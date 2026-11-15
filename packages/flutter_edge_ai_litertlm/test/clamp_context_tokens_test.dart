@@ -9,10 +9,10 @@ library;
 
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
+import 'package:litertlm_dart/common.dart';
 
 void main() {
   group('clampLitertlmContextTokens (#318)', () {

@@ -3,11 +3,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/conversation_handles.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
+import 'package:litertlm_dart/common.dart';
 
 /// A conversation that answers with scripted text chunks, one turn at a time,
 /// and can be held open mid-turn so a test can stop it there.

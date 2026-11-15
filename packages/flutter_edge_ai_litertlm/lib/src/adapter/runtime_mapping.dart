@@ -5,8 +5,7 @@
 
 import 'package:flutter_edge_ai/engine.dart';
 
-import '../runtime/errors.dart';
-import '../runtime/types.dart';
+import 'package:litertlm_dart/common.dart';
 
 extension PreferredBackendToRuntime on PreferredBackend {
   Backend get toRuntime => switch (this) {

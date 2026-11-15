@@ -25,10 +25,10 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_io.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedder/litert_lm_embedder.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedder/embedder_types.dart';
+import 'package:litertlm_dart/common.dart';
 
 const _images = '../flutter_edge_ai/example/assets/eg2_vision';
 const _goldenPath =

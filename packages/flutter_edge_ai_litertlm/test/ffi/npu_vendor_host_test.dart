@@ -6,14 +6,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha256;
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
-    show NpuDispatchUnavailableException;
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
+import 'package:litertlm_dart/common.dart';
 
 const _sm8850 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8850');
 const _tensorG5 = NpuStamp(vendor: 'Google', soc: 'Tensor_G5');

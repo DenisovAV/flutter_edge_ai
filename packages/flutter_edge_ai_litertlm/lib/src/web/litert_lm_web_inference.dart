@@ -17,9 +17,8 @@ import 'package:mutex/mutex.dart';
 import 'litert_lm_page_lock.dart';
 import 'litert_lm_web.dart';
 import '../adapter/runtime_mapping.dart';
-import '../ffi/engine_sampler_latch.dart';
 import '../reported_engine_turn.dart';
-import '../ffi/thinking_context.dart';
+import 'package:litertlm_dart/common.dart';
 import 'litert_lm_web_session_config.dart';
 
 /// Web `.litertlm` inference via the upstream `@litert-lm/core` early-preview

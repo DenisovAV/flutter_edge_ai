@@ -27,16 +27,12 @@
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
-import '../bundle/litertlm_bundle_info.dart' show npuVendorOf;
-import '../ffi/litert_lm_client.dart' show NpuDispatchUnavailableException;
-import '../ffi/npu_vendor_host.dart';
 import '../flutter_npu_platform.dart';
-import '../native_hosts.dart';
-import '../runtime/npu_stacks.dart';
+import 'package:litertlm_dart/common.dart';
 import 'litert_lm_embedding_common.dart';
-import '../bundle/litertlm_npu_target.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 
-export '../native_hosts.dart'
+export 'package:litertlm_dart/common.dart'
     show liteRtLmEmbeddingGpuAbis, liteRtLmEmbeddingGpuRefusedAbis;
 
 /// Where the pass will run a bundle: [backend] `cpu` for a generic bundle

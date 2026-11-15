@@ -1,7 +1,7 @@
 // The public `readLiteRtLmBundleInfo`, natively: the runtime's reader
 // (bundle/litertlm_bundle_reader.dart) under the package's public types.
 
-import '../bundle/litertlm_bundle_reader.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'bundle_info.dart';
 
 /// What the `.litertlm` file at [path] says about itself: its container

@@ -8,13 +8,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_cache_dir.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
-    show NpuDispatchUnavailableException;
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
+import 'package:litertlm_dart/common.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

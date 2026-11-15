@@ -9,8 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart'
     show EdgeAiLogLevel, edgeAiLogLevel;
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_log_binding.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/build_mode.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/runtime_log.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// What [body] printed through `print`.

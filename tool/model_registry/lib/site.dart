@@ -256,7 +256,7 @@ final class SiteInputs {
       p.join(
         repoRoot,
         'packages',
-        'flutter_edge_ai_litertlm',
+        'litertlm_dart',
         'hook',
         'build.dart',
       ),

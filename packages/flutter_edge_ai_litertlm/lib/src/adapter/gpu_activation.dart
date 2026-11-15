@@ -4,7 +4,7 @@
 
 import 'package:flutter_edge_ai/engine.dart';
 
-import '../bundle/litertlm_bundle_activation.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 
 /// The activation type a GPU attempt gets when the caller set none, or null to
 /// leave the engine's choice alone, with the reason it was chosen.

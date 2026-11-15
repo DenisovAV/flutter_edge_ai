@@ -11,6 +11,7 @@ workspace:
   - packages/flutter_edge_ai_rag
   - packages/flutter_edge_ai_sqlite
   - packages/flutter_edge_ai_qdrant
+  - packages/litertlm_dart
   - packages/flutter_edge_ai_litertlm
   - packages/flutter_edge_ai_llama
   - packages/flutter_edge_ai_embeddings

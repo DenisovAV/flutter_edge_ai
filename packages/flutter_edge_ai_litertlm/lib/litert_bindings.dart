@@ -18,4 +18,4 @@
 /// `package:flutter_edge_ai_litertlm/src/ffi/litert_bindings.dart`.
 library;
 
-export 'src/ffi/litert_bindings.dart';
+export 'package:litertlm_dart/litert_bindings.dart';

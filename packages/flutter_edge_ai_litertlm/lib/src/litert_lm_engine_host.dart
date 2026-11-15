@@ -10,14 +10,9 @@ import 'dart:io' show File, Platform;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 
-import 'ffi/litert_lm_client.dart';
-import 'ffi/npu_stack_manifest.dart';
-import 'ffi/npu_vendor_host.dart';
-import 'ffi/open_session_backing.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'flutter_npu_platform.dart';
-import 'runtime/litert_lm_log_level.dart';
-import 'bundle/litertlm_bundle_activation.dart' show GpuActivationReason;
-import 'runtime/npu_stacks.dart';
+import 'package:litertlm_dart/common.dart';
 
 /// The app's support directory (path_provider): the default
 /// [LiteRtLmEngineHost.cacheDir].

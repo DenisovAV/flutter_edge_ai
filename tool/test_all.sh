@@ -176,6 +176,10 @@ for dir in packages/*/ packages/*/example/; do
     # Outside the workspace: resolve it here, so a resolution failure is
     # reported as one rather than as a failing test.
     (cd "$dir" && flutter pub get && flutter test)
+  elif ! grep -q 'sdk: flutter' "${dir}pubspec.yaml"; then
+    # A pure Dart package (litertlm_dart): package:test suites, run by
+    # `dart test`, which also runs the package's build hook.
+    (cd "$dir" && dart test)
   else
     (cd "$dir" && flutter test)
   fi

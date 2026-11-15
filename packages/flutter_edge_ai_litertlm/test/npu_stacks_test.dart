@@ -5,9 +5,7 @@ import 'dart:ffi' show Abi;
 
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtLmNpuTarget;
-import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart'
-    show NpuStamp, npuVendorOf;
-import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
+import 'package:litertlm_dart/common.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

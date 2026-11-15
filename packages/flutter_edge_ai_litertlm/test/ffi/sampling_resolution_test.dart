@@ -5,10 +5,9 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
-import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_sampler.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
+import 'package:litertlm_dart/common.dart';
 
 /// Records what reaches the native layer, then stops: no engine is loaded.
 class _CapturingClient extends LiteRtLmFfiClient {

@@ -10,13 +10,11 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_status.dart';
-import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_sampler.dart';
+import 'package:litertlm_dart/bindings.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_edge_ai_litertlm/src/thinking_token_budget.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
+import 'package:litertlm_dart/common.dart';
 
 // C API 1.0: a create writes through an out-parameter and every call that
 // can fail returns a LiteRtLmStatusCode.
@@ -287,7 +285,9 @@ void main() {
   });
 
   test('the release gate lists every C function a budget calls', () {
-    final client = File('lib/src/ffi/litert_lm_client.dart').readAsStringSync();
+    final client = File(
+      '../litertlm_dart/lib/src/ffi/litert_lm_client.dart',
+    ).readAsStringSync();
     final apply = client.substring(
       client.indexOf('void applyThinkingTokenBudget('),
       client.indexOf('/// Callback typedef'),
@@ -297,7 +297,7 @@ void main() {
         m.group(1)!,
     };
     final gate = File(
-      'native/litert_lm/check_embedding_exports.py',
+      '../litertlm_dart/native/litert_lm/check_embedding_exports.py',
     ).readAsStringSync();
     final listed = RegExp(
       r'THINKING_BUDGET_SYMBOLS = \[(.*?)\]',

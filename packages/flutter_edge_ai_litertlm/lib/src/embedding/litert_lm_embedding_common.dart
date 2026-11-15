@@ -8,10 +8,9 @@
 
 import 'package:flutter_edge_ai/engine.dart';
 
-import '../embedder/embedder_constants.dart';
-import '../runtime/npu_stacks.dart';
+import 'package:litertlm_dart/common.dart';
 
-export '../embedder/embedder_constants.dart'
+export 'package:litertlm_dart/common.dart'
     show liteRtLmAudioBundle, liteRtLmMaxInputLength;
 
 /// The engine's name in messages and errors, native and web alike: the same

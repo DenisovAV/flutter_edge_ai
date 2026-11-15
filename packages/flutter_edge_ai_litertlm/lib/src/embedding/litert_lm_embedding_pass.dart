@@ -12,12 +12,12 @@ import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../adapter/runtime_log_binding.dart';
 import '../adapter/runtime_mapping.dart';
-import '../embedder/embedder_types.dart';
-import '../embedder/litert_lm_embedder.dart';
-import '../ffi/litert_lm_embedding_bindings.dart';
+import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/bindings.dart';
 import 'litert_lm_embedding_common.dart';
 
-export '../embedder/litert_lm_embedder.dart'
+export 'package:litertlm_dart/litertlm_dart.dart'
     show LiteRtLmEmbeddingConfig, checkLiteRtLmEmbeddingSymbols;
 export 'litert_lm_embedding_common.dart'
     show

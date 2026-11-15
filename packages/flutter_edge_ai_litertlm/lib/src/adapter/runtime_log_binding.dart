@@ -9,7 +9,7 @@
 import 'package:flutter_edge_ai/engine.dart'
     show EdgeAiLogLevel, edgeAiLog, edgeAiLogLevel;
 
-import '../runtime/runtime_log.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 
 void _edgeAiLogSink(String message, {bool verbose = false}) => edgeAiLog(
   message,

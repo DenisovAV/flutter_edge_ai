@@ -1,0 +1,1712 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:code_assets/code_assets.dart';
+import 'package:crypto/crypto.dart';
+// The hook's helpers live in lib/src/hook/, not hook/src/: pub.dev accepts
+// only hook/build.dart under hook/ ("Hook files are experimental").
+import 'package:litertlm_dart/src/hook/download.dart';
+import 'package:litertlm_dart/src/hook/legacy_user_defines.dart';
+import 'package:litertlm_dart/src/hook/mediatek_runtime.dart';
+import 'package:litertlm_dart/src/hook/qairt_linux.dart';
+import 'package:litertlm_dart/src/hook/qnn_runtime.dart';
+import 'package:litertlm_dart/src/hook/unsupported_target.dart';
+import 'package:litertlm_dart/src/runtime/native_release.dart';
+import 'package:litertlm_dart/src/runtime/npu_stacks.dart';
+import 'package:hooks/hooks.dart';
+
+const _packageName = 'litertlm_dart';
+
+/// This build's defines: `hooks.user_defines.litertlm_dart`, then the key
+/// apps set before the hook moved here (legacy_user_defines.dart).
+late HookDefines _defines;
+
+// ============================================================================
+// Native bundles
+// ============================================================================
+
+/// One unit of "fetch a tarball per platform from a GitHub Release, verify
+/// SHA256, extract, register the dylibs as CodeAssets". Currently there are
+/// two: LiteRT-LM (inference + embedding via LiteRT C API) and qdrant-edge
+/// (vector store FFI shim).
+///
+/// New bundles can be added by appending to [_bundles] without modifying the
+/// per-platform/cache/download/extract machinery below.
+class _NativeBundle {
+  /// Filesystem namespace under [_cacheBaseDir]. Must be unique across bundles
+  /// (e.g. `litertlm`, `qdrant_edge`).
+  final String namespace;
+
+  /// Release tag suffix; full tag is built as either `native-vX` (LiteRT) or
+  /// `qdrant-edge-vX` (qdrant) — see [releaseTagPrefix].
+  final String version;
+
+  /// Prefix of the GitHub Release tag: full tag = `$releaseTagPrefix$version`.
+  /// LiteRT uses `native-v`, qdrant uses `qdrant-edge-v`.
+  final String releaseTagPrefix;
+
+  /// Prefix of each platform archive: full name = `$archivePrefix-$dirName.tar.gz`.
+  /// LiteRT: `litertlm`, qdrant: `qdrant-edge`.
+  final String archivePrefix;
+
+  /// SHA256 of each archive, keyed by full archive filename
+  /// (e.g. `litertlm-linux_x86_64.tar.gz`).
+  final Map<String, String> checksums;
+
+  /// Name of the main shared library to register as a CodeAsset (e.g.
+  /// `LiteRtLm`, `vec0`). Platform-appropriate extension is added
+  /// via [_dylibFileName].
+  final String mainLibName;
+
+  /// Companion libraries to register alongside [mainLibName]. May be empty
+  /// (qdrant has none). LiteRT has Metal/OpenCL/WebGPU accelerators etc.
+  final List<String> companions;
+
+  /// Names this bundle shipped in an older release and no longer registers.
+  /// Deleted with the owned files on a version change — so the flat cache does
+  /// not keep them forever — and never registered, which [companions] would
+  /// do with any file it finds.
+  final List<String> legacyFileNames;
+
+  /// Companions to skip on a specific OS. LiteRT skips Apple companion
+  /// dylibs on macOS because of a Native Assets install_name_tool slack
+  /// issue (#247) — the Podfile post_install handles them instead.
+  final Set<OS> skipCompanionsOn;
+
+  /// Additional libraries to register on Windows only (no `lib` prefix).
+  /// LiteRT: lib-prefixed copies for PE imports + DXC runtime + Intel NPU
+  /// dispatch. qdrant: none.
+  final List<String> windowsExtraLibs;
+
+  /// Android-only libraries this bundle owns (no `lib` prefix, `.so` suffix
+  /// added automatically). LiteRT: the Qualcomm NPU stack. Registered by the
+  /// opt-in flag, never by presence (see _registerQualcommNpu); the list
+  /// itself also drives the flat-cache cleanup.
+  final List<String> androidExtraLibs;
+
+  /// Linux-only libraries this bundle owns (only the arm64 tarball carries
+  /// them). LiteRT: the Qualcomm dispatch and our `libcdsprpc.so` shim.
+  /// Registered by the opt-in flag, never by presence (see
+  /// _registerQualcommNpuLinux); the list also drives the flat-cache cleanup.
+  final List<String> linuxExtraLibs;
+
+  /// When `true`, per-platform subdirectories live directly under
+  /// [_cacheBaseDir] (`<cacheBase>/macos_arm64/...`). When `false`, they live
+  /// under a per-bundle namespace (`<cacheBase>/<namespace>/macos_arm64/...`).
+  ///
+  /// LiteRT uses flat=true for backwards compatibility — `example/macos/Podfile`
+  /// and `example/ios/Podfile` post_install scripts (plus the Xcode
+  /// `project.pbxproj` build phase) hardcode the flat path. Any new bundle
+  /// must use flat=false to avoid colliding with LiteRT files.
+  final bool useFlatLayout;
+
+  const _NativeBundle({
+    required this.namespace,
+    required this.version,
+    required this.releaseTagPrefix,
+    required this.archivePrefix,
+    required this.checksums,
+    required this.mainLibName,
+    required this.markerFileName,
+    this.companions = const [],
+    this.legacyFileNames = const [],
+    this.skipCompanionsOn = const {},
+    this.windowsExtraLibs = const [],
+    this.androidExtraLibs = const [],
+    this.linuxExtraLibs = const [],
+    this.useFlatLayout = false,
+  });
+
+  /// Name of the marker file that stores the cached bundle version. For LiteRT
+  /// (flat layout) it's `.flutter_gemma_native_version` at the cache root, kept
+  /// stable for backwards compatibility. For namespaced bundles it's
+  /// `.version` inside the bundle's namespace subdirectory.
+  final String markerFileName;
+
+  String get releaseTag => '$releaseTagPrefix$version';
+  String get releaseBase =>
+      'https://github.com/DenisovAV/flutter_edge_ai/releases/download/$releaseTag';
+
+  /// Directory containing this bundle's per-platform subdirectories. For flat
+  /// layout that's the cache root itself; for namespaced bundles it's the
+  /// `<cacheBase>/<namespace>/` subdir.
+  Directory cacheRoot() => useFlatLayout
+      ? Directory('${_cacheBaseDir().path}/$releaseTag')
+      : Directory('${_cacheBaseDir().path}/$namespace');
+
+  /// Absolute path of the marker file that tracks the cached version of this
+  /// bundle. Always lives at [cacheRoot] root (alongside the per-platform
+  /// subdirs).
+  File markerFile() => File('${cacheRoot().path}/$markerFileName');
+
+  String archiveName(String dirName) => '$archivePrefix-$dirName.tar.gz';
+
+  /// All filenames this bundle owns on disk inside one per-platform subdir.
+  /// Used by [_invalidateBundleCacheIfStale] to wipe only this bundle's files
+  /// when running in flat layout (LiteRT shares its dir with future bundles).
+  Iterable<String> ownedFileNames(OS os) sync* {
+    yield _dylibFileName(os, mainLibName);
+    // StreamProxy is bundled with LiteRT only — but we let the file-existence
+    // check at use sites decide. Listing it here is harmless either way.
+    yield _dylibFileName(os, 'StreamProxy');
+    for (final c in companions) {
+      yield _dylibFileName(os, c);
+    }
+    for (final l in legacyFileNames) {
+      yield _dylibFileName(os, l);
+    }
+    if (os == OS.windows) {
+      for (final w in windowsExtraLibs) {
+        yield _dylibFileName(os, w);
+      }
+    }
+    if (os == OS.android) {
+      // Every vendor stack that runs on Android, from the table (Qualcomm's is
+      // androidExtraLibs).
+      for (final vendor in NpuStack.values) {
+        if (!vendor.abis.any((abi) => abi.startsWith('android_'))) continue;
+        for (final name in npuStackLibs(vendor, 'android')) {
+          yield _dylibFileName(os, name);
+        }
+      }
+    }
+    if (os == OS.linux) {
+      for (final l in linuxExtraLibs) {
+        yield _dylibFileName(os, l);
+      }
+    }
+  }
+}
+
+/// LiteRT-LM native library version and release info.
+///
+/// 0.17.1 / 0.17.1-a — upstream v0.17.1 (`5e58e9a0`), provider from upstream
+/// main `4453b286` (the tag's was pre-ComputeMask); -a added libandroid.so to
+/// the two Android GPU accelerators' NEEDED (Mali crash, #545).
+///
+/// 0.17.0 — built from LiteRT-LM `e9fd8c53` (v0.17.0) with LiteRT `9fe5be45`.
+/// All 7 platforms rebuilt; the zlib mirror patch is gone (the v0.17.0
+/// WORKSPACE lists the mirrors itself).
+/// The GPU samplers' `Create` gained a leading `runtime_c_api` argument —
+/// upstream refreshed the prebuilt samplers with it, so nothing to patch here.
+/// The 4 `tbb*_debug.dll` files 0.16.0 still carried are dropped on purpose
+/// (#437: release TBB only).
+///
+/// 0.16.0 — built from LiteRT-LM `924e79c9` with LiteRT `0ff28117`. There is no
+/// native-v0.15.0; the jump is 0.14.0 → 0.16.0. All 7 platforms rebuilt.
+///
+/// Fixes the Android OpenCL per-turn leak (#348/#402, upstream #2699). Upstream
+/// changed `LiteRtLmStreamCallback` from 4 args to a 2-arg opaque chunk with no
+/// compat path — libStreamProxy resolves the shape at runtime.
+///
+/// Windows GPU works again: our build had been passing
+/// `--define=litert_link_capi_so=true`, a name upstream deleted. Bazel accepts
+/// unknown defines silently, so the LiteRt runtime linked statically and
+/// conflicted with the separately shipped WebGPU accelerator once Dawn was split
+/// out. Corrected to `litert_runtime_link_mode=dynamic` +
+/// `resolve_symbols_in_exec=false` (both documented as mandatory for GPU).
+///
+/// Both NPU dispatch stacks are now BUILT FROM THE PIN, not carried forward —
+/// carrying them is what broke NPU on both platforms. Intel ships a version
+/// matched OpenVino (2026.3.0.dev20260622); Qualcomm ships a dispatch rebuilt
+/// from the derived LiteRT ref together with the 10 QNN runtime libs refreshed
+/// from the same QAIRT 2.44.0.260225 (the stale pair failed with
+/// `Qnn System library version 1.8.0 is mismatched`, minimum 1.11.0).
+///
+/// Apple: `-Wl,-headerpad_max_install_names` (Native Assets re-runs
+/// install_name_tool on every pub get), macOS `-mmacosx-version-min=11.0` —
+/// libStreamProxy.dylib had been inheriting the build host and shipped minos
+/// 26.0 since native-v0.14.0. iOS vtool minos 13.0 (#245).
+/// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
+final _litertlmBundle = _NativeBundle(
+  namespace: 'litertlm',
+  version: liteRtLmNativeVersion,
+  releaseTagPrefix: 'native-v',
+  archivePrefix: 'litertlm',
+  mainLibName: 'LiteRtLm',
+  // One directory per release tag (`<cacheBase>/native-v0.19.1-b/<platform>`),
+  // so two tags never share files. The macOS Podfile block apps paste reads
+  // the old flat `flutter_gemma/native/macos_arm64`; [_mirrorForPodfileStager]
+  // keeps that working.
+  useFlatLayout: true,
+  markerFileName: '.litertlm_native_version',
+  // 0.19.1-b changes the Windows archive and nothing else: patch_c_api.sh
+  // section 27 backports LiteRT-LM 3db1cfd0ab, which aliases multi-signature
+  // NPU KV caches on OpenVINO custom tensor buffers (Intel's GlobalGraph-v3
+  // bundles failed with "Unsupported tensor buffer type for cross-platform
+  // aliasing: 100"). LiteRtLm.dll changes; LiteRtDispatch.dll and
+  // StreamProxy.dll differ in link stamps only (CI run 43348456089); the
+  // other 20 Windows files and the six other archives are byte-identical to
+  // 0.19.1-a.
+  //
+  // 0.19.1-a: LiteRT-LM v0.19.1 (7a03724c; LiteRT dcb657e8 unchanged)
+  // rebuilt on all seven targets with patch_c_api.sh section 26: with
+  // thinking on, the first decode step of a turn with tools copies the Gemma
+  // tool constraint's bitmap by its data pointer and the vocabulary size. On
+  // Windows the prebuilt provider is libc++ and LiteRtLm.dll MSVC, and reading
+  // its vector's end() threw std::length_error and aborted the process. The
+  // Windows Intel dispatch also reads OpenVINO GlobalGraph container v3
+  // (LiteRT PR #10843, patches/litert_intel_globalgraph_v3.patch), which
+  // Intel's public Gemma 4 12B for Panther Lake carries. Against 0.19.0-a only
+  // libLiteRtLm, Windows LiteRtDispatch.dll and (link stamps) StreamProxy.dll
+  // change; CI run 43188320482 built Linux and Windows.
+  //
+  // 0.19.0-a: LiteRT-LM v0.19.0 (771b06e1, LiteRT dcb657e8), C API 1.0 and
+  // patch_c_api.sh sections 17-25; StreamProxy exports stream_proxy_create_v1
+  // only. Android no longer ships the separate OpenCL accelerator and sampler,
+  // Linux and Windows no TopK WebGPU sampler (both linked or dropped, see
+  // verify_tarball_manifest.sh).
+  // 0.18.0-h changes the Windows archive and nothing else: both copies of
+  // libLiteRtWebGpuAccelerator.dll are Google's prebuilt from LiteRT-LM
+  // 5f973f57, which contains LiteRT #11120 — on an Intel GPU it turns off the
+  // dp4a int8 FC/conv path, whose output was corrupt on D3D12, so Gemma 4 12B
+  // returned no text for a prompt under 512 tokens (LiteRT-LM #4083). The
+  // accelerator imports nothing from libLiteRt.dll, and its Dawn imports
+  // resolve against the shipped webgpu_dawn.dll, byte-identical at both refs.
+  // Measured on Panther Lake (Arc B390): the 12B's prefill takes about 45%
+  // longer (7271 tokens: 21.4-22.7 s -> 31.3-32.2 s), its decode 3-4% less
+  // time; E2B and EmbeddingGemma 2 unchanged. The other 23 Windows files and
+  // the six other archives are byte-identical to 0.18.0-g.
+  // The release also carries the two macOS SwiftPM companion zips
+  // (macos/flutter_edge_ai_litertlm/Package.swift), packaged for this tag from
+  // the same macOS archive.
+  //
+  // 0.18.0-g changes the Windows archive and nothing else: the Intel NPU
+  // stack moves from OpenVINO 2026.3.1 to 2026.4.1 (LiteRT 991d15588a,
+  // patches/litert_openvino_2026_4_1.patch) — Intel's Gemma 4 12B for Panther
+  // Lake carries blob metadata 2.7, which the 2026.3 NPU plugin refuses — and
+  // openvino_intel_npu_vm_runtime.dll joins it. LiteRtDispatch.dll, LiteRtLm.dll,
+  // StreamProxy.dll, OpenVINO and TBB are CI run 39573062034's, the bytes run
+  // on Lunar Lake and Panther Lake; the other twelve Windows files and the six
+  // other archives are byte-identical to 0.18.0-f.
+  //
+  // 0.18.0-f rebuilds libLiteRtLm and StreamProxy on all seven targets and
+  // adds the Google Tensor dispatch to the Android archive:
+  // stream_proxy_create2 takes the chunk accessors from Dart (#453, #668);
+  // a stopped conversation turn can be rewound in place (patch_c_api.sh §16,
+  // litert_lm_conversation_rewind_cancelled_turn, #682); Windows loads an AOT
+  // NPU bundle's sections from memory instead of handing Google's prebuilt
+  // libLiteRt.dll a C runtime descriptor it cannot read, which ended the
+  // process with 0xC0000409 (§15, LiteRT-LM #4023, #679); and
+  // libLiteRtDispatch_GoogleTensor.so, built from LiteRT's
+  // litert/vendors/google_tensor/dispatch at the pin, bundled only behind
+  // google_tensor_npu (#670, #686). Windows LiteRtDispatch.dll is rebuilt from
+  // the pin; every other file, Android's Qualcomm dispatch included, is
+  // byte-identical to 0.18.0-e.
+  //
+  // 0.18.0-e rebuilds libLiteRtLm on all seven targets: on Linux and Windows
+  // EmbeddingGemma 2's external weights are addressed by the bundle's path
+  // inside each model flatbuffer instead of a C++ map handed to Google's
+  // prebuilt libc++ libLiteRt — the libstdc++/MSVC STL mismatch failed the
+  // create on Linux and was an access violation on Windows (patch_c_api.sh
+  // §13; Apple and Android compile it out); and embedding responses report
+  // their input and truncated lengths (§14,
+  // litert_lm_embedding_response_get_input_length / _get_truncated_length).
+  // Every other file is byte-identical to 0.18.0-d: Windows LiteRtDispatch.dll
+  // is carried from it byte for byte, and CI's StreamProxy.dll differs only in
+  // its link stamps.
+  //
+  // 0.18.0-d rebuilds the two Linux libLiteRtLm.so and nothing else: the
+  // Gemma data processors wrap the prebuilt constraint provider instead of
+  // reinterpret_cast-ing it (patch_c_api.sh §12, #551) — on Linux it speaks
+  // Google's libc++ ABI and every native tool call aborted on its first
+  // constrained token. The other files and five archives are byte-identical
+  // to 0.18.0-c.
+  //
+  // 0.18.0-c adds two files to the linux_arm64 archive and changes nothing
+  // else: our Qualcomm dispatch (built in CI from the LiteRT pin against the
+  // QAIRT 2.50 headers) and the libcdsprpc.so shim the QNN Stubs need, for
+  // Linux arm64 NPU behind `qualcomm_npu` (_registerQualcommNpuLinux). The
+  // seven files already there and the other six archives are byte-identical
+  // to 0.18.0-b.
+  //
+  // 0.18.0-b rebuilds libLiteRtLm.dylib in the three Apple archives and nothing
+  // else: in an app with flutter_litert, LiteRT's gpu_registry tried the
+  // generic libLiteRtGpuAccelerator first and, when that dlopen failed, bound
+  // flutter_litert's accelerator through RTLD_DEFAULT — a crash in
+  // LiteRtCreateCompiledModel. Apple now tries only our framework and never
+  // the default lookup (patches/litert_gpu_registry_apple.patch). Exports,
+  // dependencies and minos match 0.18.0-a; the other four archives are
+  // byte-identical to it.
+  //
+  // 0.18.0-a rebuilds the two Linux libLiteRtLm.so and nothing else: upstream
+  // sets the Qualcomm NPU options (HTP burst) on Android only, so a Linux
+  // Qualcomm board ran HTP in its default mode (patch_c_api.sh §11). Exports,
+  // NEEDED and GLIBC versions match 0.18.0; the other five archives are
+  // byte-identical to it.
+  //
+  // 0.18.0 is upstream v0.18.0 (b2f686e2) with LiteRT 26895c9f, QAIRT 2.50.0
+  // and OpenVINO 2026.3.1; Apple and Android built locally, Linux and Windows
+  // in CI. The tag's own prebuilt companions are used again — its constraint
+  // provider has the ComputeMask ABI; both build scripts and both workflows
+  // assert that before compiling.
+  //
+  // Android carries no QNN runtime any more: Qualcomm licenses it for
+  // redistribution inside an application only, so an app opts in with
+  // `qualcomm_npu: true` and this hook fetches it from Maven (see
+  // _registerQualcommNpu). The dispatch stays, built against the same QAIRT
+  // release the hook pins. Android also drops the three Dawn-dependent GPU
+  // libraries, which could never load (no libwebgpu_dawn.so on Android).
+  //
+  // Apple ships upstream's Metal accelerator as LiteRtLmMetalAccelerator:
+  // flutter_litert embeds a framework under the upstream name, and an app
+  // bundle holds one per name (patch_c_api.sh §10).
+  //
+  // verify_tarball_manifest.sh gates what must and must not ship. These sums
+  // must equal both the bytes GitHub serves and the `checksums_litertlm.txt`
+  // published on the release — a stale txt sent a user down the wrong path
+  // while debugging a mismatch (#316).
+  checksums: {
+    'litertlm-linux_x86_64.tar.gz':
+        'fde4a418818747f740795e95e65821f31bb48a104ffe89844f6f7303f6f05799',
+    'litertlm-linux_arm64.tar.gz':
+        '812b465e77cd30ce6c1ca144e48158eb364e08b5af4aca546052c42b391f4750',
+    'litertlm-windows_x86_64.tar.gz':
+        'c114569468a5bbe8a68ca48ba1c5ff31a5c96d635042b71ab84cf56ed3c3a1dc',
+    'litertlm-macos_arm64.tar.gz':
+        '698c48bcc01633a49640af5c51c85a2ee850bed81789a91c24efc8926080d170',
+    'litertlm-ios_arm64.tar.gz':
+        'b477c3fad86dcfaab62ea87e327556fdfb2f4b61ce03351d71828b9e9f8f848f',
+    'litertlm-ios_sim_arm64.tar.gz':
+        'cc2c2de4195692ce89c73451924ac6617bfe7557afddb3fdd81df9022795b5a2',
+    'litertlm-android_arm64.tar.gz':
+        '1a3dbe72bfce3cde6a39f90b4173ad9ccdcf14e42fb69092b1b968d7aecef7b4',
+  },
+  companions: [
+    'GemmaModelConstraintProvider',
+    // macOS + iOS GPU (Metal). Upstream's libLiteRtMetalAccelerator, renamed:
+    // flutter_litert ships a framework under the upstream name, and an app
+    // bundle holds only one (see patch_c_api.sh §10).
+    'LiteRtLmMetalAccelerator',
+    'LiteRtWebGpuAccelerator', // Linux/Windows GPU (WebGPU → Vulkan/DX12)
+    'LiteRt', // Linux/Windows core runtime
+    'webgpu_dawn', // Linux/Windows Dawn WebGPU (split to a shared lib in v0.14.0)
+  ],
+  legacyFileNames: [
+    // Not shipped since native-v0.19.0-a: libLiteRtLm.so links Android's
+    // OpenCL accelerator and sampler in (patch_c_api.sh section 19).
+    'LiteRtOpenClAccelerator',
+    'LiteRtTopKOpenClSampler',
+    // Not shipped since native-v0.19.0-a: Linux and Windows build no GPU
+    // sampler (section 20, CPU sampling), and Apple links its sampler into
+    // libLiteRtLm. A stale 0.18 copy in the cache is deleted, never bundled.
+    'LiteRtTopKWebGpuSampler',
+    'libLiteRtTopKWebGpuSampler',
+    'LiteRtTopKMetalSampler',
+    // Not shipped on any platform since native-v0.18.0: on Android it needs
+    // Dawn, which no bundle carries.
+    'LiteRtGpuAccelerator',
+    // Upstream's name for the Metal accelerator, shipped renamed since
+    // native-v0.18.0 (flutter_litert's framework uses the upstream name).
+    'LiteRtMetalAccelerator',
+  ],
+  // On macOS, skip the upstream Apple companion dylibs from Native Assets
+  // bundling (#247). The companion dylibs Google ships in
+  // `prebuilt/macos_arm64/` (`libGemmaModelConstraintProvider.dylib`,
+  // `libLiteRtMetalAccelerator.dylib`, shipped as `libLiteRtLmMetalAccelerator`;
+  // the Metal sampler is not shipped at all) were linked without
+  // `-Wl,-headerpad_max_install_names`, leaving 64 and 56 bytes of slack in
+  // the load-commands area (native-v0.18.0-g). That fits the app's
+  // `@rpath/<X>.framework/<X>`, but not the absolute path `flutter test` gives
+  // every code asset, and a failed rewrite aborts the whole bundling step. So
+  // Native Assets never touches them: the app gets them as frameworks from
+  // this package's macOS Swift package (`macos/flutter_edge_ai_litertlm/
+  // Package.swift`, #689), or, with Swift Package Manager off, from the
+  // macos/Podfile block (`tool/stage_macos_companions.sh`), and
+  // [_stagePointedAtCompanionFrameworks] points LiteRtLm at them. iOS / Linux /
+  // Windows / Android are unaffected: their Native Assets paths (Xcode build
+  // phases on iOS, no install_name_tool on Linux/Windows/Android) don't
+  // trigger the bug.
+  skipCompanionsOn: {OS.macOS},
+  // Windows: LiteRtLm.dll references companion DLLs by their original
+  // Google filenames with "lib" prefix (libLiteRt.dll etc.) via PE imports.
+  // Native Assets uses no prefix on Windows (LiteRt.dll), so we ship both
+  // names from the CI artifact — register the lib-prefixed copies here
+  // so the PE loader can resolve imports at LoadLibrary time. Plus the
+  // DirectXShaderCompiler runtime (WebGPU/DX12) and the Intel NPU
+  // dispatch (LiteRtDispatch.dll + OpenVino + TBB).
+  windowsExtraLibs: [
+    'libGemmaModelConstraintProvider',
+    'libLiteRt',
+    'libLiteRtWebGpuAccelerator',
+    'libwebgpu_dawn', // lib-prefixed for the accelerator's PE import (v0.14.0)
+    // DXC runtime
+    'dxil',
+    'dxcompiler',
+    // Intel NPU stack (NpuStack.intel), in every Windows x64 build. ONE SET
+    // WITH THE WINDOWS WORKFLOW'S `$ovWanted`: see intelNpuLibs.
+    ...intelNpuLibs,
+  ],
+  // Android NPU: Qualcomm dispatch bridge + QNN HTP runtime + per-SoC Stubs.
+  //
+  // Registered only for apps that set `qualcomm_npu: true` (see
+  // _registerQualcommNpu): the dispatch from this bundle, the QNN runtime from
+  // Qualcomm's own Maven artifact. Since native-v0.18.0 the tarball carries
+  // the dispatch only. The ten QNN names stay in this list so the flat-cache
+  // cleanup still removes copies an older tarball left behind.
+  //
+  // sm8550=V73, sm8650=V75, sm8750=V79, sm8850=V81.
+  // Stub libs are the CPU-side bridge; Skel libs run on Hexagon DSP via FastRPC.
+  androidExtraLibs: qualcommNpuLibs,
+  // Linux arm64 NPU: the Qualcomm dispatch (built from the LiteRT pin, like
+  // Android's) and our libcdsprpc.so shim. The QNN runtime comes from
+  // Qualcomm's QAIRT SDK zip at build time — see _registerQualcommNpuLinux.
+  linuxExtraLibs: [qualcommDispatchLib, cdsprpcShimLib],
+);
+
+final _bundles = [_litertlmBundle];
+
+// ============================================================================
+// Per-platform name resolution
+// ============================================================================
+
+/// Resolve prebuilt directory name for the given OS + architecture.
+/// iOS distinguishes device vs simulator via IOSSdk.
+String? _prebuiltDirName(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
+  if (os == OS.iOS) {
+    // Only arm64 is supported. On Apple Silicon Macs, Flutter still invokes
+    // the hook for x86_64 simulator slices; returning null skips them so
+    // Native Assets's lipo step doesn't try to merge two arm64-only inputs
+    // and fail with "same architectures and can't be in the same fat file".
+    if (arch != Architecture.arm64) return null;
+    if (iOSSdk == IOSSdk.iPhoneSimulator) {
+      return 'ios_sim_arm64';
+    }
+    return 'ios_arm64';
+  }
+  final archName = switch (arch) {
+    Architecture.arm64 => 'arm64',
+    Architecture.x64 => 'x86_64',
+    _ => null,
+  };
+  if (archName == null) return null;
+  final osName = switch (os) {
+    OS.macOS => 'macos',
+    OS.linux => 'linux',
+    OS.windows => 'windows',
+    OS.android => 'android',
+    _ => null,
+  };
+  if (osName == null) return null;
+  return '${osName}_$archName';
+}
+
+// ============================================================================
+// Cache layout
+// ============================================================================
+
+/// Platform-appropriate base directory for all native caches. Per-bundle
+/// subdirectories live underneath (e.g. `<cacheBase>/litertlm/macos_arm64/`).
+///
+/// The LiteRT-LM bundle lives one level down, per release tag
+/// ([_NativeBundle.cacheRoot]); the NPU runtimes' caches beside it.
+Directory _cacheBaseDir() => Directory(_cacheBasePath('litertlm_dart'));
+
+/// `<the OS's per-user cache>/<name>/native`.
+String _cacheBasePath(String name) {
+  final home =
+      Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '';
+  if (Platform.isWindows) {
+    final localAppData =
+        Platform.environment['LOCALAPPDATA'] ?? '$home\\AppData\\Local';
+    return '$localAppData\\$name\\native';
+  }
+  if (Platform.isMacOS) return '$home/Library/Caches/$name/native';
+  return '$home/.cache/$name/native';
+}
+
+/// Reads the JSON marker for [bundle]. Returns null if absent, malformed, or
+/// LEGACY plain-text (pre-protocol) — all treated as "not present" so the next
+/// step re-fetches and rewrites the marker as JSON (self-heal).
+({String version, String owner})? _readMarker(_NativeBundle bundle) {
+  final m = bundle.markerFile();
+  if (!m.existsSync()) return null;
+  try {
+    final decoded = jsonDecode(m.readAsStringSync()) as Map<String, dynamic>;
+    final v = decoded['version'];
+    final o = decoded['owner'];
+    if (v is String && o is String) return (version: v, owner: o);
+    return null;
+  } catch (_) {
+    return null; // legacy plain-text or corrupt → treat as absent
+  }
+}
+
+/// Writes the JSON marker {version, owner}.
+/// COMMIT POINT: call LAST, only after the dylib files are fully in place.
+void _writeMarker(_NativeBundle bundle) {
+  bundle.markerFile().writeAsStringSync(
+    jsonEncode({'version': bundle.version, 'owner': _packageName}),
+  );
+}
+
+/// Wipe stale per-platform cached files when a bundle's version changes. Cheap
+/// (one marker read) and idempotent: if the JSON marker matches this bundle's
+/// version, do nothing; if missing, legacy plain-text, or a mismatched version,
+/// delete this bundle's files in every per-platform subdir. The next
+/// `_resolveLibDir` falls through to `_downloadAndExtract` for whatever platform
+/// the build targets. WIPE-ONLY — does NOT write the marker; `_writeMarker` is
+/// the commit point in `_processBundle`, called only AFTER the dylib is in place
+/// (so an interrupted fetch leaves no marker → clean refetch next build).
+///
+/// For namespaced bundles (`useFlatLayout=false`) we sweep entire per-platform
+/// subdirs — nobody else owns them. For flat-layout LiteRT we delete only the
+/// files listed by [_NativeBundle.ownedFileNames] so a hypothetical second
+/// flat bundle wouldn't be wiped collaterally.
+void _invalidateBundleCacheIfStale(_NativeBundle bundle) {
+  final cacheRoot = bundle.cacheRoot();
+  if (!cacheRoot.existsSync()) {
+    cacheRoot.createSync(recursive: true);
+  }
+  final stored = _readMarker(bundle);
+  if (stored != null && stored.version == bundle.version) return;
+
+  final platformPattern = RegExp(r'^(linux|macos|ios|android|windows)_');
+  for (final entity in cacheRoot.listSync()) {
+    if (entity is! Directory) continue;
+    final name = entity.uri.pathSegments.where((s) => s.isNotEmpty).last;
+    if (!platformPattern.hasMatch(name)) continue;
+
+    if (bundle.useFlatLayout) {
+      // Shared dir — delete only files this bundle owns. Iterate every OS
+      // (we don't know which one the subdir was populated for; just attempt
+      // all names — `deleteSync` is a no-op when the file is absent).
+      for (final os in OS.values) {
+        for (final fileName in bundle.ownedFileNames(os)) {
+          final f = File('${entity.path}/$fileName');
+          if (f.existsSync()) {
+            f.deleteSync();
+          }
+        }
+      }
+    } else {
+      // Exclusive dir — wipe the whole platform subdir, faster + cleaner.
+      entity.deleteSync(recursive: true);
+    }
+  }
+}
+
+// ============================================================================
+// Dynamic-library file naming
+// ============================================================================
+
+/// Dylib filename for [name] on [os]: `lib<name>.so/dylib` on Unix-like
+/// systems, `<name>.dll` on Windows. The lib prefix is applied unconditionally
+/// for now — both LiteRT and qdrant use it on every Unix-like target.
+String _dylibFileName(OS os, String name) {
+  return switch (os) {
+    OS.windows => '$name.dll',
+    OS.macOS || OS.iOS => 'lib$name.dylib',
+    _ => 'lib$name.so',
+  };
+}
+
+bool _hasMainLib(Directory dir, _NativeBundle bundle, OS os) {
+  if (!dir.existsSync()) return false;
+  final fileName = _dylibFileName(os, bundle.mainLibName);
+  return File('${dir.path}/$fileName').existsSync();
+}
+
+/// Try to resolve libs from a directory. Returns the directory if the bundle's
+/// main lib exists. Search order:
+///   1. local `native/<bundle-namespace>/prebuilt/<dirName>/` inside the
+///      package — useful for in-tree development.
+///   2. cached `<cacheBase>/<bundle-namespace>/<dirName>/` from a previous
+///      `_downloadAndExtract`.
+/// Package-relative local prebuilt directory for [bundle] on [dirName].
+///
+/// LiteRT keeps the historical `native/litert_lm/`; new bundles use
+/// `native/<namespace>/`.
+String _localPrebuiltPath(_NativeBundle bundle, String dirName) =>
+    bundle.namespace == 'litertlm'
+    ? 'native/litert_lm/prebuilt/$dirName/'
+    : 'native/${bundle.namespace}/prebuilt/$dirName/';
+
+Directory? _resolveLibDir(
+  _NativeBundle bundle,
+  String dirName,
+  Uri packageRoot,
+  OS os,
+) {
+  // Local prebuilts use a per-bundle directory layout under `native/`.
+  // LiteRT historically uses `native/litert_lm/prebuilt/`. For new bundles
+  // we use `native/<namespace>/prebuilt/`.
+  final localDir = Directory.fromUri(
+    packageRoot.resolve(_localPrebuiltPath(bundle, dirName)),
+  );
+  if (_hasMainLib(localDir, bundle, os)) return localDir;
+
+  final cacheDir = Directory('${bundle.cacheRoot().path}/$dirName');
+  if (_hasMainLib(cacheDir, bundle, os)) return cacheDir;
+
+  return null;
+}
+
+// ============================================================================
+// Download + verify + extract
+// ============================================================================
+
+Future<Directory?> _downloadAndExtract(
+  _NativeBundle bundle,
+  String dirName,
+) async {
+  final archiveName = bundle.archiveName(dirName);
+  final expectedChecksum = bundle.checksums[archiveName];
+  if (expectedChecksum == null) {
+    // No checksum registered — the ONLY legitimate reason this function
+    // returns null. Mirrors LiteRT-LM's behaviour for targets we ship nothing
+    // for (android_x86_64). The build proceeds without this CodeAsset and the
+    // runtime fails at first use with a clear "no such file" dlopen error.
+    //
+    // Every other failure below THROWS. A registered checksum is a promise
+    // that this platform is supported, so failing to produce the library is a
+    // broken build, not a skip — and a hook that returns null there completes
+    // successfully, ships an app with no native library, and surfaces as an
+    // opaque dlopen crash on the user's device (#316's shape).
+    return null;
+  }
+
+  final cacheRoot = bundle.cacheRoot();
+  final targetDir = Directory('${cacheRoot.path}/$dirName');
+  final archiveFile = File('${cacheRoot.path}/$archiveName');
+
+  try {
+    if (!cacheRoot.existsSync()) {
+      cacheRoot.createSync(recursive: true);
+    }
+
+    final url = '${bundle.releaseBase}/$archiveName';
+    stderr.writeln(
+      'flutter_edge_ai: Downloading ${bundle.namespace} native libs from $url ...',
+    );
+
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        throw StateError(
+          'flutter_edge_ai: could not download ${bundle.namespace} native libs '
+          'for $dirName — HTTP ${response.statusCode} from $url.\n'
+          'This platform HAS a registered checksum, so the archive is expected '
+          'to exist. Check network access to github.com, or that release tag '
+          '"${bundle.releaseTag}" still carries $archiveName.',
+        );
+      }
+      final sink = archiveFile.openWrite();
+      await response.pipe(sink);
+    } finally {
+      client.close();
+    }
+
+    final bytes = await archiveFile.readAsBytes();
+    final actualChecksum = sha256.convert(bytes).toString();
+    if (actualChecksum != expectedChecksum) {
+      archiveFile.deleteSync();
+      // An integrity failure has no benign reading, so this is the one case
+      // that must never degrade to "build succeeded". It means the bytes
+      // GitHub served are not the bytes this plugin version was built against
+      // — a re-uploaded tag (#316), a corrupted transfer, or a MITM. Shipping
+      // an app without the library, or with the wrong one, are both worse than
+      // failing here.
+      throw StateError(
+        'flutter_edge_ai: CHECKSUM MISMATCH for $archiveName.\n'
+        '  expected $expectedChecksum\n'
+        '  actual   $actualChecksum\n'
+        'The archive served by ${bundle.releaseBase} does not match what '
+        '${bundle.namespace} ${bundle.version} was pinned to. Re-run to rule '
+        'out a corrupt transfer; if it persists, the release asset was '
+        'replaced after publication and the pin can no longer be satisfied — '
+        'do NOT work around it by clearing the checksum.',
+      );
+    }
+    stderr.writeln('flutter_edge_ai: Checksum verified ($archiveName)');
+
+    // Extract into a sibling temp dir on the SAME filesystem (under cacheRoot),
+    // then atomically rename into place. A torn/interrupted extract leaves only
+    // the temp dir (cleaned in finally), never a half-populated targetDir.
+    final tmpDir = Directory('${cacheRoot.path}/.tmp-$dirName-$pid');
+    if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
+    tmpDir.createSync(recursive: true);
+    try {
+      final result = await Process.run('tar', [
+        '-xzf',
+        archiveFile.path,
+        '-C',
+        tmpDir.path,
+      ]);
+      if (result.exitCode != 0) {
+        throw StateError(
+          'flutter_edge_ai: could not extract $archiveName for '
+          '${bundle.namespace} — tar exited ${result.exitCode}.\n'
+          '${result.stderr}\n'
+          'The download and its checksum both passed, so this is local: '
+          'disk space or permissions. (A MISSING tar cannot reach this branch '
+          'at all — Process.run raises ProcessException instead of returning a '
+          'non-zero code — so do not read this as "tar not installed".)',
+        );
+      }
+      if (targetDir.existsSync()) targetDir.deleteSync(recursive: true);
+      tmpDir.renameSync(targetDir.path); // atomic on same FS
+    } finally {
+      if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
+    }
+    archiveFile.deleteSync();
+    stderr.writeln(
+      'flutter_edge_ai: ${bundle.namespace} libs cached to ${targetDir.path}',
+    );
+    return targetDir;
+  } on StateError {
+    // Already carries a crafted message — clean up and let it through.
+    if (archiveFile.existsSync()) archiveFile.deleteSync();
+    rethrow;
+  } catch (e) {
+    // Everything else, and this is the COMMON path: no network, DNS failure,
+    // a proxy or firewall refusing github.com, TLS interception, a 429. Those
+    // used to `return null` and now would surface as a bare SocketException
+    // with a 17-frame stack and no guidance — the four crafted messages above
+    // all cover rarer cases than this one.
+    if (archiveFile.existsSync()) archiveFile.deleteSync();
+    throw StateError(
+      'flutter_edge_ai: could not fetch ${bundle.namespace} native libs for '
+      '$dirName.\n'
+      '  $e\n'
+      'This platform is supported, so the build cannot continue without them.\n'
+      '  - No network / restricted egress? The archives come from '
+      'github.com/DenisovAV/flutter_edge_ai/releases (tag ${bundle.releaseTag}), '
+      'not from pub.dev, so mirroring pub is not enough.\n'
+      '  - Transient (GitHub 5xx or 429)? Re-run; there is no retry here.\n'
+      '  - Working on the plugin itself? A populated '
+      'native/litert_lm/prebuilt/$dirName/ is used before any download.',
+    );
+  }
+}
+
+// ============================================================================
+// Per-bundle processing — register CodeAssets from resolved libDir
+// ============================================================================
+
+Future<void> _processBundle({
+  required _NativeBundle bundle,
+  required BuildInput input,
+  required BuildOutputBuilder output,
+  required OS os,
+  required String dirName,
+}) async {
+  // Skip the bundle entirely if it has no checksum for this platform.
+  // Both bundles use this as the "is this target supported" gate. The skip is
+  // non-fatal on purpose, so an app that uses another engine still builds; only
+  // Windows ARM64 says so (see `missingArchiveNotice`, #326).
+  final archiveName = bundle.archiveName(dirName);
+  if (!bundle.checksums.containsKey(archiveName)) {
+    final notice = missingArchiveNotice(
+      packageName: _packageName,
+      dirName: dirName,
+      archiveName: archiveName,
+    );
+    if (notice != null) stderr.writeln(notice);
+    return;
+  }
+
+  // One directory per release tag, so no other version shares it: no owner
+  // to check. The marker only says the directory was completed.
+  _invalidateBundleCacheIfStale(bundle);
+
+  var libDir = _resolveLibDir(bundle, dirName, input.packageRoot, os);
+  libDir ??= await _downloadAndExtract(bundle, dirName);
+  // Null now means one thing only: no checksum registered for this platform,
+  // i.e. we ship nothing for it on purpose. Every real failure throws.
+  if (libDir == null) return;
+
+  final prebuiltDir = libDir.uri;
+  final mainFileName = _dylibFileName(os, bundle.mainLibName);
+  final mainFileUri = prebuiltDir.resolve(mainFileName);
+  if (!File.fromUri(mainFileUri).existsSync()) {
+    // We got a directory — from the cache, a local prebuilt, or a verified
+    // download — and the one library the bundle exists to deliver is not in
+    // it. Returning here registered no CodeAsset and reported success, so a
+    // half-populated cache shipped as a working build.
+    throw StateError(
+      'flutter_edge_ai: ${bundle.namespace} $dirName resolved to '
+      '${prebuiltDir.toFilePath()} but $mainFileName is missing from it.\n'
+      'The directory is present but incomplete — most often a cache left over '
+      'from an interrupted extract. Delete it, then `flutter clean` and build '
+      'again. NOT `flutter pub get`: pub get does not run build hooks, so it '
+      'will not repopulate the cache (measured — output.json mtimes unchanged).',
+    );
+  }
+
+  // Commit point: marker written only after the dylib is confirmed in place.
+  _writeMarker(bundle);
+
+  // Flutter's native-assets pipeline declares every `CodeAsset.file` as a
+  // build OUTPUT and every `output.dependencies` entry as a build INPUT (see
+  // flutter_tools build_system/targets/native_assets.dart `DartBuild`).
+  // Registering a dylib straight from `prebuiltDir` (the global cache, which we
+  // also list as a dependency below) makes the output dylib live INSIDE an
+  // input directory. Xcode then takes a directoryTreeSignature over that input
+  // dir which includes the output dylib, so the macOS "Flutter Assemble" Run
+  // Script ends up depending on its own output → "Cycle inside Flutter
+  // Assemble" (and "located outside of the allowed root paths" warnings).
+  //
+  // Fix: copy each dylib into the hook's `outputDirectory` (an allowed root
+  // that never overlaps the cache dependency dir) and register the CodeAsset
+  // from there. The cache dir stays an input-only dependency for rebuild
+  // detection. Copies compare CONTENT, not length — see [_sameBytes].
+  //
+  // APPLE-ONLY: the "Cycle inside Flutter Assemble" self-loop is an Xcode
+  // mechanism (the Run Script's directoryTreeSignature over an input dir that
+  // contains the output dylib). Windows (MSBuild) and Linux (Ninja) have no
+  // such cycle, so staging there solves nothing — and on Windows it actively
+  // breaks the PE loader: it splits the main `LiteRtLm.dll` (staged) away from
+  // its dynamically-loaded companion DLLs (samplers / Intel-NPU dispatch /
+  // openvino / tbb) that stay in the cache, so a `dlopen` of a companion on
+  // cancel/close cannot find it and hangs. So stage ONLY on the Apple
+  // toolchain, where the cycle actually occurs; elsewhere register straight
+  // from the cache (the layout the loader expects), keeping every file
+  // consistent regardless of which list it came from.
+  //
+  // ---------------------------------------------------------------------
+  // The rest of this comment is NOT Apple-specific.
+  //
+  // Every registered asset passes through `stage()`, which makes it the one
+  // place that knows what this hook actually READ — so it records those files
+  // as dependencies too.
+  //
+  // `output.dependencies` already lists `prebuiltDir`, but a DIRECTORY entry is
+  // hashed as the sorted list of child NAMES and nothing else
+  // (`_hashDirectory` in package:native_assets_builder — verified against
+  // 0.13.0: `recursive: false`, no content, no mtime. It is a private symbol
+  // in a package nothing here depends on directly, so re-check it after a
+  // Flutter SDK bump.) Rebuilding these dylibs in place keeps every name, so
+  // the hash is unchanged and the hook is skipped entirely — the new binaries
+  // never reach the build, and `stage()` never even runs to notice.
+  //
+  // Measured, not inferred: the hash this repo's own build recorded for
+  // `prebuilt/ios_arm64/` is md5 of the four child names joined by ';',
+  // truncated to a little-endian int64 —
+  //
+  //   "libGemmaModelConstraintProvider.dylib;libLiteRtLm.dylib;"
+  //   "libLiteRtMetalAccelerator.dylib;libStreamProxy.dylib"
+  //   -> 7433067446362060770
+  //
+  // (Written as two adjacent literals with the ';' inside the first, so the
+  // string is reproducible by copy-paste. A `\` line continuation means
+  // nothing in a `//` comment, and the earlier version of this note that used
+  // one hashed to a different number than the one it claimed.)
+  //
+  // That is the entire invalidation signal for four dylibs, and it is why a
+  // local `build_ios.sh` used to need `flutter clean` to take effect.
+  //
+  // Files are content-hashed, so listing them is what closes that. The
+  // directory entry stays: it is the only thing that notices a NEW companion
+  // appearing, since the lists below are `existsSync`-guarded. Cost is
+  // paid on every up-to-date check, not only when the hook runs, and it is
+  // well under a second for the 19-file / 154 MB android_arm64 set on a warm
+  // cache. No figure is quoted because it is a single-machine measurement and
+  // will read as false on a slower host.
+  final consumed = <Uri>[];
+
+  Uri stage(Uri srcUri) {
+    consumed.add(srcUri);
+    if (os != OS.macOS && os != OS.iOS) return srcUri;
+    final src = File.fromUri(srcUri);
+    final destUri = input.outputDirectory.resolve(srcUri.pathSegments.last);
+    final dest = File.fromUri(destUri);
+    if (!dest.existsSync() || !_sameBytes(src, dest)) {
+      dest.parent.createSync(recursive: true);
+      src.copySync(destUri.toFilePath());
+    }
+    return destUri;
+  }
+
+  // macOS: the companions reach the app as frameworks (#689), from the
+  // plugin's Swift package or from the Podfile block, so LiteRtLm is pointed at
+  // them here, before Flutter copies it into the app and Xcode signs it.
+  final Uri mainStaged;
+  if (os == OS.macOS && bundle.skipCompanionsOn.contains(os)) {
+    consumed.add(mainFileUri);
+    mainStaged = _stagePointedAtCompanionFrameworks(
+      mainFileUri,
+      input.outputDirectory,
+      bundle.companions,
+    );
+  } else {
+    mainStaged = stage(mainFileUri);
+  }
+  output.assets.code.add(
+    CodeAsset(
+      package: _packageName,
+      name: 'src/native/${bundle.mainLibName}',
+      linkMode: DynamicLoadingBundled(),
+      file: mainStaged,
+    ),
+  );
+
+  // StreamProxy companion (LiteRT only — a tiny C lib that copies callback
+  // strings to heap). Lives in the same tarball, registered by convention.
+  // Other bundles can ignore it by simply not shipping a `StreamProxy.*` file.
+  final proxyFileName = _dylibFileName(os, 'StreamProxy');
+  final proxyFileUri = prebuiltDir.resolve(proxyFileName);
+  if (File.fromUri(proxyFileUri).existsSync()) {
+    output.assets.code.add(
+      CodeAsset(
+        package: _packageName,
+        name: 'src/native/StreamProxy',
+        linkMode: DynamicLoadingBundled(),
+        file: stage(proxyFileUri),
+      ),
+    );
+  }
+
+  // Companion libraries (accelerators, samplers, etc.).
+  final skipCompanions = bundle.skipCompanionsOn.contains(os);
+  for (final name in bundle.companions) {
+    if (skipCompanions) continue;
+    final fileName = _dylibFileName(os, name);
+    final fileUri = prebuiltDir.resolve(fileName);
+    if (File.fromUri(fileUri).existsSync()) {
+      output.assets.code.add(
+        CodeAsset(
+          package: _packageName,
+          name: 'src/native/$name',
+          linkMode: DynamicLoadingBundled(),
+          file: stage(fileUri),
+        ),
+      );
+    }
+  }
+
+  // Windows-only extras (lib-prefixed companions for PE imports, DXC, NPU).
+  if (os == OS.windows) {
+    for (final name in bundle.windowsExtraLibs) {
+      final fileName = _dylibFileName(os, name);
+      final fileUri = prebuiltDir.resolve(fileName);
+      if (File.fromUri(fileUri).existsSync()) {
+        output.assets.code.add(
+          CodeAsset(
+            package: _packageName,
+            name: 'src/native/$name',
+            linkMode: DynamicLoadingBundled(),
+            file: stage(fileUri),
+          ),
+        );
+      }
+    }
+  }
+
+  // The NPU stack of each vendor of this target (NpuStack.abis), the same
+  // table the runtime chooses a vendor from. The ABI string is Abi.current()'s
+  // spelling, which code_assets' OS and Architecture names share.
+  //
+  // A vendor whose stack ships on request (npuUserDefine) is bundled when the
+  // app set the flag, never because the files are there: an older flat cache
+  // or a maintainer's prebuilt can hold them, and registering them on presence
+  // would put the vendor's libraries into an app that did not ask for them —
+  // and make NativeAssetsManifest.json, which the runtime gate reads, claim a
+  // stack the developer never enabled.
+  final targetAbi = '${os.name}_${input.config.code.targetArchitecture.name}';
+  for (final vendor in NpuStack.values) {
+    if (!vendor.abis.any((abi) => abi.startsWith('${os.name}_'))) continue;
+    final define = npuUserDefine(vendor);
+    if (define != null && !readBoolUserDefine(_defines[define], define)) {
+      continue;
+    }
+    if (!vendor.abis.contains(targetAbi)) {
+      // Set by an app that also builds this OS where the vendor has an NPU
+      // (Linux x64 next to Linux arm64): said, instead of failing the build.
+      if (define != null) {
+        stderr.writeln(
+          '[$_packageName] $define: no ${vendor.label} NPU on $targetAbi; '
+          'nothing to bundle there.',
+        );
+      }
+      continue;
+    }
+    switch (vendor) {
+      case NpuStack.qualcomm when os == OS.android:
+        if (bundle.androidExtraLibs.isEmpty) break;
+        await _registerQualcommNpu(
+          input: input,
+          output: output,
+          prebuiltDir: prebuiltDir,
+          stage: stage,
+        );
+      case NpuStack.qualcomm when os == OS.linux:
+        if (bundle.linuxExtraLibs.isEmpty) break;
+        await _registerQualcommNpuLinux(
+          input: input,
+          output: output,
+          prebuiltDir: prebuiltDir,
+          stage: stage,
+        );
+      case NpuStack.qualcomm:
+        throw StateError('NpuStack.qualcomm has no stack for $targetAbi');
+      case NpuStack.googleTensor when os == OS.android:
+        _registerBundledNpuStack(
+          vendor: vendor,
+          output: output,
+          prebuiltDir: prebuiltDir,
+          stage: stage,
+        );
+      case NpuStack.googleTensor:
+        throw StateError('NpuStack.googleTensor has no stack for $targetAbi');
+      // Not from the native bundle: Google's AAR, fetched (see
+      // mediatek_runtime.dart for why).
+      case NpuStack.mediatek when os == OS.android:
+        await _registerMediatekNpu(input: input, output: output, stage: stage);
+      case NpuStack.mediatek:
+        throw StateError('NpuStack.mediatek has no stack for $targetAbi');
+      // In every Windows x64 build, through windowsExtraLibs above.
+      case NpuStack.intel:
+        break;
+    }
+  }
+
+  // A bundle that skips its companions on this OS (see [skipCompanionsOn])
+  // leaves them for the app's own build phase to stage. Ship that phase its
+  // script through the one path it can already find.
+  if (bundle.skipCompanionsOn.contains(os) && bundle.companions.isNotEmpty) {
+    // The Podfile block apps pasted (every codelab has it) reads the stager
+    // and the companions from the flat cache directory of the package this
+    // hook used to live in, so they are put there too.
+    final legacyDir = Directory('${_cacheBasePath('flutter_gemma')}/$dirName');
+    final mirrored = _mirrorForPodfileStager(
+      bundle,
+      os,
+      prebuiltDir,
+      legacyDir,
+    );
+    final staged = _shipCompanionStager(input.packageRoot, legacyDir);
+    if (staged != null) {
+      output.dependencies.add(staged.source);
+      // The destination too: the cache is shared across checkouts, so an app
+      // on an older plugin version can overwrite this file. Its content hash
+      // is what makes this hook re-run and put its own version back, instead
+      // of the Xcode phase silently executing the other checkout's script.
+      output.dependencies.add(staged.destination);
+    }
+    // Likewise the companions: an older flutter_edge_ai_litertlm on this
+    // machine replaces them with its own version's.
+    output.dependencies.addAll(mirrored);
+  }
+
+  output.dependencies.add(prebuiltDir);
+  output.dependencies.addAll(consumed);
+  // And the branch that did NOT win. The entries above describe the directory
+  // that resolved and the files read from it, which notices a rewrite of a file
+  // already in use — but not a change in WHICH directory wins. If the cache
+  // resolved and the maintainer then runs build_*.sh, no recorded hash moves,
+  // the hook is skipped, and the fresh local build is ignored until
+  // `flutter clean`. A directory that does not exist hashes to a sentinel and
+  // flips the moment it is created, so naming it while absent costs nothing.
+  final localDir = Directory.fromUri(
+    input.packageRoot.resolve(_localPrebuiltPath(bundle, dirName)),
+  );
+  if (localDir.uri != prebuiltDir) {
+    output.dependencies.add(_watchableAncestor(localDir).uri);
+  }
+}
+
+/// Registers the Android stack of [vendor], for an app that set its opt-in
+/// (checked by the caller's vendor loop, from the table), from the native
+/// archive. A file missing there is a native release that does not carry the
+/// stack yet: the build fails rather than ship a flag that does nothing.
+void _registerBundledNpuStack({
+  required NpuStack vendor,
+  required BuildOutputBuilder output,
+  required Uri prebuiltDir,
+  required Uri Function(Uri) stage,
+}) {
+  if (!npuDispatchInNativeTarball(vendor)) {
+    throw StateError(
+      '${vendor.label}: its dispatch is not in the native bundle',
+    );
+  }
+  for (final name in npuStackLibs(vendor, 'android')) {
+    final fileName = _dylibFileName(OS.android, name);
+    final file = prebuiltDir.resolve(fileName);
+    if (!File.fromUri(file).existsSync()) {
+      throw StateError(
+        '[$_packageName] ${npuUserDefine(vendor)}: $fileName is not in this '
+        "release's Android native bundle; ${vendor.label} needs a "
+        '$_packageName release whose native bundle carries it. Remove '
+        '${npuUserDefine(vendor)} until then.',
+      );
+    }
+    output.assets.code.add(
+      CodeAsset(
+        package: _packageName,
+        name: 'src/native/$name',
+        linkMode: DynamicLoadingBundled(),
+        file: stage(file),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// Opt-in MediaTek NPU dispatch (Android)
+// ============================================================================
+
+/// Registers the MediaTek dispatch, for an app that set `mediatek_npu`
+/// (checked by the caller's vendor loop, from the table): Google's build of
+/// it, from the `litert-npu-runtime-mediatek` AAR via the cache.
+Future<void> _registerMediatekNpu({
+  required BuildInput input,
+  required BuildOutputBuilder output,
+  required Uri Function(Uri) stage,
+}) async {
+  final refusal = mediatekNpuBuildRefusal(_packageName);
+  if (refusal != null) throw StateError(refusal);
+  if (npuDispatchInNativeTarball(NpuStack.mediatek)) {
+    throw StateError(
+      'MediaTek: its dispatch is in the native bundle, not fetched',
+    );
+  }
+  final dir = await _ensureMediatekRuntime(input, output);
+  for (final name in mediatekNpuLibs) {
+    output.assets.code.add(
+      CodeAsset(
+        package: _packageName,
+        name: 'src/native/$name',
+        linkMode: DynamicLoadingBundled(),
+        file: stage(dir.uri.resolve(_dylibFileName(OS.android, name))),
+      ),
+    );
+  }
+  // Said once per hook run (the hook is cached, so not on every build).
+  stderr.writeln(
+    '[$_packageName] $mediatekNpuUserDefine: bundling the MediaTek NPU '
+    'dispatch from litert-npu-runtime-mediatek $mediatekRuntimeVersion '
+    '(Apache 2.0; LICENSE and THIRD_PARTY_NOTICE.txt in ${dir.path}). It runs '
+    "the device's NeuroPilot runtime, under MediaTek's licence.",
+  );
+}
+
+/// Returns the cache directory holding the MediaTek dispatch, fetching and
+/// preparing it first if needed.
+Future<Directory> _ensureMediatekRuntime(
+  BuildInput input,
+  BuildOutputBuilder output,
+) async {
+  final root = _npuCacheRoot(input, 'mediatek', 'android_arm64');
+  final entry = Directory('${root.path}/${mediatekCacheEntryName()}');
+  if (isCompleteQnnCache(entry, fileNames: mediatekLibFileNames)) return entry;
+
+  final rawAar = _defines[mediatekNpuAarUserDefine];
+  if (rawAar != null && rawAar is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$mediatekNpuAarUserDefine must be a path string',
+    );
+  }
+  final localAar = _defines.path(mediatekNpuAarUserDefine);
+  if (localAar != null) {
+    output.dependencies.add(localAar);
+    final aar = File.fromUri(localAar);
+    if (!aar.existsSync()) {
+      throw StateError(
+        '[$_packageName] $mediatekNpuAarUserDefine points at '
+        '${aar.path}, which does not exist.',
+      );
+    }
+    final actual = (await sha256.bind(aar.openRead()).first).toString();
+    if (actual != mediatekRuntimeSha256) {
+      throw StateError(
+        '[$_packageName] ${aar.path} is not '
+        'litert-npu-runtime-mediatek-$mediatekRuntimeVersion.aar '
+        '(sha256 $actual, expected $mediatekRuntimeSha256).',
+      );
+    }
+    return promoteMediatekCache(root, aar);
+  }
+
+  final mirror = _defines[mediatekNpuMavenUrlUserDefine];
+  if (mirror != null && mirror is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$mediatekNpuMavenUrlUserDefine must '
+      'be a URL string',
+    );
+  }
+  final url = mediatekRuntimeAarUrl(
+    (mirror as String?) ?? mediatekDefaultMavenBase,
+  );
+  root.createSync(recursive: true);
+  final download = root.createTempSync(qnnDownloadTempPrefix);
+  try {
+    final aar = File(
+      '${download.path}/litert-npu-runtime-mediatek-$mediatekRuntimeVersion.aar',
+    );
+    try {
+      await downloadVerified(url, aar, mediatekRuntimeSha256);
+    } on Object catch (e) {
+      throw StateError(
+        '[$_packageName] $mediatekNpuUserDefine is set, but the MediaTek '
+        'dispatch could not be fetched: ${redactUserInfoIn('$e', url)}\n'
+        'Without network access, download ${redactUserInfo(url)} yourself and '
+        'set hooks.user_defines.$_packageName.$mediatekNpuAarUserDefine to its '
+        'path.',
+      );
+    }
+    return promoteMediatekCache(root, aar);
+  } finally {
+    download.deleteSync(recursive: true);
+  }
+}
+
+// ============================================================================
+// Opt-in Qualcomm NPU stack (Android)
+// ============================================================================
+
+/// Registers the Android Qualcomm NPU stack, for an app that set
+/// `qualcomm_npu` (checked by the caller's vendor loop, from the table).
+Future<void> _registerQualcommNpu({
+  required BuildInput input,
+  required BuildOutputBuilder output,
+  required Uri prebuiltDir,
+  required Uri Function(Uri) stage,
+}) async {
+  void register(String name, Uri file) => output.assets.code.add(
+    CodeAsset(
+      package: _packageName,
+      name: 'src/native/$name',
+      linkMode: DynamicLoadingBundled(),
+      file: stage(file),
+    ),
+  );
+
+  // Ours, from the native bundle. Enabled and missing is a broken bundle, not
+  // a reason to ship the QNN runtime without the library that loads it.
+  final dispatch = prebuiltDir.resolve(
+    _dylibFileName(OS.android, qualcommDispatchLib),
+  );
+  if (!File.fromUri(dispatch).existsSync()) {
+    throw StateError(
+      '[$_packageName] qualcomm_npu is set, but '
+      '${dispatch.toFilePath()} is missing from the native bundle.',
+    );
+  }
+  register(qualcommDispatchLib, dispatch);
+
+  // Qualcomm's, from Qualcomm's Maven artifact via the cache.
+  final qnnDir = await _ensureQnnRuntime(input, output);
+  for (final name in qnnRuntimeLibs) {
+    register(name, qnnDir.uri.resolve(_dylibFileName(OS.android, name)));
+  }
+  // Said once per hook run (the hook is cached, so not on every build):
+  // the libraries are Qualcomm's, and their notices travel with them.
+  stderr.writeln(
+    '[$_packageName] qualcomm_npu: bundling Qualcomm QNN runtime '
+    '$qnnRuntimeVersion (Qualcomm licence; LICENSE.pdf and NOTICE.txt in '
+    '${qnnDir.path}).',
+  );
+}
+
+/// Returns the cache directory holding the prepared QNN runtime, fetching and
+/// preparing it first if needed.
+Future<Directory> _ensureQnnRuntime(
+  BuildInput input,
+  BuildOutputBuilder output,
+) async {
+  final root = _qnnCacheRoot(input);
+  final entry = Directory('${root.path}/${qnnCacheEntryName()}');
+  if (isCompleteQnnCache(entry, fileNames: qnnLibFileNames)) return entry;
+
+  final rawAar = _defines[qualcommNpuAarUserDefine];
+  if (rawAar != null && rawAar is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$qualcommNpuAarUserDefine must be a path string',
+    );
+  }
+  final localAar = _defines.path(qualcommNpuAarUserDefine);
+  if (localAar != null) {
+    // The app points at an AAR it has (offline builds, mirrors that need
+    // credentials). Same checksum as Maven's: this is a source, not a version.
+    output.dependencies.add(localAar);
+    final aar = File.fromUri(localAar);
+    if (!aar.existsSync()) {
+      throw StateError(
+        '[$_packageName] $qualcommNpuAarUserDefine points at '
+        '${aar.path}, which does not exist.',
+      );
+    }
+    final actual = (await sha256.bind(aar.openRead()).first).toString();
+    if (actual != qnnRuntimeSha256) {
+      throw StateError(
+        '[$_packageName] ${aar.path} is not qnn-runtime-$qnnRuntimeVersion.aar '
+        '(sha256 $actual, expected $qnnRuntimeSha256).',
+      );
+    }
+    return promoteQnnCache(root, aar);
+  }
+
+  final mirror = _defines[qualcommNpuMavenUrlUserDefine];
+  if (mirror != null && mirror is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$qualcommNpuMavenUrlUserDefine must '
+      'be a URL string',
+    );
+  }
+  final url = qnnRuntimeAarUrl((mirror as String?) ?? qnnDefaultMavenBase);
+  root.createSync(recursive: true);
+  // A fresh directory per download, not a pid-named file: two CI containers
+  // sharing a mounted cache can have the same pid, and would write one file.
+  final download = root.createTempSync(qnnDownloadTempPrefix);
+  try {
+    final aar = File('${download.path}/qnn-runtime-$qnnRuntimeVersion.aar');
+    try {
+      await downloadVerified(url, aar, qnnRuntimeSha256);
+    } on Object catch (e) {
+      throw StateError(
+        '[$_packageName] qualcomm_npu is set, but the QNN runtime could not be '
+        'fetched: ${redactUserInfoIn('$e', url)}\nWithout network access, '
+        'download ${redactUserInfo(url)} yourself and set '
+        'hooks.user_defines.$_packageName.$qualcommNpuAarUserDefine to its path.',
+      );
+    }
+    return promoteQnnCache(root, aar);
+  } finally {
+    // Only the prepared libraries are kept; the 71 MB archive is not.
+    download.deleteSync(recursive: true);
+  }
+}
+
+/// Where the prepared QNN runtime for [target] (`android_arm64`,
+/// `linux_arm64`) is cached: beside the native bundles, or — when that is not
+/// writable (a container with no HOME, a read-only home) — in the hook's
+/// shared output directory for this project.
+Directory _qnnCacheRoot(BuildInput input, [String target = 'android_arm64']) =>
+    _npuCacheRoot(input, 'qnn', target);
+
+/// Where a vendor's prepared NPU libraries ([name]: `qnn`, `mediatek`) for
+/// [target] are cached: beside the native bundles, or — when that is not
+/// writable — in the hook's shared output directory for this project.
+Directory _npuCacheRoot(BuildInput input, String name, String target) {
+  final preferred = Directory(
+    '${_cacheBaseDir().path}${Platform.pathSeparator}$name'
+    '${Platform.pathSeparator}$target',
+  );
+  try {
+    preferred.createSync(recursive: true);
+    final probe = File(
+      '${preferred.path}${Platform.pathSeparator}.write-probe-$pid',
+    );
+    probe
+      ..writeAsStringSync('')
+      ..deleteSync();
+    return preferred;
+  } on FileSystemException {
+    return Directory.fromUri(
+      input.outputDirectoryShared.resolve('$name/$target/'),
+    );
+  }
+}
+
+/// Registers the Linux arm64 Qualcomm NPU stack, for an app that set
+/// `qualcomm_npu` (checked by the caller's vendor loop, from the table, which
+/// also says on linux_x64 that there is nothing to bundle): our dispatch and
+/// libcdsprpc.so shim from the native bundle, Qualcomm's QNN runtime from the
+/// QAIRT SDK zip via the cache.
+Future<void> _registerQualcommNpuLinux({
+  required BuildInput input,
+  required BuildOutputBuilder output,
+  required Uri prebuiltDir,
+  required Uri Function(Uri) stage,
+}) async {
+  void register(String name, Uri file) => output.assets.code.add(
+    CodeAsset(
+      package: _packageName,
+      name: 'src/native/$name',
+      linkMode: DynamicLoadingBundled(),
+      file: stage(file),
+    ),
+  );
+
+  // Ours, from the native bundle. Enabled and missing is a bundle older than
+  // the Linux stack, not a reason to ship QNN without what loads it.
+  for (final name in const [qualcommDispatchLib, cdsprpcShimLib]) {
+    final file = prebuiltDir.resolve(_dylibFileName(OS.linux, name));
+    if (!File.fromUri(file).existsSync()) {
+      throw StateError(
+        '[$_packageName] qualcomm_npu is set, but ${file.toFilePath()} is '
+        'missing from the native bundle.',
+      );
+    }
+    register(name, file);
+  }
+
+  final qnnDir = await _ensureQairtLinux(input, output);
+  for (final name in qairtLinuxLibs) {
+    register(name, qnnDir.uri.resolve(_dylibFileName(OS.linux, name)));
+  }
+  stderr.writeln(
+    '[$_packageName] qualcomm_npu: bundling Qualcomm QNN runtime from QAIRT '
+    '$qairtBuild (Qualcomm licence; LICENSE.pdf and QNN_NOTICE.txt in '
+    '${qnnDir.path}).',
+  );
+}
+
+/// Returns the cache directory holding the QNN runtime for Linux arm64,
+/// reading it out of the QAIRT SDK zip first if needed.
+Future<Directory> _ensureQairtLinux(
+  BuildInput input,
+  BuildOutputBuilder output,
+) async {
+  final root = _qnnCacheRoot(input, 'linux_arm64');
+  final entry = Directory('${root.path}/${qairtCacheEntryName()}');
+  if (isCompleteQnnCache(entry, fileNames: qairtLinuxFileNames)) return entry;
+
+  final localZip = _defines.path(qualcommNpuQairtZipUserDefine);
+  final ({Map<String, Uint8List> libraries, Map<String, Uint8List> notices})
+  files;
+  if (localZip != null) {
+    // Offline and air-gapped builds: the same pinned bytes, read from a copy.
+    output.dependencies.add(localZip);
+    final zip = File.fromUri(localZip);
+    if (!zip.existsSync()) {
+      throw StateError(
+        '[$_packageName] $qualcommNpuQairtZipUserDefine points at '
+        '${zip.path}, which does not exist.',
+      );
+    }
+    files = qairtFilesFromZip(zip);
+  } else {
+    try {
+      // Outside the cache lock: a slow network must not hold up another
+      // build that only needs to read a complete entry.
+      files = await fetchQairtFiles(
+        httpRangeReader(qairtZipUrl, expectedLength: qairtZipLength),
+      );
+    } on Object catch (e) {
+      throw StateError(
+        '[$_packageName] qualcomm_npu is set, but the QNN runtime could not be '
+        'read from $qairtZipUrl: $e\nWithout network access, download that '
+        'zip yourself and set '
+        'hooks.user_defines.$_packageName.$qualcommNpuQairtZipUserDefine to '
+        'its path.',
+      );
+    }
+  }
+  return writeQnnCacheEntry(
+    root,
+    qairtCacheEntryName(),
+    qairtLinuxFileNames,
+    () => files.libraries,
+    () => files.notices,
+  );
+}
+
+// ============================================================================
+// Entry point
+// ============================================================================
+
+void main(List<String> args) async {
+  await build(args, (input, output) async {
+    if (!input.config.buildCodeAssets) return;
+
+    final pubspec = workspacePubspecFor(input.outputDirectoryShared);
+    if (pubspec != null) output.dependencies.add(pubspec.uri);
+    _defines = HookDefines(
+      current: (key) => input.userDefines[key],
+      currentPath: input.userDefines.path,
+      legacy: pubspec == null
+          ? const {}
+          : userDefinesIn(pubspec.readAsStringSync(), legacyUserDefinesPackage),
+      legacyBase: pubspec?.parent.uri,
+    );
+
+    final codeConfig = input.config.code;
+    final os = codeConfig.targetOS;
+
+    // Supported platforms: desktop + iOS + Android.
+    // Web uses MediaPipe JS + wa-sqlite (dart:ffi blocked in WASM).
+    if (os != OS.macOS &&
+        os != OS.linux &&
+        os != OS.windows &&
+        os != OS.iOS &&
+        os != OS.android) {
+      return;
+    }
+
+    final arch = codeConfig.targetArchitecture;
+    final iOSSdk = os == OS.iOS ? codeConfig.iOS.targetSdk : null;
+    final dirName = _prebuiltDirName(os, arch, iOSSdk: iOSSdk);
+    if (dirName == null) return; // Unsupported arch (e.g. arm32), skip.
+
+    for (final bundle in _bundles) {
+      await _processBundle(
+        bundle: bundle,
+        input: input,
+        output: output,
+        os: os,
+        dirName: dirName,
+      );
+    }
+  });
+}
+
+/// Byte-for-byte comparison of two existing files.
+///
+/// `stage()` compares CONTENT rather than `lengthSync()`. The staged directory
+/// is named after the build CONFIG alone — no package version, no package root
+/// — so the same path is reused across an upgrade and across a local native
+/// rebuild. A size-only guard therefore keeps the previous binary whenever the
+/// replacement happens to be the same size, which is exactly what re-stamping
+/// a Mach-O load command produces.
+///
+/// Byte-identical in `flutter_edge_ai_sqlite` and `flutter_edge_ai_onnx`; the
+/// packages publish independently and cannot share it.
+bool _sameBytes(File a, File b) {
+  if (a.lengthSync() != b.lengthSync()) return false;
+  final x = a.readAsBytesSync();
+  final y = b.readAsBytesSync();
+  for (var i = 0; i < x.length; i++) {
+    if (x[i] != y[i]) return false;
+  }
+  return true;
+}
+
+/// Copies [bundle]'s companions for [os] from [prebuiltDir] into [legacyDir],
+/// the `flutter_gemma/native/<platform>` directory the Podfile stager reads,
+/// when they differ, and records the version there the way the hooks of
+/// flutter_edge_ai_litertlm up to 1.20.x did, so one of them building on this
+/// machine sees a version not its own and fetches its own files back.
+/// Returns the copies, for the hook's dependencies.
+List<Uri> _mirrorForPodfileStager(
+  _NativeBundle bundle,
+  OS os,
+  Uri prebuiltDir,
+  Directory legacyDir,
+) {
+  legacyDir.createSync(recursive: true);
+  final copies = <Uri>[];
+  for (final name in bundle.companions) {
+    final fileName = _dylibFileName(os, name);
+    final src = File.fromUri(prebuiltDir.resolve(fileName));
+    if (!src.existsSync()) continue;
+    final dst = File('${legacyDir.path}/$fileName');
+    if (!dst.existsSync() || !_sameBytes(src, dst)) src.copySync(dst.path);
+    copies.add(dst.uri);
+  }
+  File(
+    '${legacyDir.parent.path}/.flutter_gemma_native_version',
+  ).writeAsStringSync(
+    jsonEncode({'version': bundle.version, 'owner': 'flutter_gemma_litertlm'}),
+  );
+  return copies;
+}
+
+/// Name of the companion-staging script, in `tool/` here and copied into the
+/// native cache dir next to the dylibs it stages.
+const _stagerFileName = 'stage_macos_companions.sh';
+
+/// Source and destination of the shipped staging script.
+typedef _StagedScript = ({Uri source, Uri destination});
+
+/// Copy `tool/[_stagerFileName]` next to the dylibs it stages.
+///
+/// The app's Xcode build phase reads the companion dylibs from the flat native
+/// cache dir, so the script travels with them. The phase predates this
+/// package's macOS plugin (#689), and blocks pasted into Podfiles before it
+/// look only there.
+///
+/// Returns null when the script is absent (a consumer on an older plugin
+/// version), leaving the phase to report the missing file itself.
+_StagedScript? _shipCompanionStager(Uri packageRoot, Directory cacheDir) {
+  final src = File.fromUri(packageRoot.resolve('tool/$_stagerFileName'));
+  if (!src.existsSync()) return null;
+  final dst = File('${cacheDir.path}/$_stagerFileName');
+  // Content-compare, not the bundle `.version` marker: the script's version is
+  // the PACKAGE's, so a plugin-only patch release must be able to replace it
+  // without a native re-tag.
+  if (!dst.existsSync() || !_sameBytes(src, dst)) {
+    dst.parent.createSync(recursive: true);
+    src.copySync(dst.path);
+  }
+  // `copySync` does not carry the executable bit — callers invoke it as
+  // `sh <path>` rather than executing it directly.
+  return (source: src.uri, destination: dst.uri);
+}
+
+/// The nearest ancestor of [dir] that exists — or [dir] itself when it does.
+///
+/// `output.dependencies` has TWO readers with different tolerances.
+/// package:native_assets_builder hashes a missing directory to a sentinel and
+/// is perfectly happy. Flutter writes the same paths into a depfile and its
+/// tooling LISTS them, so naming a directory that is not there aborts the build
+/// with `PathNotFoundException: Directory listing failed` — measured, on a
+/// clean clone where the gitignored `prebuilt/` does not exist.
+///
+/// Walking up preserves what naming it was for: creating the missing level
+/// changes the child-name list of whichever ancestor we did name, so the hook
+/// re-runs and notices the local prebuilt appearing.
+Directory _watchableAncestor(Directory dir) {
+  var d = dir;
+  while (!d.existsSync()) {
+    final parent = d.parent;
+    if (parent.path == d.path) return d; // filesystem root
+    d = parent;
+  }
+  return d;
+}
+
+/// Copies the macOS [src] LiteRtLm into [outDir] with its references to the
+/// [companions] pointed at their frameworks: `@rpath/lib<X>.dylib` becomes
+/// `@rpath/<X>.framework/Versions/A/<X>`, the install name the plugin's
+/// Swift package and `tool/stage_macos_companions.sh` both give them. The copy
+/// is then signed ad hoc; the app's build signs it again with its own identity.
+///
+/// libLiteRtLm is built with `-headerpad_max_install_names`, so the longer
+/// names fit. A `<name>.source-sha256` file beside the copy records which
+/// source, patched by which version of this step, it was made from, so an
+/// unchanged source is not patched again: a fresh copy on every run would
+/// change the file Flutter embeds each time.
+Uri _stagePointedAtCompanionFrameworks(
+  Uri src,
+  Uri outDir,
+  List<String> companions,
+) {
+  final source = File.fromUri(src);
+  final dest = File.fromUri(outDir.resolve(src.pathSegments.last));
+  final marker = File('${dest.path}.source-sha256');
+  final sourceSum =
+      '${sha256.convert(source.readAsBytesSync())} framework-refs-1';
+  if (dest.existsSync() &&
+      marker.existsSync() &&
+      marker.readAsStringSync() == sourceSum) {
+    return dest.uri;
+  }
+  dest.parent.createSync(recursive: true);
+  source.copySync(dest.path);
+
+  final listing = _run('otool', ['-L', dest.path]);
+  final args = <String>[];
+  for (final line in listing.split('\n').skip(1)) {
+    final ref = line.trim().split(' ').first;
+    for (final name in companions) {
+      if (ref.endsWith('/lib$name.dylib')) {
+        args.addAll([
+          '-change',
+          ref,
+          '@rpath/$name.framework/Versions/A/$name',
+        ]);
+      }
+    }
+  }
+  if (args.isNotEmpty) {
+    _run('install_name_tool', [...args, dest.path]);
+    _run('codesign', ['--force', '--sign', '-', dest.path]);
+  }
+  marker.writeAsStringSync(sourceSum);
+  return dest.uri;
+}
+
+/// Runs [executable] and returns its stdout; a non-zero exit fails the build.
+String _run(String executable, List<String> args) {
+  final r = Process.runSync(executable, args);
+  if (r.exitCode != 0) {
+    throw StateError('$executable ${args.join(' ')} failed: ${r.stderr}');
+  }
+  return r.stdout as String;
+}

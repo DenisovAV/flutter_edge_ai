@@ -33,7 +33,7 @@ import 'package:flutter_edge_ai/engine.dart';
 // stub, so the bindings would appear undefined during analysis.
 import 'package:flutter_edge_ai_litertlm/litert_bindings.dart';
 
-import '../runtime/runtime_log.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 
 /// What `LiteRtEmbeddingBackend.describe` hands core for a `.tflite` embedder.
 ///

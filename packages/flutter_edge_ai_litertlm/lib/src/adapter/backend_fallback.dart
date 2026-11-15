@@ -9,9 +9,9 @@ import 'dart:ffi';
 
 import 'package:flutter_edge_ai/engine.dart';
 
-import '../ffi/backend_preference.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import '../litert_lm_load_errors.dart';
-import '../runtime/npu_stacks.dart';
+import 'package:litertlm_dart/common.dart';
 import 'runtime_mapping.dart';
 
 String _wire(PreferredBackend backend) => ffiBackendWireName(backend.toRuntime);

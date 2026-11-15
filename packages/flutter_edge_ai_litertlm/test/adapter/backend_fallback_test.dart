@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai_litertlm/src/adapter/backend_fallback.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_load_errors.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_test/flutter_test.dart';

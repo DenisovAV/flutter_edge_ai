@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'bundle/litertlm_flatbuffer.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 
 /// The `name` item of the section litetune's `bundle` writes the decision a
 /// model was trained on into (`decision_section.SECTION_NAME`).

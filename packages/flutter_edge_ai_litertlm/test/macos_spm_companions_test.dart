@@ -9,15 +9,18 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/litertlm_dart.dart' show liteRtLmNativeVersion;
 
 String _read(String path) =>
     File(path).readAsStringSync().replaceAll('\r\n', '\n');
 
 final _packageSwift = _read('macos/flutter_edge_ai_litertlm/Package.swift');
 final _podspec = _read('macos/flutter_edge_ai_litertlm.podspec');
-final _hook = _read('hook/build.dart');
-final _stager = _read('tool/stage_macos_companions.sh');
-final _packager = _read('native/litert_lm/package_macos_spm_companions.sh');
+final _hook = _read('../litertlm_dart/hook/build.dart');
+final _stager = _read('../litertlm_dart/tool/stage_macos_companions.sh');
+final _packager = _read(
+  '../litertlm_dart/native/litert_lm/package_macos_spm_companions.sh',
+);
 
 /// `(name, checksum)` pairs of Package.swift's `companions`.
 Map<String, String> _swiftCompanions() => {
@@ -29,10 +32,9 @@ Map<String, String> _swiftCompanions() => {
 
 void main() {
   test('Package.swift fetches from the native release the hook uses', () {
-    final hookVersion = RegExp(
-      r"version: '([^']+)',\n  releaseTagPrefix: 'native-v',",
-    ).firstMatch(_hook)?.group(1);
-    expect(hookVersion, isNotNull, reason: "the hook's LiteRT-LM bundle");
+    // The hook's bundle takes its version from litertlm_dart's one constant.
+    expect(_hook, contains('version: liteRtLmNativeVersion,'));
+    const hookVersion = liteRtLmNativeVersion;
     final tag = RegExp(
       r'^let nativeTag = "([^"]+)"$',
       multiLine: true,

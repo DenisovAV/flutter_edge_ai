@@ -22,15 +22,12 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtEmbedders;
 import 'package:flutter_edge_ai_litertlm/src/catalog/litert_catalog.dart'
     show debugLiteRtCatalogHost;
-import 'package:flutter_edge_ai_litertlm/src/embedder/embedding_parts.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedder/litert_lm_embedder.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedder/litertlm_container_io.dart';
-import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_npu_target.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_embedding_bindings.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
+// ignore: implementation_imports — the fake LiteRT-LM implements the generated EmbeddingEngine bindings class
+import 'package:litertlm_dart/src/ffi/litert_lm_embedding_bindings.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedder/embedder_types.dart';
+import 'package:litertlm_dart/common.dart';
 
 const _file = 'eg2.litertlm';
 const _noAudioEncoder =
@@ -3109,7 +3106,7 @@ void main() {
     // native/litert_lm/check_embedding_exports.py refuses to publish a
     // tarball whose libLiteRtLm lacks one; it must ask for the same list.
     final script = File(
-      'native/litert_lm/check_embedding_exports.py',
+      '../litertlm_dart/native/litert_lm/check_embedding_exports.py',
     ).readAsStringSync();
     final list = RegExp(
       r'REQUIRED = \[(.*?)\]',
@@ -3123,7 +3120,7 @@ void main() {
 
   test('the bindings do not bind what D23 rules out', () {
     final source = File(
-      'lib/src/ffi/litert_lm_embedding_bindings.dart',
+      '../litertlm_dart/lib/src/ffi/litert_lm_embedding_bindings.dart',
     ).readAsStringSync();
     for (final symbol in [
       'litert_lm_loaded_file_supports_input_modality',

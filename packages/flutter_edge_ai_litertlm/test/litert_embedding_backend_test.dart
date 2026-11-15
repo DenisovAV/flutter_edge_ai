@@ -12,22 +12,15 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_cache_dir.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_pass.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedder/litert_lm_embedder.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
-import 'package:flutter_edge_ai_litertlm/src/native_hosts.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart'
-    show NpuStack;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
-import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedder/embedder_types.dart';
+import 'package:litertlm_dart/common.dart';
 
 EmbeddingModelSpec _tflite({String model = 'gemma.tflite'}) =>
     EmbeddingModelSpec(

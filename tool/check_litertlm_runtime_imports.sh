@@ -37,6 +37,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 src="${1:-$root/packages/flutter_edge_ai_litertlm/lib/src}"
 if [[ ! -d "$src" ]]; then
   echo "no such directory: $src" >&2
+  ((check == 1)) && exit 1
   exit 0
 fi
 
@@ -102,28 +103,13 @@ for area in runtime rest; do
     "(flutter $flutter, path_provider $plugin, flutter_edge_ai $core)"
 done
 
-# Relative imports from the runtime side to a file outside it.
-escapes=0
-while IFS= read -r file; do
-  rel="${file#"$src"/}"
-  [[ "$(area_of "$rel")" == runtime ]] || continue
-  dir="$(dirname "$rel")"
-  while IFS= read -r uri; do
-    target="$(python3 -c 'import os,sys; print(os.path.normpath(os.path.join(sys.argv[1], sys.argv[2])))' "$dir" "$uri")"
-    if [[ "$(area_of "$target")" != runtime ]]; then
-      escapes=$((escapes + 1))
-      echo "[runtime] $rel imports $target, outside the runtime side"
-    fi
-  done < <(grep -oE "^[[:space:]]*(import|export|part)[[:space:]]+'[^':]+'" "$file" | sed -E "s/.*'([^']+)'/\1/")
-done < <(find "$src" -name '*.dart' -type f | LC_ALL=C sort)
-echo "runtime: $escapes relative import(s) leave the runtime side"
-
 if ((check == 1)); then
-  eval "runtime_any=\$any_runtime"
-  if ((runtime_any > 0 || escapes > 0)); then
-    echo "::error::check_litertlm_runtime_imports: the runtime side of" \
-      "flutter_edge_ai_litertlm imports Flutter, core, or a file outside it"
-    exit 1
-  fi
+  # The gate proper (tool/check_litertlm_runtime_gate.py): every directive of
+  # every runtime file, conditional branches, quotes and `part of` included,
+  # this package's own package: URIs resolved; fails on a missing or empty
+  # runtime side.
+  python3 "$root/tool/check_litertlm_runtime_gate.py" "${src%/src}" \
+    flutter_edge_ai_litertlm ffi bundle runtime hook embedder
+  exit $?
 fi
 exit 0

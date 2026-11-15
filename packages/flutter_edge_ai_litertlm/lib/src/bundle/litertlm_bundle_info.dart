@@ -29,16 +29,12 @@ final class NpuStamp {
   /// `PTL`, `Tensor_G5`.
   final String soc;
 
-  /// The vendor's stack, through the one table of stamps ([NpuStack]); null
-  /// for a stamp this package has no stack for.
-  NpuStack? get stack => NpuStack.forStamp(vendor);
-
-  bool get isQualcomm => stack == NpuStack.qualcomm;
+  bool get isQualcomm => npuVendorOf(this) == NpuStack.qualcomm;
 
   /// Compiled by LiteRT's OpenVINO plugin for an Intel NPU: Google's
   /// `…_Intel_PTL` bundles are stamped `IntelOpenVINO` / `PTL` (read from the
   /// published 270m, 440m and 740m, revisions 9be6e8b9, e301f74d, 24d962e9).
-  bool get isIntel => stack == NpuStack.intel;
+  bool get isIntel => npuVendorOf(this) == NpuStack.intel;
 
   /// The same stamp as written (a stamp's case is the compiler's).
   @override

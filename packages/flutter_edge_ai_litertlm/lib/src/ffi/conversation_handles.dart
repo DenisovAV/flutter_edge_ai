@@ -192,7 +192,7 @@ class RecoveringConversationHandle implements ConversationHandle {
       throw StateError('Conversation handle is closed');
     }
     runtimeLog(
-      '[LiteRtLmSession] rebuilt the conversation after a stopped turn or '
+      '[FfiInferenceModel] rebuilt the conversation after a stopped turn or '
       'a full context (${_history.length} messages replayed)',
     );
   }
@@ -233,14 +233,14 @@ class RecoveringConversationHandle implements ConversationHandle {
           case StoppedTurnRewind.rewound:
             _stopped = false;
             runtimeLog(
-              '[LiteRtLmSession] rewound the conversation after a stopped '
+              '[FfiInferenceModel] rewound the conversation after a stopped '
               'turn or a full context',
             );
             return;
           case StoppedTurnRewind.notCancelled when !takeBack:
             _stopped = false;
             runtimeLog(
-              '[LiteRtLmSession] the stopped turn had ended natively before '
+              '[FfiInferenceModel] the stopped turn had ended natively before '
               'the stop; the conversation is kept as it is',
             );
             return;
@@ -311,7 +311,7 @@ class RecoveringConversationHandle implements ConversationHandle {
           onTimeout: () {
             if (!_stopRequested) {
               runtimeLog(
-                '[LiteRtLmSession] the previous turn is still generating '
+                '[FfiInferenceModel] the previous turn is still generating '
                 'after ${windDownTimeout.inSeconds}s; this one waits for it',
               );
               return;
@@ -322,7 +322,7 @@ class RecoveringConversationHandle implements ConversationHandle {
                 'the previous turn did not wind down within '
                 '${windDownTimeout.inSeconds}s';
             runtimeLog(
-              '[LiteRtLmSession] a stopped turn did not wind down within '
+              '[FfiInferenceModel] a stopped turn did not wind down within '
               '${windDownTimeout.inSeconds}s (is its stream paused?); '
               'rebuilding without it',
             );

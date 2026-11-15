@@ -90,6 +90,11 @@ final class LiteRtLmSection {
 
   final BundleSection _section;
 
+  late final LiteRtLmNpuTarget? _npuTarget = switch (_section.npuTarget) {
+    final stamp? => LiteRtLmNpuTarget.fromStamp(stamp),
+    null => null,
+  };
+
   /// The section's `AnySectionDataType` as the schema names it:
   /// `TFLiteModel`, `SP_Tokenizer`, `LlmMetadataProto`, `HF_Tokenizer_Zlib`,
   /// `TFLiteWeights`, … — or `unknown(<n>)` for a value this version of the
@@ -108,10 +113,7 @@ final class LiteRtLmSection {
   /// ahead-of-time compiler writes into every model it compiles. Null for a
   /// section that is not compiled for an NPU, for a section that is not a
   /// TFLite model, and on the web, where only the header is read.
-  LiteRtLmNpuTarget? get npuTarget => switch (_section.npuTarget) {
-    final stamp? => LiteRtLmNpuTarget.fromStamp(stamp),
-    null => null,
-  };
+  LiteRtLmNpuTarget? get npuTarget => _npuTarget;
 
   int get length => _section.length;
 
@@ -143,7 +145,7 @@ final class LiteRtLmBundleInfo {
     required Map<String, Object?> systemMetadata,
     required List<LiteRtLmSection> sections,
     required int fileLength,
-  }) : this.of(
+  }) : this._(
          BundleInfo(
            majorVersion: majorVersion,
            minorVersion: minorVersion,
@@ -152,14 +154,16 @@ final class LiteRtLmBundleInfo {
            sections: [for (final s in sections) s._section],
            fileLength: fileLength,
          ),
+         sections,
        );
 
   /// The public info for the runtime's [info].
   @internal
-  LiteRtLmBundleInfo.of(this.info)
-    : sections = List.unmodifiable([
-        for (final s in info.sections) LiteRtLmSection._(s),
-      ]);
+  LiteRtLmBundleInfo.of(BundleInfo info)
+    : this._(info, [for (final s in info.sections) LiteRtLmSection._(s)]);
+
+  LiteRtLmBundleInfo._(this.info, List<LiteRtLmSection> sections)
+    : sections = List.unmodifiable(sections);
 
   /// This info as the runtime names it.
   @internal
@@ -229,10 +233,12 @@ final class LiteRtLmBundleInfo {
 
   /// The NPU the bundle's compiled sections target, or null for a bundle with
   /// no compiled section. Always null when only the header was read.
-  LiteRtLmNpuTarget? get npuTarget => switch (info.npuTarget) {
-    final stamp? => LiteRtLmNpuTarget.fromStamp(stamp),
-    null => null,
-  };
+  LiteRtLmNpuTarget? get npuTarget {
+    for (final section in sections) {
+      if (section.npuTarget case final target?) return target;
+    }
+    return null;
+  }
 
   /// Whether the text model runs on an NPU only: the bundle has a
   /// [hasNpuAux] section or its [textModel] is compiled for an NPU. Such a

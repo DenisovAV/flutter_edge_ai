@@ -1,10 +1,12 @@
-// ORT-GenAI ships Microsoft's telemetry on by default since 0.17.0; the client turns
-// it off before the library is opened, and leaves a value the app set alone.
+// ORT-GenAI (since 0.17.0) and ONNX Runtime (official builds since 1.28) ship
+// Microsoft's telemetry on by default; both clients turn it off before their
+// library is opened, and leave a value the app set alone.
 import 'dart:ffi' as ffi;
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_client.dart';
+import 'package:flutter_edge_ai_onnx/src/embedding/ort_ffi_client.dart';
+import 'package:flutter_edge_ai_onnx/src/ffi/ort_telemetry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _variable = 'ORT_DISABLE_TELEMETRY';
@@ -54,13 +56,24 @@ void main() {
   test('sets ORT_DISABLE_TELEMETRY=1 when the app did not', () {
     unset();
     expect(current(), isNull);
-    disableGenAiTelemetry();
+    disableOrtTelemetry();
     expect(current(), '1');
   }, skip: posix ? false : 'POSIX environment; Windows is checked on a PC');
 
   test('keeps a value the app already set', () {
     set('0');
-    disableGenAiTelemetry();
+    disableOrtTelemetry();
     expect(current(), '0');
+  }, skip: posix ? false : 'POSIX environment; Windows is checked on a PC');
+
+  test('the embedding client sets it before it opens ONNX Runtime', () {
+    unset();
+    expect(current(), isNull);
+    // Without the bundle or an override the open fails on a bare host VM;
+    // the variable must already be set by then.
+    try {
+      OrtFfiClient();
+    } catch (_) {}
+    expect(current(), '1');
   }, skip: posix ? false : 'POSIX environment; Windows is checked on a PC');
 }

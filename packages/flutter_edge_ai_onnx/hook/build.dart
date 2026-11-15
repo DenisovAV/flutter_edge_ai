@@ -4,21 +4,23 @@
 // `stage()`), but sources from **Microsoft's own GitHub releases** — two
 // separate repos, NOT the `native-vX` tag this repo publishes for LiteRT-LM
 // — so it does not reuse `_NativeBundle`'s tag-based URL construction.
-// Document this supply-chain divergence: unlike every other bundle in this
-// monorepo, these two archives are never re-hosted by us.
+// Two archives are ours, on this repository's releases: the Android
+// ORT-GenAI build (`native/build_genai_android.sh`) and the iOS ONNX Runtime
+// (`native/build_ort_ios.sh`); every other archive is Microsoft's own.
 //
 // **macOS arm64, linux_x64, windows_x64/windows_arm64, android_arm64, ios
 // arm64 (v1)** —
-// iOS is now landed too, but shaped differently from every other platform:
-// Microsoft ships ONE self-contained artifact for iOS
-// (`onnxruntime-genai-ios-<ver>.zip` → `onnxruntime-genai.xcframework`) whose
-// framework binary STATICALLY links ORT and DYNAMICALLY EXPORTS BOTH APIs
-// (`Oga*` for generation, `OrtGetApiBase` for the plain-ORT embedding arm) —
-// verified via `nm -gU` + `otool -L` on the extracted binary (zero
-// `LC_LOAD_DYLIB` on onnxruntime). So iOS registers exactly one CodeAsset
-// (`ort: null` in `_OrtBundle`, see its doc) where every other platform
-// registers two — there is no co-location problem to solve and no second
-// "onnxruntime" archive to add; do not add one. Android's two archives are zips
+// iOS registers two CodeAssets like every other platform, from two archives.
+// Microsoft's `onnxruntime-genai-ios-<ver>.zip` links its own ORT statically
+// and, since 0.18.0, exports only `Oga*` (microsoft/onnxruntime-genai#2673):
+// `OrtGetApiBase` is a local symbol there, so the plain-ORT embedding arm
+// cannot use that copy. The second archive is ONNX Runtime itself, built by
+// `native/build_ort_ios.sh` from Microsoft's static `onnxruntime-c` pod
+// library into one dylib per slice that exports only `_Ort*`; the two copies
+// keep their C++ symbols private and do not interpose (both measured on the
+// simulator, `OrtGetApiBase` resolving to `onnxruntime.framework`). The genai
+// framework does not load ORT dynamically, so there is no co-location
+// problem on iOS. Android's two archives are zips
 // (ORT's AAR from Maven Central and our ORT-GenAI build, which keeps the AAR
 // layout) containing per-ABI `.so` files under `jni/<abi>/` — see
 // [_archivesFor]'s doc — and the (host-verifiable) extraction is landed: only
@@ -126,10 +128,24 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
         'download/v0.20.0/onnxruntime-genai-ios-0.20.0.zip';
     const sha256Hex =
         'dd3c1235e9cecff1606a9d70fb067a9e08b58489671a8e0ba8a78203a23c09a6';
+    // ONNX Runtime 1.30.0, the newest `onnxruntime-c` pod archive Microsoft
+    // publishes (1.30.1 to 1.32.0 have none), linked by
+    // `native/build_ort_ios.sh` into `ios-arm64/` and `ios-arm64-simulator/`
+    // (arm64 only, so no thinning). Microsoft compiles it for iOS 15.1.
+    const ortUrl =
+        'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+        'native-onnxruntime-ios-v1.30.0-a/onnxruntime-ios-1.30.0-a.zip';
+    const ortSha256Hex =
+        '3a65782cbe675d04a1497dc20415a23e8f7141e0b207fc9a5abd3c150ba7c460';
     if (iOSSdk == IOSSdk.iPhoneSimulator) {
       return const _OrtBundle(
         dirName: 'ios_sim_arm64',
-        ort: null,
+        ort: _Archive(
+          url: ortUrl,
+          sha256: ortSha256Hex,
+          extractedLibPath: 'ios-arm64-simulator/libonnxruntime.dylib',
+          assetName: 'onnxruntime',
+        ),
         genai: _Archive(
           url: url,
           sha256: sha256Hex,
@@ -146,7 +162,12 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
     }
     return const _OrtBundle(
       dirName: 'ios_arm64',
-      ort: null,
+      ort: _Archive(
+        url: ortUrl,
+        sha256: ortSha256Hex,
+        extractedLibPath: 'ios-arm64/libonnxruntime.dylib',
+        assetName: 'onnxruntime',
+      ),
       genai: _Archive(
         url: url,
         sha256: sha256Hex,
@@ -315,13 +336,9 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
 }
 
 /// The archive(s) that make up one platform's bundle, plus the bundle
-/// version tag used for the cache marker. Every platform but iOS carries
-/// TWO archives (`ort` + `genai`) — iOS's genai framework statically links
-/// ORT and exports both APIs from the one binary (see this file's top doc),
-/// so [ort] is `null` there. **Never add a second ORT asset for iOS** — that
-/// would be redundant (a second copy of the same statically-linked symbols
-/// under a different CodeAsset name) and defeats the whole point of iOS
-/// shipping one self-contained artifact.
+/// version tag used for the cache marker. Every platform carries TWO archives
+/// (`ort` + `genai`); on iOS the genai framework's own ORT is private, so the
+/// embedding arm loads [ort] (see this file's top doc).
 class _OrtBundle {
   const _OrtBundle({
     required this.dirName,
@@ -330,17 +347,17 @@ class _OrtBundle {
   });
 
   final String dirName;
-  final _Archive? ort;
+  final _Archive ort;
   final _Archive genai;
 
   /// Cache-invalidation key — bump whenever either archive's URL/sha changes.
-  String get version => ort == null
-      ? 'genai-0.20.0'
+  String get version => dirName.startsWith('ios')
+      ? 'ort-1.30.0-a.3a65782c_genai-0.20.0'
       : dirName.startsWith('android')
       ? 'ort-1.32.0_genai-0.20.0-a.1ae8dfa0'
       : 'ort-1.32.0_genai-0.20.0';
 
-  List<_Archive> get archives => [?ort, genai];
+  List<_Archive> get archives => [ort, genai];
 }
 
 // ============================================================================

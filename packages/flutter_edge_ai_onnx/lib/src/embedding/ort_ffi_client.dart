@@ -23,6 +23,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart' as pkg_ffi;
 
 import '../ffi/onnxruntime_bindings.g.dart';
+import '../ffi/ort_telemetry.dart';
 import 'ort_client.dart';
 
 /// Env var override for host tests: point directly at a locally-downloaded
@@ -32,49 +33,25 @@ import 'ort_client.dart';
 const _libraryOverrideEnvVar = 'FLUTTER_GEMMA_ORT_LIBRARY';
 
 ffi.DynamicLibrary _openOnnxRuntime() {
+  // Before the library opens: official ONNX Runtime builds since 1.28 carry
+  // Microsoft's telemetry, on by default.
+  disableOrtTelemetry();
   final override = Platform.environment[_libraryOverrideEnvVar];
   if (override != null && override.isNotEmpty) {
     return ffi.DynamicLibrary.open(override);
   }
   if (Platform.isIOS) {
-    // iOS ships no standalone onnxruntime archive: the onnxruntime-genai
-    // framework statically links ORT and dynamically exports OrtGetApiBase
-    // from the same binary (verified via `nm -gU` on the extracted
-    // xcframework slice — see `hook/build.dart`'s iOS branch and
-    // `gen_ai_client.dart`'s `_openGenAiLibraries` iOS branch). Resolve it
-    // from there instead of a separate CodeAsset.
-    //
-    // Opening the framework by name works whether or not the inference arm
-    // (`GenAiFfiClient`) already loaded it: dlopen of an already-loaded
-    // image just bumps its refcount — no double-load, one shared ORT
-    // state — and dlopen's loaded-image set is process-wide, so this also
-    // resolves correctly from the embedding worker isolate. Falling back to
-    // `DynamicLibrary.process()` (guarded by `providesSymbol` so a false hit
-    // can't slip past) covers the case where the framework was already
-    // loaded under a path this literal name doesn't re-resolve by.
-    //
-    // The open MUST use the `@executable_path/Frameworks/` anchor — iOS
-    // dyld 4 cannot resolve a bare `<name>.framework/<name>` leaf name (same
-    // reasoning, and same anchor shape, as
-    // `flutter_edge_ai_litertlm/lib/src/ffi/litert_lm_client.dart`'s
-    // `LiteRtLm.framework`/`StreamProxy.framework` opens, and
-    // `gen_ai_client.dart`'s `_candidateNames` iOS branch).
-    try {
-      return ffi.DynamicLibrary.open(
-        '@executable_path/Frameworks/onnxruntime-genai.framework/'
-        'onnxruntime-genai',
-      );
-    } catch (_) {}
-    final proc = ffi.DynamicLibrary.process();
-    if (proc.providesSymbol('OrtGetApiBase')) return proc;
-    throw UnsupportedError(
-      'Could not resolve OrtGetApiBase on iOS: '
-      '@executable_path/Frameworks/onnxruntime-genai.framework/'
-      'onnxruntime-genai was not found and the process image does not '
-      'already export OrtGetApiBase. Set $_libraryOverrideEnvVar to an '
-      'explicit path for host testing — in a real app build iOS resolves '
-      'OrtGetApiBase from onnxruntime-genai.framework (see '
-      'hook/build.dart\'s iOS branch).',
+    // iOS bundles ONNX Runtime as its own `onnxruntime.framework` (built by
+    // `native/build_ort_ios.sh` from Microsoft's static library; see
+    // `hook/build.dart`'s iOS branch), as every other host bundles one:
+    // `onnxruntime-genai.framework` keeps its ORT private since ORT-GenAI
+    // 0.18.0 (microsoft/onnxruntime-genai#2673), so `OrtGetApiBase` is not
+    // there to find. The open MUST use the `@executable_path/Frameworks/`
+    // anchor — iOS dyld 4 cannot resolve a bare `<name>.framework/<name>`
+    // leaf name (same anchor as `flutter_edge_ai_litertlm`'s
+    // `LiteRtLm.framework` and `gen_ai_client.dart`'s iOS branch).
+    return ffi.DynamicLibrary.open(
+      '@executable_path/Frameworks/onnxruntime.framework/onnxruntime',
     );
   }
   if (Platform.isMacOS) {
@@ -260,9 +237,9 @@ class OrtFfiClient implements OrtClient {
   int _resolvedApiVersion = ORT_API_VERSION;
 
   /// The ORT C API version this client actually resolved at construction:
-  /// [ORT_API_VERSION] on desktop/Android (standalone ORT 1.32, which serves
-  /// API 27), lower on iOS where the ORT inside `onnxruntime-genai.framework`
-  /// predates 1.27.
+  /// [ORT_API_VERSION] (27, the header these bindings were generated from)
+  /// on every host: ONNX Runtime 1.32 on desktop/Android and 1.30 on iOS both
+  /// serve it.
   int get resolvedApiVersion => _resolvedApiVersion;
 
   OrtFfiClient() {
@@ -276,10 +253,10 @@ class OrtFfiClient implements OrtClient {
         .cast<ffi.NativeFunction<ffi.Pointer<OrtApi> Function(ffi.Uint32)>>()
         .asFunction<ffi.Pointer<OrtApi> Function(int)>();
     // Probe DOWN from our compiled ORT_API_VERSION to the newest API the
-    // linked onnxruntime actually accepts. Desktop/Android link a standalone
-    // ORT 1.32, which serves API 27, so this matches on the first try; iOS reuses the ORT
-    // statically linked inside `onnxruntime-genai.framework`, whose ORT can be
-    // OLDER than 1.27 — there `GetApi(27)` returns nullptr and we step down.
+    // linked onnxruntime actually accepts. Every host bundles a standalone
+    // ORT that serves API 27 (1.32 on desktop/Android, 1.30 on iOS), so this
+    // matches on the first try; the probe keeps an older ORT from a
+    // `FLUTTER_GEMMA_ORT_LIBRARY` override usable.
     // `OrtApi` is append-only across versions and every function this client
     // binds (CreateEnv/CreateSession/Run/CreateTensorWithDataAsOrtValue/…)
     // exists since API 1, so any non-null `OrtApi*` is safe to use.

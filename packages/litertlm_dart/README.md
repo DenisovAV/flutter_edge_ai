@@ -27,8 +27,24 @@ a Flutter app uses those, through
 The version is the upstream LiteRT-LM version this package is built from,
 plus a build number for our native rebuilds of it: `0.19.1+1` is LiteRT-LM
 0.19.1 on `native-v0.19.1-b`. Within one upstream version the Dart API stays
-compatible; a breaking change comes with an upstream version change. Depend on
-it as `'>=0.19.1+1 <0.19.2'`.
+compatible; a breaking change comes with an upstream version change. So depend
+on it with an upper bound at the next upstream patch, `'>=0.19.1+1 <0.19.2'`,
+not with a caret: `^0.19.1` would also take 0.19.2.
+
+## Where it runs today
+
+The runtime and the hook are what `flutter_edge_ai_litertlm` runs on Android,
+iOS, macOS, Linux and Windows. Outside a Flutter app it is not yet a finished
+CLI or server story:
+
+- **macOS:** the hook leaves two companion libraries (the constraint provider
+  and the Metal accelerator) to the app's build — `flutter_edge_ai_litertlm`'s
+  Swift package or its Podfile step embeds them. A plain Dart program on macOS
+  cannot load the engine yet.
+- **Library lookup** follows the layout of a Flutter app bundle; `dart run` and
+  `dart build cli` layouts are not looked up yet.
+
+Both are planned with a command-line example.
 
 ## Libraries
 

@@ -3,9 +3,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 
 /// A conversation that answers with scripted text chunks, one turn at a time,
 /// and can be held open mid-turn so a test can stop it there.
@@ -224,6 +223,25 @@ void main() {
     // The stopped turn's reply is what the model had written when stopped.
     expect(textOf(seed[3] as Map<String, dynamic>), 'Hello');
   });
+
+  test(
+    'a rebuild is logged under the tag the device suites filter on',
+    () async {
+      // open_sessions_native_test, litertlm_stop_rewind_test and
+      // litertlm_open_sessions_test keep only `[FfiInferenceModel]` lines to
+      // count rewinds and rebuilds; another tag makes their checks vacuous.
+      final logged = <String>[];
+      runtimeLogSink = (message, {verbose = false}) => logged.add(message);
+      addTearDown(resetRuntimeLogSink);
+      expect(await handle.chat('one').join(), 'Hello there.');
+      await stopMidTurn('two', first);
+      expect(await handle.chat('three').join(), 'Hello there.');
+      expect(
+        logged.where((m) => m.startsWith('[FfiInferenceModel] rebuilt')),
+        hasLength(1),
+      );
+    },
+  );
 
   test('a rebuilt conversation is kept until the next stop', () async {
     await stopMidTurn('one', first);

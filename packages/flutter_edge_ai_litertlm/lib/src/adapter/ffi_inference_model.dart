@@ -1225,7 +1225,7 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
 
   @override
   Future<void> prepare(List<String> targets) =>
-      _model._scoringCheckFor(this, targets);
+      withCoreErrors(() => _model._scoringCheckFor(this, targets));
 
   @override
   Future<OptionScoringRun> score(
@@ -1233,7 +1233,7 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
     List<String> targets, {
     CancelToken? cancelToken,
   }) async {
-    await _model._scoringCheckFor(this, targets);
+    await withCoreErrors(() => _model._scoringCheckFor(this, targets));
     // The session adds BOS itself, so a prompt that starts with its text
     // would carry two.
     if (prompt.startsWith('<bos>')) {

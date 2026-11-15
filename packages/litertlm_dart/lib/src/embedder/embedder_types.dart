@@ -17,7 +17,9 @@ enum EmbedderModality { text, image, audio }
 /// One embedding request: text, images and audio, embedded as one vector.
 @immutable
 final class EmbedderInput {
-  const EmbedderInput({this.text, this.images = const [], this.audio});
+  /// [images] is copied into an unmodifiable list (the bytes are not).
+  EmbedderInput({this.text, List<Uint8List> images = const [], this.audio})
+    : images = List.unmodifiable(images);
 
   /// The text, its task prefix already in front of it.
   final String? text;
@@ -32,13 +34,14 @@ final class EmbedderInput {
 /// What a loaded embedder reports.
 @immutable
 final class EmbedderInfo {
-  const EmbedderInfo({
+  /// [modalities] is copied into an unmodifiable set.
+  EmbedderInfo({
     required this.dimension,
     required this.maxInputTokens,
-    required this.modalities,
+    required Set<EmbedderModality> modalities,
     required this.visionTokensPerImage,
     required this.activeBackend,
-  });
+  }) : modalities = Set.unmodifiable(modalities);
 
   /// The length of every vector.
   final int dimension;

@@ -297,6 +297,33 @@ void main() {
     });
   });
 
+  group('the public types built by hand', () {
+    test('keep the sections and the target they were given', () {
+      const target = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
+      final text = LiteRtLmSection(
+        dataType: 'TFLiteModel',
+        begin: 0,
+        end: 10,
+        npuTarget: target,
+      );
+      final info = LiteRtLmBundleInfo(
+        majorVersion: 1,
+        minorVersion: 5,
+        patchVersion: 0,
+        systemMetadata: const {},
+        sections: [text],
+        fileLength: 10,
+      );
+      expect(identical(info.sections.single, text), isTrue);
+      expect(identical(info.textModel, text), isTrue);
+      expect(info.sections, contains(text));
+      expect(identical(text.npuTarget, text.npuTarget), isTrue);
+      expect(identical(info.npuTarget, text.npuTarget), isTrue);
+      expect(info.npuTarget, target);
+      expect(() => info.sections.add(text), throwsUnsupportedError);
+    });
+  });
+
   group('files that are not complete containers', () {
     Matcher problem(LiteRtLmBundleProblem p) => throwsA(
       isA<LiteRtLmBundleException>().having((e) => e.problem, 'problem', p),

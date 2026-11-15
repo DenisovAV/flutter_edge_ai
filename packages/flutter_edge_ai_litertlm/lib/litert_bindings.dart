@@ -15,7 +15,7 @@
 /// This library is unconditional — importing it from code that is also
 /// reachable on web will fail to compile there. Native-only leaves should
 /// import this directly instead of the implementation path
-/// `package:flutter_edge_ai_litertlm/src/ffi/litert_bindings.dart`.
+/// `package:litertlm_dart/litert_bindings.dart`.
 library;
 
 export 'package:litertlm_dart/litert_bindings.dart';

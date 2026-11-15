@@ -42,6 +42,7 @@ export 'src/bundle/litertlm_bundle_info.dart'
 export 'src/embedder/embedder_types.dart'
     show
         EmbedderEngineException,
+        EmbedderInfo,
         EmbedderInput,
         EmbedderInputTooLongException,
         EmbedderLoadException,

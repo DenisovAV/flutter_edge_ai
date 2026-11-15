@@ -36,7 +36,7 @@ export 'src/bundle/litertlm_load_plan.dart'
         textBackendsAllowedForTesting;
 export 'src/bundle/litertlm_npu_target.dart' show readLiteRtLmNpuTarget;
 export 'src/embedder/embedding_parts.dart'
-    show EmbeddingPartKind, embeddingParts;
+    show EmbeddingPart, EmbeddingPartKind, embeddingParts;
 export 'src/embedder/litert_lm_embedder.dart'
     show
         LiteRtLmEmbedder,
@@ -61,6 +61,7 @@ export 'src/embedder/litert_lm_embedder.dart'
 export 'src/embedder/litertlm_container_io.dart' show readLitertlmModelTypes;
 export 'src/ffi/backend_preference.dart'
     show
+        NpuProbes,
         activationDataTypeWireValue,
         encoderBackendWireName,
         ffiBackendFallbackOrder,
@@ -71,6 +72,7 @@ export 'src/ffi/channel_content_filter.dart' show liteRtLmFiltersChannelContent;
 export 'src/ffi/conversation_handles.dart'
     show
         RecoveringConversationHandle,
+        ToolCallReader,
         VirtualConversationHandle,
         thoughtChunkPrefix,
         virtualConversationHistoryForTest,
@@ -81,11 +83,16 @@ export 'src/ffi/litert_default_scope.dart'
 export 'src/ffi/litert_lm_client.dart'
     show
         ConversationHandle,
+        EngineCreateRequest,
+        EngineCreateResult,
+        ExecutorConversation,
         LiteRtLmConversationHandle,
         LiteRtLmFfiClient,
+        LiteRtLmLastErrorRead,
         NativeLastTurnEnd,
         ScoringStoppedError,
         ScoringStops,
+        SendCallGate,
         StoppedTurnRewind,
         StoppedTurnRewindException,
         absResourceExhausted,
@@ -108,12 +115,14 @@ export 'src/ffi/litert_lm_runtime_check.dart'
         liteRtLmCApiMajor,
         liteRtLmOwnBuildSymbol,
         requireOwnLiteRtLmBuild;
-export 'src/ffi/litert_lm_status.dart' show LiteRtLmCallException;
-export 'src/ffi/macos_load_error.dart' show openMacOSLiteRtLm;
+export 'src/ffi/litert_lm_status.dart'
+    show LiteRtLmCallException, LiteRtLmLastError;
+export 'src/ffi/macos_load_error.dart' show MacOSLoadCause, openMacOSLiteRtLm;
 export 'src/ffi/native_turns.dart'
     show
         LiteRtLmTurnCancelledException,
         LiteRtLmTurnClosedException,
+        NativeTurn,
         NativeTurnEnd,
         NativeTurnStream,
         NativeTurns;
@@ -125,8 +134,10 @@ export 'src/ffi/npu_stack_manifest.dart'
         qualcommNpuNotEnabledReason;
 export 'src/ffi/npu_vendor_host.dart'
     show
+        BrokenNpuMaskAux,
         LiteRtLmNpuHost,
         LiteRtLmPlatformNpuHost,
+        NpuChoice,
         NpuChosen,
         NpuDispatch,
         NpuPlatformBindings,
@@ -150,7 +161,8 @@ export 'src/ffi/open_session_backing.dart'
         androidGpuFamilyFrom,
         liteRtLmOpenSessionBacking;
 
-export 'src/ffi/windows_std_handles.dart' show openBundledWindowsLibrary;
+export 'src/ffi/windows_std_handles.dart'
+    show StdHandleCalls, openBundledWindowsLibrary;
 export 'src/runtime/build_mode.dart'
     show isDebugBuild, isProductBuild, isProfileBuild, isReleaseBuild;
 export 'src/runtime/native_release.dart' show liteRtLmNativeVersion;
@@ -158,10 +170,10 @@ export 'src/runtime/response_text.dart' show extractResponseText;
 export 'src/runtime/runtime_log.dart'
     show
         RuntimeLogLevel,
+        RuntimeLogSink,
         currentRuntimeLogLevel,
         resetRuntimeLogSink,
         runtimeLog,
         runtimeLogLevel,
         runtimeLogLevelSource,
         runtimeLogSink;
-export 'src/ffi/litert_bindings.dart' show liteRtLmHostLibraryCandidates;

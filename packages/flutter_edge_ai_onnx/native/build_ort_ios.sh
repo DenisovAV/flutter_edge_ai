@@ -18,9 +18,16 @@
 #   one cannot interpose on each other;
 # - install name `@rpath/onnxruntime.framework/onnxruntime`, the framework
 #   Native Assets wraps `libonnxruntime.dylib` in;
-# - `vtool` sets minos 13.0: Flutter's generated framework Info.plist says
-#   MinimumOSVersion 13.0 and App Store validation requires the two to match
-#   (ITMS-90208). Microsoft compiles the objects for iOS 15.1, the real floor.
+# - `vtool` sets minos 13.0, the value every iOS dylib in this repository
+#   carries: App Store validation rejects a binary whose minos is above the
+#   MinimumOSVersion of its framework Info.plist (ITMS-90208), and Flutter
+#   writes that plist from the app (15.0 measured with Flutter 3.50). The
+#   objects are Microsoft's, compiled for iOS 15.1: that is the real floor,
+#   which the package documents. APIs newer than that (CoreML's
+#   MLComputePlan) are weak imports.
+# - The bytes depend on the toolchain (vtool records the SDK version): the
+#   published zip, 3a65782c..., was built with Xcode 27.2; two builds there
+#   from scratch were byte-identical.
 #
 # Needs Xcode (clang, lipo, vtool, nm), curl, unzip, zip, shasum.
 #

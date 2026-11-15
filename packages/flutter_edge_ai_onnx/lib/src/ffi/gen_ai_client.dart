@@ -1027,9 +1027,10 @@ String? guidanceRefusalOf(GenAiClient client, {ffi.Abi? abi}) {
 /// names alone" reasoning) for `LiteRtLm.framework`/`StreamProxy.framework`.
 /// A bare leaf name here would dlopen-fail on every real iPhone (and the
 /// simulator — verified: unanchored fails there too). This list is only ever
-/// consulted for `'onnxruntime-genai'` on iOS — the platform ships one image
-/// serving both APIs (see [_openGenAiLibraries]'s iOS branch), so
-/// `'onnxruntime'` is never opened there.
+/// consulted for `'onnxruntime-genai'` on iOS — genai links its own ORT
+/// statically (see [_openGenAiLibraries]'s iOS branch), so the generation
+/// client never opens `'onnxruntime'` there; the bundled
+/// `onnxruntime.framework` is the embedding client's.
 List<String> _candidateNames(String libraryName) {
   if (Platform.isIOS) {
     return [

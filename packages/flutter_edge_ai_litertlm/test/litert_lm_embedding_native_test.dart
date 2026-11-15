@@ -39,7 +39,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai/engine_io.dart';
 import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:litertlm_dart/bindings.dart';
@@ -146,8 +145,7 @@ Uint8List _toneWav(int seconds) {
 /// library — the download cache of a checkout pinned before 0.19 — would be
 /// read as garbage, not refused.
 String? _dylib() {
-  for (final path in hostNativeLibraryCandidates(
-    libFileName: hostNativeLibraryFileName('LiteRtLm'),
+  for (final path in liteRtLmHostLibraryCandidates(
     envOverride: Platform.environment['LITERTLM_DYLIB'],
   )) {
     if (!File(path).existsSync()) continue;

@@ -24,40 +24,13 @@ export 'src/runtime/npu_stacks.dart'
     show
         NpuStack,
         androidLibFileName,
-        cdsprpcShimLib,
-        googleTensorDispatchLib,
         googleTensorNpuLibs,
-        googleTensorNpuUserDefine,
-        googleTensorSystemRuntime,
-        intelDispatchLib,
-        intelNpuLibs,
-        mediatekAndroidSystemLibs,
-        mediatekDispatchLib,
-        mediatekNeuronAdapters,
-        mediatekNpuAarUserDefine,
-        mediatekNpuLibs,
-        mediatekNpuMavenUrlUserDefine,
         mediatekNpuRefused,
         mediatekNpuRefusedReason,
-        mediatekNpuUserDefine,
         nativeAssetId,
-        npuAndroidSystemLibs,
-        npuDispatchInNativeTarball,
-        npuDispatchLib,
         npuSentenceList,
         npuStackLibs,
-        npuUserDefine,
-        offeredNpuStacks,
-        qairtLinuxLibs,
-        qnnRuntimeLibs,
-        qualcommAndroidFastRpcLib,
-        qualcommDispatchLib,
-        qualcommNpuAarUserDefine,
-        qualcommNpuLibs,
-        qualcommNpuLibsLinux,
-        qualcommNpuMavenUrlUserDefine,
-        qualcommNpuQairtZipUserDefine,
-        qualcommNpuUserDefine;
+        offeredNpuStacks;
 export 'src/bundle/litertlm_bundle_info.dart'
     show
         BundleInfo,
@@ -65,14 +38,10 @@ export 'src/bundle/litertlm_bundle_info.dart'
         LiteRtLmBundleException,
         LiteRtLmBundleProblem,
         NpuStamp,
-        litertlmContainerVersion,
-        litertlmTfliteModelType,
-        npuVendorOf,
-        parseLitertlmHeader;
+        npuVendorOf;
 export 'src/embedder/embedder_types.dart'
     show
         EmbedderEngineException,
-        EmbedderInfo,
         EmbedderInput,
         EmbedderInputTooLongException,
         EmbedderLoadException,
@@ -90,7 +59,6 @@ export 'src/embedder/litertlm_container.dart'
         litertlmHasAudioEncoder,
         litertlmHasAudioTower,
         litertlmHasVisionTower,
-        litertlmModelTypes,
         readLitertlmModelTypesFrom;
 export 'src/ffi/engine_sampler_latch.dart' show EngineSamplerLatch;
 export 'src/ffi/thinking_context.dart' show thinkingContext;

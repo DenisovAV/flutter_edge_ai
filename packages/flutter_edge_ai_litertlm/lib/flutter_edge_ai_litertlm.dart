@@ -24,14 +24,13 @@ export 'src/adapter/bundle_reader_stub.dart'
     if (dart.library.ffi) 'src/adapter/bundle_reader.dart'
     show readLiteRtLmBundleInfo;
 export 'package:litertlm_dart/common.dart'
-    show LiteRtLmBundleException, LiteRtLmBundleProblem;
+    show LiteRtLmBundleException, LiteRtLmBundleProblem, LiteRtLmLogLevel;
 export 'src/litert_lm_load_errors.dart';
 
 // The models this package runs, generated from the project's model registry:
 // `LiteRtLmModels.gemma4E2bIt.npuSm8750`, `LiteRtEmbedders…`. Plain Dart on
 // every platform; `backendsHere` answers for the runtime it runs in.
 export 'src/catalog/litert_catalog.dart' hide debugLiteRtCatalogHost;
-export 'package:litertlm_dart/common.dart';
 
 // LiteRt interpreter FFI (arbitrary `.tflite` models) — used by
 // flutter_edge_ai_speech. `dart.library.ffi`-only;

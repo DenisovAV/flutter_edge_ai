@@ -63,12 +63,6 @@ class _NativeBundle {
   /// (qdrant has none). LiteRT has Metal/OpenCL/WebGPU accelerators etc.
   final List<String> companions;
 
-  /// Names this bundle shipped in an older release and no longer registers.
-  /// Deleted with the owned files on a version change — so the flat cache does
-  /// not keep them forever — and never registered, which [companions] would
-  /// do with any file it finds.
-  final List<String> legacyFileNames;
-
   /// Companions to skip on a specific OS. LiteRT skips Apple companion
   /// dylibs on macOS because of a Native Assets install_name_tool slack
   /// issue (#247) — the Podfile post_install handles them instead.
@@ -108,21 +102,13 @@ class _NativeBundle {
     required this.archivePrefix,
     required this.checksums,
     required this.mainLibName,
-    required this.markerFileName,
     this.companions = const [],
-    this.legacyFileNames = const [],
     this.skipCompanionsOn = const {},
     this.windowsExtraLibs = const [],
     this.androidExtraLibs = const [],
     this.linuxExtraLibs = const [],
     this.useFlatLayout = false,
   });
-
-  /// Name of the marker file that stores the cached bundle version. For LiteRT
-  /// (flat layout) it's `.flutter_gemma_native_version` at the cache root, kept
-  /// stable for backwards compatibility. For namespaced bundles it's
-  /// `.version` inside the bundle's namespace subdirectory.
-  final String markerFileName;
 
   String get releaseTag => '$releaseTagPrefix$version';
   String get releaseBase =>
@@ -135,48 +121,7 @@ class _NativeBundle {
       ? Directory('${_cacheBaseDir().path}/$releaseTag')
       : Directory('${_cacheBaseDir().path}/$namespace');
 
-  /// Absolute path of the marker file that tracks the cached version of this
-  /// bundle. Always lives at [cacheRoot] root (alongside the per-platform
-  /// subdirs).
-  File markerFile() => File('${cacheRoot().path}/$markerFileName');
-
   String archiveName(String dirName) => '$archivePrefix-$dirName.tar.gz';
-
-  /// All filenames this bundle owns on disk inside one per-platform subdir.
-  /// Used by [_invalidateBundleCacheIfStale] to wipe only this bundle's files
-  /// when running in flat layout (LiteRT shares its dir with future bundles).
-  Iterable<String> ownedFileNames(OS os) sync* {
-    yield _dylibFileName(os, mainLibName);
-    // StreamProxy is bundled with LiteRT only — but we let the file-existence
-    // check at use sites decide. Listing it here is harmless either way.
-    yield _dylibFileName(os, 'StreamProxy');
-    for (final c in companions) {
-      yield _dylibFileName(os, c);
-    }
-    for (final l in legacyFileNames) {
-      yield _dylibFileName(os, l);
-    }
-    if (os == OS.windows) {
-      for (final w in windowsExtraLibs) {
-        yield _dylibFileName(os, w);
-      }
-    }
-    if (os == OS.android) {
-      // Every vendor stack that runs on Android, from the table (Qualcomm's is
-      // androidExtraLibs).
-      for (final vendor in NpuStack.values) {
-        if (!vendor.abis.any((abi) => abi.startsWith('android_'))) continue;
-        for (final name in npuStackLibs(vendor, 'android')) {
-          yield _dylibFileName(os, name);
-        }
-      }
-    }
-    if (os == OS.linux) {
-      for (final l in linuxExtraLibs) {
-        yield _dylibFileName(os, l);
-      }
-    }
-  }
 }
 
 /// LiteRT-LM native library version and release info.
@@ -230,7 +175,6 @@ final _litertlmBundle = _NativeBundle(
   // the old flat `flutter_gemma/native/macos_arm64`; [_mirrorForPodfileStager]
   // keeps that working.
   useFlatLayout: true,
-  markerFileName: '.litertlm_native_version',
   // 0.19.1-b changes the Windows archive and nothing else: patch_c_api.sh
   // section 27 backports LiteRT-LM 3db1cfd0ab, which aliases multi-signature
   // NPU KV caches on OpenVINO custom tensor buffers (Intel's GlobalGraph-v3
@@ -383,24 +327,7 @@ final _litertlmBundle = _NativeBundle(
     'LiteRt', // Linux/Windows core runtime
     'webgpu_dawn', // Linux/Windows Dawn WebGPU (split to a shared lib in v0.14.0)
   ],
-  legacyFileNames: [
-    // Not shipped since native-v0.19.0-a: libLiteRtLm.so links Android's
-    // OpenCL accelerator and sampler in (patch_c_api.sh section 19).
-    'LiteRtOpenClAccelerator',
-    'LiteRtTopKOpenClSampler',
-    // Not shipped since native-v0.19.0-a: Linux and Windows build no GPU
-    // sampler (section 20, CPU sampling), and Apple links its sampler into
-    // libLiteRtLm. A stale 0.18 copy in the cache is deleted, never bundled.
-    'LiteRtTopKWebGpuSampler',
-    'libLiteRtTopKWebGpuSampler',
-    'LiteRtTopKMetalSampler',
-    // Not shipped on any platform since native-v0.18.0: on Android it needs
-    // Dawn, which no bundle carries.
-    'LiteRtGpuAccelerator',
-    // Upstream's name for the Metal accelerator, shipped renamed since
-    // native-v0.18.0 (flutter_litert's framework uses the upstream name).
-    'LiteRtMetalAccelerator',
-  ],
+
   // On macOS, skip the upstream Apple companion dylibs from Native Assets
   // bundling (#247). The companion dylibs Google ships in
   // `prebuilt/macos_arm64/` (`libGemmaModelConstraintProvider.dylib`,
@@ -514,77 +441,6 @@ String _cacheBasePath(String name) {
   }
   if (Platform.isMacOS) return '$home/Library/Caches/$name/native';
   return '$home/.cache/$name/native';
-}
-
-/// Reads the JSON marker for [bundle]. Returns null if absent, malformed, or
-/// LEGACY plain-text (pre-protocol) — all treated as "not present" so the next
-/// step re-fetches and rewrites the marker as JSON (self-heal).
-({String version, String owner})? _readMarker(_NativeBundle bundle) {
-  final m = bundle.markerFile();
-  if (!m.existsSync()) return null;
-  try {
-    final decoded = jsonDecode(m.readAsStringSync()) as Map<String, dynamic>;
-    final v = decoded['version'];
-    final o = decoded['owner'];
-    if (v is String && o is String) return (version: v, owner: o);
-    return null;
-  } catch (_) {
-    return null; // legacy plain-text or corrupt → treat as absent
-  }
-}
-
-/// Writes the JSON marker {version, owner}.
-/// COMMIT POINT: call LAST, only after the dylib files are fully in place.
-void _writeMarker(_NativeBundle bundle) {
-  bundle.markerFile().writeAsStringSync(
-    jsonEncode({'version': bundle.version, 'owner': _packageName}),
-  );
-}
-
-/// Wipe stale per-platform cached files when a bundle's version changes. Cheap
-/// (one marker read) and idempotent: if the JSON marker matches this bundle's
-/// version, do nothing; if missing, legacy plain-text, or a mismatched version,
-/// delete this bundle's files in every per-platform subdir. The next
-/// `_resolveLibDir` falls through to `_downloadAndExtract` for whatever platform
-/// the build targets. WIPE-ONLY — does NOT write the marker; `_writeMarker` is
-/// the commit point in `_processBundle`, called only AFTER the dylib is in place
-/// (so an interrupted fetch leaves no marker → clean refetch next build).
-///
-/// For namespaced bundles (`useFlatLayout=false`) we sweep entire per-platform
-/// subdirs — nobody else owns them. For flat-layout LiteRT we delete only the
-/// files listed by [_NativeBundle.ownedFileNames] so a hypothetical second
-/// flat bundle wouldn't be wiped collaterally.
-void _invalidateBundleCacheIfStale(_NativeBundle bundle) {
-  final cacheRoot = bundle.cacheRoot();
-  if (!cacheRoot.existsSync()) {
-    cacheRoot.createSync(recursive: true);
-  }
-  final stored = _readMarker(bundle);
-  if (stored != null && stored.version == bundle.version) return;
-
-  final platformPattern = RegExp(r'^(linux|macos|ios|android|windows)_');
-  for (final entity in cacheRoot.listSync()) {
-    if (entity is! Directory) continue;
-    final name = entity.uri.pathSegments.where((s) => s.isNotEmpty).last;
-    if (!platformPattern.hasMatch(name)) continue;
-
-    if (bundle.useFlatLayout) {
-      // Shared dir — delete only files this bundle owns. Iterate every OS
-      // (we don't know which one the subdir was populated for; just attempt
-      // all names — `deleteSync` is a no-op when the file is absent).
-      for (final os in OS.values) {
-        for (final fileName in bundle.ownedFileNames(os)) {
-          final f = File('${entity.path}/$fileName');
-          if (f.existsSync()) {
-            f.deleteSync();
-          }
-        }
-      }
-    } else {
-      // Exclusive dir — wipe the whole platform subdir, faster + cleaner.
-      entity.deleteSync(recursive: true);
-    }
-  }
 }
 
 // ============================================================================
@@ -809,9 +665,8 @@ Future<void> _processBundle({
     return;
   }
 
-  // One directory per release tag, so no other version shares it: no owner
-  // to check. The marker only says the directory was completed.
-  _invalidateBundleCacheIfStale(bundle);
+  // One directory per release tag, so no other version shares it, and an
+  // extract lands by an atomic rename: a directory there is complete.
 
   var libDir = _resolveLibDir(bundle, dirName, input.packageRoot, os);
   libDir ??= await _downloadAndExtract(bundle, dirName);
@@ -836,9 +691,6 @@ Future<void> _processBundle({
       'will not repopulate the cache (measured — output.json mtimes unchanged).',
     );
   }
-
-  // Commit point: marker written only after the dylib is confirmed in place.
-  _writeMarker(bundle);
 
   // Flutter's native-assets pipeline declares every `CodeAsset.file` as a
   // build OUTPUT and every `output.dependencies` entry as a build INPUT (see
@@ -1571,7 +1423,8 @@ bool _sameBytes(File a, File b) {
 /// the `flutter_gemma/native/<platform>` directory the Podfile stager reads,
 /// when they differ, and records the version there the way the hooks of
 /// flutter_edge_ai_litertlm up to 1.20.x did, so one of them building on this
-/// machine sees a version not its own and fetches its own files back.
+/// machine sees a version not its own and fetches its own files back. Its
+/// libLiteRtLm there is removed, which is what makes that hook run again.
 /// Returns the copies, for the hook's dependencies.
 List<Uri> _mirrorForPodfileStager(
   _NativeBundle bundle,
@@ -1589,6 +1442,14 @@ List<Uri> _mirrorForPodfileStager(
     if (!dst.existsSync() || !_sameBytes(src, dst)) src.copySync(dst.path);
     copies.add(dst.uri);
   }
+  // An older hook does not watch the companions, but it does watch its own
+  // libLiteRtLm here: removing it makes that hook run again and fetch its
+  // own release's files, companions included, before its app's stager reads
+  // them.
+  final legacyMain = File(
+    '${legacyDir.path}/${_dylibFileName(os, bundle.mainLibName)}',
+  );
+  if (legacyMain.existsSync()) legacyMain.deleteSync();
   File(
     '${legacyDir.parent.path}/.flutter_gemma_native_version',
   ).writeAsStringSync(

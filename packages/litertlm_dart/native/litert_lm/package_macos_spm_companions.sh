@@ -42,9 +42,10 @@ trap 'rm -rf "${WORK}"' EXIT
 tar -xzf "${TARBALL}" -C "${WORK}"
 
 # The bundle version in each framework's Info.plist: the native release the
-# bytes come from, read from the hook so the two cannot disagree.
-HOOK="$(cd "$(dirname "$0")/../.." && pwd)/hook/build.dart"
-HOOK_VERSION="$(sed -n "s/^  version: '\([^']*\)',$/\1/p" "${HOOK}" | head -1)"
+# bytes come from, read from the constant the hook takes it from, so the two
+# cannot disagree.
+HOOK="$(cd "$(dirname "$0")/../.." && pwd)/lib/src/runtime/native_release.dart"
+HOOK_VERSION="$(sed -n "s/^const liteRtLmNativeVersion = '\([^']*\)';$/\1/p" "${HOOK}" | head -1)"
 [ -n "${HOOK_VERSION}" ] || { echo "could not read the native version from ${HOOK}" >&2; exit 1; }
 NATIVE_VERSION="${NATIVE_VERSION:-${HOOK_VERSION}}"
 [ "${NATIVE_VERSION}" = "${HOOK_VERSION}" ] || {

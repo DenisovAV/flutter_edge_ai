@@ -177,8 +177,8 @@ for dir in packages/*/ packages/*/example/; do
     # reported as one rather than as a failing test.
     (cd "$dir" && flutter pub get && flutter test)
   elif ! grep -q 'sdk: flutter' "${dir}pubspec.yaml"; then
-    # A pure Dart package (litertlm_dart): package:test suites, run by
-    # `dart test`, which also runs the package's build hook.
+    # A pure Dart package (litertlm_dart, genkit_hybrid): package:test
+    # suites, run by `dart test`, which also runs a package's build hook.
     (cd "$dir" && dart test)
   else
     (cd "$dir" && flutter test)

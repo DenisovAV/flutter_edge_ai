@@ -14,8 +14,8 @@
 // TWO ORDERING RULES, both bought with incidents rather than chosen:
 //
 //   1. The hook's download cache comes before any local build artifact. The
-//      cache is version-validated by hook/build.dart (`_readMarker` /
-//      `_invalidateBundleCacheIfStale`); a local prebuilt is gitignored, made
+//      cache has one directory per release tag (hook/build.dart), so it holds
+//      this release's bytes; a local prebuilt is gitignored, made
 //      by a hand-run build script, and carries no version marker. They hold the
 //      same bytes today. After the next `native-v*` bump a stale local copy
 //      would silently shadow the refreshed download, and host tests would run

@@ -58,13 +58,7 @@ String? nativeKey(String repoRoot, String host, Map<String, String> versions) {
   final archive = _archives[host];
   if (archive == null) return null;
   final hook = File(
-    p.join(
-      repoRoot,
-      'packages',
-      'litertlm_dart',
-      'hook',
-      'build.dart',
-    ),
+    p.join(repoRoot, 'packages', 'litertlm_dart', 'hook', 'build.dart'),
   );
   if (!hook.existsSync()) return null;
   final m = RegExp(

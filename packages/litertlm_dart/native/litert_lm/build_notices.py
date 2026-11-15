@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate packages/flutter_edge_ai_litertlm/NOTICES.
+"""Regenerate packages/litertlm_dart/NOTICES.
 
 Flutter's LicenseCollector reads a package's NOTICES in place of its LICENSE
 and folds every entry into each consuming app's licence page, so this file is
@@ -163,7 +163,7 @@ def main():
     lic = OPENVINO_ROOT + "docs/licensing/"
 
     entries = [
-        _entry(["flutter_edge_ai_litertlm"], _text(own)),
+        _entry(["litertlm_dart"], _text(own)),
         _entry(["LiteRT", "LiteRT-LM"], _text(litert)),
         _entry(
             ["LiteRT-LM third-party components"],

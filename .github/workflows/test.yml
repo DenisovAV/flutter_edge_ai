@@ -246,8 +246,8 @@ jobs:
       - name: Cache Qualcomm QNN runtime
         uses: actions/cache@v4
         with:
-          path: ~/.cache/flutter_gemma/native/qnn
-          key: qnn-runtime-${{ hashFiles('packages/flutter_edge_ai_litertlm/lib/src/hook/qnn_runtime.dart') }}
+          path: ~/.cache/litertlm_dart/native/qnn
+          key: qnn-runtime-${{ hashFiles('packages/litertlm_dart/lib/src/hook/qnn_runtime.dart') }}
 
       - name: Build example APK
         working-directory: packages/flutter_edge_ai/example

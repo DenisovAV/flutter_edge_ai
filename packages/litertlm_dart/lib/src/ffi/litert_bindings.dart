@@ -188,6 +188,15 @@ class LiteRtRankedTensorTypeView {
 /// and the incidents behind them now live in ONE place, the runtime's
 /// host_native_library.dart (a copy of core's), because this search had been written three times
 /// (here, and twice in rag_sqlite's tests) and the copies had drifted.
+/// Where a host-side test or tool finds this release's libLiteRtLm outside an
+/// app bundle: [envOverride] first, then the hook's cache for this release tag,
+/// then a local `native/litert_lm/prebuilt/` build. Empty on a host this
+/// package has no prebuilt for.
+List<String> liteRtLmHostLibraryCandidates({String? envOverride}) => [
+  if (envOverride != null && envOverride.isNotEmpty) envOverride,
+  ..._devLiteRtLmCandidates(),
+];
+
 List<String> _devLiteRtLmCandidates() {
   // Guarded rather than trusted: hostNativeDirName() is null on iOS, and the
   // relative paths below interpolate it, so an unguarded call would build

@@ -13,9 +13,9 @@
 /// it resolves correctly at compile time on native platforms.
 ///
 /// This library is unconditional — importing it from code that is also
-/// reachable on web will fail to compile there. Native-only leaves should
-/// import this directly instead of the implementation path
-/// `package:litertlm_dart/litert_bindings.dart`.
+/// reachable on web will fail to compile there. It re-exports
+/// `package:litertlm_dart/litert_bindings.dart`, where the bindings live;
+/// either import gives the same classes.
 library;
 
 export 'package:litertlm_dart/litert_bindings.dart';

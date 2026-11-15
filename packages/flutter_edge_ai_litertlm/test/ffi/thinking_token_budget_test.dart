@@ -13,9 +13,10 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_status.dart';
-import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_sampler.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_sampler.dart';
 import 'package:flutter_edge_ai_litertlm/src/thinking_token_budget.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
 
 // C API 1.0: a create writes through an out-parameter and every call that
 // can fail returns a LiteRtLmStatusCode.
@@ -230,7 +231,7 @@ void main() {
       expect(
         thinkingBudgetChannelWarning(
           512,
-          const BundleSamplerRead(SamplingParams(), declaresChannel: false),
+          const BundleSamplerRead(BundleSampler(), declaresChannel: false),
           path,
         ),
         allOf(
@@ -246,7 +247,7 @@ void main() {
       expect(
         thinkingBudgetChannelWarning(
           512,
-          const BundleSamplerRead(SamplingParams(), declaresChannel: true),
+          const BundleSamplerRead(BundleSampler(), declaresChannel: true),
           path,
         ),
         isNull,
@@ -254,7 +255,7 @@ void main() {
       expect(
         thinkingBudgetChannelWarning(
           null,
-          const BundleSamplerRead(SamplingParams(), declaresChannel: false),
+          const BundleSamplerRead(BundleSampler(), declaresChannel: false),
           path,
         ),
         isNull,

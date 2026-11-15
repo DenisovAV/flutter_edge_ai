@@ -12,7 +12,8 @@ import 'dart:io';
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show windowsPreloadLibraries;
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show intelNpuLibs;
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart'
+    show intelNpuLibs;
 import 'package:flutter_test/flutter_test.dart';
 
 /// The sha256 of the Windows archive [_windowsArchive] lists. The hook's pin

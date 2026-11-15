@@ -18,7 +18,7 @@
 import 'dart:ffi';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/engine_io.dart';
+import '../runtime/host_native_library.dart';
 
 import 'package:ffi/ffi.dart';
 
@@ -184,8 +184,8 @@ class LiteRtRankedTensorTypeView {
 /// instead of assuming it.
 ///
 /// The ordering rules — cache before local build, walk up rather than assume —
-/// and the incidents behind them now live in ONE place, core's
-/// host_native_library.dart, because this search had been written three times
+/// and the incidents behind them now live in ONE place, the runtime's
+/// host_native_library.dart (a copy of core's), because this search had been written three times
 /// (here, and twice in rag_sqlite's tests) and the copies had drifted.
 List<String> _devLiteRtLmCandidates() {
   // Guarded rather than trusted: hostNativeDirName() is null on iOS, and the

@@ -1,35 +1,33 @@
-import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_load_plan.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
 
-const npu = PreferredBackend.npu;
-const gpu = PreferredBackend.gpu;
-const cpu = PreferredBackend.cpu;
-const sm8750 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8750');
+const npu = Backend.npu;
+const gpu = Backend.gpu;
+const cpu = Backend.cpu;
+const sm8750 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8750');
 
 /// A Gemma 4-shaped bundle: text model, vision and audio encoders, optionally
 /// a `tf_lite_aux` section ([aux], or [auxTarget] for one compiled for that
 /// NPU). [text], [vision] and [audio] are each a `backend_constraint` and the
 /// NPU the section is compiled for.
-LiteRtLmBundleInfo bundle({
-  (String?, LiteRtLmNpuTarget?) text = (null, null),
-  (String?, LiteRtLmNpuTarget?) vision = (null, null),
-  (String?, LiteRtLmNpuTarget?) audio = (null, null),
+BundleInfo bundle({
+  (String?, NpuStamp?) text = (null, null),
+  (String?, NpuStamp?) vision = (null, null),
+  (String?, NpuStamp?) audio = (null, null),
   bool aux = false,
-  LiteRtLmNpuTarget? auxTarget,
+  NpuStamp? auxTarget,
   bool withEncoders = true,
   int? fileLength,
 }) {
   var at = 0;
-  LiteRtLmSection section(
-    String modelType,
-    (String?, LiteRtLmNpuTarget?) spec,
-  ) {
+  BundleSection section(String modelType, (String?, NpuStamp?) spec) {
     final (constraint, target) = spec;
     final begin = at;
     at += 100;
-    return LiteRtLmSection(
+    return BundleSection(
       dataType: 'TFLiteModel',
       begin: begin,
       end: at,
@@ -46,7 +44,7 @@ LiteRtLmBundleInfo bundle({
     ],
     if (aux || auxTarget != null) section('tf_lite_aux', (null, auxTarget)),
   ];
-  return LiteRtLmBundleInfo(
+  return BundleInfo(
     majorVersion: 1,
     minorVersion: 5,
     patchVersion: 0,
@@ -86,13 +84,13 @@ void main() {
   var npuAsked = 0;
 
   LiteRtLmLoadPlan plan({
-    LiteRtLmBundleInfo? info,
-    PreferredBackend? preferred,
+    BundleInfo? info,
+    Backend? preferred,
     bool fallback = true,
     bool image = false,
     bool audio = false,
-    PreferredBackend? visionBackend,
-    PreferredBackend? audioBackend,
+    Backend? visionBackend,
+    Backend? audioBackend,
     bool npuHere = true,
     String abi = 'android_arm64',
   }) => planLiteRtLmLoad(
@@ -133,19 +131,14 @@ void main() {
       'LiteRT would try to compile it on the device with a compiler plugin, '
       'which no NPU stack here ships, and run it on the CPU';
 
+  // The plan's refusal; the engine reports it as one NPU attempt of a
+  // BackendInitException (test/litert_lm_engine_load_test.dart).
   Matcher npuUnreachable(Pattern says) => throwsA(
-    isA<BackendInitException>()
-        .having((e) => e.attempts.length, 'attempts', 1)
-        .having((e) => e.lastAttempt.backend, 'backend', npu)
-        .having(
-          (e) => e.lastAttempt.error,
-          'error',
-          isA<NpuDispatchUnavailableException>().having(
-            (e) => e.message,
-            'message',
-            contains(says),
-          ),
-        ),
+    isA<NpuDispatchUnavailableException>().having(
+      (e) => e.message,
+      'message',
+      contains(says),
+    ),
   );
 
   group('a generic bundle (or one the reader could not read)', () {
@@ -365,16 +358,14 @@ void main() {
 
     test("liteRtLmTextCandidates is the plan's text order, which the engine "
         'reads to know whether to look for an NPU stack', () {
-      List<PreferredBackend> candidates(
-        LiteRtLmBundleInfo? info, [
-        PreferredBackend? preferred,
-      ]) => liteRtLmTextCandidates(
-        path: 'model.litertlm',
-        bundle: info,
-        preferredBackend: preferred,
-        backendFallback: true,
-        abi: 'android_arm64',
-      ).backends;
+      List<Backend> candidates(BundleInfo? info, [Backend? preferred]) =>
+          liteRtLmTextCandidates(
+            path: 'model.litertlm',
+            bundle: info,
+            preferredBackend: preferred,
+            backendFallback: true,
+            abi: 'android_arm64',
+          ).backends;
       expect(candidates(officialSm8750), [npu]);
       expect(candidates(generic), [gpu, cpu]);
       expect(candidates(generic, npu), [gpu, cpu]);
@@ -441,7 +432,7 @@ void main() {
 
     test('an NPU this package has no dispatch for is refused', () {
       final samsung = bundle(
-        text: (null, const LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955')),
+        text: (null, const NpuStamp(vendor: 'Samsung', soc: 'E9955')),
         aux: true,
       );
       expect(
@@ -459,10 +450,7 @@ void main() {
         ),
       );
       final intel = bundle(
-        text: (
-          null,
-          const LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL'),
-        ),
+        text: (null, const NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL')),
       );
       expect(plan(info: intel, abi: 'windows_x64').textBackends, [npu]);
       expect(plan(info: officialSm8750, abi: 'linux_arm64').textBackends, [
@@ -474,10 +462,7 @@ void main() {
         'naming both, before the NPU is asked about', () {
       final tensorAudio = bundle(
         text: (null, sm8750),
-        audio: (
-          null,
-          const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
-        ),
+        audio: (null, const NpuStamp(vendor: 'Google', soc: 'Tensor_G5')),
         aux: true,
       );
       expect(
@@ -503,7 +488,7 @@ void main() {
       // the unreachable Qualcomm stack instead of the encoder's vendor.
       final samsungAudio = bundle(
         text: (null, sm8750),
-        audio: (null, const LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955')),
+        audio: (null, const NpuStamp(vendor: 'Samsung', soc: 'E9955')),
         aux: true,
       );
       expect(
@@ -694,7 +679,7 @@ void main() {
           'windows_x64; load it without supportAudio',
         ),
       );
-      for (final backend in PreferredBackend.values) {
+      for (final backend in Backend.values) {
         expect(
           () => plan(
             info: visionSm8750,
@@ -712,7 +697,7 @@ void main() {
     test('a vendor this package has no dispatch for: the same, on every '
         'host', () {
       final samsungAudio = bundle(
-        audio: (null, const LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955')),
+        audio: (null, const NpuStamp(vendor: 'Samsung', soc: 'E9955')),
       );
       expect(plan(info: samsungAudio).textBackends, [gpu, cpu]);
       expect(plan(info: samsungAudio, image: true).visionBackend, cpu);
@@ -819,10 +804,10 @@ void main() {
     test('the engine is told to look for the NPU stack only when an encoder '
         'that is on runs on the NPU', () {
       bool onNpu(
-        LiteRtLmBundleInfo? info, {
+        BundleInfo? info, {
         bool image = false,
         bool audio = false,
-        PreferredBackend? visionBackend,
+        Backend? visionBackend,
       }) => liteRtLmEncoderOnNpu(
         bundle: info,
         supportImage: image,

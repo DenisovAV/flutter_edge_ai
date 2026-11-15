@@ -16,9 +16,10 @@ import 'package:mutex/mutex.dart';
 
 import 'litert_lm_page_lock.dart';
 import 'litert_lm_web.dart';
+import '../adapter/runtime_mapping.dart';
 import '../ffi/engine_sampler_latch.dart';
 import '../reported_engine_turn.dart';
-import '../thinking_context.dart';
+import '../ffi/thinking_context.dart';
 import 'litert_lm_web_session_config.dart';
 
 /// Web `.litertlm` inference via the upstream `@litert-lm/core` early-preview
@@ -402,7 +403,10 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
   /// Reports what LiteRT-LM#2080 means for a generation with [sampling], as
   /// the native client does.
   void _noteGeneration(ResolvedSampling sampling, {required bool explicit}) {
-    final note = _samplerLatch.onGeneration(sampling, explicit: explicit);
+    final note = _samplerLatch.onGeneration(
+      sampling.toRuntime,
+      explicit: explicit,
+    );
     if (note == null) return;
     if (!note.warn) {
       edgeAiLog(
@@ -563,7 +567,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
 
 /// Session-side accumulator + async iterator pump for `@litert-lm/core`.
 ///
-/// Mirrors [FfiInferenceModelSession] (lib/src/ffi/ffi_inference_model.dart)
+/// Mirrors [FfiInferenceModelSession] (lib/src/adapter/ffi_inference_model.dart)
 /// 1:1 — same buffering of query chunks, same Gemma 4 raw-JSON-accumulating
 /// branch, same `with RawSdkResponseSession` mixin so [InferenceChat] reads
 /// `lastRawResponse` and extracts `tool_calls` via the shared

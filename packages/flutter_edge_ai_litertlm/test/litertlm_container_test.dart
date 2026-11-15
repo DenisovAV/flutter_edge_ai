@@ -5,7 +5,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_container_io.dart';
-import 'package:flutter_edge_ai_litertlm/src/litertlm_flatbuffer.dart'
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_flatbuffer.dart'
     show litertlmHeaderEnd;
 import 'package:flutter_test/flutter_test.dart';
 

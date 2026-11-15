@@ -2,9 +2,9 @@
 // a native conversation of its own, or a virtual one replayed as full messages
 // into a shared conversation. Internal to this package; the switch is no API.
 
-import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
+import '../runtime/types.dart';
 
-import '../npu_stacks.dart';
+import '../runtime/npu_stacks.dart';
 
 /// How each `openSession` session of a loaded model holds its context.
 enum OpenSessionBacking {
@@ -87,17 +87,17 @@ const liteRtLmConversationsNpus = {
 /// [androidGpu] the GPU family of an Android device, null when not read.
 OpenSessionBacking liteRtLmOpenSessionBacking({
   required String abi,
-  required PreferredBackend? backend,
+  required Backend? backend,
   NpuStack? npuVendor,
   AndroidGpuFamily? androidGpu,
 }) {
   final verified = switch (backend) {
-    PreferredBackend.cpu => liteRtLmConversationsCpuAbis.contains(abi),
-    PreferredBackend.gpu =>
+    Backend.cpu => liteRtLmConversationsCpuAbis.contains(abi),
+    Backend.gpu =>
       abi == 'android_arm64'
           ? liteRtLmConversationsAndroidGpus.contains(androidGpu)
           : liteRtLmConversationsGpuAbis.contains(abi),
-    PreferredBackend.npu =>
+    Backend.npu =>
       npuVendor != null && liteRtLmConversationsNpus.contains((npuVendor, abi)),
     null => false,
   };

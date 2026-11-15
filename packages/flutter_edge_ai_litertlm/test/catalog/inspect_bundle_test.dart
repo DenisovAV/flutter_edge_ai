@@ -23,8 +23,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart';
-import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_sampler.dart'
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_npu_target.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_sampler.dart'
     show llmMetadataRange;
 import 'package:flutter_test/flutter_test.dart';
 

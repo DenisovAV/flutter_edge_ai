@@ -16,15 +16,16 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show LiteRtLmFfiClient;
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
-import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_activation.dart'
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_activation.dart'
     show GpuActivationReason;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart'
     show NpuDispatch, debugIntelBrokenNpuMaskAux;
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuStack;
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart'
+    show NpuStack;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';

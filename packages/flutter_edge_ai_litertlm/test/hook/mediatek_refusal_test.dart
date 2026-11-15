@@ -8,7 +8,7 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart'
     show npuNotBundledReason;
 import 'package:flutter_edge_ai_litertlm/src/hook/mediatek_runtime.dart'
     show mediatekNpuBuildRefusal;
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

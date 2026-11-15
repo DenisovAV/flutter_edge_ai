@@ -8,7 +8,7 @@
 
 import 'package:flutter_edge_ai/engine.dart';
 
-import '../npu_stacks.dart';
+import '../runtime/npu_stacks.dart';
 
 /// The engine's name in messages and errors, native and web alike: the same
 /// LiteRT-LM runtime, compiled to WebAssembly on the web.

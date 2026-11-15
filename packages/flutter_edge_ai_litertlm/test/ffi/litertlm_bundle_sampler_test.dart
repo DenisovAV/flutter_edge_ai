@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_sampler.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_sampler.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
 
 /// The first bytes of two real bundles, up to the end of their LlmMetadata
 /// section: header, zero padding, proto. See fixtures/README.md.
@@ -55,7 +55,7 @@ void main() {
     test('Qwen3-0.6B ships TOP_P 0.6 / 20 / 0.95', () async {
       expect(
         await readBundleSampler(_qwen3),
-        const SamplingParams(temperature: 0.6, topK: 20, topP: 0.95),
+        const BundleSampler(temperature: 0.6, topK: 20, topP: 0.95),
       );
     });
 
@@ -154,7 +154,7 @@ void main() {
             ..._int(5, 7),
           ]),
         ),
-        const SamplingParams(
+        const BundleSampler(
           temperature: 0.6,
           topK: 20,
           topP: 0.95,
@@ -168,14 +168,14 @@ void main() {
         samplerFromLlmMetadata(
           _llmMetadata([..._int(1, 1), ..._int(2, 40), ..._float(4, 1.0)]),
         ),
-        const SamplingParams(temperature: 1.0, topK: 40, topP: 1.0),
+        const BundleSampler(temperature: 1.0, topK: 40, topP: 1.0),
       );
     });
 
     test('GREEDY becomes topK 1', () {
       expect(
         samplerFromLlmMetadata(_llmMetadata(_int(1, 3))),
-        const SamplingParams(topK: 1),
+        const BundleSampler(topK: 1),
       );
     });
 

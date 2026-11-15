@@ -15,9 +15,9 @@ import 'package:crypto/crypto.dart' show sha256;
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../bundle/litertlm_bundle_info.dart'
-    show LiteRtLmBundleInfo, LiteRtLmNpuTarget, npuVendorOf;
-import '../litert_lm_load_errors.dart' show NpuDispatchUnavailableException;
-import '../npu_stacks.dart';
+    show BundleInfo, NpuStamp, npuVendorOf;
+import '../runtime/load_errors.dart' show NpuDispatchUnavailableException;
+import '../runtime/npu_stacks.dart';
 import 'backend_preference.dart'
     show npuNoVendorReason, npuUnreachable, platformNpuProbes;
 import 'intel_weight_banks.dart';
@@ -141,7 +141,7 @@ final class NpuRefused extends NpuChoice {
 /// anything is loaded. The first candidate whose stack is there and whose
 /// device answers is chosen.
 Future<NpuChoice> chooseNpuVendor({
-  required LiteRtLmNpuTarget? target,
+  required NpuStamp? target,
   required LiteRtLmNpuHost host,
 }) async {
   final compiledFor = target == null ? null : npuVendorOf(target);
@@ -207,7 +207,7 @@ typedef NpuDispatch = ({
 /// that cannot be read is logged and counts as unlisted.
 Future<bool?> npuHwMasking(
   NpuStack vendor,
-  LiteRtLmBundleInfo? bundle, {
+  BundleInfo? bundle, {
   required String path,
   List<BrokenNpuMaskAux> broken = intelBrokenNpuMaskAux,
   Future<String> Function(String path, int begin, int end) sha256OfRange =
@@ -225,7 +225,7 @@ Future<bool?> npuHwMasking(
 };
 
 Future<bool> _intelBrokenNpuMasks(
-  LiteRtLmBundleInfo? bundle, {
+  BundleInfo? bundle, {
   required String path,
   required List<BrokenNpuMaskAux> broken,
   required Future<String> Function(String path, int begin, int end)

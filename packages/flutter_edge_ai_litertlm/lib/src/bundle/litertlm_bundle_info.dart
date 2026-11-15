@@ -1,6 +1,6 @@
 // What a `.litertlm` file says about itself: its container header (LiteRT-LM
 // `schema/core/litertlm_header_schema.fbs`, pin b2f686e2) and, read natively by
-// `readLiteRtLmBundleInfo`, the NPU each compiled section was built for.
+// `readBundleInfo`, the NPU each compiled section was built for.
 //
 // The types here are plain Dart, exported on every platform so code that names
 // them compiles on the web too; reading a file needs `dart:io`
@@ -9,17 +9,17 @@
 
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/engine.dart' show NpuTarget, NpuVendor;
+import 'litertlm_flatbuffer.dart';
+import '../runtime/npu_stacks.dart' show NpuStack;
 
-import '../litertlm_flatbuffer.dart';
-import '../npu_stacks.dart' show NpuStack;
-
-/// The SoC a `.litertlm` bundle's compiled sections target.
-///
-/// It is the core [NpuTarget] of a catalog variant compiled for an NPU, with
+/// The SoC a `.litertlm` bundle's compiled sections target: the
+/// `LiteRtStamp` the AOT compiler writes into each section it compiles, with
 /// the vendor and SoC spelled as the compiler stamped them.
-final class LiteRtLmNpuTarget extends NpuTarget {
-  const LiteRtLmNpuTarget({required this.vendor, required this.soc});
+///
+/// The Flutter adapter's public `LiteRtLmNpuTarget` is the core `NpuTarget`
+/// made from one of these (adapter/bundle_info.dart).
+final class NpuStamp {
+  const NpuStamp({required this.vendor, required this.soc});
 
   /// The SoC manufacturer as the compiler stamped it: `Qualcomm`, `Google`,
   /// `MediaTek`, `IntelOpenVINO`.
@@ -29,33 +29,21 @@ final class LiteRtLmNpuTarget extends NpuTarget {
   /// `PTL`, `Tensor_G5`.
   final String soc;
 
-  /// The vendor by core's name, through the one table of stamps
-  /// ([NpuStack]); null for a stamp this package has no stack for.
-  @override
-  NpuVendor? get npuVendor => switch (NpuStack.forStamp(vendor)) {
-    NpuStack.qualcomm => NpuVendor.qualcomm,
-    NpuStack.googleTensor => NpuVendor.googleTensor,
-    NpuStack.mediatek => NpuVendor.mediatek,
-    NpuStack.intel => NpuVendor.intel,
-    null => null,
-  };
+  /// The vendor's stack, through the one table of stamps ([NpuStack]); null
+  /// for a stamp this package has no stack for.
+  NpuStack? get stack => NpuStack.forStamp(vendor);
 
-  /// [soc], as the compiler stamped it.
-  @override
-  String get socModel => soc;
-
-  bool get isQualcomm => npuVendorOf(this) == NpuStack.qualcomm;
+  bool get isQualcomm => stack == NpuStack.qualcomm;
 
   /// Compiled by LiteRT's OpenVINO plugin for an Intel NPU: Google's
   /// `…_Intel_PTL` bundles are stamped `IntelOpenVINO` / `PTL` (read from the
   /// published 270m, 440m and 740m, revisions 9be6e8b9, e301f74d, 24d962e9).
-  bool get isIntel => npuVendorOf(this) == NpuStack.intel;
+  bool get isIntel => stack == NpuStack.intel;
 
-  /// The same stamp as written. [sameSoc] is the comparison that ignores
-  /// case (a stamp's case is the compiler's, not the SoC's).
+  /// The same stamp as written (a stamp's case is the compiler's).
   @override
   bool operator ==(Object other) =>
-      other is LiteRtLmNpuTarget && other.vendor == vendor && other.soc == soc;
+      other is NpuStamp && other.vendor == vendor && other.soc == soc;
 
   @override
   int get hashCode => Object.hash(vendor, soc);
@@ -67,12 +55,11 @@ final class LiteRtLmNpuTarget extends NpuTarget {
 /// The vendor this package dispatches a bundle stamped [target] to, or null
 /// when it has no dispatch for that vendor. Internal: not in the package's
 /// `show` list, so [NpuStack] stays out of the public API.
-NpuStack? npuVendorOf(LiteRtLmNpuTarget target) =>
-    NpuStack.forStamp(target.vendor);
+NpuStack? npuVendorOf(NpuStamp target) => NpuStack.forStamp(target.vendor);
 
 /// One section of a `.litertlm` container.
-final class LiteRtLmSection {
-  LiteRtLmSection({
+final class BundleSection {
+  BundleSection({
     required this.dataType,
     required this.begin,
     required this.end,
@@ -98,7 +85,7 @@ final class LiteRtLmSection {
   /// ahead-of-time compiler writes into every model it compiles. Null for a
   /// section that is not compiled for an NPU, for a section that is not a
   /// TFLite model, and on the web, where only the header is read.
-  final LiteRtLmNpuTarget? npuTarget;
+  final NpuStamp? npuTarget;
 
   int get length => end - begin;
 
@@ -131,7 +118,7 @@ final class LiteRtLmSection {
 
   @override
   String toString() =>
-      'LiteRtLmSection($dataType${modelType == null ? '' : ' $modelType'}, '
+      'BundleSection($dataType${modelType == null ? '' : ' $modelType'}, '
       '$begin..$end${npuTarget == null ? '' : ', compiled for $npuTarget'})';
 }
 
@@ -139,14 +126,14 @@ final class LiteRtLmSection {
 /// its container version, its system metadata, and its sections with their
 /// declared constraints and the NPU each compiled section targets.
 ///
-/// Natively, read it with `readLiteRtLmBundleInfo(path)`.
-final class LiteRtLmBundleInfo {
-  LiteRtLmBundleInfo({
+/// Natively, read it with `readBundleInfo(path)`.
+final class BundleInfo {
+  BundleInfo({
     required this.majorVersion,
     required this.minorVersion,
     required this.patchVersion,
     required Map<String, Object?> systemMetadata,
-    required List<LiteRtLmSection> sections,
+    required List<BundleSection> sections,
     required this.fileLength,
   }) : systemMetadata = Map.unmodifiable(systemMetadata),
        sections = List.unmodifiable(sections);
@@ -161,7 +148,7 @@ final class LiteRtLmBundleInfo {
   final Map<String, Object?> systemMetadata;
 
   /// Every section, in header order.
-  final List<LiteRtLmSection> sections;
+  final List<BundleSection> sections;
 
   /// The length of the file the header was read from.
   final int fileLength;
@@ -180,7 +167,7 @@ final class LiteRtLmBundleInfo {
   /// `tf_lite_prefill_decode`, as LiteRT-LM reads it (`litert_lm_loader.cc`);
   /// a section of another data type (`TFLiteWeights`, a tokenizer) is never
   /// one, whatever `model_type` it carries.
-  LiteRtLmSection? sectionOf(String modelType) {
+  BundleSection? sectionOf(String modelType) {
     final type = modelType.toLowerCase();
     for (final section in sections) {
       if (section.dataType != _tfliteModel) continue;
@@ -190,15 +177,15 @@ final class LiteRtLmBundleInfo {
   }
 
   /// The text model, whose backend is the model's `preferredBackend`.
-  LiteRtLmSection? get textModel => sectionOf(_prefillDecode);
+  BundleSection? get textModel => sectionOf(_prefillDecode);
 
   /// The vision encoder, whose backend is `preferredVisionBackend`; null for a
   /// bundle without vision.
-  LiteRtLmSection? get visionEncoder => sectionOf(_visionEncoder);
+  BundleSection? get visionEncoder => sectionOf(_visionEncoder);
 
   /// The audio encoder, whose backend is `preferredAudioBackend`; null for a
   /// bundle without audio.
-  LiteRtLmSection? get audioEncoder => sectionOf(_audioEncoder);
+  BundleSection? get audioEncoder => sectionOf(_audioEncoder);
 
   /// Whether the bundle carries a multi-token-prediction drafter, which
   /// speculative decoding uses.
@@ -212,7 +199,7 @@ final class LiteRtLmBundleInfo {
 
   /// The NPU the bundle's compiled sections target, or null for a bundle with
   /// no compiled section. Always null when only the header was read.
-  LiteRtLmNpuTarget? get npuTarget {
+  NpuStamp? get npuTarget {
     for (final section in sections) {
       if (section.npuTarget case final target?) return target;
     }
@@ -227,7 +214,7 @@ final class LiteRtLmBundleInfo {
 
   @override
   String toString() =>
-      'LiteRtLmBundleInfo($majorVersion.$minorVersion.$patchVersion, '
+      'BundleInfo($majorVersion.$minorVersion.$patchVersion, '
       '${sections.length} sections, $fileLength of $expectedLength bytes'
       '${npuTarget == null ? '' : ', compiled for $npuTarget'})';
 }
@@ -346,11 +333,11 @@ const litertlmTfliteModelType = 3;
 /// Native only for the section offsets (`uint64`). Throws
 /// [LiteRtLmBundleException] ([LiteRtLmBundleProblem.malformed]) when the
 /// flatbuffer is out of range.
-LiteRtLmBundleInfo parseLitertlmHeader(
+BundleInfo parseLitertlmHeader(
   Uint8List header, {
   required ({int major, int minor, int patch}) version,
   required int fileLength,
-  Map<(int, int), LiteRtLmNpuTarget?> npuTargets = const {},
+  Map<(int, int), NpuStamp?> npuTargets = const {},
   String? path,
 }) {
   try {
@@ -364,7 +351,7 @@ LiteRtLmBundleInfo parseLitertlmHeader(
         _readItems(fb, entries, system);
       }
     }
-    final sections = <LiteRtLmSection>[];
+    final sections = <BundleSection>[];
     final sectionMetadata = fb.table(root, 1);
     final objects = sectionMetadata == null
         ? null
@@ -382,7 +369,7 @@ LiteRtLmBundleInfo parseLitertlmHeader(
         final begin = fb.uint64(section, 1);
         final end = fb.uint64(section, 2);
         sections.add(
-          LiteRtLmSection(
+          BundleSection(
             dataType: type < _dataTypes.length
                 ? _dataTypes[type]
                 : 'unknown($type)',
@@ -394,7 +381,7 @@ LiteRtLmBundleInfo parseLitertlmHeader(
         );
       }
     }
-    return LiteRtLmBundleInfo(
+    return BundleInfo(
       majorVersion: version.major,
       minorVersion: version.minor,
       patchVersion: version.patch,

@@ -16,7 +16,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 
 /// The QNN runtime release fetched for `qualcomm_npu: true`.
 ///

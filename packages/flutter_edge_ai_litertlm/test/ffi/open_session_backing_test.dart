@@ -8,11 +8,13 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/conversation_handles.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
 
 const _abis = [
   'macos_arm64',
@@ -28,7 +30,7 @@ void main() {
   group('liteRtLmOpenSessionBacking', () {
     OpenSessionBacking backing(
       String abi,
-      PreferredBackend? backend, {
+      Backend? backend, {
       NpuStack? npu,
       AndroidGpuFamily? gpu,
     }) => liteRtLmOpenSessionBacking(
@@ -42,8 +44,7 @@ void main() {
         'Android and iOS', () {
       final native = {
         for (final abi in _abis)
-          if (backing(abi, PreferredBackend.cpu) == OpenSessionBacking.native)
-            abi,
+          if (backing(abi, Backend.cpu) == OpenSessionBacking.native) abi,
       };
       expect(native, {
         'macos_arm64',
@@ -58,7 +59,7 @@ void main() {
       final native = {
         for (final abi in _abis)
           if (abi != 'android_arm64' &&
-              backing(abi, PreferredBackend.gpu) == OpenSessionBacking.native)
+              backing(abi, Backend.gpu) == OpenSessionBacking.native)
             abi,
       };
       expect(native, {'macos_arm64'});
@@ -67,41 +68,22 @@ void main() {
     test('Android GPU: Adreno and Mali only; any other family or an unread '
         'one is virtual', () {
       expect(
-        backing(
-          'android_arm64',
-          PreferredBackend.gpu,
-          gpu: AndroidGpuFamily.adreno,
-        ),
+        backing('android_arm64', Backend.gpu, gpu: AndroidGpuFamily.adreno),
         OpenSessionBacking.native,
       );
       expect(
-        backing(
-          'android_arm64',
-          PreferredBackend.gpu,
-          gpu: AndroidGpuFamily.mali,
-        ),
+        backing('android_arm64', Backend.gpu, gpu: AndroidGpuFamily.mali),
         OpenSessionBacking.native,
       );
       expect(
-        backing(
-          'android_arm64',
-          PreferredBackend.gpu,
-          gpu: AndroidGpuFamily.powerVr,
-        ),
+        backing('android_arm64', Backend.gpu, gpu: AndroidGpuFamily.powerVr),
         OpenSessionBacking.virtual,
       );
       expect(
-        backing(
-          'android_arm64',
-          PreferredBackend.gpu,
-          gpu: AndroidGpuFamily.other,
-        ),
+        backing('android_arm64', Backend.gpu, gpu: AndroidGpuFamily.other),
         OpenSessionBacking.virtual,
       );
-      expect(
-        backing('android_arm64', PreferredBackend.gpu),
-        OpenSessionBacking.virtual,
-      );
+      expect(backing('android_arm64', Backend.gpu), OpenSessionBacking.virtual);
     });
 
     test('NPU: Qualcomm and Tensor on Android, Intel on Windows; Qualcomm on '
@@ -109,7 +91,7 @@ void main() {
       final native = <(NpuStack, String)>{
         for (final npu in NpuStack.values)
           for (final abi in _abis)
-            if (backing(abi, PreferredBackend.npu, npu: npu) ==
+            if (backing(abi, Backend.npu, npu: npu) ==
                 OpenSessionBacking.native)
               (npu, abi),
       };
@@ -118,10 +100,7 @@ void main() {
         (NpuStack.googleTensor, 'android_arm64'),
         (NpuStack.intel, 'windows_x64'),
       });
-      expect(
-        backing('android_arm64', PreferredBackend.npu),
-        OpenSessionBacking.virtual,
-      );
+      expect(backing('android_arm64', Backend.npu), OpenSessionBacking.virtual);
     });
 
     test('an unknown backend is virtual', () {
@@ -320,10 +299,10 @@ class _SlowClient extends LiteRtLmFfiClient {
     String? systemMessage,
     String? toolsJson,
     String? messagesJson,
-    required ResolvedSampling sampling,
+    required Sampler sampling,
     required bool samplingExplicit,
     int? maxOutputTokens,
-    required MultimodalOrder multimodalOrder,
+    required MediaOrder multimodalOrder,
     String? jsonSchema,
     required bool filterChannelContent,
   }) async {

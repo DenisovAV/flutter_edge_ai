@@ -11,7 +11,7 @@ import 'package:flutter_edge_ai_litertlm/src/hook/mediatek_runtime.dart';
 import 'package:flutter_edge_ai_litertlm/src/hook/qairt_linux.dart';
 import 'package:flutter_edge_ai_litertlm/src/hook/qnn_runtime.dart';
 import 'package:flutter_edge_ai_litertlm/src/hook/unsupported_target.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 import 'package:hooks/hooks.dart';
 
 const _packageName = 'flutter_edge_ai_litertlm';

@@ -19,10 +19,12 @@ import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart'
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuStack;
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart'
+    show NpuStack;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
 
 EmbeddingModelSpec _tflite({String model = 'gemma.tflite'}) =>
     EmbeddingModelSpec(
@@ -509,7 +511,7 @@ void main() {
       final config = descriptor.config as LiteRtLmEmbeddingConfig;
       expect(
         config.npuTarget,
-        const LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850'),
+        const NpuStamp(vendor: 'Qualcomm', soc: 'SM8850'),
       );
       expect(config.npuDispatchDir, '/data/app/npu');
       expect(config.backend, PreferredBackend.npu);
@@ -532,7 +534,7 @@ void main() {
       final config = descriptor.config as LiteRtLmEmbeddingConfig;
       expect(
         config.npuTarget,
-        const LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL'),
+        const NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL'),
       );
       expect(config.npuDispatchDir, r'C:\Apps\demo');
       expect(config.backend, PreferredBackend.npu);

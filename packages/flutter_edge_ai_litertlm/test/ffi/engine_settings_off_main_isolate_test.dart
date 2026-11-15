@@ -3,12 +3,12 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtLmEngineCreateException, LiteRtLmLogLevel;
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/runtime_log.dart';
 
 /// `litert_lm_engine_settings_create` took 81 ms on the calling isolate of an
 /// S25 Ultra, just before `initialize` spawned the engine's isolate, and a
@@ -23,7 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// What they cannot see is the timing: that needs a phone.
 void main() {
   late Future<EngineCreateResult> Function(EngineCreateRequest) originalCreate;
-  late EdgeAiLogLevel originalLogLevel;
+  late RuntimeLogLevel originalLogLevel;
   late List<String> callingIsolateLookups;
   late List<EngineCreateRequest> requests;
 
@@ -49,7 +49,7 @@ void main() {
 
   setUp(() {
     originalCreate = createEngineOffMainIsolate;
-    originalLogLevel = edgeAiLogLevel;
+    originalLogLevel = runtimeLogLevel;
     callingIsolateLookups = [];
     requests = [];
     createEngineOffMainIsolate = (request) async {
@@ -60,7 +60,7 @@ void main() {
 
   tearDown(() {
     createEngineOffMainIsolate = originalCreate;
-    edgeAiLogLevel = originalLogLevel;
+    runtimeLogLevel = originalLogLevel;
   });
 
   test('initialize makes the engine settings on the engine isolate, and '
@@ -87,7 +87,7 @@ void main() {
   });
 
   test('the request carries every argument initialize was given', () async {
-    edgeAiLogLevel = EdgeAiLogLevel.verbose;
+    runtimeLogLevel = RuntimeLogLevel.verbose;
 
     await quietly(
       () => clientWithoutNativeLibrary().initialize(
@@ -128,7 +128,7 @@ void main() {
     expect(request.nativeLogLevel, LiteRtLmLogLevel.warning);
     expect(
       request.logLevel,
-      EdgeAiLogLevel.verbose,
+      RuntimeLogLevel.verbose,
       reason: "a spawned isolate starts at the default level, not the caller's",
     );
     expect(request.dispatchLibDir, isNull, reason: 'not the NPU');
@@ -274,7 +274,7 @@ void main() {
       modelPath: '/models/gemma.litertlm',
       backend: 'npu',
       maxTokens: 1024,
-      logLevel: EdgeAiLogLevel.none,
+      logLevel: RuntimeLogLevel.none,
       visionBackend: 'cpu',
       audioBackend: 'gpu',
       cacheDir: '/cache',

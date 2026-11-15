@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 
 import 'ffi/npu_vendor_host.dart';
 import 'litert_lm_load_errors.dart' show NpuDispatchUnavailableException;
-import 'npu_stacks.dart';
+import 'runtime/npu_stacks.dart';
 
 /// [NpuPlatformBindings] for a Flutter app.
 final class FlutterNpuPlatform implements NpuPlatformBindings {

@@ -12,10 +12,11 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_npu_target.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
 
 void main() {
   late Directory root;
@@ -29,7 +30,7 @@ void main() {
     return path;
   }
 
-  const sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
+  const sm8850 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8850');
 
   test('the generic bundle has no compiled section: null', () async {
     final path = write('eg2.litertlm', eg2Container(vision: true));
@@ -58,23 +59,14 @@ void main() {
       ),
     );
     final target = await readLiteRtLmNpuTarget(path);
-    expect(
-      target,
-      const LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL'),
-    );
+    expect(target, const NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL'));
     expect(target!.isIntel, isTrue);
     expect(target.isQualcomm, isFalse);
     expect('$target', 'IntelOpenVINO PTL');
     expect(sm8850.isIntel, isFalse);
     // Any case, as isQualcomm; a bare "Intel" is not LiteRT's OpenVINO stamp.
-    expect(
-      const LiteRtLmNpuTarget(vendor: 'INTELOPENVINO', soc: 'PTL').isIntel,
-      isTrue,
-    );
-    expect(
-      const LiteRtLmNpuTarget(vendor: 'Intel', soc: 'PTL').isIntel,
-      isFalse,
-    );
+    expect(const NpuStamp(vendor: 'INTELOPENVINO', soc: 'PTL').isIntel, isTrue);
+    expect(const NpuStamp(vendor: 'Intel', soc: 'PTL').isIntel, isFalse);
   });
 
   test(
@@ -86,7 +78,7 @@ void main() {
       );
       expect(
         await readLiteRtLmNpuTarget(path),
-        const LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'QCS8275'),
+        const NpuStamp(vendor: 'Qualcomm', soc: 'QCS8275'),
       );
     },
   );
@@ -131,10 +123,7 @@ void main() {
         eg2Container(textStamp: ('Google', 'Tensor_G5'), appendedStamp: true),
       );
       final target = await readLiteRtLmNpuTarget(path);
-      expect(
-        target,
-        const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
-      );
+      expect(target, const NpuStamp(vendor: 'Google', soc: 'Tensor_G5'));
       expect(target!.isQualcomm, isFalse);
     },
   );
@@ -227,7 +216,7 @@ void main() {
       final target = await readLiteRtLmNpuTarget(npuPath);
       // ignore: avoid_print
       print('[eg2-npu] $npuPath → $target in ${watch.elapsedMilliseconds} ms');
-      expect(target, LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: soc));
+      expect(target, NpuStamp(vendor: 'Qualcomm', soc: soc));
     }, skip: npuPath.isEmpty ? 'set EG2_NPU_LITERTLM' : false);
 
     test('the generic 440m reads as no NPU', () async {

@@ -15,9 +15,10 @@ import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_load_plan.dart'
     show textBackendsAllowedForTesting;
 import 'package:flutter_edge_ai_litertlm/src/catalog/litert_catalog.dart'
     show debugLiteRtCatalogHost;
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart'
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart'
     show mediatekNpuRefused;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
 
 /// Every host the website shows, `Abi.current()` spelling; null is the web.
 const _hosts = <String, String?>{
@@ -260,7 +261,9 @@ void main() {
       for (final v in model.variants) {
         if (v.isWebBundle) continue;
         final info = _bundleInfo(v.file.sha256);
-        final loader = textBackendsAllowedForTesting(info);
+        final loader = {
+          for (final b in textBackendsAllowedForTesting(info.info)) b.toCore,
+        };
         if (v.npuTarget == null) {
           expect(
             _here(v, 'macos_arm64'),

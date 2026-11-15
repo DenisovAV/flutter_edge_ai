@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
-import 'package:flutter_edge_ai_litertlm/src/thinking_context.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/thinking_context.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

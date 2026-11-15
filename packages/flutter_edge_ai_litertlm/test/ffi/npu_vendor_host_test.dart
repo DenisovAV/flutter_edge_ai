@@ -6,20 +6,19 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha256;
-import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
-    show LiteRtLmBundleInfo, LiteRtLmNpuTarget, LiteRtLmSection;
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show NpuDispatchUnavailableException;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
 
-const _sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
-const _tensorG5 = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5');
-const _mt6991 = LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6991');
-const _ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
+const _sm8850 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8850');
+const _tensorG5 = NpuStamp(vendor: 'Google', soc: 'Tensor_G5');
+const _mt6991 = NpuStamp(vendor: 'MediaTek', soc: 'mt6991');
+const _ptl = NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL');
 
 void main() {
   test('a stamped bundle asks only its own vendor, a generic one the vendors '
@@ -43,7 +42,7 @@ void main() {
     // so the reason names the vendor that is missing.
     for (final (target, vendor) in const [
       (_ptl, 'Intel'),
-      (LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955'), 'Samsung'),
+      (NpuStamp(vendor: 'Samsung', soc: 'E9955'), 'Samsung'),
     ]) {
       final host = _FakeHost('android_arm64');
       final choice = await chooseNpuVendor(target: target, host: host);
@@ -175,25 +174,25 @@ void main() {
     // Google's E2B `_intel_PTL` stamp tf_lite_aux IntelOpenVINO/PTL; the
     // private 26B's aux carries no stamp (CPU); E2B `_intel_LNL` stamps
     // IntelOpenVINO/LNL. Only the public 26B's aux is listed.
-    const ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
-    const lnl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'LNL');
+    const ptl = NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL');
+    const lnl = NpuStamp(vendor: 'IntelOpenVINO', soc: 'LNL');
     const public26b =
         '17accf36c4da07fcdf50abdcc43bd00f6b05d9f2eaee95fa18aaf73e67ebfe28';
     const public26bAuxLength = 5806310;
     const auxBegin = 13249101824;
 
-    LiteRtLmBundleInfo bundle({
-      LiteRtLmNpuTarget? text,
-      LiteRtLmNpuTarget? aux,
+    BundleInfo bundle({
+      NpuStamp? text,
+      NpuStamp? aux,
       bool hasAux = true,
       int auxLength = public26bAuxLength,
-    }) => LiteRtLmBundleInfo(
+    }) => BundleInfo(
       majorVersion: 1,
       minorVersion: 5,
       patchVersion: 0,
       systemMetadata: const {},
       sections: [
-        LiteRtLmSection(
+        BundleSection(
           dataType: 'TFLiteModel',
           begin: 32,
           end: 64,
@@ -201,7 +200,7 @@ void main() {
           npuTarget: text,
         ),
         if (hasAux)
-          LiteRtLmSection(
+          BundleSection(
             dataType: 'TFLiteModel',
             begin: auxBegin,
             end: auxBegin + auxLength,
@@ -260,7 +259,7 @@ void main() {
         await npuHwMasking(
           NpuStack.intel,
           bundle(
-            aux: const LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'ptl'),
+            aux: const NpuStamp(vendor: 'IntelOpenVINO', soc: 'ptl'),
           ),
           path: 'pub26b.litertlm',
           sha256OfRange: hashing(public26b),
@@ -334,7 +333,7 @@ void main() {
         await npuHwMasking(
           NpuStack.intel,
           bundle(
-            aux: const LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'PTL'),
+            aux: const NpuStamp(vendor: 'Qualcomm', soc: 'PTL'),
           ),
           path: 'x.litertlm',
           sha256OfRange: hashing(public26b),
@@ -389,7 +388,7 @@ void main() {
         for (final b in [
           null,
           bundle(
-            aux: const LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850'),
+            aux: const NpuStamp(vendor: 'Qualcomm', soc: 'SM8850'),
           ),
           // A stamp the vendor does not run cannot reach it (the reader and
           // the vendor choice refuse it first); even so it changes nothing.

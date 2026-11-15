@@ -24,10 +24,11 @@ import 'embedding_cache_dir.dart';
 import 'litert_embedding_pass.dart';
 import 'litert_lm_embedding_pass.dart';
 import 'litert_lm_npu.dart';
-import 'litertlm_npu_target.dart';
+import '../bundle/litertlm_npu_target.dart';
 import '../native_hosts.dart' show LiteRtLmEg2Bundle;
 import 'vision_budget.dart';
 import 'weight_cache_notice.dart';
+import '../adapter/runtime_log_binding.dart';
 
 /// LiteRT embedding backend: `.tflite` embedders (EmbeddingGemma 1, Gecko)
 /// over the LiteRT C API, and `.litertlm` embedding bundles (EmbeddingGemma 2:
@@ -143,6 +144,7 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider
     EmbeddingModelSpec spec,
     RuntimeConfig config,
   ) async {
+    bindRuntimeLogToCore();
     final file = spec.files.first.filename;
     final opensBundle = isLiteRtLmFilename(config.modelPath);
     // Wherever it is used: a misconfigured backend fails at its first load,
@@ -202,7 +204,7 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   required Future<String> Function() cacheDirectory,
 }) async {
   if (config.supportAudio) requireLiteRtLmAudioEncoder(config.modelPath);
-  final LiteRtLmNpuTarget? target;
+  final NpuStamp? target;
   try {
     target = await readLiteRtLmNpuTarget(config.modelPath);
   } on FileSystemException catch (e) {

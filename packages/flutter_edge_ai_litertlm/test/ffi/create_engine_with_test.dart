@@ -1,12 +1,12 @@
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtLmEngineCreateException, LiteRtLmLogLevel;
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/runtime_log.dart';
 
 /// `createEngineWith` is the body `initialize` runs on the engine's isolate:
 /// the settings, every setter, the create and LiteRT-LM's last error. These
@@ -208,7 +208,7 @@ const _full = EngineCreateRequest(
   modelPath: '/models/gemma.litertlm',
   backend: 'npu',
   maxTokens: 4096,
-  logLevel: EdgeAiLogLevel.none,
+  logLevel: RuntimeLogLevel.none,
   visionBackend: 'cpu',
   audioBackend: 'gpu',
   cacheDir: '/cache',
@@ -226,7 +226,7 @@ const _empty = EngineCreateRequest(
   modelPath: '/models/gemma.litertlm',
   backend: 'cpu',
   maxTokens: 1024,
-  logLevel: EdgeAiLogLevel.none,
+  logLevel: RuntimeLogLevel.none,
 );
 
 void main() {
@@ -273,7 +273,7 @@ void main() {
         modelPath: '/models/gemma4-26B-A4B-it-Intel_PTL_NPU.litertlm',
         backend: 'npu',
         maxTokens: 8192,
-        logLevel: EdgeAiLogLevel.none,
+        logLevel: RuntimeLogLevel.none,
         dispatchLibDir: r'C:\app',
         useHwMaskingForNpu: true,
       ),

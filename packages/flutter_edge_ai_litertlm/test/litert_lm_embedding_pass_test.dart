@@ -25,9 +25,10 @@ import 'package:flutter_edge_ai_litertlm/src/catalog/litert_catalog.dart'
 import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_parts.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_container_io.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_npu_target.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_embedding_bindings.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
 
 const _file = 'eg2.litertlm';
 const _noAudioEncoder =
@@ -36,8 +37,8 @@ const _allSignatures = [128, 256, 512, 1024, 2048, 8192];
 
 /// What a per-SoC bundle declares (measured: 128-1024, no 2048/8192).
 const _npuSignatures = [128, 256, 512, 1024];
-const _sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
-const _ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
+const _sm8850 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8850');
+const _ptl = NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL');
 const _dispatchDir = '/data/app/code_cache/litert_npu';
 
 /// What LiteRT-LM's stb decoder handles (X3, measured on our dylib).
@@ -104,7 +105,7 @@ void main() {
     bool requireWeightCache = false,
     LiteRtLmEmbeddingBindings Function()? openBindings,
     DateTime Function()? clock,
-    LiteRtLmNpuTarget? npuTarget,
+    NpuStamp? npuTarget,
     String npuDispatchDir = _dispatchDir,
     bool gpu = false,
     bool visionTowerOnCpu = false,

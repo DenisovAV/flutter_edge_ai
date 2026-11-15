@@ -16,6 +16,10 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_bindings.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_runtime_check.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
+import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
+import 'package:flutter_edge_ai_litertlm/src/adapter/backend_fallback.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
 
 const _iosPath = '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm';
 
@@ -255,7 +259,7 @@ void main() {
     test('is an Error: the backend fallback loop stops at the first backend '
         'instead of retrying the same library on the next', () async {
       final backends = ffiBackendFallbackOrder(
-        PreferredBackend.gpu,
+        Backend.gpu,
         npuAvailable: false,
       );
       expect(
@@ -267,7 +271,7 @@ void main() {
       await expectLater(
         initializeFfiRuntime<Object>(
           preferredBackend: PreferredBackend.gpu,
-          backends: backends,
+          backends: [for (final b in backends) b.toCore],
           logTag: '[Test]',
           createClient: Object.new,
           initializeClient: (_, backend) async {

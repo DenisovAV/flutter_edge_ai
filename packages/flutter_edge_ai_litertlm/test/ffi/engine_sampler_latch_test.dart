@@ -1,20 +1,15 @@
-import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/engine_sampler_latch.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
 
-const _defaults = ResolvedSampling(
+const _defaults = Sampler(
   temperature: 1.0,
   topK: 64,
   topP: 0.95,
   randomSeed: 1,
 );
-const _greedy = ResolvedSampling(
-  temperature: 0.8,
-  topK: 1,
-  topP: 0.95,
-  randomSeed: 1,
-);
-const _thinking = ResolvedSampling(
+const _greedy = Sampler(temperature: 0.8, topK: 1, topP: 0.95, randomSeed: 1);
+const _thinking = Sampler(
   temperature: 0.6,
   topK: 20,
   topP: 0.95,

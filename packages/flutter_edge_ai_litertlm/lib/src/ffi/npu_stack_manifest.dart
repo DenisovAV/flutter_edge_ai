@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:ffi' show Abi;
 import 'dart:io' show Platform;
 
-import '../npu_stacks.dart';
+import '../runtime/npu_stacks.dart';
 
 /// Whether this build carries a vendor's NPU stack ([NpuStack]) where LiteRT
 /// will load it, and why not: from NativeAssetsManifest.json for a stack the

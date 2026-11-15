@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check_litertlm_runtime_imports.sh — how far flutter_edge_ai_litertlm's
-# lib/src still is from a Flutter-free runtime layer. REPORT ONLY: it always
-# exits 0 and is not wired into CI.
+# lib/src still is from a Flutter-free runtime layer. A report by default
+# (always exits 0); with --check it is the Phase 0 gate CI runs.
 #
 # For every .dart file under packages/flutter_edge_ai_litertlm/lib/src it
 # lists the import/export directives that tie the file to Flutter or to core:
@@ -10,11 +10,13 @@
 #   core     — package:flutter_edge_ai/ (core, which itself imports Flutter)
 # and prints per-area counts. The runtime side is lib/src/{ffi,bundle,runtime,
 # hook}; everything else is counted as the rest (adapter, web, catalog, …).
-# The later goal (Phase 0 exit criterion) is no flutter/plugin/core directive
-# in the runtime side.
+# The Phase 0 exit criterion: no flutter/plugin/core directive in the runtime
+# side, and no relative import from it to a file outside it (so the whole
+# side moves into the Flutter-free package as it is).
 #
-# Usage: tool/check_litertlm_runtime_imports.sh [path to the package's lib/src]
-#        (defaults to this checkout's), -q for the counts alone.
+# Usage: tool/check_litertlm_runtime_imports.sh [-q] [--check] [lib/src path]
+#        (defaults to this checkout's); -q for the counts alone; --check exits
+#        1 when the runtime side breaks the criterion.
 #
 # Directive detection: a line starting (after indentation) with `import` or
 # `export` whose URI sits on that line — what `dart format` writes.
@@ -22,10 +24,15 @@
 set -u
 
 quiet=0
-if [[ "${1:-}" == "-q" ]]; then
-  quiet=1
+check=0
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    -q) quiet=1 ;;
+    --check) check=1 ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
   shift
-fi
+done
 root="$(cd "$(dirname "$0")/.." && pwd)"
 src="${1:-$root/packages/flutter_edge_ai_litertlm/lib/src}"
 if [[ ! -d "$src" ]]; then
@@ -94,4 +101,29 @@ for area in runtime rest; do
   echo "$area: $any file(s) import Flutter, a Flutter plugin or core" \
     "(flutter $flutter, path_provider $plugin, flutter_edge_ai $core)"
 done
+
+# Relative imports from the runtime side to a file outside it.
+escapes=0
+while IFS= read -r file; do
+  rel="${file#"$src"/}"
+  [[ "$(area_of "$rel")" == runtime ]] || continue
+  dir="$(dirname "$rel")"
+  while IFS= read -r uri; do
+    target="$(python3 -c 'import os,sys; print(os.path.normpath(os.path.join(sys.argv[1], sys.argv[2])))' "$dir" "$uri")"
+    if [[ "$(area_of "$target")" != runtime ]]; then
+      escapes=$((escapes + 1))
+      echo "[runtime] $rel imports $target, outside the runtime side"
+    fi
+  done < <(grep -oE "^[[:space:]]*(import|export|part)[[:space:]]+'[^':]+'" "$file" | sed -E "s/.*'([^']+)'/\1/")
+done < <(find "$src" -name '*.dart' -type f | LC_ALL=C sort)
+echo "runtime: $escapes relative import(s) leave the runtime side"
+
+if ((check == 1)); then
+  eval "runtime_any=\$any_runtime"
+  if ((runtime_any > 0 || escapes > 0)); then
+    echo "::error::check_litertlm_runtime_imports: the runtime side of" \
+      "flutter_edge_ai_litertlm imports Flutter, core, or a file outside it"
+    exit 1
+  fi
+fi
 exit 0

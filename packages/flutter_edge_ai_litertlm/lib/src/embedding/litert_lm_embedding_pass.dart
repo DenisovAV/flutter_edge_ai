@@ -104,13 +104,14 @@ import '../ffi/litert_lm_library.dart';
 import '../ffi/litert_lm_status.dart' show lastErrorFrom, liteRtLmStatusName;
 import '../ffi/npu_vendor_host.dart' show npuStagesWeightBanks;
 import '../ffi/sigprof_mask.dart';
-import '../npu_stacks.dart' show NpuStack;
+import '../runtime/npu_stacks.dart' show NpuStack;
 import '../runtime/runtime_log.dart';
 import 'embedding_parts.dart';
 import 'litert_lm_embedding_common.dart';
 import 'litertlm_container_io.dart';
-import 'litertlm_npu_target.dart';
+import '../bundle/litertlm_npu_target.dart';
 import 'vision_budget.dart';
+import '../adapter/runtime_log_binding.dart';
 
 // Shared with the web pass; re-exported so this file's users keep one import.
 export 'litert_lm_embedding_common.dart'
@@ -247,7 +248,7 @@ final class LiteRtLmEmbeddingConfig {
 
   /// The SoC a per-SoC bundle is compiled for, when `describe()` placed it on
   /// the NPU; null runs the bundle on CPU.
-  final LiteRtLmNpuTarget? npuTarget;
+  final NpuStamp? npuTarget;
 
   /// Where LiteRT loads the vendor's dispatch from — the Qualcomm dispatch and
   /// QNN libraries, or on Windows the Intel stack beside the executable —
@@ -295,7 +296,7 @@ EmbeddingPass buildLiteRtLmEmbeddingPass(LiteRtLmEmbeddingConfig config) =>
 /// NPU — a QNN runtime without this Hexagon version's Skel, or on Windows a PC
 /// without an Intel NPU or its driver.
 @visibleForTesting
-String liteRtLmNpuProbeFailureCauses(LiteRtLmNpuTarget target) =>
+String liteRtLmNpuProbeFailureCauses(NpuStamp target) =>
     switch (npuVendorOf(target)) {
       NpuStack.intel =>
         'on another SoC, or on a PC without an Intel NPU or its driver',
@@ -431,6 +432,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
 
   @override
   Future<EmbeddingPassInfo> load() async {
+    bindRuntimeLogToCore();
     if (_loaded || _closed) {
       throw StateError('LiteRtLmEmbeddingPass.load() runs once, before close');
     }
@@ -854,7 +856,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   void _probeAccelerator(
     LiteRtLmEmbeddingBindings b,
     int dimension,
-    LiteRtLmNpuTarget? target,
+    NpuStamp? target,
   ) {
     final bytes = utf8.encode(_probeText);
     final buffer = _alloc<Uint8>(bytes.length);

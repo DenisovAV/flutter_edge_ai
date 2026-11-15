@@ -132,7 +132,7 @@ void main() {
       reason: "a spawned isolate starts at the default level, not the caller's",
     );
     expect(request.dispatchLibDir, isNull, reason: 'not the NPU');
-    expect(request.disableHwMaskingForNpu, isFalse);
+    expect(request.useHwMaskingForNpu, isNull);
     expect(request.listWeightBanks, isFalse);
     expect(request.blockSigprof, isFalse);
     expect(
@@ -193,7 +193,7 @@ void main() {
         backend: 'npu',
         npuDispatch: (
           dir: '/vendor/dispatch',
-          disableHwMasking: true,
+          useHwMasking: false,
           stagesWeightBanks: true,
         ),
       ),
@@ -202,13 +202,46 @@ void main() {
     final request = requests.single;
     expect(request.backend, 'npu');
     expect(request.dispatchLibDir, '/vendor/dispatch');
-    expect(request.disableHwMaskingForNpu, isTrue);
+    expect(request.useHwMaskingForNpu, isFalse);
     expect(request.listWeightBanks, isTrue);
     expect(
       request.blockSigprof,
       Platform.isLinux,
       reason: "QNN's init fails under the debug VM's SIGPROF on Linux only",
     );
+  });
+
+  test('an NPU dispatch that turns the HW mask update path on reaches the '
+      'request as true', () async {
+    await quietly(
+      () => clientWithoutNativeLibrary().initialize(
+        modelPath: '/models/gemma4-26B-A4B-it-Intel_PTL_NPU.litertlm',
+        backend: 'npu',
+        npuDispatch: (
+          dir: r'C:\app',
+          useHwMasking: true,
+          stagesWeightBanks: true,
+        ),
+      ),
+    );
+
+    expect(requests.single.useHwMaskingForNpu, isTrue);
+  });
+
+  test('an NPU dispatch that leaves the HW mask default sends none', () async {
+    await quietly(
+      () => clientWithoutNativeLibrary().initialize(
+        modelPath: '/models/gemma.litertlm',
+        backend: 'npu',
+        npuDispatch: (
+          dir: '/vendor/dispatch',
+          useHwMasking: null,
+          stagesWeightBanks: false,
+        ),
+      ),
+    );
+
+    expect(requests.single.useHwMaskingForNpu, isNull);
   });
 
   test('a NULL engine fails initialize with the model path, and nothing is '
@@ -250,7 +283,7 @@ void main() {
       activationDataType: 1,
       nativeLogLevel: LiteRtLmLogLevel.silent,
       dispatchLibDir: '/lib/arm64',
-      disableHwMaskingForNpu: true,
+      useHwMaskingForNpu: true,
       kernelBatchSize: 2,
       blockSigprof: true,
       listWeightBanks: true,
@@ -270,7 +303,7 @@ void main() {
     expect(copy.activationDataType, request.activationDataType);
     expect(copy.nativeLogLevel, request.nativeLogLevel);
     expect(copy.dispatchLibDir, request.dispatchLibDir);
-    expect(copy.disableHwMaskingForNpu, request.disableHwMaskingForNpu);
+    expect(copy.useHwMaskingForNpu, request.useHwMaskingForNpu);
     expect(copy.kernelBatchSize, request.kernelBatchSize);
     expect(copy.blockSigprof, request.blockSigprof);
     expect(copy.listWeightBanks, request.listWeightBanks);

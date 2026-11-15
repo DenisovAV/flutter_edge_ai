@@ -136,9 +136,10 @@ class DirectoryBundleFile extends ModelFile {
 
   /// Directory members (`.onnx_data`, `genai_config.json`, tokenizer json/vocab)
   /// aren't in `FileNameUtils.supportedExtensions`, so the extension heuristic
-  /// would wrongly impose the 1 MB default on small config files. We only assert
-  /// "a non-empty file landed"; real size/sha verification is a follow-up
-  /// (`ResolvedHfFile.sha256`/`sizeBytes` are carried but not yet checked).
+  /// would wrongly impose the 1 MB default on small config files. Here we only
+  /// assert "a non-empty file landed"; the exact size is checked after the
+  /// install when the resolver gave one (`ResolvedHfFile.sizeBytes`), and
+  /// `ResolvedHfFile.sha256` is carried but not yet checked.
   @override
   int? get minimumSizeBytes => 1;
 }

@@ -89,6 +89,7 @@ MessageType enum
 ModelArtifact class final
 ModelCatalog class abstract base
 ModelCatalogSource class abstract interface
+ModelFamily class abstract interface
 ModelFile class abstract
 ModelFileManager class abstract
 ModelFileType enum

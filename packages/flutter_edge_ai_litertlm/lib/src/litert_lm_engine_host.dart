@@ -16,6 +16,7 @@ import 'ffi/npu_vendor_host.dart';
 import 'ffi/open_session_backing.dart';
 import 'flutter_npu_platform.dart';
 import 'litert_lm_log_level.dart';
+import 'litertlm_bundle_activation.dart' show GpuActivationReason;
 import 'npu_stacks.dart';
 
 /// The app's support directory (path_provider): the default
@@ -88,6 +89,7 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
+    GpuActivationReason? gpuActivationReason,
     required NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
     required int? thinkingTokenBudget,
@@ -103,6 +105,7 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
     audioBackend: audioBackend,
     enableSpeculativeDecoding: enableSpeculativeDecoding,
     activationDataType: activationDataType,
+    gpuActivationReason: gpuActivationReason,
     npuDispatch: npuDispatch,
     nativeLogLevel: nativeLogLevel,
     thinkingTokenBudget: thinkingTokenBudget,

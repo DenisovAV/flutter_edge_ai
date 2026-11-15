@@ -4,7 +4,7 @@ part of '../model_specs.dart';
 /// Only [moonshine] has a shipped [SttModelProfile]/pipeline
 /// (`flutter_edge_ai_speech`); the others are follow-ons that need a log-mel
 /// frontend.
-enum SttModelType { moonshine, whisper, parakeet }
+enum SttModelType implements ModelFamily { moonshine, whisper, parakeet }
 
 /// Model file for STT models (.tflite files)
 class SttModelFile extends ModelFile {

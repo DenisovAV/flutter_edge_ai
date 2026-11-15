@@ -382,30 +382,12 @@
       "web": []
     },
     "gemma-4-e2b-it/gpu": {
-      "android_arm64": [
-        "cpu",
-        "gpu"
-      ],
-      "ios_arm64": [
-        "cpu",
-        "gpu"
-      ],
-      "macos_arm64": [
-        "cpu",
-        "gpu"
-      ],
-      "linux_x64": [
-        "cpu",
-        "gpu"
-      ],
-      "linux_arm64": [
-        "cpu",
-        "gpu"
-      ],
-      "windows_x64": [
-        "cpu",
-        "gpu"
-      ],
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
       "web": []
     },
     "gemma-4-e2b-it/web": {
@@ -517,30 +499,12 @@
       "web": []
     },
     "gemma-4-e4b-it/gpu": {
-      "android_arm64": [
-        "cpu",
-        "gpu"
-      ],
-      "ios_arm64": [
-        "cpu",
-        "gpu"
-      ],
-      "macos_arm64": [
-        "cpu",
-        "gpu"
-      ],
-      "linux_x64": [
-        "cpu",
-        "gpu"
-      ],
-      "linux_arm64": [
-        "cpu",
-        "gpu"
-      ],
-      "windows_x64": [
-        "cpu",
-        "gpu"
-      ],
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
       "web": []
     },
     "gemma-4-e4b-it/web": {

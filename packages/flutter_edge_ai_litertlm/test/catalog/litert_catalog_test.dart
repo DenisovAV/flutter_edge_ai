@@ -40,6 +40,18 @@ const _withheld = <String, Set<PreferredBackend>>{
     PreferredBackend.gpu,
     PreferredBackend.npu,
   },
+  // GPU-artisan builds: the loader reads them as gpu,cpu, and LiteRT-LM's
+  // open-source runtime has no engine for them.
+  'gemma-4-e2b-it/gpu': {
+    PreferredBackend.cpu,
+    PreferredBackend.gpu,
+    PreferredBackend.npu,
+  },
+  'gemma-4-e4b-it/gpu': {
+    PreferredBackend.cpu,
+    PreferredBackend.gpu,
+    PreferredBackend.npu,
+  },
 };
 
 const _registry = '../../model_registry';

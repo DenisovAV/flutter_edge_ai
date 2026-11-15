@@ -1,3 +1,6 @@
+## Unreleased
+- `BuiltInAiHuggingFaceResolver` declares the `inference` role.
+
 ## 0.4.1
 - Require `flutter_local_ai` ^0.4.0: no launch crash on Apple OS older than 26.
 

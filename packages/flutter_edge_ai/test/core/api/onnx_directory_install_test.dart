@@ -36,7 +36,7 @@ const _dirModel = ResolvedHfModel(
   file: 'genai_config.json', // primary (bare leaf)
   url: 'https://huggingface.co/org/repo/resolve/main/cpu/genai_config.json',
   fileType: ModelFileType.onnx,
-  modelType: ModelType.qwen3, // manifest declares the family
+  family: ModelType.qwen3, // manifest declares the family
   directoryName: _modelId,
   files: [
     ResolvedHfFile(
@@ -130,6 +130,79 @@ void main() {
     final modelPath = paths!.values.first;
     expect(p.basename(modelPath), 'genai_config.json');
     expect(p.basename(File(modelPath).parent.path), _modelId);
+  });
+
+  group('member sizes', () {
+    // A fresh shell: an earlier test left its directory model active, and
+    // an install with sizes refuses to write over the files it reads.
+    setUp(() {
+      final plugin = FlutterEdgeAiPlugin.instance;
+      FlutterEdgeAiPlugin.instance = FlutterEdgeAiMobile();
+      addTearDown(() => FlutterEdgeAiPlugin.instance = plugin);
+    });
+
+    ResolvedHfModel withSizes(int Function(String name) sizeOf) =>
+        ResolvedHfModel(
+          file: _dirModel.file,
+          url: _dirModel.url,
+          fileType: _dirModel.fileType,
+          family: _dirModel.family,
+          directoryName: _dirModel.directoryName,
+          files: [
+            for (final f in _dirModel.files!)
+              ResolvedHfFile(
+                name: f.name,
+                url: f.url,
+                sizeBytes: sizeOf(f.name),
+              ),
+          ],
+        );
+
+    test(
+      'members of the size the resolver gave install and activate',
+      () async {
+        await ServiceRegistry.initialize(downloadService: download);
+        HuggingFaceResolverRegistry.instance.registerAll([
+          _ScriptedResolver(ModelFileType.onnx, withSizes((_) => 2048)),
+        ]);
+        final install = await FlutterEdgeAi.installModel(
+          modelType: ModelType.general,
+          fileType: ModelFileType.onnx,
+        ).fromHuggingFace('org/repo').install();
+        expect(FlutterEdgeAi.activeModelSpec?.name, install.spec.name);
+      },
+    );
+
+    test('a member of another size fails the install before it activates, '
+        'and is deleted with its record', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      HuggingFaceResolverRegistry.instance.registerAll([
+        _ScriptedResolver(
+          ModelFileType.onnx,
+          withSizes((name) => name == 'model.onnx' ? 4096 : 2048),
+        ),
+      ]);
+      await expectLater(
+        FlutterEdgeAi.installModel(
+          modelType: ModelType.general,
+          fileType: ModelFileType.onnx,
+        ).fromHuggingFace('org/repo').install(),
+        throwsA(
+          isA<ModelValidationException>().having(
+            (e) => e.message,
+            'message',
+            contains('model.onnx is 2048 bytes, 4096 expected'),
+          ),
+        ),
+      );
+      expect(FlutterEdgeAi.activeModelSpec, isNull);
+      final dir = await storageDir();
+      expect(File(p.join(dir, _modelId, 'model.onnx')).existsSync(), isFalse);
+      expect(
+        File(p.join(dir, _modelId, 'genai_config.json')).existsSync(),
+        isTrue,
+      );
+    });
   });
 
   test('progress says 100 only once the directory model is active', () async {
@@ -569,6 +642,8 @@ class _ScriptedResolver implements HuggingFaceResolver {
   String get name => 'scripted-dir';
   @override
   int get priority => 0;
+  @override
+  ModelManagementType get type => ModelManagementType.inference;
   @override
   bool canResolve(String repo, {ModelFileType? fileType}) =>
       fileType == forFileType;

@@ -204,6 +204,14 @@ abstract base class EmbedderVariant extends CatalogVariant {
   /// for an NPU, null otherwise.
   PreferredBackend? get preferredBackend => null;
 
+  /// What to open the model with: pass it as `defaults:` to
+  /// `FlutterEdgeAi.getActiveEmbedder`. By default [preferredBackend] and
+  /// nothing else; a subclass may say more. To change the backend, override
+  /// [preferredBackend], not the backend inside this getter, so the two
+  /// never disagree.
+  ModelRuntimeDefaults get runtimeDefaults =>
+      ModelRuntimeDefaults(preferredBackend: preferredBackend);
+
   /// [model] and [tokenizer], which is what the installer downloads; not
   /// overridable.
   @nonVirtual
@@ -224,6 +232,11 @@ abstract base class SttVariant extends CatalogVariant {
 
   /// The tokenizer file.
   ModelArtifact get tokenizer;
+
+  /// What to open the model with: pass it as `defaults:` to
+  /// `FlutterEdgeAi.getActiveStt`. Empty by default (the SDK defaults); a
+  /// subclass may say more.
+  ModelRuntimeDefaults get runtimeDefaults => const ModelRuntimeDefaults();
 
   /// [model] and [tokenizer], which is what the installer downloads; not
   /// overridable.
@@ -246,6 +259,11 @@ abstract base class TtsVariant extends CatalogVariant {
 
   /// The pinned URL the bundle's files are fetched under.
   String get baseUrl;
+
+  /// What to open the model with: pass it as `defaults:` to
+  /// `FlutterEdgeAi.getActiveTts`. Empty by default (the SDK defaults); a
+  /// subclass may say more.
+  ModelRuntimeDefaults get runtimeDefaults => const ModelRuntimeDefaults();
 }
 
 /// A list of models, as one package or `FlutterEdgeAi.catalog` offers them.

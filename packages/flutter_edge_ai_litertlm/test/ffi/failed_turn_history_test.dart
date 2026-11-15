@@ -90,6 +90,7 @@ void main() {
               ),
               samplingExplicit: false,
               thinking: false,
+              filterChannelContent: true,
             )
             .toList(),
         throwsStateError,
@@ -149,6 +150,7 @@ void main() {
         sampling: sampling,
         samplingExplicit: false,
         thinking: false,
+        filterChannelContent: true,
       );
       final a = Object();
       final b = Object();

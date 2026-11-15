@@ -1,0 +1,82 @@
+diff --git a/runtime/components/constrained_decoding/thinking_budget_constraint.cc b/runtime/components/constrained_decoding/thinking_budget_constraint.cc
+index 48eb2427..6de76826 100644
+--- a/runtime/components/constrained_decoding/thinking_budget_constraint.cc
++++ b/runtime/components/constrained_decoding/thinking_budget_constraint.cc
+@@ -213,7 +213,22 @@ ThinkingBudgetConstraint::ComputeMask(const Constraint::State& state) const {
+     }
+     const auto& bitmap = static_cast<const BitmapLogitMask&>(*user_mask);
+     RET_CHECK_EQ(bitmap.vocab_size(), vocab_size_);
+-    std::vector<uint64_t> words(bitmap.words().begin(), bitmap.words().end());
++    // flutter_edge_ai: copy the words the vocabulary needs from words().data()
++    // instead of the span's begin()/end(). The user mask can come from a
++    // prebuilt provider built against another C++ standard library: on
++    // Windows the Gemma provider's BitmapLogitMask holds a libc++ vector
++    // {begin, size, capacity} while this runtime's MSVC STL reads {first,
++    // last, end}, so end() was the element count read as a pointer, and the
++    // copy threw std::length_error and aborted the process on the first
++    // decode step of every thinking turn with tools. The begin pointer and
++    // vocab_size() sit at the same offsets in both, which is all that
++    // CompositeLogitMask and the mask runner read either. Calling the mask's
++    // own Apply is no way out: the provider returns absl::Status in a
++    // register (Google's trivial_abi absl), this runtime expects it in
++    // memory.
++    const uint64_t* user_words = bitmap.words().data();
++    const size_t num_words = (static_cast<size_t>(vocab_size_) + 63) / 64;
++    std::vector<uint64_t> words(user_words, user_words + num_words);
+     words[start_token / 64] |= (uint64_t{1} << (start_token % 64));
+     return std::make_unique<BitmapLogitMask>(vocab_size_, std::move(words));
+   }
+diff --git a/runtime/components/constrained_decoding/thinking_budget_constraint_test.cc b/runtime/components/constrained_decoding/thinking_budget_constraint_test.cc
+index eda87c27..7ad0e8ef 100644
+--- a/runtime/components/constrained_decoding/thinking_budget_constraint_test.cc
++++ b/runtime/components/constrained_decoding/thinking_budget_constraint_test.cc
+@@ -14,6 +14,7 @@
+ 
+ #include "runtime/components/constrained_decoding/thinking_budget_constraint.h"
+ 
++#include <cstdint>
+ #include <limits>
+ #include <memory>
+ #include <string>
+@@ -381,6 +382,41 @@ TEST(ThinkingBudgetConstraintTest, TestStepZeroWithNonBitmapUserMask) {
+   EXPECT_THAT(logits, ElementsAre(kNegInf, kNegInf, 1.5f, kNegInf, kNegInf));
+ }
+ 
++// The step-0 copy of a bitmap user mask takes the words the vocabulary needs
++// from words().data(), never words().size() or end(), which a prebuilt
++// provider built against another C++ standard library lays out differently
++// (flutter_edge_ai, patch_c_api.sh section 26). A mask holding more words than
++// its vocabulary needs shows which one was read.
++class OversizedBitmapConstraint : public FakeConstraint {
++ public:
++  explicit OversizedBitmapConstraint(int vocabulary_size)
++      : FakeConstraint(/*token_ids=*/{7, 1}, vocabulary_size) {}
++  absl::StatusOr<std::unique_ptr<LogitMask>> ComputeMask(
++      const State&) const override {
++    // Token 7 allowed; three extra words past the vocabulary, all ones.
++    std::vector<uint64_t> words((GetVocabularySize() + 63) / 64 + 3,
++                                ~uint64_t{0});
++    for (size_t i = 0; i < (GetVocabularySize() + 63) / 64; ++i) words[i] = 0;
++    words[0] = uint64_t{1} << 7;
++    return std::make_unique<BitmapLogitMask>(GetVocabularySize(),
++                                             std::move(words));
++  }
++};
++
++TEST(ThinkingBudgetConstraintTest, TestStepZeroCopiesOnlyTheVocabularyWords) {
++  OversizedBitmapConstraint user_constraint(/*vocabulary_size=*/100);
++  ThinkingBudgetConstraint constraint(&user_constraint, /*budget=*/5,
++                                      /*start_token_ids=*/{2, 3},
++                                      /*end_token_ids=*/{4},
++                                      /*vocab_size=*/100);
++  auto state = constraint.Start();
++  ASSERT_OK_AND_ASSIGN(auto mask, constraint.ComputeMask(*state));
++  ASSERT_EQ(mask->GetType(), MaskType::kBitmap);
++  const auto& bitmap = static_cast<const BitmapLogitMask&>(*mask);
++  EXPECT_EQ(bitmap.words().size(), 2u);
++  EXPECT_THAT(AllowedTokens(constraint, *state), ElementsAre(2, 7));
++}
++
+ TEST(ThinkingBudgetConstraintTest, TestMismatchAfterPartialStartMatchFails) {
+   ThinkingBudgetConstraint constraint(nullptr, 5, {10, 11}, {12, 13}, 100);
+   auto state = constraint.Start();

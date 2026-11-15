@@ -239,7 +239,7 @@ void main() {
       // Finetunes whose ids drop the family and whose architecture names it
       // only in prose ("Qwen3.5-0.8B gated-delta hybrid …", "built on
       // Qwen3-4B"): the conservative mapping returns null rather than guess —
-      // the app supplies the type (`r.modelType ?? ModelType.general`).
+      // the app supplies the type (`r.family as ModelType? ?? ModelType.general`).
       'litert-community/Polaris-4B-Preview': null,
       'litert-community/decider-0.8b-LiteRT': null,
       'litert-community/decider-2b-vision-LiteRT': null,
@@ -248,7 +248,7 @@ void main() {
     expect(expected.length, byRepo.length);
     for (final entry in expected.entries) {
       final r = await resolve(entry.key);
-      expect(r.modelType, entry.value, reason: entry.key);
+      expect(r.family, entry.value, reason: entry.key);
     }
   });
 

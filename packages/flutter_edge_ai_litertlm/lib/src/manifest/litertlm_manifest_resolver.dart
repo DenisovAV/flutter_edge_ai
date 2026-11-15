@@ -30,7 +30,7 @@ export 'manifest_fetch_types.dart' show ManifestFetch, ManifestFetchException;
 ///     'litert-community/Qwen3-4B-Thinking-2507',
 ///     fileType: ModelFileType.litertlm);
 /// await FlutterEdgeAi.installModel(
-///       modelType: r.modelType ?? ModelType.general,
+///       modelType: r.family as ModelType? ?? ModelType.general,
 ///       fileType: r.fileType,
 ///     )
 ///     .fromNetwork(r.url) // r.url honours this resolver's [revision] pin
@@ -70,6 +70,10 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
 
   @override
   int get priority => 0;
+
+  /// Resolves language models only (`installModel(...).fromHuggingFace`).
+  @override
+  ModelManagementType get type => ModelManagementType.inference;
 
   /// Claims exactly [ModelFileType.litertlm] — never a null hint. With more
   /// than one resolver registered, a bare `resolveHuggingFace(repo)` must not
@@ -209,7 +213,7 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
       file: resolution.file,
       url: _fileUrl(repo, resolution.file),
       fileType: ModelFileType.litertlm,
-      modelType: mapModelType(
+      family: mapModelType(
         baseModel: baseModel,
         displayName: manifest.displayName,
         architecture: architecture,
@@ -301,8 +305,8 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
   }
 
   /// Maps the manifest's model identity onto a [ModelType], or null when no
-  /// mapping is certain — the app then supplies one (`r.modelType ??
-  /// ModelType.general`).
+  /// mapping is certain — the app then supplies one
+  /// (`r.family as ModelType? ?? ModelType.general`).
   ///
   /// Deliberately conservative: the bundle supplies the chat template, but
   /// core still drives a conversation by [ModelType] — which tool-call format

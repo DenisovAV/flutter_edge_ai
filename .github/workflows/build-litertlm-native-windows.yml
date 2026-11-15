@@ -15,9 +15,9 @@ on:
       litertlm_version:
         description: 'LiteRT-LM ref (tag, branch, or commit SHA)'
         required: true
-        default: '771b06e1a2c7f70a399a718599109facf37e38fd'
+        default: '7a03724cece417f1724c923b3d527b4319730841'
       prebuilt_ref:
-        description: 'Upstream ref to take prebuilt companion libs from (blank = the exact v0.19.0 source SHA)'
+        description: 'Upstream ref to take prebuilt companion libs from (blank = the exact v0.19.1 source SHA)'
         required: false
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
         shell: pwsh
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '771b06e1a2c7f70a399a718599109facf37e38fd' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '7a03724cece417f1724c923b3d527b4319730841' }}
       # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: the
       # v0.19.0 tag's own prebuilt is newer and its LiteRT pin contains #11120.
       ANDROID_NDK_HOME: ''
@@ -175,7 +175,13 @@ jobs:
           # user's machine, not a degraded build. Test-Path is also true for a
           # ~130-byte git-lfs pointer stub, and Windows has no patchelf step to
           # trip over one — so assert size as well.
-          foreach ($base in @('libGemmaModelConstraintProvider','libLiteRt','libLiteRtTopKWebGpuSampler','libLiteRtWebGpuAccelerator','libwebgpu_dawn')) {
+          # No GPU sampler on Windows since v0.19.0 (patch_c_api.sh section 20;
+          # see build-litertlm-native.yml): neither linked in nor shipped.
+          $dll = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes('artifacts\LiteRtLm.dll'))
+          if ($dll.Contains('AVTopKWebGpuSampler@lm@litert@@')) {
+            throw 'LiteRtLm.dll links the TopK WebGPU sampler (section 20 did not apply)'
+          }
+          foreach ($base in @('libGemmaModelConstraintProvider','libLiteRt','libLiteRtWebGpuAccelerator','libwebgpu_dawn')) {
             $src = "$prebuilt\$base.dll"
             if (-not (Test-Path $src)) {
               throw "prebuilt companion missing: $base.dll - LiteRtLm.dll imports it"

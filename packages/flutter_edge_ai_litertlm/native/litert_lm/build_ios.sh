@@ -8,7 +8,7 @@
 #
 # Usage:
 #   ./build_ios.sh [ref]
-#   ./build_ios.sh 771b06e1       # v0.19.0 (the default)
+#   ./build_ios.sh 7a03724c       # v0.19.1 (the default)
 #   ./build_ios.sh v0.11.0        # WARNING: v0.11.0 prebuilt accelerators
 #                                 # are ABI-incompatible with libLiteRtLm
 #                                 # rebuilt from v0.11.0 source — crashes
@@ -49,11 +49,11 @@ else
 fi
 
 # 2. Checkout version
-# v0.19.0. Build from an exact release commit: its source and its prebuilt accelerator
+# v0.19.1. Build from an exact release commit: its source and its prebuilt accelerator
 # dylibs come from one tree, which is the invariant that matters — mixing
 # them is what crashed in libLiteRtMetalAccelerator (see the build-native
 # skill). v0.11.0 itself is broken — see the WARNING above.
-DEFAULT_REF="771b06e1a2c7f70a399a718599109facf37e38fd"
+DEFAULT_REF="7a03724cece417f1724c923b3d527b4319730841"
 TARGET_REF="${VERSION:-$DEFAULT_REF}"
 echo "Checking out $TARGET_REF..."
 git checkout -f "$TARGET_REF"
@@ -92,7 +92,7 @@ echo "Pulling LFS files..."
 # segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
 # main in 4453b286, and that provider carries the LogitMask types. Upstream's
 # own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-771b06e1a2c7f70a399a718599109facf37e38fd}"
+PREBUILT_REF="${PREBUILT_REF:-7a03724cece417f1724c923b3d527b4319730841}"
 echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/ios_arm64/*,prebuilt/ios_sim_arm64/*"
 # One file, from a different commit than the source: fetch it straight from the

@@ -93,14 +93,31 @@ void main() {
       expect(
         HuggingFaceResolverRegistry.instance.findFor(
           'org/name',
+          type: ModelManagementType.inference,
           fileType: ModelFileType.litertlm,
         ),
         same(r),
       );
-      expect(HuggingFaceResolverRegistry.instance.findFor('org/name'), isNull);
       expect(
         HuggingFaceResolverRegistry.instance.findFor(
           'org/name',
+          type: ModelManagementType.inference,
+        ),
+        isNull,
+      );
+      // An LLM resolver is never asked for another role.
+      expect(
+        HuggingFaceResolverRegistry.instance.findFor(
+          'org/name',
+          type: ModelManagementType.embedding,
+          fileType: ModelFileType.litertlm,
+        ),
+        isNull,
+      );
+      expect(
+        HuggingFaceResolverRegistry.instance.findFor(
+          'org/name',
+          type: ModelManagementType.inference,
           fileType: ModelFileType.onnx,
         ),
         isNull,
@@ -160,7 +177,7 @@ void main() {
       expect(r.runtime.supportAudio, false);
       expect(r.runtime.preferredBackend, PreferredBackend.gpu);
       expect(r.fileType, ModelFileType.litertlm);
-      expect(r.modelType, ModelType.qwen3);
+      expect(r.family, ModelType.qwen3);
       expect(r.file, 'model.litertlm');
       expect(
         r.url,
@@ -333,7 +350,7 @@ void main() {
         final r = await f.resolver(manifest()).resolve('org/name');
         expect(r.runtime.maxTokens, isNull);
         expect(r.runtime.minOutputTokens, isNull);
-        expect(r.modelType, isNull);
+        expect(r.family, isNull);
         // No `capabilities` block at all: the manifest never looked, which
         // is "silent" (null) — not "declared unsupported" (false).
         expect(r.runtime.supportImage, isNull);

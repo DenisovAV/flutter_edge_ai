@@ -524,6 +524,23 @@ await FlutterEdgeAi.installModel(
 
 The resolver lives in the engine package — `LitertlmManifestResolver` in `flutter_edge_ai_litertlm` reads `litertlm_manifest.json` — and rides on the engine via `HuggingFaceResolverSource`, so `initialize(inferenceEngines: […])` auto-registers it. Pass `initialize(huggingFaceResolvers: [...])` only to override an engine's default (e.g. `LitertlmManifestResolver(revision: 'abc123')` to pin a commit).
 
+`r.family` is the model family the resolver found: a `ModelType` for a language model (`r.family as ModelType? ?? ModelType.general`), null when it could not tell.
+
+Each resolver serves one role — its `type`: `ModelManagementType.inference`, `embedding`, `stt` or `tts`. `resolveHuggingFace(repo, type: …, fileType: …)` asks only the resolvers of that role (inference by default), so an `.onnx` language model and an `.onnx` embedder each reach their own. A backend package carries its resolver the way an engine does: `initialize` registers the resolvers of `inferenceEngines`, `embeddingBackends`, `sttBackends` and `ttsBackends`, and refuses a provider whose resolver serves another role than its list. The explicit `huggingFaceResolvers:` list is registered first and wins a tie within its role.
+
+An embedder installs the same way once an embedding resolver is registered for its file type:
+
+```dart
+final install = await FlutterEdgeAi.installEmbedder()
+    .fromHuggingFace('org/embedder', fileType: ModelFileType.onnx)
+    .install();
+final embedder = await FlutterEdgeAi.getActiveEmbedder(
+  defaults: install.runtime,
+);
+```
+
+It installs the model file and, when the resolver names one (`r.tokenizerFile`), its tokenizer, and, on native platforms, checks the sizes the resolver gives before the model becomes active (on the web they only drive progress and the 2 GiB refusal outside streaming mode); a resolution that is a model directory is refused with `UnsupportedError` for now. `getActiveEmbedder`, `getActiveStt` and `getActiveTts` take `defaults:` like `getActiveModel` — an explicit argument wins over a default, which wins over the SDK's — and each reads only the fields of its role (`ModelRuntimeDefaults.language` for speech).
+
 ### Source capabilities
 
 | Source Type | Platform | Progress | Resume | Authentication | Use Case |

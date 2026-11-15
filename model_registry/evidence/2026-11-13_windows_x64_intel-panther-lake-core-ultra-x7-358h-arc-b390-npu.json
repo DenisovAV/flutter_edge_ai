@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-13",
+  "host": "windows_x64",
+  "device": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU)",
+  "commit": "d51b6c7a32c99bfca07fddb480b04160ad82634d",
+  "packages": {
+    "flutter_edge_ai": "2.6.0",
+    "flutter_edge_ai_litertlm": "1.20.1",
+    "flutter_edge_ai_speech": "0.6.1"
+  },
+  "native": "d318b723411ff94fe05973fa4da76015af57c9500ee05262980c9b80678a9a6b",
+  "log_sha256": "f5e6b87d4e4499d943bf72031c23eb931daadd6b4128d8aee271c3db0c76b018",
+  "log_url": null,
+  "cells": {
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "audio",
+        "text",
+        "vision"
+      ],
+      "gpu": [
+        "text"
+      ]
+    }
+  }
+}

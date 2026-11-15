@@ -11,6 +11,7 @@ import 'dart:math' show max;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
@@ -19,8 +20,10 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
+import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_activation.dart'
+    show GpuActivationReason;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart'
-    show NpuDispatch;
+    show NpuDispatch, debugIntelBrokenNpuMaskAux;
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuStack;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -67,6 +70,10 @@ class _FakeHost extends LiteRtLmEngineHost {
 
   /// The client's thinking budget at each attempt.
   final thinkingBudgets = <int?>[];
+
+  /// The activation type (wire value) handed to each attempt.
+  final activationDataTypes = <int?>[];
+  final gpuActivationReasons = <GpuActivationReason?>[];
 
   /// Creates running at this moment, and the most there ever were.
   int creating = 0;
@@ -121,12 +128,15 @@ class _FakeHost extends LiteRtLmEngineHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
+    GpuActivationReason? gpuActivationReason,
     required NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
     required int? thinkingTokenBudget,
   }) async {
+    gpuActivationReasons.add(gpuActivationReason);
     nativeLogLevels.add(nativeLogLevel);
     thinkingBudgets.add(thinkingTokenBudget);
+    activationDataTypes.add(activationDataType);
     mostCreatingAtOnce = max(mostCreatingAtOnce, ++creating);
     // A create takes time; another one started meanwhile would overlap it.
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -144,6 +154,7 @@ class _FakeHost extends LiteRtLmEngineHost {
 /// Records what [LiteRtLmFfiClient.initialize] is given; creates no engine.
 class _InitCapturingClient extends LiteRtLmFfiClient {
   LiteRtLmLogLevel? nativeLogLevel;
+  GpuActivationReason? gpuActivationReason;
   int? budget;
 
   @override
@@ -159,10 +170,12 @@ class _InitCapturingClient extends LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? activationDataType,
+    GpuActivationReason? gpuActivationReason,
     NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
   }) async {
+    this.gpuActivationReason = gpuActivationReason;
     this.nativeLogLevel = nativeLogLevel;
     budget = thinkingTokenBudget;
   }
@@ -179,6 +192,7 @@ Uint8List _bundle({
   String? audio,
   bool encoders = true,
   bool aux = false,
+  (String, String)? auxStamp,
 }) => litertlmContainer(
   [
     (
@@ -204,11 +218,14 @@ Uint8List _bundle({
         bytes: tfliteModel({}),
       ),
     ],
-    if (aux)
+    if (aux || auxStamp != null)
       (
         type: sectionTfliteModel,
         modelType: 'tf_lite_aux',
-        bytes: tfliteModel({}),
+        bytes: tfliteModel({
+          if (auxStamp != null)
+            'LiteRtStamp': liteRtStamp(auxStamp.$1, auxStamp.$2),
+        }),
       ),
   ],
   items: {
@@ -232,6 +249,7 @@ void main() {
 
   tearDown(() {
     debugLiteRtLmEngineHost = null;
+    debugIntelBrokenNpuMaskAux = null;
     root.deleteSync(recursive: true);
   });
 
@@ -252,6 +270,9 @@ void main() {
     bool backendFallback = true,
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
+    ModelType modelType = ModelType.gemmaIt,
+    int maxTokens = 1024,
+    ActivationDataType? activationDataType,
   }) =>
       LiteRtLmEngine(
         backendFallback: backendFallback,
@@ -261,12 +282,13 @@ void main() {
         InferenceModelSpec(
           name: 'test',
           modelSource: FileSource(path),
-          modelType: ModelType.gemmaIt,
+          modelType: modelType,
           fileType: ModelFileType.litertlm,
         ),
         RuntimeConfig(
-          maxTokens: 1024,
+          maxTokens: maxTokens,
           modelPath: path,
+          activationDataType: activationDataType,
           preferredBackend: preferredBackend,
           supportImage: supportImage,
           supportAudio: supportAudio,
@@ -333,6 +355,61 @@ void main() {
     await plain.close();
   });
 
+  test('Gemma 4: maxTokens reaches the activation default, and only the GPU '
+      'attempt takes it (LiteRT-LM #4001)', () async {
+    final path = write('g4.litertlm', _bundle(text: 'gpu,cpu'));
+    host = _FakeHost(
+      failures: const {'gpu': LiteRtLmEngineCreateException('no GPU')},
+    );
+    debugLiteRtLmEngineHost = host;
+    final long = await load(path, modelType: ModelType.gemma4, maxTokens: 4096);
+    final short = await load(
+      path,
+      modelType: ModelType.gemma4,
+      maxTokens: 2048,
+    );
+    final pinned = await load(
+      path,
+      modelType: ModelType.gemma4,
+      maxTokens: 4096,
+      activationDataType: ActivationDataType.float16,
+    );
+    final otherFamily = await load(path, maxTokens: 4096);
+    final onCpu = await load(
+      path,
+      modelType: ModelType.gemma4,
+      maxTokens: 4096,
+      preferredBackend: PreferredBackend.cpu,
+    );
+    expect(host.attempts.map((a) => a.backend), [
+      ...['gpu', 'cpu'],
+      ...['gpu', 'cpu'],
+      ...['gpu', 'cpu'],
+      ...['gpu', 'cpu'],
+      'cpu',
+    ]);
+    // float32 = 0, float16 = 1 (`activationDataTypeWireValue`).
+    expect(host.activationDataTypes, [
+      ...[0, null],
+      ...[null, null],
+      ...[1, 1],
+      ...[null, null],
+      null,
+    ]);
+    // Why, for a failed create's message: only the GPU attempt that took the
+    // engine's float32 carries a reason; a caller's float16 carries none.
+    expect(host.gpuActivationReasons, [
+      ...[GpuActivationReason.gemma4LongContext, null],
+      ...[null, null],
+      ...[null, null],
+      ...[null, null],
+      null,
+    ]);
+    for (final model in [long, short, pinned, otherFamily, onCpu]) {
+      await model.close();
+    }
+  });
+
   test('the real host hands the client the budget and the log level', () async {
     final client = _InitCapturingClient();
     await const LiteRtLmEngineHost().initializeClient(
@@ -347,10 +424,15 @@ void main() {
       enableAudio: false,
       audioBackend: 'cpu',
       enableSpeculativeDecoding: null,
-      activationDataType: null,
+      activationDataType: 0,
+      gpuActivationReason: GpuActivationReason.functionGemmaWithoutKey,
       npuDispatch: null,
       nativeLogLevel: LiteRtLmLogLevel.silent,
       thinkingTokenBudget: 2048,
+    );
+    expect(
+      client.gpuActivationReason,
+      GpuActivationReason.functionGemmaWithoutKey,
     );
     expect(client.nativeLogLevel, LiteRtLmLogLevel.silent);
     expect(client.budget, 2048);
@@ -400,7 +482,7 @@ void main() {
       expect(host.preparedFor, [NpuStack.qualcomm]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/qualcomm',
-        disableHwMasking: false,
+        useHwMasking: null,
         stagesWeightBanks: false,
       ));
       await stamped.close();
@@ -449,7 +531,7 @@ void main() {
         expect(host.preparedFor, [NpuStack.googleTensor], reason: soc);
         expect(host.npuDispatches.single, (
           dir: '/fake/npu/googleTensor',
-          disableHwMasking: false,
+          useHwMasking: null,
           stagesWeightBanks: false,
         ));
       }
@@ -486,11 +568,89 @@ void main() {
       expect(host.preparedFor, [NpuStack.mediatek]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/mediatek',
-        disableHwMasking: false,
+        useHwMasking: null,
         stagesWeightBanks: false,
       ));
     },
   );
+
+  test('Windows x64: the HW mask update path is turned on only for a bundle '
+      'whose PTL-stamped tf_lite_aux is listed by length and sha256; another '
+      'PTL aux, one whose masks run on the CPU, and a Lunar Lake bundle keep '
+      'it off', () async {
+    const ptl = ('IntelOpenVINO', 'PTL');
+    const lnl = ('IntelOpenVINO', 'LNL');
+    // The aux section the container fixture writes for a PTL stamp.
+    final ptlAux = tfliteModel({'LiteRtStamp': liteRtStamp(ptl.$1, ptl.$2)});
+    final listed = [
+      (
+        length: ptlAux.length,
+        sha256: sha256.convert(ptlAux).toString(),
+        file: 'ptl_npu_aux.litertlm',
+        issue: 'its masks are wrong past ~2,048 tokens',
+      ),
+    ];
+    final sameLengthOtherHash = [
+      (
+        length: ptlAux.length,
+        sha256: '0' * 64,
+        file: 'ptl_npu_aux.litertlm',
+        issue: 'its masks are wrong past ~2,048 tokens',
+      ),
+    ];
+    for (final (name, bytes, broken, expected) in [
+      (
+        'ptl_npu_aux.litertlm',
+        _bundle(textStamp: ptl, auxStamp: ptl, encoders: false),
+        listed,
+        true,
+      ),
+      (
+        'ptl_npu_aux_other_hash.litertlm',
+        _bundle(textStamp: ptl, auxStamp: ptl, encoders: false),
+        sameLengthOtherHash,
+        false,
+      ),
+      (
+        'ptl_npu_aux_shipped_list.litertlm',
+        _bundle(textStamp: ptl, auxStamp: ptl, encoders: false),
+        null,
+        false,
+      ),
+      (
+        'ptl_cpu_aux.litertlm',
+        _bundle(textStamp: ptl, aux: true, encoders: false),
+        listed,
+        false,
+      ),
+      (
+        'lnl.litertlm',
+        _bundle(textStamp: lnl, auxStamp: lnl, encoders: false),
+        listed,
+        false,
+      ),
+    ]) {
+      host = _FakeHost(os: 'windows', abiName: 'windows_x64', npuShips: true);
+      debugLiteRtLmEngineHost = host;
+      debugIntelBrokenNpuMaskAux = broken;
+      late InferenceModel model;
+      final printed = await printedBy(() async {
+        model = await load(write(name, bytes));
+      });
+      expect(host.attempts.map((a) => a.backend), ['npu'], reason: name);
+      expect(host.npuDispatches.single, (
+        dir: '/fake/npu/intel',
+        useHwMasking: expected,
+        stagesWeightBanks: true,
+      ), reason: name);
+      expect(
+        printed.any((line) => line.contains('wrong past ~2,048 tokens')),
+        expected,
+        reason: "$name: the log names the file's known issue",
+      );
+      await model.close();
+    }
+  });
 
   test('Windows x64: the Intel stack is checked before the NPU is tried, and '
       'an Intel attempt turns the HW mask update path off and claims its '
@@ -503,7 +663,7 @@ void main() {
     expect(host.askedVendors, [NpuStack.intel, NpuStack.intel]);
     expect(host.npuDispatches.single, (
       dir: '/fake/npu/intel',
-      disableHwMasking: true,
+      useHwMasking: false,
       stagesWeightBanks: true,
     ));
     await model.close();

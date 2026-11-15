@@ -1,4 +1,17 @@
-enum ModelType {
+/// A model family: what a model is, beyond its file — the language-model
+/// families of [ModelType], the speech-to-text families of `SttModelType`
+/// and the text-to-speech families of `TtsModelType`.
+///
+/// `ResolvedHfModel.family` carries one: each installer accepts only its own
+/// family type and refuses another with an error. Embedders have no family
+/// type yet (their backends read what they need from the file).
+///
+/// Implemented by core's family enums ([ModelType], `SttModelType`,
+/// `TtsModelType`); an installer recognises only those.
+abstract interface class ModelFamily {}
+
+/// The language-model families.
+enum ModelType implements ModelFamily {
   general,
   gemmaIt,
   gemma4, // Gemma 4 E2B/E4B with native function calling tokens

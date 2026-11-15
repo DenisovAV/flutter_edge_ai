@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-13",
+  "host": "windows_x64",
+  "device": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU)",
+  "commit": "d51b6c7a32c99bfca07fddb480b04160ad82634d",
+  "packages": {
+    "flutter_edge_ai": "2.6.0",
+    "flutter_edge_ai_litertlm": "1.20.1",
+    "flutter_edge_ai_speech": "0.6.1"
+  },
+  "native": "d318b723411ff94fe05973fa4da76015af57c9500ee05262980c9b80678a9a6b",
+  "log_sha256": "7cc54114b4b1d4414514583f3895438bc0a8e7aa80a057b1b6fbb53d561edefc",
+  "log_url": null,
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "embeddinggemma-2-text-vision-440m/generic": {
+      "cpu": [
+        "text to image retrieval"
+      ]
+    }
+  }
+}

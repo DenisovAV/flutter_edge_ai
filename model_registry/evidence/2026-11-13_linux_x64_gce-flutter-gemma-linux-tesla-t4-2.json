@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-13",
+  "host": "linux_x64",
+  "device": "GCE flutter-gemma-linux (Tesla T4)",
+  "commit": "1f7b7e4abc331d622b10ab4c03a80a20b8b4067f",
+  "packages": {
+    "flutter_edge_ai": "2.6.0",
+    "flutter_edge_ai_litertlm": "1.20.1",
+    "flutter_edge_ai_speech": "0.6.1"
+  },
+  "native": "fde4a418818747f740795e95e65821f31bb48a104ffe89844f6f7303f6f05799",
+  "log_sha256": "60c4bd278796c0fe4d8ba1ed648a7ca97e7da175094dcb6843b712d9939999ff",
+  "log_url": null,
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "embeddinggemma-2-text-vision-440m/generic": {
+      "cpu": [
+        "text to image retrieval"
+      ]
+    }
+  }
+}

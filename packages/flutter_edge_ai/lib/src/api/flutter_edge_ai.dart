@@ -197,9 +197,11 @@ class FlutterEdgeAi {
     List<SkillExecutorProvider> skillExecutors = const [],
     // Opt-in resolvers that turn a Hugging Face repo id into a
     // [ResolvedHfModel] by reading that repo's deployment metadata (e.g.
-    // flutter_edge_ai_litertlm reads `litertlm_manifest.json`). Consumed by
-    // [resolveHuggingFace]; empty default is a no-op (that call then throws a
-    // clear "no resolver registered" error).
+    // flutter_edge_ai_litertlm reads `litertlm_manifest.json`), for any role
+    // (each declares its own `type`). Consumed by [resolveHuggingFace] and the
+    // installers' `fromHuggingFace`; registered BEFORE the resolvers the
+    // providers above carry (HuggingFaceResolverSource), so one here wins the
+    // equal-priority tie within its role. Empty default is a no-op.
     List<HuggingFaceResolver> huggingFaceResolvers = const [],
 
     /// Optional host-provided broadcast of download task updates (mobile).
@@ -225,6 +227,26 @@ class FlutterEdgeAi {
     /// implementation from your app or tests.
     FileSystemService? fileSystemService,
   }) async {
+    // Read (and checked) before anything registers: a provider whose resolver
+    // serves another role refuses the whole initialize, not half of it.
+    final providerResolvers = [
+      ...engineHuggingFaceResolvers(inferenceEngines),
+      ..._providerHuggingFaceResolvers(
+        embeddingBackends,
+        ModelManagementType.embedding,
+        'embeddingBackends',
+      ),
+      ..._providerHuggingFaceResolvers(
+        sttBackends,
+        ModelManagementType.stt,
+        'sttBackends',
+      ),
+      ..._providerHuggingFaceResolvers(
+        ttsBackends,
+        ModelManagementType.tts,
+        'ttsBackends',
+      ),
+    ];
     await ServiceRegistry.initialize(
       huggingFaceToken: huggingFaceToken,
       maxDownloadRetries: maxDownloadRetries,
@@ -254,15 +276,15 @@ class FlutterEdgeAi {
     if (huggingFaceResolvers.isNotEmpty) {
       HuggingFaceResolverRegistry.instance.registerAll(huggingFaceResolvers);
     }
-    // Auto-register resolvers that ride on the engines themselves (an engine
+    // Auto-register resolvers that ride on the providers themselves (one
     // that `implements HuggingFaceResolverSource` — LiteRtLmEngine, OnnxEngine,
-    // BuiltInAiEngine). Registered AFTER the explicit list so an app-supplied
-    // resolver wins the equal-priority tie (findFor: first-registered). Dedup
-    // is handled by registerAll (a `const` resolver passed both explicitly and
-    // via its engine is the same instance → registered once).
-    final engineResolvers = engineHuggingFaceResolvers(inferenceEngines);
-    if (engineResolvers.isNotEmpty) {
-      HuggingFaceResolverRegistry.instance.registerAll(engineResolvers);
+    // BuiltInAiEngine, or an embedding/STT/TTS backend). Registered AFTER the
+    // explicit list so an app-supplied resolver wins the equal-priority tie
+    // within its role (findFor: first-registered). Dedup is handled by
+    // registerAll (a `const` resolver passed both explicitly and via its
+    // provider is the same instance → registered once).
+    if (providerResolvers.isNotEmpty) {
+      HuggingFaceResolverRegistry.instance.registerAll(providerResolvers);
     }
 
     // Single-flight model-manager init: restore the previously-active model
@@ -737,23 +759,49 @@ class FlutterEdgeAi {
   /// [initialize] registers these AFTER the explicit `huggingFaceResolvers:`
   /// list, so an app's explicit resolver wins the equal-priority tie. An engine
   /// that does not implement [HuggingFaceResolverSource] contributes nothing.
+  /// Throws [StateError] for an engine whose resolver's
+  /// [HuggingFaceResolver.type] is not [ModelManagementType.inference].
   /// Extracted so the derivation is unit-testable without a full [initialize].
   @visibleForTesting
   static List<HuggingFaceResolver> engineHuggingFaceResolvers(
     List<InferenceEngineProvider> engines,
+  ) => _providerHuggingFaceResolvers(
+    engines,
+    ModelManagementType.inference,
+    'inferenceEngines',
+  );
+
+  /// The resolvers [providers] (passed to [initialize] as [listName]) carry
+  /// through [HuggingFaceResolverSource], each checked to serve [type], the
+  /// role of that list.
+  static List<HuggingFaceResolver> _providerHuggingFaceResolvers(
+    List<Object> providers,
+    ModelManagementType type,
+    String listName,
   ) {
     final resolvers = <HuggingFaceResolver>[];
-    for (final e in engines) {
-      // Bind via pattern: HuggingFaceResolverSource is not a subtype of
-      // InferenceEngineProvider, so a plain `is` check would not promote `e`.
-      if (e case final HuggingFaceResolverSource source) {
-        resolvers.add(source.huggingFaceResolver);
+    for (final p in providers) {
+      // Bind via pattern: HuggingFaceResolverSource is not a subtype of the
+      // provider types, so a plain `is` check would not promote `p`.
+      if (p case final HuggingFaceResolverSource source) {
+        final resolver = source.huggingFaceResolver;
+        if (resolver.type != type) {
+          throw StateError(
+            '${p.runtimeType} was passed in $listName, but the Hugging Face '
+            'resolver it carries ("${resolver.name}") serves '
+            '${resolver.type.name} models, not ${type.name} ones. A provider '
+            'carries a resolver of its own role; pass a resolver for another '
+            'role in FlutterEdgeAi.initialize(huggingFaceResolvers: [...]).',
+          );
+        }
+        resolvers.add(resolver);
       }
     }
     return resolvers;
   }
 
-  /// Three-tier runtime-default merge used by [getActiveModel] and [openModel]: an explicit
+  /// Three-tier runtime-default merge used by [getActiveModel], [openModel] and
+  /// [getActiveEmbedder]: an explicit
   /// argument wins over a manifest [ModelRuntimeDefaults] value, which wins over
   /// the SDK default. Extracted so the precedence rule is stated — and tested —
   /// in one place.
@@ -773,12 +821,19 @@ class FlutterEdgeAi {
   /// revision-pinned variant, and returns the runtime defaults on
   /// `InferenceInstallation.runtime`.
   ///
-  /// [fileType] tells the registry which resolver to pick (the litertlm
-  /// resolver claims `ModelFileType.litertlm`); it is the only deterministic
-  /// selection signal a resolver has before it fetches the manifest.
+  /// [type] is the role to resolve for: only resolvers whose
+  /// [HuggingFaceResolver.type] is [type] are asked, so an `.onnx` language
+  /// model and an `.onnx` embedder each reach their own resolver. The default
+  /// is [ModelManagementType.inference]; `installEmbedder().fromHuggingFace`
+  /// resolves with [ModelManagementType.embedding].
   ///
-  /// The result carries install identity ([ResolvedHfModel.modelType] /
-  /// [ResolvedHfModel.fileType] for [installModel], and [ResolvedHfModel.url]
+  /// [fileType] then tells the registry which resolver of that role to pick
+  /// (the litertlm resolver claims `ModelFileType.litertlm`); it is the only
+  /// deterministic selection signal a resolver has before it fetches the
+  /// manifest.
+  ///
+  /// The result carries install identity ([ResolvedHfModel.family] /
+  /// [ResolvedHfModel.fileType] for the installer, and [ResolvedHfModel.url]
   /// for the download) plus overridable [ResolvedHfModel.runtime] defaults.
   /// Apply the model-level defaults with `getActiveModel(defaults:)`; forward
   /// the two session-level fields to `createSession` yourself. Install from
@@ -790,7 +845,7 @@ class FlutterEdgeAi {
   /// final r = await FlutterEdgeAi.resolveHuggingFace(
   ///     repo, fileType: ModelFileType.litertlm);
   /// await FlutterEdgeAi.installModel(
-  ///       modelType: r.modelType ?? ModelType.general,
+  ///       modelType: r.family as ModelType? ?? ModelType.general,
   ///       fileType: r.fileType,
   ///     )
   ///     .fromNetwork(r.url)
@@ -805,33 +860,69 @@ class FlutterEdgeAi {
   /// ```
   ///
   /// [token] defaults to the token passed to [initialize]. Throws [StateError]
-  /// if no registered resolver handles [repo] — add the engine package that
-  /// provides one (e.g. flutter_edge_ai_litertlm for `.litertlm` manifests).
+  /// if no registered resolver of role [type] handles [repo] — add the engine
+  /// or backend package that provides one (e.g. flutter_edge_ai_litertlm for
+  /// `.litertlm` manifests); the message names any resolver of another role
+  /// that claims [repo] and [fileType]. Also throws [StateError] when the
+  /// resolver's result names a [ResolvedHfModel.tokenizerFile] that is not
+  /// among its [ResolvedHfModel.files], or that is its
+  /// [ResolvedHfModel.file].
   static Future<ResolvedHfModel> resolveHuggingFace(
     String repo, {
+    ModelManagementType type = ModelManagementType.inference,
     ModelFileType? fileType,
     String? token,
     PreferredBackend? preferredBackend,
   }) async {
     final resolver = HuggingFaceResolverRegistry.instance.findFor(
       repo,
+      type: type,
       fileType: fileType,
     );
     if (resolver == null) {
+      // A resolver of another role that claims this repo is the likeliest
+      // mistake (a resolver declaring the wrong `type`): name it.
+      final otherRoles = [
+        for (final r in HuggingFaceResolverRegistry.instance.registered)
+          if (r.type != type && r.canResolve(repo, fileType: fileType))
+            '"${r.name}" claims ${fileType?.name ?? 'this repo'} but serves '
+                '${r.type.name}; check its `type`',
+      ];
       throw StateError(
-        'No Hugging Face resolver registered for "$repo" (fileType: $fileType). '
-        'Register the engine that provides one — its resolver auto-registers via '
-        'HuggingFaceResolverSource (e.g. LiteRtLmEngine ships the litertlm '
-        'manifest resolver) — or pass one explicitly to '
-        'FlutterEdgeAi.initialize(huggingFaceResolvers: [...]).',
+        'No ${type.name} Hugging Face resolver registered for "$repo" '
+        '(fileType: $fileType). '
+        '${otherRoles.isEmpty ? '' : '${otherRoles.join('. ')}. '}'
+        'Register the engine or backend that provides '
+        'one — its resolver auto-registers via HuggingFaceResolverSource (e.g. '
+        'LiteRtLmEngine ships the litertlm manifest resolver) — or pass one '
+        'explicitly to FlutterEdgeAi.initialize(huggingFaceResolvers: [...]).',
       );
     }
-    return resolver.resolve(
+    final resolved = await resolver.resolve(
       repo,
       token: token ?? ServiceRegistry.instance.huggingFaceToken,
       platform: _currentPlatformKey(),
       preferredBackend: preferredBackend,
     );
+    if (resolved.tokenizerFile case final tokenizer?
+        when tokenizer == resolved.file ||
+            tokenizer == resolved.file.split('/').last) {
+      throw StateError(
+        'The Hugging Face resolver "${resolver.name}" resolved "$repo" with '
+        'tokenizerFile "$tokenizer", which is its model file "${resolved.file}" '
+        'itself; a tokenizer file is a separate file, and a model that '
+        'carries its own tokenizer has tokenizerFile null.',
+      );
+    }
+    if (resolved.tokenizerFile case final tokenizer?
+        when !(resolved.files?.any((f) => f.name == tokenizer) ?? false)) {
+      throw StateError(
+        'The Hugging Face resolver "${resolver.name}" resolved "$repo" with '
+        'tokenizerFile "$tokenizer", which is not among its files '
+        '(${resolved.files?.map((f) => f.name).join(', ') ?? 'none'}).',
+      );
+    }
+    return resolved;
   }
 
   /// Lowercase platform key passed to [HuggingFaceResolver.resolve] so a
@@ -907,6 +998,15 @@ class FlutterEdgeAi {
   ///   explicit load falls back, including an NPU request; reuse is quiet.
   ///   Read [EmbeddingModel.activeBackend] for the actual placement; null is
   ///   unknown, not CPU. Provider constructors own any strict fallback policy.
+  /// - [defaults]: overridable runtime defaults, e.g. a catalog variant's
+  ///   `EmbedderVariant.runtimeDefaults` or `EmbeddingInstallation.runtime`.
+  ///   Its `preferredBackend`, `supportImage` and `supportAudio` apply where
+  ///   the matching argument above is not given (explicit argument > default
+  ///   > SDK default: no backend preference, no images, no audio); its other
+  ///   fields are not read here. Only this call reads them: RAG's
+  ///   `FlutterEdgeAiActiveEmbedder` and genkit's runtime load the active
+  ///   embedder without `defaults`, so pass the same `preferredBackend`
+  ///   (and media flags) to them yourself.
   ///
   /// Fails (as a failed future) with:
   /// - [StateError] if no active embedding model is set
@@ -939,9 +1039,10 @@ class FlutterEdgeAi {
   /// debugPrint('embedding on ${embedder.activeBackend}');
   /// ```
   static Future<EmbeddingModel> getActiveEmbedder({
+    ModelRuntimeDefaults? defaults,
     PreferredBackend? preferredBackend,
-    bool supportImage = false,
-    bool supportAudio = false,
+    bool? supportImage,
+    bool? supportAudio,
   }) async {
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final activeSpec = manager.activeEmbeddingModel;
@@ -957,9 +1058,17 @@ class FlutterEdgeAi {
 
     // Create EmbeddingModel using active spec (paths resolved automatically)
     return await FlutterEdgeAiPlugin.instance.createEmbeddingModel(
-      preferredBackend: preferredBackend,
-      supportImage: supportImage,
-      supportAudio: supportAudio,
+      preferredBackend: preferredBackend ?? defaults?.preferredBackend,
+      supportImage: mergeRuntimeDefault(
+        supportImage,
+        defaults?.supportImage,
+        false,
+      ),
+      supportAudio: mergeRuntimeDefault(
+        supportAudio,
+        defaults?.supportAudio,
+        false,
+      ),
     );
   }
 
@@ -994,6 +1103,10 @@ class FlutterEdgeAi {
   ///   exists, so it takes effect on every call and not just the first.
   ///   Override a single transcription with
   ///   [SpeechRecognizer.transcribe]'s own `language` instead.
+  /// - [defaults]: overridable runtime defaults, e.g. a catalog variant's
+  ///   `SttVariant.runtimeDefaults`. Its `preferredBackend` and `language`
+  ///   apply where the matching argument above is not given (explicit
+  ///   argument > default > SDK default); its other fields are not read here.
   ///
   /// Throws:
   /// - [StateError] if no active STT model is set
@@ -1019,6 +1132,7 @@ class FlutterEdgeAi {
   /// final french = await de.transcribe(frenchPcm, language: 'fr');
   /// ```
   static Future<SpeechRecognizer> getActiveStt({
+    ModelRuntimeDefaults? defaults,
     PreferredBackend? preferredBackend,
     String? language,
   }) async {
@@ -1040,8 +1154,8 @@ class FlutterEdgeAi {
 
     // Create SpeechRecognizer using active spec (paths resolved automatically)
     return await FlutterEdgeAiPlugin.instance.createSttModel(
-      preferredBackend: preferredBackend,
-      language: language,
+      preferredBackend: preferredBackend ?? defaults?.preferredBackend,
+      language: language ?? defaults?.language,
     );
   }
 
@@ -1067,6 +1181,10 @@ class FlutterEdgeAi {
   ///   loads. A previously-created synthesizer for the same active model is
   ///   reused across calls (create-time singleton) — to pick up a new
   ///   [language], [close][SpeechSynthesizer.close] it first.
+  /// - [defaults]: overridable runtime defaults, e.g. a catalog variant's
+  ///   `TtsVariant.runtimeDefaults`. Its `preferredBackend` and `language`
+  ///   apply where the matching argument above is not given (explicit
+  ///   argument > default > SDK default); its other fields are not read here.
   ///
   /// Throws:
   /// - [StateError] if no active TTS model is set
@@ -1083,6 +1201,7 @@ class FlutterEdgeAi {
   /// final synthesizer = await FlutterEdgeAi.getActiveTts();
   /// ```
   static Future<SpeechSynthesizer> getActiveTts({
+    ModelRuntimeDefaults? defaults,
     PreferredBackend? preferredBackend,
     String? language,
   }) async {
@@ -1104,8 +1223,8 @@ class FlutterEdgeAi {
 
     // Create SpeechSynthesizer using active spec (paths resolved automatically)
     return await FlutterEdgeAiPlugin.instance.createTtsModel(
-      preferredBackend: preferredBackend,
-      language: language,
+      preferredBackend: preferredBackend ?? defaults?.preferredBackend,
+      language: language ?? defaults?.language,
     );
   }
 

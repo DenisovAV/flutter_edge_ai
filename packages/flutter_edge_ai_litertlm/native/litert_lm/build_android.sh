@@ -11,7 +11,7 @@
 #
 # Usage:
 #   ./build_android.sh [ref]
-#   ./build_android.sh 771b06e1       # v0.19.0 (the default)
+#   ./build_android.sh 7a03724c       # v0.19.1 (the default)
 #   ./build_android.sh v0.11.0        # WARNING: v0.11.0 prebuilt accelerators
 #                                     # are ABI-incompatible with libLiteRtLm
 #                                     # rebuilt from v0.11.0 source. Use 032334d
@@ -23,7 +23,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/android_arm64"
 LITERT_LM_DIR="${LITERT_LM_DIR:-/tmp/LiteRT-LM}"
-DEFAULT_REF="771b06e1a2c7f70a399a718599109facf37e38fd"   # v0.19.0
+DEFAULT_REF="7a03724cece417f1724c923b3d527b4319730841"   # v0.19.1
 VERSION="${1:-}"
 
 # Resolve Android NDK — prefer ANDROID_NDK_HOME env, else newest under
@@ -117,7 +117,7 @@ echo "Pulling LFS files..."
 # segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
 # main in 4453b286, and that provider carries the LogitMask types. Upstream's
 # own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-771b06e1a2c7f70a399a718599109facf37e38fd}"
+PREBUILT_REF="${PREBUILT_REF:-7a03724cece417f1724c923b3d527b4319730841}"
 echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/android_arm64/*"
 # One file, from a different commit than the source: fetch it straight from the

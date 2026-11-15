@@ -73,7 +73,7 @@ ResolvedHfModel _answer(
     file: file ?? r.file,
     url: url ?? r.url,
     fileType: r.fileType,
-    modelType: r.modelType,
+    family: r.family,
     sha256: sha256 ?? r.sha256,
     sizeBytes: sizeBytes ?? r.sizeBytes,
     notes: notes ?? r.notes,

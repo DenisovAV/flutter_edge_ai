@@ -1,3 +1,6 @@
+## Unreleased
+- `OnnxHuggingFaceResolver` declares the `inference` role.
+
 ## 0.9.1
 - Web: closing a model releases its Transformers.js pipeline (#800).
 

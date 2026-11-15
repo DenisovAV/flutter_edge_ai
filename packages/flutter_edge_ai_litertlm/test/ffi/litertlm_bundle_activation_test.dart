@@ -102,27 +102,61 @@ void main() {
   });
 
   group('gpuActivationDefault', () {
-    ActivationDataType? rule({
+    ({ActivationDataType? type, GpuActivationReason? reason}) choose({
       ActivationDataType? requested,
       PreferredBackend? preferredBackend = PreferredBackend.gpu,
       ModelType modelType = ModelType.functionGemma,
       bool? declaresKey = false,
+      int maxTokens = 1024,
     }) => gpuActivationDefault(
       requested: requested,
       preferredBackend: preferredBackend,
       modelType: modelType,
       declaresKey: declaresKey,
+      maxTokens: maxTokens,
     );
 
+    ActivationDataType? rule({
+      ActivationDataType? requested,
+      PreferredBackend? preferredBackend = PreferredBackend.gpu,
+      ModelType modelType = ModelType.functionGemma,
+      bool? declaresKey = false,
+      int maxTokens = 1024,
+    }) => choose(
+      requested: requested,
+      preferredBackend: preferredBackend,
+      modelType: modelType,
+      declaresKey: declaresKey,
+      maxTokens: maxTokens,
+    ).type;
+
     test('FunctionGemma without the key gets float32', () {
-      expect(rule(), ActivationDataType.float32);
+      expect(choose(), (
+        type: ActivationDataType.float32,
+        reason: GpuActivationReason.functionGemmaWithoutKey,
+      ));
+    });
+
+    test('FunctionGemma does not depend on the context', () {
+      for (final maxTokens in [1024, 2048, 2049, 32768]) {
+        expect(
+          rule(maxTokens: maxTokens),
+          ActivationDataType.float32,
+          reason: '$maxTokens',
+        );
+        expect(
+          rule(maxTokens: maxTokens, declaresKey: true),
+          isNull,
+          reason: '$maxTokens',
+        );
+      }
     });
 
     test('an explicit value wins, float16 included', () {
-      expect(
-        rule(requested: ActivationDataType.float16),
-        ActivationDataType.float16,
-      );
+      expect(choose(requested: ActivationDataType.float16), (
+        type: ActivationDataType.float16,
+        reason: null,
+      ));
       expect(
         rule(requested: ActivationDataType.float32, declaresKey: true),
         ActivationDataType.float32,
@@ -137,17 +171,99 @@ void main() {
       expect(rule(declaresKey: null), isNull);
     });
 
-    test('other families without the key are left alone', () {
+    test('other families without the key are left alone, at any context', () {
       for (final type in ModelType.values) {
         if (type == ModelType.functionGemma) continue;
-        expect(rule(modelType: type), isNull, reason: type.name);
+        for (final maxTokens in [1024, 2048]) {
+          expect(
+            rule(modelType: type, maxTokens: maxTokens),
+            isNull,
+            reason: '${type.name} $maxTokens',
+          );
+        }
+        if (type == ModelType.gemma4) continue;
+        expect(
+          rule(modelType: type, maxTokens: 8192),
+          isNull,
+          reason: '${type.name} 8192',
+        );
       }
+    });
+
+    group('Gemma 4 (LiteRT-LM #4001)', () {
+      test('a context of 2,048 keeps the default; 2,049 gets float32', () {
+        for (final declares in <bool?>[true, false, null]) {
+          expect(
+            rule(
+              modelType: ModelType.gemma4,
+              declaresKey: declares,
+              maxTokens: 2048,
+            ),
+            isNull,
+            reason: 'declares=$declares',
+          );
+          expect(
+            choose(
+              modelType: ModelType.gemma4,
+              declaresKey: declares,
+              maxTokens: 2049,
+            ),
+            (
+              type: ActivationDataType.float32,
+              reason: GpuActivationReason.gemma4LongContext,
+            ),
+            reason: 'declares=$declares',
+          );
+        }
+        expect(
+          rule(modelType: ModelType.gemma4, maxTokens: 4096),
+          ActivationDataType.float32,
+        );
+      });
+
+      test('an explicit float16 wins over a long context', () {
+        expect(
+          choose(
+            modelType: ModelType.gemma4,
+            maxTokens: 8192,
+            requested: ActivationDataType.float16,
+          ),
+          (type: ActivationDataType.float16, reason: null),
+        );
+      });
+
+      test('the CPU is left alone at any context', () {
+        expect(
+          rule(
+            modelType: ModelType.gemma4,
+            maxTokens: 8192,
+            preferredBackend: PreferredBackend.cpu,
+          ),
+          isNull,
+        );
+      });
+
+      test('the default order and an NPU request reach it (their GPU '
+          'attempts)', () {
+        for (final backend in <PreferredBackend?>[null, PreferredBackend.npu]) {
+          expect(
+            rule(
+              modelType: ModelType.gemma4,
+              maxTokens: 4096,
+              preferredBackend: backend,
+            ),
+            ActivationDataType.float32,
+            reason: '${backend?.name}',
+          );
+        }
+      });
     });
 
     // The gate the engine applies, over everything it depends on. A request
     // with no backend is the default order (GPU first) and must be eligible:
     // narrowing the CPU exclusion to `== gpu` breaks exactly that call.
-    test('backend x family x declares: only the eligible cells choose', () {
+    test('backend x family x declares x context: only the eligible cells '
+        'choose', () {
       const backends = <PreferredBackend?>[
         null,
         PreferredBackend.gpu,
@@ -162,21 +278,27 @@ void main() {
       for (final backend in backends) {
         for (final family in families) {
           for (final declares in <bool?>[true, false, null]) {
-            final expected =
-                backend != PreferredBackend.cpu &&
-                    family == ModelType.functionGemma &&
-                    declares == false
-                ? ActivationDataType.float32
-                : null;
-            expect(
-              rule(
-                preferredBackend: backend,
-                modelType: family,
-                declaresKey: declares,
-              ),
-              expected,
-              reason: '${backend?.name} ${family.name} declares=$declares',
-            );
+            for (final maxTokens in [1024, 2048, 2049, 4096]) {
+              final gpuReachable = backend != PreferredBackend.cpu;
+              final functionGemma =
+                  family == ModelType.functionGemma && declares == false;
+              final gemma4Long = family == ModelType.gemma4 && maxTokens > 2048;
+              final expected = gpuReachable && (functionGemma || gemma4Long)
+                  ? ActivationDataType.float32
+                  : null;
+              expect(
+                rule(
+                  preferredBackend: backend,
+                  modelType: family,
+                  declaresKey: declares,
+                  maxTokens: maxTokens,
+                ),
+                expected,
+                reason:
+                    '${backend?.name} ${family.name} declares=$declares '
+                    'maxTokens=$maxTokens',
+              );
+            }
           }
         }
       }
@@ -187,18 +309,23 @@ void main() {
         ActivationDataType? requested,
         PreferredBackend? backend,
         ModelType family = ModelType.functionGemma,
+        int maxTokens = 1024,
       }) => activationHeaderMatters(
         requested: requested,
         preferredBackend: backend,
         modelType: family,
+        maxTokens: maxTokens,
       );
       expect(matters(), isTrue);
+      expect(matters(maxTokens: 4096), isTrue);
       expect(matters(backend: PreferredBackend.gpu), isTrue);
       expect(matters(backend: PreferredBackend.npu), isTrue);
       expect(matters(backend: PreferredBackend.cpu), isFalse);
       expect(matters(requested: ActivationDataType.float16), isFalse);
       expect(matters(family: ModelType.gemmaIt), isFalse);
+      // Gemma 4 is decided by the context alone, either way.
       expect(matters(family: ModelType.gemma4), isFalse);
+      expect(matters(family: ModelType.gemma4, maxTokens: 4096), isFalse);
     });
   });
 

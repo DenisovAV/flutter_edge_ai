@@ -120,9 +120,18 @@ class InferenceChat {
   @internal
   final Mutex genaiLock = Mutex();
 
+  /// Qwen3's soft switch that turns thinking off for one user turn.
+  static const _noThinkSuffix = ' /no_think';
+
+  /// The messages as the caller gave them ([fullHistory]).
   final List<Message> _fullHistory = [];
-  final List<Message> _prefixes =
-      []; // Prefix messages (tools prompt + context message) for replay across sessions
+
+  /// Prefix messages (tools prompt + context message) for replay across
+  /// sessions, as the model received them.
+  final List<Message> _prefixes = [];
+
+  /// The messages the session is rebuilt from, as the model received them
+  /// (a Qwen3 text turn with thinking off carries [_noThinkSuffix]).
   final List<Message> _modelHistory = [];
   int _currentTokens = 0;
   bool _toolsInstructionSent =
@@ -285,13 +294,18 @@ class InferenceChat {
     // requested. Only to a plain text turn: in a tool response it is noise,
     // and next to audio a bundle may print the user's text as the start of
     // its answer (Qwen3-ASR then returns an empty transcript).
+    // The suffix is for the model only: [fullHistory] keeps the caller's
+    // message, so replaying it through clearHistory(replayHistory:) appends
+    // exactly one suffix again. A text that already ends with it (a history
+    // saved before the suffix stayed out of it) is sent as is.
     if (!enableThinking &&
         modelType == ModelType.qwen3 &&
         message.isUser &&
         message.type == MessageType.text &&
-        !message.hasAudio) {
+        !message.hasAudio &&
+        !message.text.endsWith(_noThinkSuffix)) {
       messageToSend = messageToSend.copyWith(
-        text: '${messageToSend.text} /no_think',
+        text: '${messageToSend.text}$_noThinkSuffix',
       );
     }
 
@@ -310,13 +324,14 @@ class InferenceChat {
 
     await session.addQueryChunk(messageToSend);
 
-    // Store message in history
-    _fullHistory.add(messageToSend);
+    // The app's history keeps the caller's message; the replay lists keep
+    // what the model received, so a rebuilt session gets the same input.
+    _fullHistory.add(message);
     // If this is a prefix message, add to _prefixes
     if (prefix) {
-      _prefixes.add(message);
+      _prefixes.add(messageToSend);
     } else {
-      _modelHistory.add(message);
+      _modelHistory.add(messageToSend);
     }
 
     if (message.hasImage) {

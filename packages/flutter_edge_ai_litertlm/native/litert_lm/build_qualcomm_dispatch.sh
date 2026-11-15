@@ -75,7 +75,7 @@ fi
 #
 # Do NOT go back to a literal, and do NOT use LiteRT v2.1.1 or earlier — the
 # LiteRtDispatchApi struct has breaking ABI changes after it.
-LITERTLM_REF="${LITERTLM_REF:-771b06e1a2c7f70a399a718599109facf37e38fd}"   # v0.19.0
+LITERTLM_REF="${LITERTLM_REF:-7a03724cece417f1724c923b3d527b4319730841}"   # v0.19.1
 LITERT_REF="${LITERT_REF:-}"
 if [ -z "$LITERT_REF" ]; then
   echo "Resolving LITERT_REF from LiteRT-LM $LITERTLM_REF WORKSPACE..."

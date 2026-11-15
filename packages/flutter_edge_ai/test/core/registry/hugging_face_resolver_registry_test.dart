@@ -5,7 +5,7 @@ import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show PreferredBackend;
 import 'package:flutter_edge_ai/src/model.dart' show ModelFileType, ModelType;
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
-    show InferenceModelSpec;
+    show InferenceModelSpec, ModelManagementType;
 import 'package:flutter_edge_ai/src/registry/hugging_face_resolver_registry.dart';
 import 'package:flutter_edge_ai/src/registry/inference_engine_provider.dart';
 import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
@@ -15,10 +15,17 @@ import 'package:flutter_test/flutter_test.dart';
 /// Minimal fake resolver — probe-chain selection is what these tests exercise,
 /// so [resolve] is never called.
 class _R implements HuggingFaceResolver {
-  _R(this._n, this._pri, {this.accepts = true});
+  _R(
+    this._n,
+    this._pri, {
+    this.accepts = true,
+    this.type = ModelManagementType.inference,
+  });
   final String _n;
   final int _pri;
   final bool accepts;
+  @override
+  final ModelManagementType type;
   @override
   String get name => _n;
   @override
@@ -78,7 +85,12 @@ void main() {
         _R('low', 0),
         _R('high', 10),
       ]);
-      expect(HuggingFaceResolverRegistry.instance.findFor('o/r')!.name, 'high');
+      expect(
+        HuggingFaceResolverRegistry.instance
+            .findFor('o/r', type: ModelManagementType.inference)!
+            .name,
+        'high',
+      );
     });
 
     test('first-registered breaks ties on equal priority', () {
@@ -87,13 +99,48 @@ void main() {
         _R('second', 5),
       ]);
       expect(
-        HuggingFaceResolverRegistry.instance.findFor('o/r')!.name,
+        HuggingFaceResolverRegistry.instance
+            .findFor('o/r', type: ModelManagementType.inference)!
+            .name,
         'first',
       );
     });
 
+    test('selects by role first: a higher-priority resolver of another role '
+        'is never chosen', () {
+      HuggingFaceResolverRegistry.instance.registerAll([
+        _R('embedder', 9, type: ModelManagementType.embedding),
+        _R('llm', 0),
+      ]);
+      expect(
+        HuggingFaceResolverRegistry.instance
+            .findFor('o/r', type: ModelManagementType.inference)!
+            .name,
+        'llm',
+      );
+      expect(
+        HuggingFaceResolverRegistry.instance
+            .findFor('o/r', type: ModelManagementType.embedding)!
+            .name,
+        'embedder',
+      );
+      expect(
+        HuggingFaceResolverRegistry.instance.findFor(
+          'o/r',
+          type: ModelManagementType.stt,
+        ),
+        isNull,
+      );
+    });
+
     test('findFor null when empty; hasAny false', () {
-      expect(HuggingFaceResolverRegistry.instance.findFor('o/r'), isNull);
+      expect(
+        HuggingFaceResolverRegistry.instance.findFor(
+          'o/r',
+          type: ModelManagementType.inference,
+        ),
+        isNull,
+      );
       expect(HuggingFaceResolverRegistry.instance.hasAny, isFalse);
     });
 
@@ -103,7 +150,9 @@ void main() {
         _R('accepts', 0),
       ]);
       expect(
-        HuggingFaceResolverRegistry.instance.findFor('o/r')!.name,
+        HuggingFaceResolverRegistry.instance
+            .findFor('o/r', type: ModelManagementType.inference)!
+            .name,
         'accepts',
       );
     });
@@ -122,7 +171,7 @@ void main() {
         file: 'model.litertlm',
         url: 'https://huggingface.co/o/r/resolve/main/model.litertlm',
         fileType: ModelFileType.litertlm,
-        modelType: ModelType.qwen3,
+        family: ModelType.qwen3,
         sha256: 'abc',
         sizeBytes: 123,
         runtime: ModelRuntimeDefaults(
@@ -133,7 +182,7 @@ void main() {
       );
       expect(r.file, 'model.litertlm');
       expect(r.fileType, ModelFileType.litertlm);
-      expect(r.modelType, ModelType.qwen3);
+      expect(r.family, ModelType.qwen3);
       expect(r.runtime.maxTokens, 4096);
       expect(r.runtime.thinkingDeclared, true);
       expect(r.runtime.minOutputTokens, 2048);
@@ -147,7 +196,8 @@ void main() {
         url: 'u',
         fileType: ModelFileType.litertlm,
       );
-      expect(bare.modelType, isNull);
+      expect(bare.family, isNull);
+      expect(bare.tokenizerFile, isNull);
       expect(bare.runtime.maxTokens, isNull);
       expect(bare.notes, isEmpty);
     },
@@ -219,7 +269,9 @@ void main() {
         FlutterEdgeAi.engineHuggingFaceResolvers([engine]),
       );
       expect(
-        HuggingFaceResolverRegistry.instance.findFor('o/r')!.name,
+        HuggingFaceResolverRegistry.instance
+            .findFor('o/r', type: ModelManagementType.inference)!
+            .name,
         'explicit',
       );
     });

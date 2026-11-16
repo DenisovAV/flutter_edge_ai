@@ -6,7 +6,7 @@ import 'errors.dart';
 /// The NPU cannot be reached on this device: no dispatch stack in the build,
 /// no Qualcomm FastRPC or DSP on the device, or a dispatch directory that
 /// could not be prepared. [message] says which.
-class NpuDispatchUnavailableException extends LiteRtLmException {
+final class NpuDispatchUnavailableException extends LiteRtLmException {
   const NpuDispatchUnavailableException(super.message);
 
   @override
@@ -15,7 +15,7 @@ class NpuDispatchUnavailableException extends LiteRtLmException {
 
 /// LiteRT-LM's `engine_settings_create` or `engine_create` returned NULL for a
 /// backend.
-class LiteRtLmEngineCreateException extends LiteRtLmException {
+final class LiteRtLmEngineCreateException extends LiteRtLmException {
   const LiteRtLmEngineCreateException(
     super.message, {
     this.nativeCode,

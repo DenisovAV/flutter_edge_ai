@@ -3027,7 +3027,7 @@ class LiteRtLmFfiClient {
       final status =
           '(${liteRtLmStatusName(created.code)}'
           '${created.message == null ? '' : ': ${created.message}'})';
-      throw Exception(
+      throw LiteRtLmNativeException(
         toolsJson == null
             ? 'Failed to create conversation $status'
             : 'Failed to create conversation with tools $status. Tool calls '
@@ -4797,8 +4797,9 @@ class LiteRtLmFfiClient {
 
   /// The engine's token ids for [text], with no BOS added: what the option
   /// scorer of `InferenceModel.createDecider` compares. Unlike [tokenCount]
-  /// it throws: a [StateError] without a loaded engine, and when the native
-  /// call fails. Holds [_nativeMutex].
+  /// it throws: a [StateError] without a loaded engine, and a
+  /// [LiteRtLmNativeException] when the native call fails. Holds
+  /// [_nativeMutex].
   Future<List<int>> tokenIds(String text) => _protectNativeMutex(() async {
     final b = _bindings;
     final engine = _engine;
@@ -4815,7 +4816,7 @@ class LiteRtLmFfiClient {
           b.lastError,
         );
       } on LiteRtLmCallException catch (e) {
-        throw StateError(
+        throw LiteRtLmNativeException(
           'litert_lm_engine_tokenize failed for a text of ${text.length} '
           'characters: $e',
         );
@@ -4835,11 +4836,11 @@ class LiteRtLmFfiClient {
           b.lastError,
         );
       } on LiteRtLmCallException catch (e) {
-        throw StateError('$e');
+        throw LiteRtLmNativeException('$e');
       }
       // Non-empty text cannot tokenise to nothing (see [tokenCount]).
       if (n < 0 || (n == 0 && text.isNotEmpty) || (n > 0 && ids == nullptr)) {
-        throw StateError(
+        throw LiteRtLmNativeException(
           'litert_lm_engine_tokenize returned $n tokens for a text of '
           '${text.length} characters',
         );
@@ -4874,7 +4875,9 @@ class LiteRtLmFfiClient {
           b.lastError,
         );
       } on LiteRtLmCallException catch (e) {
-        throw StateError('litert_lm_engine_detokenize failed for $ids: $e');
+        throw LiteRtLmNativeException(
+          'litert_lm_engine_detokenize failed for $ids: $e',
+        );
       }
       final r = result;
       final Pointer<Char> text;
@@ -4885,10 +4888,12 @@ class LiteRtLmFfiClient {
           b.lastError,
         );
       } on LiteRtLmCallException catch (e) {
-        throw StateError('$e');
+        throw LiteRtLmNativeException('$e');
       }
       if (text == nullptr) {
-        throw StateError('litert_lm_engine_detokenize returned no text');
+        throw LiteRtLmNativeException(
+          'litert_lm_engine_detokenize returned no text',
+        );
       }
       return nativeText(text.cast());
     } finally {

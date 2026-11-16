@@ -30,11 +30,14 @@ final class ContextFullException extends LiteRtLmException {
 /// Native failed the turn, or cancelled it without being asked. The next
 /// message rebuilds the conversation from its history.
 final class TurnFailedException extends LiteRtLmException {
-  const TurnFailedException(super.message, {this.cause});
+  const TurnFailedException(super.message, {Object? cause}) : _cause = cause;
 
-  /// What failed underneath.
-  final Object? cause;
+  final Object? _cause;
 }
+
+/// What failed under [e], for the Flutter adapter, which hands core the
+/// error core's apps always caught; null when nothing did.
+Object? turnFailureCause(TurnFailedException e) => e._cause;
 
 /// A conversation with a loaded model.
 ///

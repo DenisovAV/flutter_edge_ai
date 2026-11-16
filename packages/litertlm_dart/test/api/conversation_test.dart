@@ -418,7 +418,7 @@ void main() {
       expect(
         await errorOf((_, send) => send.failed(const FormatException('x'))),
         isA<TurnFailedException>().having(
-          (e) => e.cause,
+          (e) => turnFailureCause(e),
           'cause',
           isA<FormatException>(),
         ),

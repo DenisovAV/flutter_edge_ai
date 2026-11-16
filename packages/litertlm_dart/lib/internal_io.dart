@@ -181,7 +181,8 @@ export 'src/ffi/litert_bindings.dart' show liteRtLmHostLibraryCandidates;
 export 'src/api/embedding_engine.dart'
     show createEmbeddingEngineWith, embedderConfigFor;
 export 'src/api/backend.dart' show backendKindOf;
-export 'src/api/conversation.dart' show conversationForTest, conversationHandle;
+export 'src/api/conversation.dart'
+    show conversationForTest, conversationHandle, turnFailureCause;
 export 'src/api/engine.dart'
     show
         EngineHost,

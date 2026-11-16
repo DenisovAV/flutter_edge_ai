@@ -68,6 +68,7 @@ export 'src/runtime/errors.dart'
     show
         ConstraintUnsupportedException,
         LiteRtLmException,
+        LiteRtLmNativeException,
         ScoringCancelledException;
 export 'src/runtime/litert_lm_log_level.dart' show LiteRtLmLogLevel;
 export 'src/runtime/load_errors.dart'

@@ -5,7 +5,7 @@
 /// What every exception litertlm_dart throws for a LiteRT-LM failure
 /// extends: one type to catch. Programming errors stay [ArgumentError] and
 /// [StateError].
-abstract class LiteRtLmException implements Exception {
+abstract base class LiteRtLmException implements Exception {
   const LiteRtLmException(this.message);
 
   /// What went wrong.
@@ -16,6 +16,15 @@ abstract class LiteRtLmException implements Exception {
 }
 
 /// An option-scoring run was cancelled. Core: `DeciderCancelledException`.
+/// A LiteRT-LM call failed: [message] names the call and native's status.
+/// Kotlin's `LiteRtLmJniException`.
+final class LiteRtLmNativeException extends LiteRtLmException {
+  const LiteRtLmNativeException(super.message);
+
+  @override
+  String toString() => 'LiteRtLmNativeException: $message';
+}
+
 final class ScoringCancelledException extends LiteRtLmException {
   const ScoringCancelledException(super.message);
 

@@ -16,6 +16,7 @@ import 'package:litertlm_dart/internal_io.dart'
         ScoringStoppedError,
         conversationHandle,
         createOwnConversation,
+        turnFailureCause,
         engineFiltersChannelContent,
         engineNoRewindReason,
         isReleaseBuild,
@@ -453,6 +454,9 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           throw StateError('Model was closed while creating a session');
         }
         rethrow;
+      } on lm.LiteRtLmNativeException catch (e, st) {
+        // Core's apps have always caught a plain Exception here.
+        Error.throwWithStackTrace(Exception(e.message), st);
       }
       runtimeLog(
         '[FfiInferenceModel/perf] createConversation (FFI): ${sessionSw.elapsedMilliseconds - beforeConv}ms',
@@ -575,6 +579,9 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         throw StateError('Model was closed while opening a session');
       }
       rethrow;
+    } on lm.LiteRtLmNativeException catch (e, st) {
+      // Core's apps have always caught a plain Exception here.
+      Error.throwWithStackTrace(Exception(e.message), st);
     } finally {
       _openSessionsPending--;
     }
@@ -788,8 +795,9 @@ class FfiInferenceModelSession extends InferenceModelSession
     }
     // What core's apps always got: the failure itself, not litertlm_dart's
     // wrapper of it.
-    if (error is lm.TurnFailedException && error.cause != null) {
-      return mapRuntimeError(error.cause!);
+    if (error is lm.TurnFailedException) {
+      final cause = turnFailureCause(error);
+      if (cause != null) return mapRuntimeError(cause);
     }
     if (error is lm.ContextFullException) {
       return ContextLimitException(
@@ -1123,6 +1131,17 @@ TurnEnd liteRtLmCompletedTurnEnd(
   null => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
 };
 
+/// [call], with a failed native call thrown as the [StateError] core's
+/// option scoring has always got.
+@visibleForTesting
+Future<T> liteRtLmAsStateError<T>(Future<T> Function() call) async {
+  try {
+    return await call();
+  } on lm.LiteRtLmNativeException catch (e, st) {
+    Error.throwWithStackTrace(StateError(e.message), st);
+  }
+}
+
 /// [OptionScorer] over the engine an [FfiInferenceModel] loaded. Holds no
 /// native resource between calls: each scoring pass opens and deletes its own
 /// session.
@@ -1170,10 +1189,12 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
   }
 
   @override
-  Future<List<int>> tokenize(String text) => _engine.tokenize(text);
+  Future<List<int>> tokenize(String text) =>
+      liteRtLmAsStateError(() => _engine.tokenize(text));
 
   @override
-  Future<String> detokenize(List<int> ids) => _engine.detokenize(ids);
+  Future<String> detokenize(List<int> ids) =>
+      liteRtLmAsStateError(() => _engine.detokenize(ids));
 
   @override
   Future<String> renderUserMessage(String content) =>

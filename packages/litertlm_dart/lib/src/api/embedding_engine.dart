@@ -3,7 +3,7 @@
 // GPU (where measured) or a per-SoC bundle's NPU, over the runtime's
 // LiteRtLmEmbedder.
 
-import 'dart:ffi' show Abi, Allocator;
+import 'dart:ffi' show Allocator;
 import 'dart:typed_data' show Float32List, Uint8List;
 
 import 'package:ffi/ffi.dart' show calloc;
@@ -19,7 +19,15 @@ import '../ffi/litert_lm_embedding_bindings.dart'
     show LiteRtLmEmbeddingBindings;
 import '../ffi/npu_vendor_host.dart';
 import '../runtime/native_hosts.dart'
-    show liteRtLmEmbeddingGpuAbis, liteRtLmEmbeddingGpuRefusedAbis;
+    show
+        LiteRtLmEg2Bundle,
+        liteRtLmEmbeddingGpuAbis,
+        liteRtLmEmbeddingGpuMeasured,
+        liteRtLmEmbeddingGpuRefusedAbis;
+import '../runtime/npu_stacks.dart'
+    show NpuStack, mediatekNpuRefused, mediatekNpuRefusedReason;
+import '../bundle/litertlm_bundle_info.dart' show LiteRtLmBundleException;
+import 'dart:io' show FileSystemException;
 import 'backend.dart';
 import 'engine.dart' show currentEngineHost;
 import 'message.dart';
@@ -47,8 +55,8 @@ final class EmbeddingEngineConfig {
   final String cacheDir;
 
   /// The text tower's backend. A per-SoC bundle runs on the NPU only, a
-  /// generic one never there; the GPU is honoured where it was measured and
-  /// the bundle runs on the CPU elsewhere.
+  /// generic one never there; the GPU is taken where it was measured, for the
+  /// bundles measured there, and refused elsewhere (never moved to the CPU).
   final Backend backend;
 
   /// Null: images are not taken. Set: they are, and a bundle without a vision
@@ -137,9 +145,29 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
   final path = config.modelPath;
   final file = path.split(RegExp(r'[/\\]')).last;
   Never refuse(String message) => throw EmbedderLoadException(message);
-  final target = await readLiteRtLmNpuTarget(path);
+  // A file that cannot be read is a load failure, as every refusal here.
+  Future<T> read<T>(Future<T> Function() body) async {
+    try {
+      return await body();
+    } on EmbedderLoadException {
+      rethrow;
+    } on Object catch (e) {
+      if (e is! FileSystemException &&
+          e is! FormatException &&
+          e is! RangeError &&
+          e is! LiteRtLmBundleException) {
+        rethrow;
+      }
+      throw EmbedderLoadException(
+        '$file is not a readable .litertlm bundle: $e',
+        cause: e,
+      );
+    }
+  }
+
+  final target = await read(() => readLiteRtLmNpuTarget(path));
   final backend = config.backend;
-  final abi = '${Abi.current()}';
+  final abi = currentEngineHost.abi;
   var gpu = false;
   String? dispatchDir;
   NpuStamp? npuTarget;
@@ -158,7 +186,32 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
           "release's native libraries; load $file on the CPU.",
         );
       }
-      gpu = liteRtLmEmbeddingGpuAbis.contains(abi);
+      // Never moved to the CPU: the GPU is honoured where it was measured,
+      // for the bundles that ran there, and refused elsewhere.
+      if (!liteRtLmEmbeddingGpuAbis.contains(abi)) {
+        refuse(
+          'EmbeddingGemma 2 runs on the GPU on '
+          '${liteRtLmEmbeddingGpuAbis.join(', ')} only, and this is $abi; '
+          'load $file on the CPU.',
+        );
+      }
+      final towers = await read(() async => readLiteRtLmMediaTowers(path));
+      final bundle = LiteRtLmEg2Bundle.of(
+        vision: towers.vision,
+        audio: towers.audio,
+      );
+      final measured = liteRtLmEmbeddingGpuMeasured[abi] ?? const {};
+      if (!measured.contains(bundle)) {
+        refuse(
+          'EmbeddingGemma 2 on the GPU on $abi has run with '
+          '${measured.map((b) => b.label).join(' and ')} only; $file is '
+          '${bundle.label}, not run on this GPU yet. Load it on the CPU.',
+        );
+      }
+      if (config.visionBackend != null && !towers.vision) {
+        refuse('$file has no vision tower: it takes no images.');
+      }
+      gpu = true;
     case NpuBackend(:final platform, dispatchDir: final dir):
       if (target == null) {
         refuse(
@@ -168,10 +221,15 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
         );
       }
       final vendor = npuVendorOf(target);
-      if (vendor == null) {
+      if (vendor == null || !NpuStack.forAbi(abi).contains(vendor)) {
         refuse(
-          '$file is compiled for a ${target.vendor} NPU, which no '
-          'dispatch here runs.',
+          '$file is compiled for the $target NPU, which no dispatch on $abi '
+          'runs.',
+        );
+      }
+      if (vendor == NpuStack.mediatek && mediatekNpuRefused) {
+        refuse(
+          '$file is compiled for the $target NPU: $mediatekNpuRefusedReason.',
         );
       }
       npuTarget = target;
@@ -196,7 +254,7 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
   // encoder is compiled for cpu/gpu only).
   final onAccelerator = gpu || npuTarget != null;
   final towers = onAccelerator
-      ? readLiteRtLmMediaTowers(path)
+      ? await read(() async => readLiteRtLmMediaTowers(path))
       : (vision: false, audio: false);
   return LiteRtLmEmbeddingConfig(
     modelPath: path,

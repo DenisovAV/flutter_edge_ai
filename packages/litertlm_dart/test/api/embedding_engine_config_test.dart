@@ -10,10 +10,21 @@ import 'package:test/test.dart';
 
 import '../litertlm_container_fixture.dart';
 
+/// The host [abi], for the NPU placements.
+class _Host extends EngineHost {
+  const _Host(this.abiName);
+  final String abiName;
+  @override
+  String get abi => abiName;
+}
+
 void main() {
   late Directory dir;
   setUp(() => dir = Directory.systemTemp.createTempSync('eg2_config'));
-  tearDown(() => dir.deleteSync(recursive: true));
+  tearDown(() {
+    debugEngineHost = null;
+    dir.deleteSync(recursive: true);
+  });
 
   String write(String name, Uint8List bytes) =>
       (File('${dir.path}/$name')..writeAsBytesSync(bytes)).path;
@@ -58,26 +69,79 @@ void main() {
     },
   );
 
-  test('the GPU is honoured only where it was measured', () async {
-    final path = write('g.litertlm', eg2Container(vision: true));
+  test('the GPU: taken for a bundle measured on this host, refused for any '
+      'other and off the measured hosts; never moved to the CPU', () async {
     final abi = '${Abi.current()}';
-    if (liteRtLmEmbeddingGpuRefusedAbis.contains(abi)) {
-      await expectLater(
-        embedderConfigFor(config(path, backend: const Backend.gpu())),
-        throwsA(isA<EmbedderLoadException>()),
+    final measured = liteRtLmEmbeddingGpuMeasured[abi] ?? const {};
+    for (final (bundle, bytes) in [
+      (LiteRtLmEg2Bundle.text270m, eg2Container()),
+      (LiteRtLmEg2Bundle.textVision440m, eg2Container(vision: true)),
+      (
+        LiteRtLmEg2Bundle.textVisionAudio740m,
+        eg2Container(vision: true, audio: true),
+      ),
+    ]) {
+      final path = write('${bundle.name}.litertlm', bytes);
+      final placing = embedderConfigFor(
+        config(path, backend: const Backend.gpu()),
       );
+      if (liteRtLmEmbeddingGpuAbis.contains(abi) &&
+          !liteRtLmEmbeddingGpuRefusedAbis.contains(abi) &&
+          measured.contains(bundle)) {
+        final placed = await placing;
+        expect(placed.gpu, isTrue, reason: bundle.label);
+        expect(placed.visionTowerOnCpu, bundle != LiteRtLmEg2Bundle.text270m);
+      } else {
+        await expectLater(
+          placing,
+          throwsA(isA<EmbedderLoadException>()),
+          reason: '${bundle.label} on $abi',
+        );
+      }
+    }
+  });
+
+  test('images on a bundle without a vision tower are refused on the GPU',
+      () async {
+    final abi = '${Abi.current()}';
+    if (!(liteRtLmEmbeddingGpuMeasured[abi] ?? const {}).contains(
+      LiteRtLmEg2Bundle.text270m,
+    )) {
       return;
     }
-    final placed = await embedderConfigFor(
-      config(path, backend: const Backend.gpu(), vision: const Backend.cpu()),
+    final path = write('t.litertlm', eg2Container());
+    await expectLater(
+      embedderConfigFor(
+        config(path, backend: const Backend.gpu(), vision: const Backend.cpu()),
+      ),
+      throwsA(isA<EmbedderLoadException>()),
     );
-    final measured = liteRtLmEmbeddingGpuAbis.contains(abi);
-    expect(placed.gpu, measured);
-    expect(placed.visionTowerOnCpu, measured);
+  });
+
+  test('an unreadable file is a load failure', () async {
+    final path = write('junk.litertlm', Uint8List.fromList([1, 2, 3]));
+    await expectLater(
+      embedderConfigFor(config(path)),
+      throwsA(isA<EmbedderLoadException>()),
+    );
+  });
+
+  test('an NPU bundle of a vendor this host does not run is refused, a '
+      'prepared directory notwithstanding', () async {
+    final path = write(
+      'intel.litertlm',
+      eg2Container(textStamp: ('IntelOpenVINO', 'PTL')),
+    );
+    debugEngineHost = const _Host('android_arm64');
+    await expectLater(
+      embedderConfigFor(config(path, backend: Backend.npu(dispatchDir: '/x'))),
+      throwsA(isA<EmbedderLoadException>()),
+    );
   });
 
   test('a per-SoC bundle runs on its NPU only, with a prepared directory '
       'used as it is', () async {
+    debugEngineHost = const _Host('android_arm64');
     final path = write(
       'q.litertlm',
       eg2Container(textStamp: ('Qualcomm', 'SM8650')),
@@ -104,6 +168,7 @@ void main() {
 
   test('beside an NPU text tower the audio tower is named cpu; the vision '
       'tower runs with the text', () async {
+    debugEngineHost = const _Host('android_arm64');
     final path = write(
       'q.litertlm',
       eg2Container(

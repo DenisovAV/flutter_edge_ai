@@ -221,16 +221,16 @@ worked examples.
 
 ### `dlopen` / "library not found" (`libLiteRtLm`)
 
-`flutter_edge_ai_litertlm` is the sole owner of the shared native library and
-bundles it via its build hook. A stale Native-Assets cache after a native
+`litertlm_dart` (under `flutter_edge_ai_litertlm`) is the sole owner of the
+shared native library and bundles it via its build hook. A stale Native-Assets cache after a native
 version bump can leave the library unbundled, surfacing at `getActiveEmbedder()`
 as an `EmbeddingLoadException` around an opaque `dlopen` "no such file". Fix
 with a clean rebuild:
 
 ```bash
 flutter clean
-rm -rf ~/Library/Caches/flutter_gemma/native        # macOS
-rm -rf ~/.cache/flutter_gemma/native                # Linux
-# Windows: rmdir /s "%LOCALAPPDATA%\flutter_gemma\native"  (path may vary)
+rm -rf ~/Library/Caches/litertlm_dart/native        # macOS
+rm -rf ~/.cache/litertlm_dart/native                # Linux
+# Windows: rmdir /s "%LOCALAPPDATA%\litertlm_dart\native"
 flutter pub get
 ```

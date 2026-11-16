@@ -29,9 +29,9 @@ native download.
 ## Install
 
 Add the core and the speech package. `flutter_edge_ai_speech` pulls in
-`flutter_edge_ai_litertlm` (which owns the shared `libLiteRtLm` native bundle)
-transitively — you don't add it yourself unless you also run `.litertlm`
-inference.
+`litertlm_dart` (which owns the shared `libLiteRtLm` native bundle) and
+`flutter_edge_ai_litertlm` transitively — you don't add them yourself unless
+you also run `.litertlm` inference.
 
 ```
 dependencies:

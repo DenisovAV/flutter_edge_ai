@@ -26,6 +26,45 @@
   another revision into the same directory. The ONNX resolver gives no sizes
   yet, so its installs are unchanged.
 
+## flutter_edge_ai_litertlm 1.21.0: the LiteRT-LM runtime is `litertlm_dart`
+
+```
+dependencies:
+  flutter_edge_ai_litertlm: ^1.21.0
+```
+
+The native library, its build hook and the Dart runtime under the engine moved
+to a new pure-Dart package, `litertlm_dart`, which `flutter_edge_ai_litertlm`
+depends on.
+
+- **NPU flags move to the `litertlm_dart:` key.** `qualcomm_npu`,
+  `google_tensor_npu` and the Qualcomm `qualcomm_npu_maven_url` /
+  `qualcomm_npu_aar` / `qualcomm_npu_qairt_zip` settings now go under
+  `hooks: user_defines: litertlm_dart:` (the workspace root's pubspec, if the
+  app is a workspace member):
+
+  ```
+  hooks:
+    user_defines:
+      litertlm_dart:
+        qualcomm_npu: true
+  ```
+
+  1.21.0 still reads them under `flutter_edge_ai_litertlm:` and prints a
+  warning naming each one; a key set under both takes the `litertlm_dart:`
+  value. The old key is to be dropped with the next upstream LiteRT-LM version.
+- **The native cache moved.** The hook caches each release in its own
+  directory, `litertlm_dart/native/<release tag>/<platform>` (`native-v0.19.1-b`
+  for 1.21.0) under
+  `~/Library/Caches` (macOS), `~/.cache` (Linux) or `%LOCALAPPDATA%` (Windows).
+  To force a fresh download, delete `litertlm_dart/native` there and run
+  `flutter clean`. The macOS Podfile `post_install` block still reads
+  `~/Library/Caches/flutter_gemma/native/macos_arm64`, which the hook keeps
+  filled; keep the block as it is.
+- **`flutter_edge_ai_speech` 0.6.2 needs `flutter_edge_ai_litertlm` 1.21.0.**
+  An older `flutter_edge_ai_litertlm` beside `litertlm_dart` would bundle
+  `libLiteRtLm` a second time.
+
 ## flutter_edge_ai 2.6.0
 
 ### Typed responses
@@ -1033,7 +1072,8 @@ transitively through `flutter_gemma_embeddings`'s old dependency on it.
 
 - **`dlopen` "library not found" after removing a package:** if you had both
   `flutter_edge_ai_litertlm` and `flutter_edge_ai_speech` and removed one, run
-  `flutter clean` and delete `~/Library/Caches/flutter_gemma/native` (Windows:
-  `%LOCALAPPDATA%\flutter_gemma\native`), then `flutter pub get`. They share one
-  native library (`flutter_edge_ai_embeddings` 2.x has no native code); see
+  `flutter clean` and delete `~/Library/Caches/litertlm_dart/native` (Linux:
+  `~/.cache/litertlm_dart/native`; Windows: `%LOCALAPPDATA%\litertlm_dart\native`;
+  `flutter_gemma/native` before `flutter_edge_ai_litertlm` 1.21.0), then
+  `flutter pub get`. They share one native library (`flutter_edge_ai_embeddings` 2.x has no native code); see
   those packages' READMEs.

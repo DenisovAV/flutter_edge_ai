@@ -9,8 +9,9 @@ TTS, and a `VoiceSession` voice loop — via the LiteRT C API + `dart:ffi`. Opt-
 package: add it only if your app needs speech-to-text, text-to-speech, or a
 push-to-talk voice loop.
 
-This package depends on `flutter_edge_ai_litertlm`, which owns the shared `libLiteRtLm`
-native bundle and exposes the LiteRT C API bindings (`LiteRtBindings`) used here.
+This package depends on `litertlm_dart`, which owns the shared `libLiteRtLm`
+native bundle and exposes the LiteRT C API bindings (`LiteRtBindings`) used here,
+and on `flutter_edge_ai_litertlm` (1.21.0 or later) for the catalog's NPU targets.
 
 ## Status
 
@@ -252,4 +253,4 @@ more). Without the companion libraries STT and TTS fail to load, and the error
 says so ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
 
 No `hook/build.dart` of its own — the native library is bundled by
-`flutter_edge_ai_litertlm`'s Native Assets hook and shared transitively.
+`litertlm_dart`'s Native Assets hook and shared with `flutter_edge_ai_litertlm`.

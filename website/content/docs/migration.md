@@ -32,6 +32,45 @@ meta:
   another revision into the same directory. The ONNX resolver gives no sizes
   yet, so its installs are unchanged.
 
+## flutter_edge_ai_litertlm 1.21.0: the LiteRT-LM runtime is `litertlm_dart`
+
+```
+dependencies:
+  flutter_edge_ai_litertlm: ^1.21.0
+```
+
+The native library, its build hook and the Dart runtime under the engine moved
+to a new pure-Dart package, `litertlm_dart`, which `flutter_edge_ai_litertlm`
+depends on.
+
+- **NPU flags move to the `litertlm_dart:` key.** `qualcomm_npu`,
+  `google_tensor_npu` and the Qualcomm `qualcomm_npu_maven_url` /
+  `qualcomm_npu_aar` / `qualcomm_npu_qairt_zip` settings now go under
+  `hooks: user_defines: litertlm_dart:` (the workspace root's pubspec, if the
+  app is a workspace member):
+
+  ```
+  hooks:
+    user_defines:
+      litertlm_dart:
+        qualcomm_npu: true
+  ```
+
+  1.21.0 still reads them under `flutter_edge_ai_litertlm:` and prints a
+  warning naming each one; a key set under both takes the `litertlm_dart:`
+  value. The old key is to be dropped with the next upstream LiteRT-LM version.
+- **The native cache moved.** The hook caches each release in its own
+  directory, `litertlm_dart/native/<release tag>/<platform>` (`native-v0.19.1-b`
+  for 1.21.0) under
+  `~/Library/Caches` (macOS), `~/.cache` (Linux) or `%LOCALAPPDATA%` (Windows).
+  To force a fresh download, delete `litertlm_dart/native` there and run
+  `flutter clean`. The macOS Podfile `post_install` block still reads
+  `~/Library/Caches/flutter_gemma/native/macos_arm64`, which the hook keeps
+  filled; keep the block as it is.
+- **`flutter_edge_ai_speech` 0.6.2 needs `flutter_edge_ai_litertlm` 1.21.0.**
+  An older `flutter_edge_ai_litertlm` beside `litertlm_dart` would bundle
+  `libLiteRtLm` a second time.
+
 ## flutter_edge_ai 2.6.0: engine SPI
 
 Engine packages continue to import `package:flutter_edge_ai/engine.dart`. Core
@@ -536,7 +575,9 @@ hooks:
       qualcomm_npu: true
 ```
 
-The build hook downloads `com.qualcomm.qti:qnn-runtime` from Maven Central once
+The key shown is the one `flutter_edge_ai_litertlm` 1.21.0 and later read;
+from 1.10.0 to 1.20.x it is `flutter_edge_ai_litertlm:`. The build hook
+downloads `com.qualcomm.qti:qnn-runtime` from Maven Central once
 per machine and caches it; offline builds set `qualcomm_npu_maven_url` to a
 mirror or `qualcomm_npu_aar` to the AAR itself. Setting the flag accepts
 Qualcomm's AI Stack License. It needs `flutter_edge_ai` 2.1.1. Without the flag
@@ -749,7 +790,7 @@ dependencies:
 ```
 dependencies:
   flutter_edge_ai: ^2.6.0                 # core — always required
-  flutter_edge_ai_litertlm: ^1.20.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai_litertlm: ^1.21.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
   flutter_edge_ai_mediapipe: ^1.3.0       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.3.2      # add if you compute embeddings with a tokenizer file (needs a backend, see above)
   flutter_edge_ai_rag: ^1.1.2             # add for on-device RAG (RagIndex) + one store below
@@ -1135,7 +1176,7 @@ await FlutterEdgeAi.dispose(); // resets core's registries; closes no model
 Native setup moved to the package that owns it:
 
 - **MediaPipe Gradle / Pod deps + the `@mediapipe/tasks-genai` web CDN** are now in `flutter_edge_ai_mediapipe` (bundled automatically on Android/iOS; add the CDN `<script>` for web).
-- **The `.litertlm` native library + the `@litert-lm/core` web CDN** are in `flutter_edge_ai_litertlm`.
+- **The `.litertlm` native library + the `@litert-lm/core` web CDN** are in `flutter_edge_ai_litertlm` (the native library through its `litertlm_dart` dependency from 1.21.0).
 - **The sqlite-vec web loader** (`sqlite3.wasm` with `sqlite-vec` statically linked) is in `flutter_edge_ai_sqlite`.
 
 The iOS/Android entitlements and manifest entries still apply when you ship an
@@ -1148,6 +1189,6 @@ inference engine. See the full [Installation guide](/docs/installation).
 `~/.cache/flutter_gemma/native`, Windows: `%LOCALAPPDATA%\flutter_gemma\native`),
 then `flutter pub get`. From `flutter_edge_ai_litertlm` 1.21.0 LiteRT-LM's own
 cache is `litertlm_dart/native` in the same places.
-`flutter_edge_ai_litertlm` owns the native LiteRT library;
-`flutter_edge_ai_speech` consumes it transitively — it has no Native-Assets hook
-of its own. `flutter_edge_ai_embeddings` has no native code at all.
+`litertlm_dart` (under `flutter_edge_ai_litertlm` from 1.21.0) owns the native
+LiteRT library; `flutter_edge_ai_litertlm` and `flutter_edge_ai_speech` consume
+it through it — neither has a Native-Assets hook of its own. `flutter_edge_ai_embeddings` has no native code at all.

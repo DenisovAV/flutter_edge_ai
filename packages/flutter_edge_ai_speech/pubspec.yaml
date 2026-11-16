@@ -5,7 +5,8 @@ homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_speech
 topics: [speech, stt, gemma, litert, on-device]
 
-# 5 native platforms via dart:ffi (LiteRT C API, shared with flutter_edge_ai_litertlm).
+# 5 native platforms via dart:ffi (LiteRT C API, from litertlm_dart's bundle, shared
+# with flutter_edge_ai_litertlm).
 # Web is declared but not yet implemented — the web arm of the conditional
 # export throws UnsupportedError until the STT web pipeline lands (follow-on).
 platforms:
@@ -50,4 +51,4 @@ dev_dependencies:
 
 # No flutter: plugin/asset block, no hook/build.dart of its own. The LiteRt
 # interpreter FFI (LiteRtBindings) and the shared libLiteRtLm native bundle
-# come transitively from flutter_edge_ai_litertlm, which owns the sole hook.
+# come from litertlm_dart, which owns the sole hook.

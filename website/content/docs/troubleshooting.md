@@ -277,7 +277,8 @@ floor applies only to the GPU and CPU attempts of a generic bundle.
 to load, after an upgrade.** From `flutter_edge_ai_litertlm` 1.10.0 the
 Qualcomm QNN runtime is not part of the package; the app opts in with
 `qualcomm_npu: true` under `hooks: user_defines: litertlm_dart:` in
-its pubspec — see [LiteRT-LM](/docs/litertlm). Without it a bundle compiled for
+its pubspec (`flutter_edge_ai_litertlm:` before `flutter_edge_ai_litertlm`
+1.21.0) — see [LiteRT-LM](/docs/litertlm). Without it a bundle compiled for
 an NPU is refused with a `BackendInitException` whose
 `NpuDispatchUnavailableException` names it. A generic bundle never runs on the
 NPU, with or without the flag: it has no NPU graph, so `npu` falls back to GPU,

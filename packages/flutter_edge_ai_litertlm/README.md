@@ -43,7 +43,7 @@ other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your 
 uses both formats.
 
 Depend on both packages (`flutter_edge_ai: ^2.6.0`,
-`flutter_edge_ai_litertlm: ^1.20.0`) and install `.litertlm` files with
+`flutter_edge_ai_litertlm: ^1.21.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
@@ -1410,8 +1410,8 @@ installed (one blob per Hexagon generation, V73 to V81). The first NPU run
 copies them out of the APK once more, because the DSP loads them from files,
 so a phone that uses the NPU holds about 166 MB of them. Setting the
 flag means accepting Qualcomm's AI Stack License, the `LICENSE.pdf` the hook
-prints the path of. Its notices are in this package's `NOTICES`, so they reach
-your app's licence page.
+prints the path of. Its notices are in `litertlm_dart`'s `NOTICES` (the package
+whose hook bundles them), so they reach your app's licence page.
 
 Behind a proxy, the hook honours `HTTPS_PROXY`. Without access to Maven Central,
 point it at a mirror or at the AAR itself:
@@ -1690,17 +1690,19 @@ See [#447](https://github.com/DenisovAV/flutter_edge_ai/issues/447).
 
 ### `dlopen` / "library not found" (`libLiteRtLm`)
 
-`flutter_edge_ai_litertlm` is the sole owner of the shared native library
-(`libLiteRtLm`) and bundles it via its build hook — this package's own
-`LiteRtEmbeddingBackend` and `flutter_edge_ai_speech` both use it directly. A
-stale Native-Assets cache after a
+`litertlm_dart`, which this package depends on, is the sole owner of the
+shared native library (`libLiteRtLm`) and bundles it via its build hook — this
+package's `LiteRtEmbeddingBackend` and `flutter_edge_ai_speech` both use it
+through `litertlm_dart`. A stale Native-Assets cache after a
 native version bump can leave the library unbundled, surfacing as an opaque
-`dlopen` "no such file" on the first inference. Fix with a clean rebuild:
+`dlopen` "no such file" on the first inference. The hook caches each release
+under its own tag (`<cache>/litertlm_dart/native/native-v0.19.1-b/<platform>`).
+Fix with a clean rebuild:
 
 ```bash
 flutter clean
-rm -rf ~/Library/Caches/flutter_gemma/native        # macOS
-rm -rf ~/.cache/flutter_gemma/native                # Linux
-# Windows: rmdir /s /q "%LOCALAPPDATA%\flutter_gemma\native"
+rm -rf ~/Library/Caches/litertlm_dart/native        # macOS
+rm -rf ~/.cache/litertlm_dart/native                # Linux
+# Windows: rmdir /s /q "%LOCALAPPDATA%\litertlm_dart\native"
 flutter pub get
 ```

@@ -52,7 +52,7 @@ engines your app uses:
 ```
 dependencies:
   flutter_edge_ai: ^2.6.0
-  flutter_edge_ai_litertlm: ^1.20.0   # .litertlm inference engine
+  flutter_edge_ai_litertlm: ^1.21.0   # .litertlm inference engine
 ```
 
 ```dart
@@ -151,6 +151,8 @@ hooks:
       qualcomm_npu: true
 ```
 
+The `litertlm_dart:` key is read from `flutter_edge_ai_litertlm` 1.21.0;
+earlier versions read the same flags under `flutter_edge_ai_litertlm:`.
 The build hook then fetches `com.qualcomm.qti:qnn-runtime:2.50.0` from Maven
 Central once, verifies its SHA-256, raises the Hexagon libraries to the 16 KB
 page alignment Google Play requires, and bundles them: about 22 MB more to

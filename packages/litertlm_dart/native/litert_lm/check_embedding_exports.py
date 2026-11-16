@@ -23,7 +23,8 @@ fat), PE export directory — so it needs no platform toolchain and checks the
 bytes that ship.
 
 REQUIRED must equal `liteRtLmEmbeddingSymbols` in
-lib/src/embedding/litert_lm_embedding_pass.dart (a VM test compares them).
+packages/litertlm_dart/lib/src/embedder/litert_lm_embedder.dart (a VM test
+compares them).
 
 Usage: check_embedding_exports.py <extracted_bundle_dir> [<label>]
 Exit 1 when the main library is missing, unreadable, or misses a symbol.

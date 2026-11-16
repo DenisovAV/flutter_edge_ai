@@ -482,7 +482,7 @@ you see this error on a stock Ubuntu 22.04 system you're loading a stale copy
 from the build cache. Clear it and let the hook re-fetch the release:
 
 ```bash
-rm -rf ~/.cache/flutter_gemma/native
+rm -rf ~/.cache/litertlm_dart/native
 flutter clean && flutter run
 ```
 

@@ -82,8 +82,13 @@ the GPU or the CPU. Run so far on Tensor G6 Pixels with
 debug builds: Gemma 4 E2B text, images and audio, EmbeddingGemma 2 270m and
 440m.
 
-MediaTek takes `mediatek_npu: true` in the same `flutter_edge_ai_litertlm` block (`flutter_edge_ai_litertlm` 1.17.0): the
-build fetches Google's `litert-npu-runtime-mediatek` AAR from Google Maven and
+The MediaTek NPU is refused after `flutter_edge_ai_litertlm` 1.19.x, at build
+time (`mediatek_npu: true` fails the build hook) and at load: the LiteRT the
+0.19 runtime pins loads a dispatch only through an entry point Google's
+MediaTek dispatch does not export, and on MT6989 a conversation's second
+message came back empty (LiteRT-LM #4256). Use `cpu` or `gpu` there. On
+1.17.0 to 1.19.x, `mediatek_npu: true` under `flutter_edge_ai_litertlm:` made the
+build fetch Google's `litert-npu-runtime-mediatek` AAR from Google Maven and
 bundles its dispatch (about 330 KB); the NeuroPilot runtime it drives is part of
 the phone. A bundle compiled for a MediaTek SoC (Google publishes Gemma 3 1B,
 Gemma 3 270M, Qwen3 0.6B and EmbeddingGemma 2 ones; no Gemma 4) runs on a phone

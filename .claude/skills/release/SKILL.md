@@ -219,6 +219,10 @@ storage providers (`flutter_edge_ai_sqlite`, `flutter_edge_ai_qdrant`). Publish
 and verify each prerequisite on pub.dev before its dependants; workspace
 resolution and dry-run do not prove the declared hosted floor exists.
 
+The same holds for LiteRT-LM: publish `litertlm_dart` → `flutter_edge_ai_litertlm`
+(pins it exactly) → `flutter_edge_ai_speech` (depends on both), each verified on
+pub.dev before the next.
+
 If yes → bump pub plugin version, publish to pub.dev. Always true for a release.
 Then **run 1f** for every satellite whose copy of the touched code is stale — a
 fix is not "done" until every duplicate across all 6 packages is patched or

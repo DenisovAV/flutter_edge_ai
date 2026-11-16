@@ -223,9 +223,11 @@ final class Engine {
     required this.bundleInfo,
     required this._backing,
     required this._linearAttentionState,
+    this._toolCallsOf = nativeToolCalls,
   });
 
   final LiteRtLmFfiClient _client;
+  final ToolCallReader _toolCallsOf;
   final OpenSessionBacking _backing;
   final bool? _linearAttentionState;
 
@@ -276,8 +278,9 @@ final class Engine {
     EngineConfig config,
     EngineHost host,
     LiteRtLmLogLevel? nativeLevel,
-    EngineBundle? read,
-  ) async {
+    EngineBundle? read, {
+    ToolCallReader toolCallsOf = nativeToolCalls,
+  }) async {
     final kind = backendKindOf(config.backend);
     final path = config.modelPath;
     final platform = switch ((
@@ -516,6 +519,7 @@ final class Engine {
         bundleInfo: bundle,
         backing: backing,
         linearAttentionState: linearAttentionState,
+        toolCallsOf: toolCallsOf,
       );
     } catch (_) {
       // The engine exists: it is deleted before the failure reaches the
@@ -655,7 +659,7 @@ final class Engine {
         handle = RecoveringConversationHandle(
           first,
           reopen: open,
-          toolCallsOf: nativeToolCalls,
+          toolCallsOf: _toolCallsOf,
           noRewindReason: _noRewindReason,
         );
       case false:
@@ -667,7 +671,7 @@ final class Engine {
           samplingExplicit: explicit,
           multimodalOrder: MediaOrder.imagesAudioText,
           filterChannelContent: filter,
-          toolCallsOf: nativeToolCalls,
+          toolCallsOf: _toolCallsOf,
           maxOutputTokens: c.maxOutputTokens,
           constraint: constraint,
           extras: extras,
@@ -773,10 +777,17 @@ final class EngineBundle {
 /// [Engine.create] with the file already read: a caller that reads it to plan
 /// its attempts does not pay for the read again in each one (an in-app read
 /// took ~0.57 s on a Linux VM). [bundle] must be [config.modelPath]'s.
+///
+/// [toolCallsOf] reads the tool calls of a model reply when a conversation
+/// replays its history (shared conversations, a rebuild after a stop): a
+/// call the model wrote as text is replayed as that call only if it reads
+/// it. The default reads the calls native converted; the Flutter adapter
+/// passes core's parser, which also reads text-form calls.
 Future<Engine> createEngineWithBundle(
   EngineConfig config,
-  EngineBundle bundle,
-) {
+  EngineBundle bundle, {
+  ToolCallReader toolCallsOf = nativeToolCalls,
+}) {
   if (bundle.path != config.modelPath) {
     throw ArgumentError.value(
       bundle.path,
@@ -786,7 +797,13 @@ Future<Engine> createEngineWithBundle(
   }
   final nativeLevel = liteRtLmNativeLogLevel;
   return Engine._oneCreateAtATime(
-    () => Engine._create(config, _host, nativeLevel, bundle),
+    () => Engine._create(
+      config,
+      _host,
+      nativeLevel,
+      bundle,
+      toolCallsOf: toolCallsOf,
+    ),
   );
 }
 

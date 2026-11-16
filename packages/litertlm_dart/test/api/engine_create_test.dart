@@ -391,6 +391,35 @@ void main() {
     },
   );
 
+  test('the tool-call reader createEngineWithBundle takes is the one its '
+      'conversations replay with; Engine.create reads native calls', () async {
+    host = _Host(abiName: 'ios_arm64');
+    debugEngineHost = host;
+    final path = write('g.litertlm', _bundle());
+    List<({String name, Map<String, Object?> arguments})> reader(String raw) =>
+        const [];
+    final withReader = await createEngineWithBundle(
+      EngineConfig(modelPath: path),
+      await readEngineBundle(path),
+      toolCallsOf: reader,
+    );
+    final plain = await Engine.create(EngineConfig(modelPath: path));
+    final a = await withReader.createConversation();
+    final b = await plain.createConversation();
+    expect(
+      (conversationHandle(a) as VirtualConversationHandle).toolCallsOf,
+      same(reader),
+    );
+    expect(
+      (conversationHandle(b) as VirtualConversationHandle).toolCallsOf,
+      same(nativeToolCalls),
+    );
+    await a.close();
+    await b.close();
+    await withReader.close();
+    await plain.close();
+  });
+
   test('creates run one at a time across engines', () async {
     final path = write('g.litertlm', _bundle());
     final engines = await Future.wait([

@@ -16,6 +16,8 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
+import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine.dart'
+    show liteRtLmToolCallsOf;
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
 import 'package:litertlm_dart/internal.dart' show NpuStack;
 import 'package:flutter_test/flutter_test.dart';
@@ -355,6 +357,26 @@ void main() {
       await model.close();
     }
   });
+
+  test(
+    "the model's conversations replay tool calls with core's parser",
+    () async {
+      host = _FakeHost(abiName: 'ios_arm64');
+      _install(host);
+      final path = write('m.litertlm', _bundle(text: 'gpu,cpu'));
+      final model =
+          await load(path, preferredBackend: PreferredBackend.cpu)
+              as FfiInferenceModel;
+      final conversation = await model.engine.createConversation();
+      expect(
+        (conversationHandle(conversation) as VirtualConversationHandle)
+            .toolCallsOf,
+        same(liteRtLmToolCallsOf),
+      );
+      await conversation.close();
+      await model.close();
+    },
+  );
 
   test('nativeLogLevel reaches every attempt; unset stays null', () async {
     final path = write('gpu.litertlm', _bundle(text: 'gpu,cpu'));

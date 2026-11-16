@@ -59,11 +59,13 @@ final class Conversation {
     this._handle, {
     required this._config,
     required void Function() thinkingTokenBudgetCapsNothing,
+    required this._engineClosed,
   }) : _budgetCapsNothing = thinkingTokenBudgetCapsNothing;
 
   final ConversationHandle _handle;
   final ConversationConfig _config;
   final void Function() _budgetCapsNothing;
+  final bool Function() _engineClosed;
   // The turn whose reply is being listened to; a turn that ended, or was
   // let go by a cancel, clears it only while it is still the current one.
   Object? _sending;
@@ -82,7 +84,9 @@ final class Conversation {
   /// [ConstraintUnsupportedException] (the response format was refused, or
   /// combined with a thinking budget), and [TurnFailedException] for any
   /// other failure (native failed or cancelled unasked, a reply native wrote
-  /// in a shape this release cannot read). Programming errors stay [Error]s.
+  /// in a shape this release cannot read). Programming errors stay [Error]s:
+  /// a send on a conversation that is closed, or whose engine is closed, is a
+  /// [StateError] thrown by this call.
   Stream<Message> sendMessageStream(
     Message message, {
     Map<String, Object?>? extraContext,
@@ -92,6 +96,7 @@ final class Conversation {
     ThinkingConfig? thinkingConfig,
   }) {
     if (_closed) throw StateError('The conversation is closed.');
+    if (_engineClosed()) throw StateError('The engine is closed.');
     _checkNotSending();
     final thinking = thinkingConfig ?? _config.thinkingConfig;
     final enable = thinking?.enableThinking ?? false;
@@ -308,7 +313,7 @@ final class Conversation {
   BenchmarkInfo getBenchmarkInfo() => _handle.getSessionMetrics();
 
   /// Ends the conversation. A reply still streaming ends with
-  /// [ConversationClosedException].
+  /// [ConversationClosedException]; a later send is a [StateError].
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
@@ -321,10 +326,12 @@ Conversation newConversation(
   ConversationHandle handle, {
   required ConversationConfig config,
   required void Function() thinkingTokenBudgetCapsNothing,
+  required bool Function() engineClosed,
 }) => Conversation._(
   handle,
   config: config,
   thinkingTokenBudgetCapsNothing: thinkingTokenBudgetCapsNothing,
+  engineClosed: engineClosed,
 );
 
 /// A conversation over [handle], for tests that drive it with a fake.
@@ -335,6 +342,7 @@ Conversation conversationForTest(
   handle,
   config: config ?? ConversationConfig(),
   thinkingTokenBudgetCapsNothing: () {},
+  engineClosed: () => false,
 );
 
 /// How many tokens [text] is, by [conversation]'s model's own tokenizer;

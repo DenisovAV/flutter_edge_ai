@@ -160,6 +160,26 @@ void main() {
     }
   });
 
+  test('a send after the engine closed is a StateError at the call, on '
+      'either backing', () async {
+    for (final backing in OpenSessionBacking.values) {
+      final engine = engineForTest(_Client(), backing: backing);
+      final conversation = await engine.createConversation();
+      await engine.close();
+      expect(
+        () => conversation.sendMessageStream(Message.user('x')),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'The engine is closed.',
+          ),
+        ),
+        reason: '$backing',
+      );
+    }
+  });
+
   test('a closed engine opens no conversation and tokenizes nothing', () async {
     final engine = engineForTest(_Client());
     await engine.close();

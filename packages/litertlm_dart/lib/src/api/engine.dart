@@ -684,6 +684,7 @@ final class Engine {
       handle,
       config: c,
       thinkingTokenBudgetCapsNothing: _budgetCapsNothing,
+      engineClosed: () => _closed,
     );
   }
 
@@ -737,7 +738,9 @@ final class Engine {
   }
 
   /// Closes every conversation and deletes the engine. Waits for a
-  /// conversation create still in flight.
+  /// conversation create still in flight. A reply still streaming ends with
+  /// [ConversationClosedException]; a later send on any of its conversations,
+  /// and every other call on the engine, is a [StateError].
   Future<void> close() async {
     _closed = true;
     await _client.shutdown();

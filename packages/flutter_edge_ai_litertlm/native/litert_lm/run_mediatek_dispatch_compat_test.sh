@@ -13,7 +13,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-D="$(mktemp -d)"
+D="$(mktemp -d "${TMPDIR:-/tmp}/mtkcompat.XXXXXX")"
 trap 'rm -rf "$D"' EXIT
 LIBS=()
 [ "$(uname -s)" = Linux ] && LIBS=(-ldl -lpthread)

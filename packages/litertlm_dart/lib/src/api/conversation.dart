@@ -152,10 +152,12 @@ final class Conversation {
     controller = StreamController<Message>(
       sync: true,
       onListen: () {
-        if (_closed) {
+        if (_closed || _engineClosed()) {
           endWith(
-            const ConversationClosedException(
-              'The conversation was closed before its message was sent.',
+            ConversationClosedException(
+              _closed
+                  ? 'The conversation was closed before its message was sent.'
+                  : 'The engine was closed before the message was sent.',
             ),
             StackTrace.current,
           );
@@ -207,6 +209,9 @@ final class Conversation {
       onCancel: () {
         if (ended) return null;
         cancelled = true;
+        // A turn cancel() already let go was asked to stop then; asking
+        // again now would stop whatever reply holds the conversation next.
+        final holdsConversation = identical(_sending, turn);
         // The next message may be sent at once: it waits for this turn to
         // end and for the conversation's recovery before it is sent.
         release();
@@ -215,7 +220,7 @@ final class Conversation {
         // Ask native to stop, then wait for the turn to end on its own, as a
         // stop always has: the handle records and recovers a turn that ended,
         // and the native lock is released at that end, not at the cancel.
-        _handle.cancelGeneration();
+        if (holdsConversation) _handle.cancelGeneration();
         final nativeEnded = Completer<void>();
         sub
           ..onData((_) {})
@@ -343,11 +348,12 @@ Conversation newConversation(
 Conversation conversationForTest(
   ConversationHandle handle, {
   ConversationConfig? config,
+  bool Function()? engineClosed,
 }) => Conversation._(
   handle,
   config: config ?? ConversationConfig(),
   thinkingTokenBudgetCapsNothing: () {},
-  engineClosed: () => false,
+  engineClosed: engineClosed ?? () => false,
 );
 
 /// How many tokens [text] is, by [conversation]'s model's own tokenizer;

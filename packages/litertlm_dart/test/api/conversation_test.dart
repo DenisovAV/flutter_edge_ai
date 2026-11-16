@@ -164,15 +164,32 @@ void main() {
     conversation.cancel();
     final b = conversation.sendMessageStream(Message.user('b')).toList();
     await pumpEventQueue();
+    final cancelsBefore = handle.cancels;
     final aCancelled = a.cancel();
     handle.sends.first.cancelled();
     await aCancelled;
+    // A was already let go by cancel(): dropping its subscription asks
+    // native for nothing more, so no stop lands on B.
+    expect(handle.cancels, cancelsBefore);
     expect(
       () => conversation.sendMessageStream(Message.user('c')),
       throwsStateError,
     );
+    handle.sends.last.chunk(_text('B'));
     handle.sends.last.finished();
-    await b;
+    expect((await b).map((m) => m.text), ['B']);
+  });
+
+  test('the engine closed between the call and the listen: '
+      'ConversationClosedException', () async {
+    var engineClosed = false;
+    final conversation = conversationForTest(
+      _Handle(),
+      engineClosed: () => engineClosed,
+    );
+    final stream = conversation.sendMessageStream(Message.user('x'));
+    engineClosed = true;
+    await expectLater(stream, emitsError(isA<ConversationClosedException>()));
   });
 
   test('cancel() stops native and keeps what was generated', () async {

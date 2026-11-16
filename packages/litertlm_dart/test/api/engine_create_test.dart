@@ -337,7 +337,7 @@ void main() {
         '/mine',
         '/prepared/qualcomm',
       ]);
-      expect(prepared.npuVendor, NpuStack.qualcomm);
+      expect(engineNpuVendor(prepared), NpuStack.qualcomm);
       await given.close();
       await prepared.close();
 
@@ -418,6 +418,23 @@ void main() {
     await b.close();
     await withReader.close();
     await plain.close();
+  });
+
+  test('a CPU thread count below 1 is refused before any engine', () async {
+    final path = write('g.litertlm', _bundle());
+    for (final count in [0, -2]) {
+      await expectLater(
+        create(path, backend: Backend.cpu(threadCount: count)),
+        throwsArgumentError,
+      );
+    }
+    expect(host.creates, isEmpty);
+    final engine = await create(
+      path,
+      backend: const Backend.cpu(threadCount: 2),
+    );
+    expect(host.creates.single.numThreads, 2);
+    await engine.close();
   });
 
   test('creates run one at a time across engines', () async {

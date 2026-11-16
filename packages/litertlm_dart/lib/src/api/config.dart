@@ -13,9 +13,9 @@ import 'message.dart';
 
 /// How the next token is drawn: LiteRT-LM's Kotlin/Swift `SamplerConfig`.
 ///
-/// Every field is set, as there. A conversation that names none uses its
-/// [ConversationConfig.defaultSamplerConfig], else the sampler the model file
-/// carries, field by field, else 0.8 / 40 / 0.95 / seed 1.
+/// Every field is set, as there. A conversation that names none uses the
+/// sampler the model file carries, field by field, else 0.8 / 40 / 0.95 /
+/// seed 1.
 @immutable
 final class SamplerConfig {
   /// Throws [ArgumentError] for a value no engine samples with: a negative or
@@ -262,7 +262,6 @@ final class ConversationConfig {
     List<Message> initialMessages = const [],
     List<Tool> tools = const [],
     this.samplerConfig,
-    this.defaultSamplerConfig,
     this.maxOutputTokens,
     this.thinkingConfig,
     this.responseFormat,
@@ -288,16 +287,11 @@ final class ConversationConfig {
   /// and answers with `Message.tool`.
   final List<Tool> tools;
 
-  /// The caller's sampler. Set, it is the caller's choice: when it differs
-  /// from the sampler the engine's first generation fixed (LiteRT-LM#2080),
-  /// the conversation says so once.
+  /// The caller's sampler; null takes the model file's sampler, field by
+  /// field, then 0.8 / 40 / 0.95 / seed 1. Set, it is the caller's choice:
+  /// when it differs from the sampler the engine's first generation fixed
+  /// (LiteRT-LM#2080), the conversation says so once.
   final SamplerConfig? samplerConfig;
-
-  /// The model's own default when [samplerConfig] is null: the values a
-  /// wrapper resolves for this model (its family's published defaults, say).
-  /// Null takes the model file's sampler, then 0.8 / 40 / 0.95 / seed 1. A
-  /// default never counts as the caller's choice.
-  final SamplerConfig? defaultSamplerConfig;
 
   /// The most tokens a reply may have, thinking included.
   final int? maxOutputTokens;

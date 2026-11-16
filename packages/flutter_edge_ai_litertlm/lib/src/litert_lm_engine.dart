@@ -7,6 +7,9 @@ import 'package:litertlm_dart/internal_io.dart'
     show
         backendKindOf,
         createEngineWithBundle,
+        engineNpuVendor,
+        minCpuGpuContextTokens,
+        npuBackendOn,
         LlmModelFamily,
         gpuActivationFor,
         liteRtLmEncoderOnNpu,
@@ -34,7 +37,7 @@ import 'thinking_token_budget.dart';
 /// load: litertlm_dart's [lm.minCpuGpuContextTokens], where the floor is
 /// applied (`Engine.create`). `maxTokens` is the CONTEXT WINDOW, not the
 /// reply length; cap a reply with `maxOutputTokens` on the session.
-const int kMinLitertlmContextTokens = lm.minCpuGpuContextTokens;
+const int kMinLitertlmContextTokens = minCpuGpuContextTokens;
 
 /// LiteRT-LM (.litertlm) inference engine. Pure factory: builds and returns a
 /// bare [InferenceModel]; core owns the singleton lifecycle and registers its
@@ -171,7 +174,7 @@ class LiteRtLmEngine
     lm.Backend backendOf(PreferredBackend backend) => switch (backend) {
       PreferredBackend.cpu => const lm.Backend.cpu(),
       PreferredBackend.gpu => const lm.Backend.gpu(),
-      PreferredBackend.npu => lm.Backend.npu(platform: host.npuPlatform),
+      PreferredBackend.npu => npuBackendOn(host.npuPlatform),
     };
     // An encoder the caller left unset loads where the file wants it.
     lm.Backend? encoder(
@@ -183,7 +186,7 @@ class LiteRtLmEngine
         : requested != null
         ? backendOf(requested)
         : switch (declared) {
-            lm.NpuBackend() => lm.Backend.npu(platform: host.npuPlatform),
+            lm.NpuBackend() => npuBackendOn(host.npuPlatform),
             final declared? => declared,
             null => const lm.Backend.cpu(),
           };
@@ -292,7 +295,7 @@ class LiteRtLmEngine
       structuredOutput: liteRtLmStructuredOutputSupport(
         abi: host.abi,
         backend: activeBackend,
-        npuVendor: engine.npuVendor,
+        npuVendor: engineNpuVendor(engine),
         androidGpu: androidGpu,
       ),
       onClose: () {}, // no-op: core resets its own state via addCloseListener

@@ -304,10 +304,6 @@ final class Conversation {
     return TurnFailedException('$error', cause: error);
   }
 
-  /// How many tokens [text] is, by the model's own tokenizer; null when the
-  /// engine cannot tell (closed, or the native call failed).
-  Future<int?> countTokens(String text) => _handle.tokenCount(text);
-
   /// What LiteRT-LM's benchmark reports about this conversation.
   BenchmarkInfo getBenchmarkInfo() => _handle.getSessionMetrics();
 
@@ -340,6 +336,11 @@ Conversation conversationForTest(
   config: config ?? ConversationConfig(),
   thinkingTokenBudgetCapsNothing: () {},
 );
+
+/// How many tokens [text] is, by [conversation]'s model's own tokenizer;
+/// null when the engine cannot tell (closed, or the native call failed).
+Future<int?> conversationTokenCount(Conversation conversation, String text) =>
+    conversation._handle.tokenCount(text);
 
 /// The handle under [conversation].
 ConversationHandle conversationHandle(Conversation conversation) =>

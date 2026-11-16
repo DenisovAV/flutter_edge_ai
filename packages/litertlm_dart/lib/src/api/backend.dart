@@ -23,14 +23,18 @@ sealed class Backend {
   /// and over Direct3D 12 on Windows.
   const factory Backend.gpu() = GpuBackend;
 
-  /// The NPU of the vendor the bundle is compiled for. [platform] answers
-  /// what plain Dart cannot: the build's `NativeAssetsManifest.json`, and on
-  /// Android a directory holding the vendor's dispatch libraries. Null works
-  /// where the dispatch sits beside the executable (Linux, Windows). A
-  /// [dispatchDir] already prepared (Kotlin's `nativeLibraryDir`) is used as
-  /// it is, and [platform] is then not asked for one.
-  const factory Backend.npu({NpuPlatform? platform, String? dispatchDir}) =
-      NpuBackend;
+  /// The NPU of the vendor the bundle is compiled for: Kotlin's
+  /// `Backend.NPU(nativeLibraryDir)`. [dispatchDir] is a directory holding
+  /// that vendor's dispatch libraries, and only that vendor's (LiteRT loads
+  /// the first dispatch it finds there); null looks beside the executable,
+  /// which is where the build puts them on Linux and Windows.
+  ///
+  /// On Android the libraries are inside the APK: an app's
+  /// `nativeLibraryDir` holds them only with `extractNativeLibs="true"`, and
+  /// then holds every vendor the app ships. flutter_edge_ai_litertlm
+  /// prepares a directory per vendor through its platform channel; a plain
+  /// Dart program on Android has to do the same.
+  const factory Backend.npu({String? dispatchDir}) = NpuBackend;
 }
 
 /// The runtime's name for [backend].
@@ -42,11 +46,10 @@ BackendKind backendKindOf(Backend backend) => switch (backend) {
 
 /// [Backend.cpu].
 final class CpuBackend extends Backend {
-  const CpuBackend({this.threadCount})
-    : assert(threadCount == null || threadCount > 0),
-      super._();
+  const CpuBackend({this.threadCount}) : super._();
 
-  /// Threads of the CPU executor; null is LiteRT-LM's default.
+  /// Threads of the CPU executor; null is LiteRT-LM's default. A count below
+  /// 1 is an [ArgumentError] when an engine is created with it.
   final int? threadCount;
 
   @override
@@ -77,10 +80,14 @@ final class GpuBackend extends Backend {
 
 /// [Backend.npu].
 final class NpuBackend extends Backend {
-  const NpuBackend({this.platform, this.dispatchDir}) : super._();
+  const NpuBackend({this.dispatchDir}) : _platform = null, super._();
 
-  /// The app's platform layer; see [Backend.npu].
-  final NpuPlatform? platform;
+  const NpuBackend._on(NpuPlatform platform)
+    : _platform = platform,
+      dispatchDir = null,
+      super._();
+
+  final NpuPlatform? _platform;
 
   /// A directory already holding the vendor's dispatch libraries.
   final String? dispatchDir;
@@ -88,11 +95,11 @@ final class NpuBackend extends Backend {
   @override
   bool operator ==(Object other) =>
       other is NpuBackend &&
-      identical(other.platform, platform) &&
+      identical(other._platform, _platform) &&
       other.dispatchDir == dispatchDir;
 
   @override
-  int get hashCode => Object.hash(NpuBackend, platform, dispatchDir);
+  int get hashCode => Object.hash(NpuBackend, _platform, dispatchDir);
 
   @override
   String toString() => 'Backend.npu()';
@@ -102,8 +109,19 @@ final class NpuBackend extends Backend {
 Backend backendOf(BackendKind kind, {NpuPlatform? platform}) => switch (kind) {
   BackendKind.cpu => const Backend.cpu(),
   BackendKind.gpu => const Backend.gpu(),
-  BackendKind.npu => Backend.npu(platform: platform),
+  BackendKind.npu =>
+    platform == null ? const NpuBackend() : npuBackendOn(platform),
 };
+
+/// The NPU, with [platform] answering what plain Dart cannot: the build's
+/// `NativeAssetsManifest.json`, and on Android a directory prepared with the
+/// dispatch libraries of the vendor the bundle names. flutter_edge_ai_litertlm
+/// passes its Flutter implementation.
+NpuBackend npuBackendOn(NpuPlatform platform) => NpuBackend._on(platform);
+
+/// [backend]'s platform layer ([npuBackendOn]); null for any other backend.
+NpuPlatform? npuPlatformOf(Backend? backend) =>
+    backend is NpuBackend ? backend._platform : null;
 
 /// How LiteRT-LM's speculative decoding (MTP) is used: the values of its
 /// `--speculative_decoding` flag and of `LiteRtLmSpeculativeDecodingMode`.

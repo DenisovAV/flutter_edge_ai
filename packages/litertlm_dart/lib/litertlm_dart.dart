@@ -32,7 +32,7 @@ export 'src/api/conversation.dart'
         TurnFailedException;
 export 'src/api/embedding_engine.dart'
     show EmbeddingEngine, EmbeddingEngineConfig;
-export 'src/api/engine.dart' show Engine, minCpuGpuContextTokens;
+export 'src/api/engine.dart' show Engine;
 export 'src/api/log.dart' show LiteRtLmLog;
 export 'src/api/message.dart'
     show
@@ -63,7 +63,6 @@ export 'src/embedder/embedder_types.dart'
         EmbedderInputTooLongException,
         EmbedderLoadException,
         EmbedderModality;
-export 'src/ffi/npu_vendor_host.dart' show NpuPlatform;
 export 'src/runtime/errors.dart'
     show
         ConstraintUnsupportedException,
@@ -73,12 +72,11 @@ export 'src/runtime/errors.dart'
 export 'src/runtime/litert_lm_log_level.dart' show LiteRtLmLogLevel;
 export 'src/runtime/load_errors.dart'
     show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
-export 'src/runtime/npu_stacks.dart' show NpuStack;
 export 'src/runtime/runtime_log.dart' show RuntimeLogSink;
 export 'src/runtime/types.dart'
     show
         ActivationDataType,
+        BackendKind,
         BenchmarkInfo,
-        BundleSampler,
         CancelSignal,
         ScoringRun;

@@ -82,9 +82,7 @@ void main() {
     final engine = engineForTest(client, backing: OpenSessionBacking.native);
     final mine = SamplerConfig(topK: 1, topP: 1, temperature: 0, seed: 3);
     await engine.createConversation(ConversationConfig(samplerConfig: mine));
-    await engine.createConversation(
-      ConversationConfig(defaultSamplerConfig: mine),
-    );
+    await createConversationWithDefault(engine, ConversationConfig(), mine);
     await engine.createConversation();
     expect(client.creates.map((c) => c.samplingExplicit), [true, false, false]);
     expect(client.creates.map((c) => c.sampling.topK), [

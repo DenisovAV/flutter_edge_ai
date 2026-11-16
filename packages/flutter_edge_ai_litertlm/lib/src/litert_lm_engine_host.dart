@@ -10,8 +10,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:litertlm_dart/internal_io.dart'
-    show AndroidGpuFamily, androidGpuFamilyFrom;
-import 'package:litertlm_dart/litertlm_dart.dart' show NpuPlatform;
+    show AndroidGpuFamily, NpuPlatform, androidGpuFamilyFrom;
 
 import 'flutter_npu_platform.dart';
 

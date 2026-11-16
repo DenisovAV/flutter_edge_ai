@@ -9,7 +9,6 @@
 library;
 
 import 'package:litertlm_dart/internal_io.dart';
-import 'package:litertlm_dart/litertlm_dart.dart' show minCpuGpuContextTokens;
 import 'package:test/test.dart';
 
 void main() {

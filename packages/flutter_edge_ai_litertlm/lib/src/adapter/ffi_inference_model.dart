@@ -15,7 +15,11 @@ import 'package:litertlm_dart/internal_io.dart'
         NativeLastTurnEnd,
         ScoringStoppedError,
         conversationHandle,
+        conversationTokenCount,
+        createConversationWithDefault,
         createOwnConversation,
+        engineBundleSampler,
+        engineRenderUserMessage,
         turnFailureCause,
         engineFiltersChannelContent,
         engineNoRewindReason,
@@ -335,12 +339,26 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     explicit,
     modelType: modelType,
     thinking: thinking,
-    modelDefaults: engine.bundleSampler.toCore,
+    modelDefaults: engineBundleSampler(engine).toCore,
   );
 
+  static lm.SamplerConfig _samplerConfig(ResolvedSampling sampling) =>
+      lm.SamplerConfig(
+        topK: sampling.topK,
+        topP: sampling.topP,
+        temperature: sampling.temperature,
+        seed: sampling.randomSeed,
+      );
+
+  /// Without [explicit] sampling, the resolved values: the model's own
+  /// default, which never counts as the caller's choice.
+  static lm.SamplerConfig? _defaultSampler(
+    SamplingParams explicit,
+    ResolvedSampling sampling,
+  ) => explicit.isEmpty ? _samplerConfig(sampling) : null;
+
   /// The conversation config of a session: [explicit] sampling marks the
-  /// caller's choice; without any, the resolved values are the model's own
-  /// default, which never counts as the caller's.
+  /// caller's choice (see [_defaultSampler] for the rest).
   lm.ConversationConfig _conversationConfig({
     required SamplingParams explicit,
     required ResolvedSampling sampling,
@@ -349,17 +367,10 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     required int? maxOutputTokens,
     String? jsonSchema,
   }) {
-    final config = lm.SamplerConfig(
-      topK: sampling.topK,
-      topP: sampling.topP,
-      temperature: sampling.temperature,
-      seed: sampling.randomSeed,
-    );
     return lm.ConversationConfig(
       systemInstruction: systemInstruction,
       tools: _nativeTools(tools),
-      samplerConfig: explicit.isEmpty ? null : config,
-      defaultSamplerConfig: explicit.isEmpty ? config : null,
+      samplerConfig: explicit.isEmpty ? null : _samplerConfig(sampling),
       maxOutputTokens: maxOutputTokens,
       responseFormat: jsonSchema == null
           ? null
@@ -448,6 +459,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
             tools: tools,
             maxOutputTokens: maxOutputTokens,
           ),
+          _defaultSampler(explicit, sampling),
         );
       } on StateError {
         if (_isClosed) {
@@ -564,7 +576,8 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     _openSessionsPending++;
     final lm.Conversation conversation;
     try {
-      conversation = await engine.createConversation(
+      conversation = await createConversationWithDefault(
+        engine,
         _conversationConfig(
           explicit: explicit,
           sampling: sampling,
@@ -573,6 +586,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           maxOutputTokens: maxOutputTokens,
           jsonSchema: jsonSchema,
         ),
+        _defaultSampler(explicit, sampling),
       );
     } on StateError {
       if (_isClosed) {
@@ -1028,7 +1042,7 @@ class FfiInferenceModelSession extends InferenceModelSession
     // already full — the #318-class DYNAMIC_UPDATE_SLICE failure. Same
     // closed-session contract as every sibling method.
     _assertNotClosed();
-    final exact = await conversation.countTokens(text);
+    final exact = await conversationTokenCount(conversation, text);
     if (exact != null) return exact;
 
     // Engine down, or the native call failed. Fall back to an estimate that
@@ -1198,7 +1212,7 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
 
   @override
   Future<String> renderUserMessage(String content) =>
-      _engine.renderUserMessage(content);
+      engineRenderUserMessage(_engine, content);
 
   @override
   Future<void> prepare(List<String> targets) =>

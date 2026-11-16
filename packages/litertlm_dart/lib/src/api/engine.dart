@@ -105,8 +105,10 @@ final class _DartNpuPlatform implements NpuPlatform {
     List<String> libFileNames,
     NpuStack vendor,
   ) => throw NpuDispatchUnavailableException(
-    'the ${vendor.label} NPU libraries need an app-side dispatch directory on '
-    'Android: pass Backend.npu(platform: ...)',
+    'the ${vendor.label} NPU libraries need a dispatch directory on Android, '
+    'which plain Dart cannot prepare: pass Backend.npu(dispatchDir:) with a '
+    "directory holding that vendor's libraries only (flutter_edge_ai_litertlm "
+    'prepares one through its platform channel)',
   );
 
   @override
@@ -219,7 +221,7 @@ final class Engine {
     required this.audioBackend,
     required this.maxNumTokens,
     required this.activationDataType,
-    required this.npuVendor,
+    required this._npuVendor,
     required this.bundleInfo,
     required this._backing,
     required this._linearAttentionState,
@@ -245,16 +247,12 @@ final class Engine {
   /// The activation type sent to the GPU executor; null left the bundle's.
   final ActivationDataType? activationDataType;
 
-  /// The vendor whose NPU the load runs on; null off the NPU.
-  final NpuStack? npuVendor;
+  final NpuStack? _npuVendor;
 
   /// What the file says about itself; null for a file the reader does not
   /// understand (a `.task`, a newer container), which loads by the rules that
   /// need no file.
   final BundleInfo? bundleInfo;
-
-  /// The sampler the model file carries (empty when it carries none).
-  BundleSampler get bundleSampler => _client.bundleSampler;
 
   bool _closed = false;
   bool _channelWarned = false;
@@ -281,18 +279,21 @@ final class Engine {
     EngineBundle? read, {
     ToolCallReader toolCallsOf = nativeToolCalls,
   }) async {
+    if (config.backend case CpuBackend(
+      :final threadCount?,
+    ) when threadCount < 1) {
+      throw ArgumentError.value(
+        threadCount,
+        'threadCount',
+        'must be 1 or more',
+      );
+    }
     final kind = backendKindOf(config.backend);
     final path = config.modelPath;
-    final platform = switch ((
-      config.backend,
-      config.visionBackend,
-      config.audioBackend,
-    )) {
-      (NpuBackend(:final platform?), _, _) => platform,
-      (_, NpuBackend(:final platform?), _) => platform,
-      (_, _, NpuBackend(:final platform?)) => platform,
-      _ => null,
-    };
+    final platform =
+        npuPlatformOf(config.backend) ??
+        npuPlatformOf(config.visionBackend) ??
+        npuPlatformOf(config.audioBackend);
     final npuHost = host.npuHost(platform);
     final abi = host.abi;
     final supportImage = config.visionBackend != null;
@@ -610,6 +611,7 @@ final class Engine {
   Future<Conversation> _createConversation(
     ConversationConfig? config, {
     required bool own,
+    SamplerConfig? defaultSamplerConfig,
   }) async {
     if (_closed) throw StateError('The engine is closed.');
     final c = config ?? ConversationConfig();
@@ -622,7 +624,7 @@ final class Engine {
       null => null,
     };
     final sampling = samplerFor(
-      c.samplerConfig ?? c.defaultSamplerConfig,
+      c.samplerConfig ?? defaultSamplerConfig,
       _client.bundleSampler,
     );
     final explicit = c.samplerConfig != null;
@@ -721,13 +723,6 @@ final class Engine {
     return _client.detokenizeIds(ids);
   }
 
-  /// [content] rendered as a user message by the model's prompt template,
-  /// with the turn's generation prompt: what scoring continues.
-  Future<String> renderUserMessage(String content) {
-    if (_closed) throw StateError('The engine is closed.');
-    return _client.renderUserMessage(content);
-  }
-
   /// The exact log-probability of each of [targets] as a continuation of
   /// [prompt], scored in one session with a rewind between targets. Not on
   /// the NPU (its executor rolls back one token). [cancel] stops it between
@@ -811,10 +806,47 @@ Future<Engine> createEngineWithBundle(
 /// the engine's backing: what `flutter_edge_ai_litertlm`'s singleton
 /// `createSession` always had, also where the engine's other conversations
 /// share one (one live conversation runs on every backend).
+///
+/// [defaultSamplerConfig] is as [createConversationWithDefault]'s.
 Future<Conversation> createOwnConversation(
   Engine engine, [
   ConversationConfig? config,
-]) => engine._createConversation(config, own: true);
+  SamplerConfig? defaultSamplerConfig,
+]) => engine._createConversation(
+  config,
+  own: true,
+  defaultSamplerConfig: defaultSamplerConfig,
+);
+
+/// [Engine.createConversation] with the model's own sampler default when the
+/// config sets none: the values flutter_edge_ai_litertlm resolves (the file's
+/// sampler, then the family's published defaults, then the fallback), which
+/// never count as the caller's choice (LiteRT-LM#2080's one-time warning
+/// fires only for a sampler the caller set). Null takes the file's sampler,
+/// then 0.8 / 40 / 0.95 / seed 1.
+Future<Conversation> createConversationWithDefault(
+  Engine engine,
+  ConversationConfig config,
+  SamplerConfig? defaultSamplerConfig,
+) => engine._createConversation(
+  config,
+  own: engine._backing == OpenSessionBacking.native,
+  defaultSamplerConfig: defaultSamplerConfig,
+);
+
+/// The NPU vendor [engine] loaded on; null off the NPU.
+NpuStack? engineNpuVendor(Engine engine) => engine._npuVendor;
+
+/// The sampler [engine]'s model file carries.
+BundleSampler engineBundleSampler(Engine engine) =>
+    engine._client.bundleSampler;
+
+/// [content] rendered as a user message by [engine]'s prompt template, with
+/// the turn's generation prompt: what option scoring continues.
+Future<String> engineRenderUserMessage(Engine engine, String content) {
+  if (engine._closed) throw StateError('The engine is closed.');
+  return engine._client.renderUserMessage(content);
+}
 
 /// An engine over [client], for tests that drive conversations with a fake
 /// client.

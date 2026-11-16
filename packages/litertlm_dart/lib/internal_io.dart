@@ -180,11 +180,16 @@ export 'src/runtime/runtime_log.dart'
 export 'src/ffi/litert_bindings.dart' show liteRtLmHostLibraryCandidates;
 export 'src/api/embedding_engine.dart'
     show createEmbeddingEngineWith, embedderConfigFor;
-export 'src/api/backend.dart' show backendKindOf;
+export 'src/api/backend.dart' show backendKindOf, npuBackendOn, npuPlatformOf;
 export 'src/api/conversation.dart'
-    show conversationForTest, conversationHandle, turnFailureCause;
+    show
+        conversationForTest,
+        conversationHandle,
+        conversationTokenCount,
+        turnFailureCause;
 export 'src/api/engine.dart'
     show
+        minCpuGpuContextTokens,
         EngineHost,
         engineClient,
         engineConversationBacking,
@@ -194,7 +199,11 @@ export 'src/api/engine.dart'
         contextTokensFor,
         EngineBundle,
         createEngineWithBundle,
+        createConversationWithDefault,
         createOwnConversation,
+        engineBundleSampler,
+        engineNpuVendor,
+        engineRenderUserMessage,
         readEngineBundle,
         debugEngineHost,
         gpuActivationFor,

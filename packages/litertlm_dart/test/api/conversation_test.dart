@@ -454,7 +454,7 @@ void main() {
     final handle = _Handle();
     final conversation = conversationForTest(handle);
     expect(conversation.getBenchmarkInfo().outputTokens, 3);
-    expect(await conversation.countTokens('four'), 4);
+    expect(await conversationTokenCount(conversation, 'four'), 4);
     await conversation.close();
     expect(handle.closed, isTrue);
     expect(

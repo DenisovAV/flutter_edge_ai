@@ -28,6 +28,7 @@ import '../runtime/npu_stacks.dart'
     show NpuStack, mediatekNpuRefused, mediatekNpuRefusedReason;
 import '../bundle/litertlm_bundle_info.dart' show LiteRtLmBundleException;
 import 'dart:io' show FileSystemException;
+import '../runtime/types.dart' show BackendKind;
 import 'backend.dart';
 import 'engine.dart' show currentEngineHost;
 import 'message.dart';
@@ -60,13 +61,13 @@ final class EmbeddingEngineConfig {
   final Backend backend;
 
   /// Null: images are not taken. Set: they are, and a bundle without a vision
-  /// tower is refused. The towers a bundle has run where it allows (vision on
-  /// the CPU beside a GPU text tower, audio on the CPU), so only whether this
-  /// is set counts today.
+  /// tower is refused. The vision tower runs on the NPU beside an NPU text
+  /// tower and on the CPU otherwise; any other backend is refused.
   final Backend? visionBackend;
 
   /// Null: audio is not taken. Set: it is, and a bundle without an audio
-  /// tower is refused.
+  /// tower is refused. The audio tower runs on the CPU only; any other
+  /// backend is refused.
   final Backend? audioBackend;
 
   /// Vision tokens per image: 140 (null) or 70.
@@ -212,7 +213,8 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
         refuse('$file has no vision tower: it takes no images.');
       }
       gpu = true;
-    case NpuBackend(:final platform, dispatchDir: final dir):
+    case final NpuBackend npu:
+      final dir = npu.dispatchDir;
       if (target == null) {
         refuse(
           '$file is the generic EmbeddingGemma 2 bundle: it has no NPU graph '
@@ -236,7 +238,7 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
       if (dir != null) {
         dispatchDir = dir;
       } else {
-        final host = currentEngineHost.npuHost(platform);
+        final host = currentEngineHost.npuHost(npuPlatformOf(npu));
         if (await chooseNpuVendor(target: target, host: host) case NpuRefused(
           :final reason,
         )) {
@@ -244,6 +246,30 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
         }
         dispatchDir = await host.prepareDispatchDir(vendor);
       }
+  }
+  // The towers run where the bundle puts them: vision on the NPU beside an
+  // NPU text tower and on the CPU otherwise, audio on the CPU everywhere
+  // (LiteRT-LM's EG2 audio encoder is compiled for the CPU and the GPU, and
+  // its GPU is not measured). Another backend is refused, never moved.
+  final textKind = backendKindOf(backend);
+  final visionKind = textKind == BackendKind.npu
+      ? BackendKind.npu
+      : BackendKind.cpu;
+  if (config.visionBackend case final vision?
+      when backendKindOf(vision) != visionKind) {
+    refuse(
+      "$file's vision tower runs on the ${visionKind.name.toUpperCase()} "
+      'beside a ${textKind.name.toUpperCase()} text tower, not on the '
+      '${backendKindOf(vision).name.toUpperCase()}: pass visionBackend: '
+      'Backend.${visionKind.name}().',
+    );
+  }
+  if (config.audioBackend case final audio? when audio is! CpuBackend) {
+    refuse(
+      "$file's audio tower runs on the CPU only, not on the "
+      '${backendKindOf(audio).name.toUpperCase()}: pass audioBackend: '
+      'Backend.cpu().',
+    );
   }
   final declared = {
     if (config.visionBackend != null) EmbedderModality.image,

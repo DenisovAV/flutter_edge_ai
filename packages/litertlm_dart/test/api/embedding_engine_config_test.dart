@@ -196,6 +196,58 @@ void main() {
     expect(placed.visionTowerOnCpu, isFalse);
   });
 
+  test('a tower asked onto a backend it does not run on is refused, not '
+      'moved: audio on the CPU only, vision with an NPU text tower or on the '
+      'CPU', () async {
+    final generic = write(
+      'g.litertlm',
+      eg2Container(vision: true, audio: true),
+    );
+    for (final (vision, audio, what) in [
+      (null, const Backend.gpu(), 'audio tower runs on the CPU only'),
+      (null, Backend.npu(), 'audio tower runs on the CPU only'),
+      (const Backend.gpu(), null, 'vision tower runs on the CPU beside a CPU'),
+      (Backend.npu(), null, 'vision tower runs on the CPU beside a CPU'),
+    ]) {
+      await expectLater(
+        embedderConfigFor(config(generic, vision: vision, audio: audio)),
+        throwsA(
+          isA<EmbedderLoadException>().having(
+            (e) => e.message,
+            'message',
+            contains(what),
+          ),
+        ),
+        reason: 'vision $vision, audio $audio',
+      );
+    }
+    debugEngineHost = const _Host('android_arm64');
+    final npu = write(
+      'q.litertlm',
+      eg2Container(
+        textStamp: ('Qualcomm', 'SM8850'),
+        vision: true,
+        visionStamp: ('Qualcomm', 'SM8850'),
+      ),
+    );
+    await expectLater(
+      embedderConfigFor(
+        config(
+          npu,
+          backend: Backend.npu(dispatchDir: '/ready'),
+          vision: const Backend.cpu(),
+        ),
+      ),
+      throwsA(
+        isA<EmbedderLoadException>().having(
+          (e) => e.message,
+          'message',
+          contains('vision tower runs on the NPU beside a NPU'),
+        ),
+      ),
+    );
+  });
+
   test(
     'the GPU off the measured hosts is refused, not run on the CPU',
     () async {

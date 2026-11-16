@@ -642,17 +642,18 @@ await chat.clearHistory(replayHistory: messages);
 Replay what `fullHistory` returned, not a display list: `systemInfo` and
 `thinking` messages are not model input, and the llama engine refuses
 `systemInfo`. Numbers come back as JSON numbers: compiled to JavaScript, `1.0`
-reads as `1`, and integers past 2^53 lose precision. `encode` throws `ArgumentError` for a
-tool-call argument JSON cannot hold (a `BigInt`, a `DateTime`, NaN, a
-non-string key, a cycle).
+reads as `1`, and integers past 2^53 lose precision. `encode` throws
+`ArgumentError` for a tool-call argument JSON cannot hold (a `BigInt`, a
+`DateTime`, NaN, a non-string key, a cycle).
 
 Media is written inline as base64, which makes the JSON about a third larger
 than the media. Pass `writeMedia` to store each buffer yourself and return a
 reference, and `readMedia` to resolve it on decode. The writer gets the media
 type and the field's path, such as `messages[3].images[0]`; the path changes
-when a message is deleted, so build the reference from a hash of the bytes, or
-the path plus an id new for each save. Decoding is strict:
-another format version, a missing or an extra key is a `FormatException`.
+when a message is deleted, so build the reference from a content hash of the
+bytes such as SHA-256 (not `bytes.hashCode`, which hashes the object), or the
+path plus an id new for each save. Decoding is strict: another format version,
+a missing or an extra key is a `FormatException`.
 
 ## Managing Installed Models
 

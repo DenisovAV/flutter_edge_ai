@@ -1,6 +1,7 @@
 // MessageTranscriptCodec in a browser (#824): the round trip, and the number
 // behaviour the class doc states for code compiled to JavaScript, where every
-// number is a JS number (under dart2wasm int and double stay apart). The full suite (golden file, analyzer field guard) runs on the VM in
+// number is a JS number (under dart2wasm int and double stay apart). The full
+// suite (golden file, analyzer field guard) runs on the VM in
 // test/message_codec/.
 @TestOn('browser')
 library;

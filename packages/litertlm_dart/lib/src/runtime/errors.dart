@@ -15,7 +15,6 @@ abstract base class LiteRtLmException implements Exception {
   String toString() => '$runtimeType: $message';
 }
 
-/// An option-scoring run was cancelled. Core: `DeciderCancelledException`.
 /// A LiteRT-LM call failed: [message] names the call and native's status.
 /// Kotlin's `LiteRtLmJniException`.
 final class LiteRtLmNativeException extends LiteRtLmException {
@@ -25,6 +24,7 @@ final class LiteRtLmNativeException extends LiteRtLmException {
   String toString() => 'LiteRtLmNativeException: $message';
 }
 
+/// An option-scoring run was cancelled. Core: `DeciderCancelledException`.
 final class ScoringCancelledException extends LiteRtLmException {
   const ScoringCancelledException(super.message);
 

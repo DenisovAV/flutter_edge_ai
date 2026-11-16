@@ -811,6 +811,8 @@ class FfiInferenceModelSession extends InferenceModelSession
     // wrapper of it.
     if (error is lm.TurnFailedException) {
       final cause = turnFailureCause(error);
+      // A native failure mid-turn as at session open: a plain Exception.
+      if (cause is lm.LiteRtLmNativeException) return Exception(cause.message);
       if (cause != null) return mapRuntimeError(cause);
     }
     if (error is lm.ContextFullException) {

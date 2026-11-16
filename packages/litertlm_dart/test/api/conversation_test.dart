@@ -425,6 +425,22 @@ void main() {
       );
     });
 
+    test('a native failure mid-turn (a rebuild that could not reopen the '
+        'conversation): TurnFailedException with it as the cause', () async {
+      expect(
+        await errorOf(
+          (_, send) => send.failed(
+            const LiteRtLmNativeException('Failed to create conversation'),
+          ),
+        ),
+        isA<TurnFailedException>().having(
+          (e) => turnFailureCause(e),
+          'cause',
+          isA<LiteRtLmNativeException>(),
+        ),
+      );
+    });
+
     test(
       "a turn that failed is not stopped again: no cancel reaches native",
       () async {

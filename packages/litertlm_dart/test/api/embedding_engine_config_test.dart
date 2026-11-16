@@ -172,6 +172,20 @@ void main() {
     expect(placed.numThreads, 2);
   });
 
+  test('a CPU thread count below 1 is an ArgumentError', () async {
+    final path = write('g.litertlm', eg2Container());
+    for (final count in [0, -1]) {
+      await expectLater(
+        embedderConfigFor(
+          config(path, backend: Backend.cpu(threadCount: count)),
+        ),
+        throwsA(
+          isA<ArgumentError>().having((e) => e.name, 'name', 'threadCount'),
+        ),
+      );
+    }
+  });
+
   test('beside an NPU text tower the audio tower is named cpu; the vision '
       'tower runs with the text', () async {
     debugEngineHost = const _Host('android_arm64');

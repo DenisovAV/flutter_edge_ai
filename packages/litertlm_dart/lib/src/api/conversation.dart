@@ -297,6 +297,11 @@ final class Conversation {
     if (error is LiteRtLmTurnClosedException) {
       return ConversationClosedException('$error');
     }
+    // A native call that failed during the turn (a rebuild that could not
+    // reopen the conversation) is a failed turn, as any other.
+    if (error is LiteRtLmNativeException) {
+      return TurnFailedException('$error', cause: error);
+    }
     if (error is LiteRtLmException) return error;
     if (error is LiteRtLmTurnCancelledException) {
       return TurnFailedException('$error', cause: error);

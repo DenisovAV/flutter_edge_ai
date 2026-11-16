@@ -5,6 +5,7 @@ import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'ffi_test_support.dart';
 
 /// A conversation whose native side the test plays: each send is a real
@@ -226,6 +227,32 @@ void main() {
     await handle.sent.future;
     handle.send.failed(Exception('Stream error: INTERNAL'));
     await expectLater(text, throwsException);
+  });
+
+  test('a native failure mid-turn reaches core as the plain Exception a '
+      'session open throws, not as the runtime type', () async {
+    final handle = _Handle()..turnEnd = NativeLastTurnEnd.failed;
+    final turn = startEngineTurnForTest(_session(handle));
+    final text = turn.text.toList();
+    await handle.sent.future;
+    handle.send.failed(
+      const lm.LiteRtLmNativeException(
+        'Failed to create conversation (INTERNAL)',
+      ),
+    );
+    await expectLater(
+      text,
+      throwsA(
+        allOf(
+          isNot(isA<lm.LiteRtLmException>()),
+          isA<Exception>().having(
+            (e) => '$e',
+            'message',
+            contains('Failed to create conversation (INTERNAL)'),
+          ),
+        ),
+      ),
+    );
   });
 
   test('liteRtLmCompletedTurnEnd: each record, and the guess without one', () {

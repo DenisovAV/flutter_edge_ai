@@ -143,6 +143,11 @@ final class EmbeddingEngine {
 Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
   EmbeddingEngineConfig config,
 ) async {
+  if (config.backend case CpuBackend(
+    :final threadCount?,
+  ) when threadCount < 1) {
+    throw ArgumentError.value(threadCount, 'threadCount', 'must be 1 or more');
+  }
   final path = config.modelPath;
   final file = path.split(RegExp(r'[/\\]')).last;
   Never refuse(String message) => throw EmbedderLoadException(message);

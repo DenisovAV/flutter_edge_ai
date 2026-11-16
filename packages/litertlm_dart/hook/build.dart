@@ -114,9 +114,10 @@ class _NativeBundle {
   String get releaseBase =>
       'https://github.com/DenisovAV/flutter_edge_ai/releases/download/$releaseTag';
 
-  /// Directory containing this bundle's per-platform subdirectories. For flat
-  /// layout that's the cache root itself; for namespaced bundles it's the
-  /// `<cacheBase>/<namespace>/` subdir.
+  /// Directory containing this bundle's per-platform subdirectories:
+  /// `<cacheBase>/<releaseTag>/` for the flat layout (libLiteRtLm), the
+  /// `<cacheBase>/<namespace>/` subdir for a namespaced bundle; `<cacheBase>`
+  /// is `…/litertlm_dart/native`.
   Directory cacheRoot() => useFlatLayout
       ? Directory('${_cacheBaseDir().path}/$releaseTag')
       : Directory('${_cacheBaseDir().path}/$namespace');
@@ -468,8 +469,8 @@ bool _hasMainLib(Directory dir, _NativeBundle bundle, OS os) {
 /// main lib exists. Search order:
 ///   1. local `native/<bundle-namespace>/prebuilt/<dirName>/` inside the
 ///      package — useful for in-tree development.
-///   2. cached `<cacheBase>/<bundle-namespace>/<dirName>/` from a previous
-///      `_downloadAndExtract`.
+///   2. cached `<cacheRoot>/<dirName>/` ([_NativeBundle.cacheRoot]) from a
+///      previous `_downloadAndExtract`.
 /// Package-relative local prebuilt directory for [bundle] on [dirName].
 ///
 /// LiteRT keeps the historical `native/litert_lm/`; new bundles use

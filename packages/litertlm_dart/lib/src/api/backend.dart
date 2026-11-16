@@ -9,8 +9,8 @@ import '../runtime/types.dart' show BackendKind;
 /// The executor a model, or one of its encoders, runs on.
 ///
 /// The NPU is one backend: which vendor's NPU (Qualcomm, Google Tensor,
-/// MediaTek, Intel) is read from the bundle's own `LiteRtStamp`, so there is
-/// no per-vendor backend.
+/// Intel; a MediaTek bundle is refused in this release) is read from the
+/// bundle's own `LiteRtStamp`, so there is no per-vendor backend.
 @immutable
 sealed class Backend {
   const Backend._();
@@ -32,8 +32,8 @@ sealed class Backend {
   /// On Android the libraries are inside the APK: an app's
   /// `nativeLibraryDir` holds them only with `extractNativeLibs="true"`, and
   /// then holds every vendor the app ships. flutter_edge_ai_litertlm
-  /// prepares a directory per vendor through its platform channel; a plain
-  /// Dart program on Android has to do the same.
+  /// prepares a directory per vendor through flutter_edge_ai's platform
+  /// channel; a plain Dart program on Android has to do the same.
   const factory Backend.npu({String? dispatchDir}) = NpuBackend;
 }
 

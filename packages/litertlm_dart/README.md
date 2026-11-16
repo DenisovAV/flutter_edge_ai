@@ -91,8 +91,9 @@ Not yet: LoRA, `tool_choice` and the other LiteRT-LM 0.20 additions.
   arm64, iOS, macOS arm64, Linux x64/arm64 and Windows x64, and registers it
   as code assets. Patches over upstream include rewinding a stopped turn,
   NPU fixes and the thinking-budget fix (`native/litert_lm/patch_c_api.sh`).
-- **NPU stacks.** Qualcomm (Android, Linux arm64), Google Tensor and MediaTek
-  (Android), Intel (Windows x64), with the vendor runtimes fetched on request.
+- **NPU stacks.** Qualcomm (Android, Linux arm64), Google Tensor (Android),
+  Intel (Windows x64), with the vendor runtimes fetched on request; MediaTek
+  is refused in this release (see Build options).
 
 ## Versions
 
@@ -126,8 +127,8 @@ a finished story:
   `nativeLibraryDir` holds it only with `extractNativeLibs="true"`, and then
   holds every vendor the app ships, of which LiteRT takes the first.
   `flutter_edge_ai_litertlm` copies one vendor's libraries into a directory of
-  their own through its platform channel; an app without it has to do the
-  same and pass that directory as `dispatchDir:`.
+  their own through `flutter_edge_ai`'s platform channel; an app without them
+  has to do the same and pass that directory as `dispatchDir:`.
 - **macOS:** the hook leaves two companion libraries (the constraint provider
   and the Metal accelerator) to the app's build — `flutter_edge_ai_litertlm`'s
   Swift package or its Podfile step embeds them. A macOS app that depends on

@@ -3,7 +3,7 @@
 // (its own native conversation, or a turn of the shared one).
 
 import 'dart:async';
-import 'dart:convert' show jsonEncode;
+import 'dart:convert' show JsonUnsupportedObjectError, jsonEncode;
 
 import 'package:meta/meta.dart' show internal, visibleForTesting;
 
@@ -125,13 +125,17 @@ final class Conversation {
   /// Sends [message] and streams the reply.
   ///
   /// [thinkingConfig] overrides the conversation's for this message;
-  /// [extraContext] adds template variables; [repetitionPenaltyConfig],
+  /// [extraContext] adds template variables (JSON values: an argument that is
+  /// not is an [ArgumentError]); [repetitionPenaltyConfig],
   /// [noRepeatNgramConfig] and [suppressTokens] shape this reply's decoding.
   ///
-  /// The stream ends with an error for: [ContextFullException] (the message
-  /// did not fit), [ConversationClosedException] (closed while streaming),
-  /// [TurnFailedException] (native failed or cancelled unasked),
-  /// [ConstraintUnsupportedException] (the response format was refused).
+  /// The message is sent when the stream is listened to. The stream ends with
+  /// an error for: [ContextFullException] (the message did not fit),
+  /// [ConversationClosedException] (closed before or while streaming),
+  /// [ConstraintUnsupportedException] (the response format was refused, or
+  /// combined with a thinking budget), and [TurnFailedException] for any
+  /// other failure (native failed or cancelled unasked, a reply native wrote
+  /// in a shape this release cannot read). Programming errors stay [Error]s.
   Stream<Message> sendMessageStream(
     Message message, {
     Map<String, Object?>? extraContext,
@@ -141,24 +145,32 @@ final class Conversation {
     ThinkingConfig? thinkingConfig,
   }) {
     if (_closed) throw StateError('The conversation is closed.');
-    if (_sending) {
-      throw StateError(
-        'A reply is still streaming; cancel it or wait for its end before '
-        'sending the next message.',
-      );
-    }
+    _checkNotSending();
     final thinking = thinkingConfig ?? _config.thinkingConfig;
     final enable = thinking?.enableThinking ?? false;
     final budget = enable ? thinking?.thinkingTokenBudget : null;
+    final merged = {..._config.extraContext, ...?extraContext};
+    try {
+      jsonEncode(merged);
+    } on JsonUnsupportedObjectError catch (e) {
+      throw ArgumentError.value(
+        extraContext,
+        'extraContext',
+        'holds a value that is not JSON: ${e.unsupportedObject}',
+      );
+    }
+    final json = jsonEncode(messageJson(message));
     if (budget != null && _config.responseFormat != null) {
-      throw const ConstraintUnsupportedException(
-        'LiteRT-LM cannot combine a response format with a thinking token '
-        'budget.',
+      return Stream.error(
+        const ConstraintUnsupportedException(
+          'LiteRT-LM cannot combine a response format with a thinking token '
+          'budget.',
+        ),
       );
     }
     if (budget != null) _budgetCapsNothing();
     final options = SendOptions(
-      extraContext: {..._config.extraContext, ...?extraContext},
+      extraContext: merged,
       repetitionPenalty: repetitionPenaltyConfig,
       noRepeatNgram: noRepeatNgramConfig,
       suppressTokens: suppressTokens == null
@@ -166,32 +178,69 @@ final class Conversation {
           : List.unmodifiable(suppressTokens),
       thinkingTokenBudget: budget,
     );
-    final json = jsonEncode(messageJson(message));
-    _sending = true;
     late final StreamController<Message> controller;
     StreamSubscription<String>? inner;
     var cancelled = false;
-    // The turn ended on its own: a done event also runs onCancel, and there
-    // is nothing left to stop.
+    // The turn ended on its own (done, or the error the handle's stream ends
+    // with): a done event, and a subscriber that cancels on the error, also
+    // run onCancel, and there is nothing left to stop.
     var ended = false;
-    void finish() => _sending = false;
+
+    void endWith(Object error, StackTrace stack) {
+      ended = true;
+      controller
+        ..addError(error, stack)
+        ..close();
+    }
 
     controller = StreamController<Message>(
       sync: true,
       onListen: () {
+        if (_closed) {
+          endWith(
+            const ConversationClosedException(
+              'The conversation was closed before its message was sent.',
+            ),
+            StackTrace.current,
+          );
+          return;
+        }
+        if (_sending) {
+          endWith(StateError(_stillSending), StackTrace.current);
+          return;
+        }
+        _sending = true;
         inner = _handle
             .chatRawMessage(json, enableThinking: enable, options: options)
             .listen(
               (chunk) {
-                if (!cancelled) controller.add(messageFromChunk(chunk));
+                if (cancelled) return;
+                final Message piece;
+                try {
+                  piece = messageFromChunk(chunk);
+                } on Object catch (e, st) {
+                  if (e is! FormatException && e is! StateError) rethrow;
+                  controller.addError(
+                    TurnFailedException(
+                      'LiteRT-LM sent a reply this release cannot read: $e',
+                      cause: e,
+                    ),
+                    st,
+                  );
+                  return;
+                }
+                controller.add(piece);
               },
               onError: (Object error, StackTrace stack) {
+                // The handle's stream ends with its error: this turn is over.
+                ended = true;
+                _sending = false;
                 if (cancelled) return;
                 controller.addError(_mapError(error), stack);
               },
               onDone: () {
                 ended = true;
-                finish();
+                _sending = false;
                 if (!controller.isClosed) controller.close();
               },
             );
@@ -203,7 +252,7 @@ final class Conversation {
         cancelled = true;
         // The next message may be sent at once: it waits for this turn to
         // end and for the conversation's recovery before it is sent.
-        finish();
+        _sending = false;
         final sub = inner;
         if (sub == null) return null;
         // Ask native to stop, then wait for the turn to end on its own, as a
@@ -219,6 +268,9 @@ final class Conversation {
             if (!nativeEnded.isCompleted) nativeEnded.complete();
           });
         if (sub.isPaused) sub.resume();
+        // Bounded: the native turn layer already gives a stopped turn 2 s and
+        // says so when it does not end; this only keeps the cancel from
+        // waiting longer than that layer.
         return nativeEnded.future.timeout(
           const Duration(seconds: 5),
           onTimeout: sub.cancel,
@@ -228,13 +280,25 @@ final class Conversation {
     return controller.stream;
   }
 
+  static const _stillSending =
+      'A reply is still streaming; cancel it or wait for its end before '
+      'sending the next message.';
+
+  void _checkNotSending() {
+    if (_sending) throw StateError(_stillSending);
+  }
+
   /// Stops the reply in flight, keeping what was generated: native stops at
   /// its next token (a prefill in progress finishes first) and the stream
   /// then ends normally, with every piece produced before the stop. Swift's
   /// `cancel()`. Cancelling the subscription instead stops native too, but
-  /// drops what has not reached the subscriber. A message still waiting for
-  /// the turn before it is not sent.
-  void cancel() => _handle.cancelGeneration();
+  /// drops what has not reached the subscriber. The next message may be sent
+  /// at once: it waits for the stopped turn to end. A message still waiting
+  /// for the turn before it is not sent.
+  void cancel() {
+    _sending = false;
+    _handle.cancelGeneration();
+  }
 
   /// Sends [message] and returns the whole reply as one [Message].
   Future<Message> sendMessage(
@@ -272,13 +336,16 @@ final class Conversation {
     if (error is LiteRtLmTurnClosedException) {
       return ConversationClosedException('$error');
     }
+    if (error is LiteRtLmException) return error;
     if (error is LiteRtLmTurnCancelledException) {
       return TurnFailedException('$error', cause: error);
     }
+    // Native's record of this send: a message that did not fit.
     if (_handle.lastTurnEnd == NativeLastTurnEnd.contextFull) {
       return ContextFullException('$error');
     }
-    return error;
+    if (error is Error) return error;
+    return TurnFailedException('$error', cause: error);
   }
 
   /// How the last turn ended; null before the first one reached native.

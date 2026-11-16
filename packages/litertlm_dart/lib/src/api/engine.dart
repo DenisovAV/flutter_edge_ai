@@ -289,7 +289,6 @@ final class Engine {
   bool _closed = false;
   bool _channelWarned = false;
 
-
   /// Loads [config.modelPath] on [config.backend]: one attempt, no fallback.
   ///
   /// Throws [LiteRtLmBundleException] when the file is incomplete or cannot
@@ -614,10 +613,7 @@ final class Engine {
   /// messages when they take it over. Either way a stopped, refused or failed
   /// turn is recovered before the next one (see [Conversation]).
   Future<Conversation> createConversation([ConversationConfig? config]) =>
-      _createConversation(
-        config,
-        own: _backing == OpenSessionBacking.native,
-      );
+      _createConversation(config, own: _backing == OpenSessionBacking.native);
 
   Future<Conversation> _createConversation(
     ConversationConfig? config, {

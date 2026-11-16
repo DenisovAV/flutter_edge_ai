@@ -233,7 +233,8 @@ void main() {
     },
   );
 
-  test('a response format with a thinking budget is refused before a send', () {
+  test('a response format with a thinking budget ends the stream with the '
+      'refusal, before a send', () async {
     final handle = _Handle();
     final conversation = Conversation.forTest(
       handle,
@@ -242,11 +243,80 @@ void main() {
         thinkingConfig: ThinkingConfig(thinkingTokenBudget: 64),
       ),
     );
-    expect(
-      () => conversation.sendMessageStream(Message.user('x')),
-      throwsA(isA<ConstraintUnsupportedException>()),
+    await expectLater(
+      conversation.sendMessageStream(Message.user('x')),
+      emitsError(isA<ConstraintUnsupportedException>()),
     );
     expect(handle.messages, isEmpty);
+  });
+
+  test('an extraContext that is not JSON is refused at the call', () {
+    final conversation = Conversation.forTest(_Handle());
+    expect(
+      () => conversation.sendMessageStream(
+        Message.user('x'),
+        extraContext: {'now': Object()},
+      ),
+      throwsArgumentError,
+    );
+  });
+
+  test('a stream nobody listens to sends nothing and blocks nothing', () async {
+    final handle = _Handle();
+    final conversation = Conversation.forTest(handle);
+    conversation.sendMessageStream(Message.user('dropped'));
+    conversation.sendMessageStream(Message.user('kept')).listen((_) {});
+    await pumpEventQueue();
+    expect(handle.messages.single['content'], [
+      {'type': 'text', 'text': 'kept'},
+    ]);
+  });
+
+  test(
+    'closed before it is listened to: ConversationClosedException',
+    () async {
+      final handle = _Handle();
+      final conversation = Conversation.forTest(handle);
+      final stream = conversation.sendMessageStream(Message.user('x'));
+      await conversation.close();
+      await expectLater(stream, emitsError(isA<ConversationClosedException>()));
+      expect(handle.messages, isEmpty);
+    },
+  );
+
+  test('cancel() lets the next message be sent at once', () async {
+    final handle = _Handle();
+    final conversation = Conversation.forTest(handle);
+    conversation.sendMessageStream(Message.user('a')).listen((_) {});
+    await pumpEventQueue();
+    conversation.cancel();
+    conversation.sendMessageStream(Message.user('b')).listen((_) {});
+    await pumpEventQueue();
+    expect(handle.messages, hasLength(2));
+  });
+
+  test('a reply native wrote in a shape this release cannot read is a '
+      'TurnFailedException on the stream, not a lost chunk', () async {
+    final handle = _Handle();
+    final conversation = Conversation.forTest(handle);
+    final errors = <Object>[];
+    final texts = <String>[];
+    final done = Completer<void>();
+    conversation
+        .sendMessageStream(Message.user('x'))
+        .listen(
+          (m) => texts.add(m.text),
+          onError: errors.add,
+          onDone: done.complete,
+        );
+    await pumpEventQueue();
+    handle.sends.single
+      ..chunk('{"role":"assistant","content":5}')
+      ..chunk(_text('ok'))
+      ..finished();
+    await done.future;
+    expect(errors.single, isA<TurnFailedException>());
+    expect(texts, ['ok']);
   });
 
   group('how a send ends', () {
@@ -297,12 +367,40 @@ void main() {
       );
     });
 
-    test('any other failure as it came', () async {
+    test('any other failure: TurnFailedException with its cause', () async {
       expect(
         await errorOf((_, send) => send.failed(const FormatException('x'))),
-        isA<FormatException>(),
+        isA<TurnFailedException>().having(
+          (e) => e.cause,
+          'cause',
+          isA<FormatException>(),
+        ),
       );
     });
+
+    test(
+      "a turn that failed is not stopped again: no cancel reaches native",
+      () async {
+        for (final end in <void Function(_Handle, NativeTurnStream<String>)>[
+          (_, send) => send.failed(Exception('native')),
+          (handle, send) {
+            handle.turnEnd = NativeLastTurnEnd.contextFull;
+            send.failed(Exception('counts'));
+          },
+          (_, send) => send.cancelled(),
+        ]) {
+          final handle = _Handle();
+          final conversation = Conversation.forTest(handle);
+          final reply = conversation
+              .sendMessageStream(Message.user('x'))
+              .toList();
+          await pumpEventQueue();
+          end(handle, handle.sends.single);
+          await expectLater(reply, throwsA(isA<LiteRtLmException>()));
+          expect(handle.cancels, 0);
+        }
+      },
+    );
   });
 
   test('the last turn end, metrics, token count and close', () async {

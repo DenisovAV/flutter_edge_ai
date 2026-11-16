@@ -76,16 +76,14 @@ class _Captured implements Exception {
   const _Captured();
 }
 
-FfiInferenceModel _model(
-  _CapturingClient client,
-  ModelType type,
-) => ffiModelForClient(
-  ffiClient: client,
-  maxTokens: 1024,
-  modelType: type,
-  activeBackend: null,
-  onClose: () {},
-);
+FfiInferenceModel _model(_CapturingClient client, ModelType type) =>
+    ffiModelForClient(
+      ffiClient: client,
+      maxTokens: 1024,
+      modelType: type,
+      activeBackend: null,
+      onClose: () {},
+    );
 
 const _qwen3Bundle = SamplingParams(temperature: 0.6, topK: 20, topP: 0.95);
 
@@ -163,10 +161,7 @@ void main() {
 
   test('openSession resolves the same way', () async {
     final client = _CapturingClient(_qwen3Bundle);
-    final session = await _model(
-      client,
-      ModelType.qwen3,
-    ).openSession(topK: 1);
+    final session = await _model(client, ModelType.qwen3).openSession(topK: 1);
     await session.addQueryChunk(const Message(text: 'hi', isUser: true));
     await expectLater(session.getResponse(), throwsA(isA<_Captured>()));
     expect(

@@ -107,6 +107,20 @@ void main() {
       expect(messageFromChunk('{"role":"assistant","content":"s"}').text, 's');
     });
 
+    test('the calls a replay keeps: a reply it cannot read has none, and '
+        'does not throw', () {
+      expect(
+        nativeToolCalls(
+          '{"role":"assistant","tool_calls":[{"function":{"name":"f",'
+          '"arguments":"not json"}}]}'
+          '{"role":"assistant","content":5}'
+          '{"role":"assistant","tool_calls":[{"function":{"name":"g",'
+          '"arguments":{}}}]}',
+        ).map((c) => c.name),
+        ['g'],
+      );
+    });
+
     test('content of another type is a contract change, not text', () {
       expect(
         () => messageFromChunk('{"role":"assistant","content":7}'),

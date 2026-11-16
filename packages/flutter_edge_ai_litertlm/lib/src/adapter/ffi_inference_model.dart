@@ -778,6 +778,11 @@ class FfiInferenceModelSession extends InferenceModelSession
     if (error is lm.ConversationClosedException) {
       return LiteRtLmSessionClosedError(error.message);
     }
+    // What core's apps always got: the failure itself, not litertlm_dart's
+    // wrapper of it.
+    if (error is lm.TurnFailedException && error.cause != null) {
+      return mapRuntimeError(error.cause!);
+    }
     if (error is lm.ContextFullException) {
       return ContextLimitException(
         'The input token count does not fit the context window space '

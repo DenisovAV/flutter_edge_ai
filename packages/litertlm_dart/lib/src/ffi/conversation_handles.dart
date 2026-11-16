@@ -33,10 +33,25 @@ typedef ToolCallReader =
 List<({String name, Map<String, Object?> arguments})> nativeToolCalls(
   String rawReply,
 ) => [
-  for (final message in concatenatedJsonObjects(rawReply))
-    for (final call in messageFromJson(message).toolCalls)
-      (name: call.name, arguments: call.arguments),
+  for (final message in concatenatedJsonObjects(rawReply)) ..._callsIn(message),
 ];
+
+/// The calls of one reply object; one this release cannot read has none (the
+/// turn's text is replayed instead, as native keeps an unconverted call).
+List<({String name, Map<String, Object?> arguments})> _callsIn(
+  Map<String, Object?> message,
+) {
+  try {
+    return [
+      for (final call in messageFromJson(message).toolCalls)
+        (name: call.name, arguments: call.arguments),
+    ];
+  } on FormatException {
+    return const [];
+  } on StateError {
+    return const [];
+  }
+}
 
 /// The JSON objects of [text], a run of concatenated JSON values; anything
 /// that is not an object, or not JSON, is skipped.

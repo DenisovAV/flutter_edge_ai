@@ -7,7 +7,8 @@ import 'model_response.dart';
 /// Which media field a buffer belongs to: [Message.imageBytes] and
 /// [Message.images] are [image], [Message.audioBytes] is [audio].
 ///
-/// A new media type comes with a new format version.
+/// A new media type comes with a new format version and a major release, since
+/// it breaks an exhaustive `switch` over this enum.
 enum MessageMediaType { image, audio }
 
 /// A media buffer [MessageTranscriptCodec.encode] hands to its
@@ -28,7 +29,8 @@ final class MessageMedia {
   /// Where the buffer is in the list being encoded, such as
   /// `messages[3].images[0]`. Unique within one [MessageTranscriptCodec.encode]
   /// but not stable: delete a message and the same path names another buffer
-  /// at the next save. Build a reference from a hash of [bytes], or from the
+  /// at the next save. Build a reference from a content hash of [bytes] such
+  /// as SHA-256 (not `bytes.hashCode`, which hashes the object), or from the
   /// path plus an id that is new for each save.
   final String path;
 }
@@ -67,8 +69,8 @@ typedef MessageMediaReader =
 /// `==` to the one encoded when its tool-call arguments are JSON values: null,
 /// bool, a finite number, String, List, or a Map with String keys. [encode]
 /// refuses any other argument, before it writes any media. Numbers are JSON
-/// numbers, not Dart `int` or `double`: compiled to JavaScript, an integral `1.0`
-/// reads back as `1`, and an integer beyond 2^53 loses precision there.
+/// numbers, not Dart `int` or `double`: compiled to JavaScript, an integral
+/// `1.0` reads back as `1`, and an integer beyond 2^53 loses precision.
 ///
 /// `Message.withImage` puts one buffer in [Message.imageBytes] and
 /// [Message.images]. [decode] gives both fields one buffer again whenever

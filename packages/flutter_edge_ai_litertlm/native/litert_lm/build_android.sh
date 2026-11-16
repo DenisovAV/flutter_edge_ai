@@ -240,28 +240,25 @@ echo "=== Building StreamProxy with $NDK_CLANG ==="
   "$SCRIPT_DIR/stream_proxy.c"
 echo "  libStreamProxy.so → $PREBUILT_DIR/"
 
-# 7b. The MediaTek dispatch adapter (LiteRT-LM v0.19.0 on): our
+# 7b. The MediaTek dispatch adapter (native-v0.19.1-c on): our
 #     libLiteRtDispatch_MediaTek.so gives Google's legacy MediaTek dispatch
 #     the versioned dispatch ABI LiteRT now requires
-#     (mediatek_dispatch_compat.c). It does not ship: the MediaTek NPU is
-#     refused in core 2.6.0 (design decision K, 2026-11-03), and the release
-#     gate forbids the name in the Android archive. BUILD_MEDIATEK_ADAPTER=1
-#     builds it, with its host test, into $PREBUILT_DIR/../mediatek_adapter,
-#     outside the archive. The host test is part of CI either way.
-if [ "${BUILD_MEDIATEK_ADAPTER:-0}" = 1 ]; then
-  echo ""
-  echo "=== MediaTek dispatch adapter (not shipped) ==="
-  LITERT_DIR="${LITERT_DIR:-}" "$SCRIPT_DIR/run_mediatek_dispatch_compat_test.sh"
-  ADAPTER_DIR="$PREBUILT_DIR/../mediatek_adapter"
-  mkdir -p "$ADAPTER_DIR"
-  "$NDK_CLANG" -std=c11 -O2 -shared -fPIC -fvisibility=hidden \
-    -Wall -Wextra -Werror \
-    -Wl,-z,max-page-size=16384 \
-    -Wl,-soname,libLiteRtDispatch_MediaTek.so \
-    -o "$ADAPTER_DIR/libLiteRtDispatch_MediaTek.so" \
-    "$SCRIPT_DIR/mediatek_dispatch_compat.c"
-  echo "  libLiteRtDispatch_MediaTek.so → $ADAPTER_DIR/"
-fi
+#     (mediatek_dispatch_compat.c). It ships in the archive and reaches an app
+#     only behind `mediatek_npu`, next to Google's dispatch, which the hook
+#     fetches from the litert-npu-runtime-mediatek AAR and stores as
+#     libmtk_litert_dispatch_legacy.so (lib/src/hook/mediatek_runtime.dart).
+#     Our own code: it includes nothing from NeuroPilot. LITERT_DIR=<LiteRT at
+#     the pin> also holds the host test to the real dispatch header.
+echo ""
+echo "=== MediaTek dispatch adapter ==="
+LITERT_DIR="${LITERT_DIR:-}" "$SCRIPT_DIR/run_mediatek_dispatch_compat_test.sh"
+"$NDK_CLANG" -std=c11 -O2 -shared -fPIC -fvisibility=hidden \
+  -Wall -Wextra -Werror \
+  -Wl,-z,max-page-size=16384 \
+  -Wl,-soname,libLiteRtDispatch_MediaTek.so \
+  -o "$PREBUILT_DIR/libLiteRtDispatch_MediaTek.so" \
+  "$SCRIPT_DIR/mediatek_dispatch_compat.c"
+echo "  libLiteRtDispatch_MediaTek.so → $PREBUILT_DIR/"
 
 # 8. Copy companion libs from upstream prebuilt (we don't rebuild these
 #    — they're Google's GPU accelerator + sampler binaries).
@@ -329,6 +326,16 @@ for lib in libQnnHtp.so libQnnSystem.so \
   if [ -f "$PREBUILT_DIR/$lib" ]; then
     rm -f "$PREBUILT_DIR/$lib"
     echo "  removed stale $lib (QNN comes from Qualcomm's Maven artifact)"
+  fi
+done
+# MediaTek: only our adapter ships. Google's dispatch (built against
+# NeuroPilot, which may reach users only inside an app) and its compiler plugin
+# come from the AAR through the hook; drop a copy staged here by hand.
+for lib in "$PREBUILT_DIR"/libmtk_litert_dispatch_legacy.so \
+           "$PREBUILT_DIR"/libLiteRtCompilerPlugin_MediaTek*.so; do
+  if [ -f "$lib" ]; then
+    rm -f "$lib"
+    echo "  removed stale $(basename "$lib") (the hook fetches it from Google's AAR)"
   fi
 done
 

@@ -3213,7 +3213,8 @@ class LiteRtLmFfiClient {
   ///
   /// [conversationToken] identifies the virtual session. When it equals the
   /// token that built [_virtualConv], the existing live conversation is
-  /// reused (cheap same-session follow-up). Otherwise it's rebuilt.
+  /// reused (cheap same-session follow-up), unless [freshConversation] (the
+  /// MediaTek NPU, LiteRT-LM #4256). Otherwise it's rebuilt.
   /// True while a virtual turn holds [_nativeMutex] and is actively streaming.
   /// Lets [releaseVirtualConversation] (a session closing mid-generation) defer
   /// the native teardown instead of deleting the pointer out from under the
@@ -3277,6 +3278,7 @@ class LiteRtLmFfiClient {
     int? maxOutputTokens,
     String? jsonSchema,
     required bool filterChannelContent,
+    bool freshConversation = false,
   }) {
     // StreamController (not async*) so the mutex release is tied to the native
     // turn's end — done, error, or a cancel that native has finished — and not
@@ -3425,10 +3427,12 @@ class LiteRtLmFfiClient {
         final rebuildingStoppedConversation = _virtualConvStopped;
         if (_virtualActiveToken != conversationToken ||
             _virtualConv == null ||
-            rebuildingStoppedConversation) {
-          // Switching sessions (or first turn, or the turn after a stop): drop
-          // the old live conversation and rebuild one replaying this session's
-          // history as a preface.
+            rebuildingStoppedConversation ||
+            freshConversation) {
+          // Switching sessions (or first turn, or the turn after a stop, or
+          // every turn where a conversation answers one message only,
+          // [freshConversation]): drop the old live conversation and rebuild
+          // one replaying this session's history as a preface.
           _virtualConvStopped = false;
           _virtualStoppedExchanges.remove(conversationToken);
           _virtualStoppedExtraContexts.remove(conversationToken);

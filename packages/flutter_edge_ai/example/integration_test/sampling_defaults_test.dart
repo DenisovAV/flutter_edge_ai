@@ -89,8 +89,8 @@ void main() {
     final model = await _load('gemma-4-E2B-it.litertlm', ModelType.gemma4);
     try {
       // Read, and found nothing: a failed read is empty too, so check both.
-      expect(model.engine.clientForTest.bundleSamplerError, isNull);
-      expect(model.engine.clientForTest.bundleSampler.isEmpty, isTrue);
+      expect(engineClient(model.engine).bundleSamplerError, isNull);
+      expect(engineClient(model.engine).bundleSampler.isEmpty, isTrue);
       expect(await _reply(model), isNotEmpty);
     } finally {
       await model.close();

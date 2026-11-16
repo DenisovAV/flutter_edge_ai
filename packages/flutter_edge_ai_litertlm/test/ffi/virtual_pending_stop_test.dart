@@ -147,7 +147,9 @@ void main() {
       reason: 'retries stop when the native send call returns',
     );
     expect(
-      virtualConversationHistoryForTest(session.conversation.handleForTest),
+      virtualConversationHistoryForTest(
+        conversationHandle(session.conversation),
+      ),
       isEmpty,
       reason: 'Rule A takes back a stopped turn that produced no text',
     );

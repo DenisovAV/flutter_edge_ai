@@ -5,6 +5,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:litertlm_dart/internal_io.dart'
     show
         BundleInfo,
+        backendKindOf,
         LlmModelFamily,
         gpuActivationFor,
         liteRtLmEncoderOnNpu,
@@ -264,8 +265,14 @@ class LiteRtLmEngine
       maxTokens: engine.maxNumTokens,
       modelType: spec.modelType,
       activeBackend: activeBackend,
-      activeVisionBackend: engine.visionBackend?.kind.toCore,
-      activeAudioBackend: engine.audioBackend?.kind.toCore,
+      activeVisionBackend: switch (engine.visionBackend) {
+        final b? => backendKindOf(b).toCore,
+        null => null,
+      },
+      activeAudioBackend: switch (engine.audioBackend) {
+        final b? => backendKindOf(b).toCore,
+        null => null,
+      },
       fileType: spec.fileType,
       supportImage: config.supportImage,
       supportAudio: config.supportAudio,

@@ -150,11 +150,11 @@ void main() {
 
   test('the load chose native backing', () {
     _result(
-      'backing=${model.engine.conversationBacking.name} '
+      'backing=${engineConversationBacking(model.engine).name} '
       'active=${model.activeBackend?.name} noRewind=${model.noRewindReason} '
       'maxTokens=${model.maxTokens}',
     );
-    expect(model.engine.conversationBacking, OpenSessionBacking.native);
+    expect(engineConversationBacking(model.engine), OpenSessionBacking.native);
   }, skip: _skip);
 
   test('three interleaved sessions each recall only their own word', () async {
@@ -463,7 +463,7 @@ void main() {
       final sameSends = <int>[];
       for (var i = 0; i < 10; i++) {
         await _ask(first, 'Reply with OK only.');
-        sameSends.add(model.engine.clientForTest.lastSendCallMicros!);
+        sameSends.add(engineClient(model.engine).lastSendCallMicros!);
       }
       final base = ProcessInfo.currentRss;
       final extra = _idle;
@@ -491,8 +491,8 @@ void main() {
         final sw = Stopwatch()..start();
         for (var i = 0; i < _switches; i++) {
           await _ask(i.isEven ? first : b, 'Reply with OK only.');
-          switchSends.add(model.engine.clientForTest.lastSendCallMicros!);
-          switchNative.add(model.engine.clientForTest.lastSendNativeMicros!);
+          switchSends.add(engineClient(model.engine).lastSendCallMicros!);
+          switchNative.add(engineClient(model.engine).lastSendNativeMicros!);
           if ((i + 1) % 50 == 0) {
             debugPrint(
               '[open] after ${i + 1} switches: '

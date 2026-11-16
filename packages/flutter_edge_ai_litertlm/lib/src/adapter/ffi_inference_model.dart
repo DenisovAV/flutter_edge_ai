@@ -11,7 +11,13 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:litertlm_dart/internal_io.dart'
-    show ScoringStoppedError, createOwnConversation, isReleaseBuild, runtimeLog;
+    show
+        ScoringStoppedError,
+        createOwnConversation,
+        engineFiltersChannelContent,
+        engineNoRewindReason,
+        isReleaseBuild,
+        runtimeLog;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
 import '../litertlm_decision_section.dart';
@@ -122,12 +128,12 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   /// being rewound after a stopped turn or a full context; null when it
   /// rewinds.
   @visibleForTesting
-  String? get noRewindReason => engine.noRewindReason;
+  String? get noRewindReason => engineNoRewindReason(engine);
 
   /// Whether LiteRT-LM may strip a finished reply's thought from the KV
   /// cache ([lm.Engine.filtersChannelContent]).
   @visibleForTesting
-  bool get filterChannelContent => engine.filtersChannelContent;
+  bool get filterChannelContent => engineFiltersChannelContent(engine);
   final ModelType modelType;
 
   /// The thinking budget of every generation with thinking on

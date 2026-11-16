@@ -225,29 +225,6 @@ final class Engine {
     required this._linearAttentionState,
   });
 
-  /// An engine over [client], for tests that drive conversations with a fake
-  /// client.
-  @visibleForTesting
-  factory Engine.forTest(
-    LiteRtLmFfiClient client, {
-    Backend backend = const Backend.cpu(),
-    int maxNumTokens = 4096,
-    OpenSessionBacking backing = OpenSessionBacking.virtual,
-    bool? linearAttentionState = false,
-    NpuStack? npuVendor,
-  }) => Engine._(
-    client: client,
-    backend: backend,
-    visionBackend: null,
-    audioBackend: null,
-    maxNumTokens: maxNumTokens,
-    activationDataType: null,
-    npuVendor: npuVendor,
-    bundleInfo: null,
-    backing: backing,
-    linearAttentionState: linearAttentionState,
-  );
-
   final LiteRtLmFfiClient _client;
   final OpenSessionBacking _backing;
   final bool? _linearAttentionState;
@@ -277,15 +254,6 @@ final class Engine {
   /// The sampler the model file carries (empty when it carries none).
   BundleSampler get bundleSampler => _client.bundleSampler;
 
-  /// Whether conversations of this engine have their own native conversation
-  /// each, or share one by replaying their messages.
-  OpenSessionBacking get conversationBacking => _backing;
-
-  /// The client under this engine, for code inside this package and its
-  /// Flutter adapter's tests.
-  @visibleForTesting
-  LiteRtLmFfiClient get clientForTest => _client;
-
   bool _closed = false;
   bool _channelWarned = false;
 
@@ -301,7 +269,7 @@ final class Engine {
       _oneCreateAtATime(() => _create(config, _host));
 
   static Future<Engine> _create(EngineConfig config, EngineHost host) async {
-    final kind = config.backend.kind;
+    final kind = backendKindOf(config.backend);
     final path = config.modelPath;
     final platform = switch ((
       config.backend,
@@ -323,9 +291,10 @@ final class Engine {
     // passes by definition (its declared constraint, even without a stamp).
     BackendKind? requested(Backend? asked, BundleSection? encoder) =>
         asked == null ||
-            (encoder != null && encoderDefaultBackend(encoder) == asked.kind)
+            (encoder != null &&
+                encoderDefaultBackend(encoder) == backendKindOf(asked))
         ? null
-        : asked.kind;
+        : backendKindOf(asked);
     final visionRequest = requested(
       config.visionBackend,
       bundle?.visionEncoder,
@@ -453,12 +422,20 @@ final class Engine {
         enableVision: supportImage,
         // The plan's choice, else the request (a file that was not read).
         visionBackend: encoderBackendWireName(
-          plan.visionBackend ?? config.visionBackend?.kind,
+          plan.visionBackend ??
+              switch (config.visionBackend) {
+                final b? => backendKindOf(b),
+                null => null,
+              },
         ),
         maxNumImages: supportImage ? (config.maxNumImages ?? 1) : 0,
         enableAudio: supportAudio,
         audioBackend: encoderBackendWireName(
-          plan.audioBackend ?? config.audioBackend?.kind,
+          plan.audioBackend ??
+              switch (config.audioBackend) {
+                final b? => backendKindOf(b),
+                null => null,
+              },
         ),
         // Off and on keep the boolean setter they always used; adaptive has
         // none and goes through a speculative decoding config.
@@ -588,7 +565,7 @@ final class Engine {
   /// Why a conversation of this engine is rebuilt from its messages instead
   /// of being rewound after a stopped turn or a full context; null when it
   /// rewinds.
-  String? get noRewindReason => backend.kind == BackendKind.npu
+  String? get _noRewindReason => backendKindOf(backend) == BackendKind.npu
       ? 'the NPU executor rolls back one token at most'
       : _linearAttentionState == true
       ? 'this model keeps linear attention state, which a rewind cannot '
@@ -602,8 +579,8 @@ final class Engine {
   /// cache, which it does by rewinding over the reply: only where every
   /// conversation is known to rewind (not on the NPU, not on a model with
   /// linear attention state or one whose state could not be read).
-  bool get filtersChannelContent => liteRtLmFiltersChannelContent(
-    npu: backend.kind == BackendKind.npu,
+  bool get _filtersChannelContent => liteRtLmFiltersChannelContent(
+    npu: backendKindOf(backend) == BackendKind.npu,
     linearAttentionState: _linearAttentionState,
   );
 
@@ -640,7 +617,7 @@ final class Engine {
       extraContext: c.extraContext,
       speculativeDecoding: c.speculativeDecoding,
     );
-    final filter = filtersChannelContent;
+    final filter = _filtersChannelContent;
     final ConversationHandle handle;
     switch (own) {
       case true:
@@ -668,7 +645,7 @@ final class Engine {
           first,
           reopen: open,
           toolCallsOf: nativeToolCalls,
-          noRewindReason: noRewindReason,
+          noRewindReason: _noRewindReason,
         );
       case false:
         handle = VirtualConversationHandle(
@@ -686,7 +663,7 @@ final class Engine {
           initialHistory: initial,
         );
     }
-    return Conversation.internal(
+    return newConversation(
       handle,
       config: c,
       thinkingTokenBudgetCapsNothing: _budgetCapsNothing,
@@ -765,3 +742,41 @@ Future<Conversation> createOwnConversation(
   Engine engine, [
   ConversationConfig? config,
 ]) => engine._createConversation(config, own: true);
+
+/// An engine over [client], for tests that drive conversations with a fake
+/// client.
+Engine engineForTest(
+  LiteRtLmFfiClient client, {
+  Backend backend = const Backend.cpu(),
+  int maxNumTokens = 4096,
+  OpenSessionBacking backing = OpenSessionBacking.virtual,
+  bool? linearAttentionState = false,
+  NpuStack? npuVendor,
+}) => Engine._(
+  client: client,
+  backend: backend,
+  visionBackend: null,
+  audioBackend: null,
+  maxNumTokens: maxNumTokens,
+  activationDataType: null,
+  npuVendor: npuVendor,
+  bundleInfo: null,
+  backing: backing,
+  linearAttentionState: linearAttentionState,
+);
+
+/// The client under [engine].
+LiteRtLmFfiClient engineClient(Engine engine) => engine._client;
+
+/// Whether [engine]'s conversations have a native conversation each, or share
+/// one by replaying their messages.
+OpenSessionBacking engineConversationBacking(Engine engine) => engine._backing;
+
+/// Why [engine]'s conversations are rebuilt instead of rewound after a stop
+/// or a full context; null when they rewind.
+String? engineNoRewindReason(Engine engine) => engine._noRewindReason;
+
+/// Whether LiteRT-LM may strip a finished reply's thought from the KV cache
+/// of [engine]'s conversations.
+bool engineFiltersChannelContent(Engine engine) =>
+    engine._filtersChannelContent;

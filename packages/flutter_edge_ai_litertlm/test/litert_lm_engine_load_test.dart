@@ -1174,7 +1174,7 @@ void main() {
           await load(path, preferredBackend: PreferredBackend.gpu)
               as FfiInferenceModel;
       expect(gpu.activeBackend, PreferredBackend.gpu);
-      expect(gpu.engine.conversationBacking, OpenSessionBacking.native);
+      expect(engineConversationBacking(gpu.engine), OpenSessionBacking.native);
       await gpu.close();
 
       host = _FakeHost(
@@ -1187,7 +1187,7 @@ void main() {
           await load(path, preferredBackend: PreferredBackend.gpu)
               as FfiInferenceModel;
       expect(cpu.activeBackend, PreferredBackend.cpu);
-      expect(cpu.engine.conversationBacking, OpenSessionBacking.virtual);
+      expect(engineConversationBacking(cpu.engine), OpenSessionBacking.virtual);
       await cpu.close();
     });
 
@@ -1241,7 +1241,10 @@ void main() {
                 as FfiInferenceModel;
         expect(host.attempts.map((a) => a.backend), contains('npu'));
         expect(model.activeBackend, PreferredBackend.cpu);
-        expect(model.engine.conversationBacking, OpenSessionBacking.virtual);
+        expect(
+          engineConversationBacking(model.engine),
+          OpenSessionBacking.virtual,
+        );
         await model.close();
       },
     );

@@ -73,7 +73,7 @@ String _text(String t) => jsonEncode({
 void main() {
   test('a reply streams as messages and ends when native ends it', () async {
     final handle = _Handle();
-    final conversation = Conversation.forTest(handle);
+    final conversation = conversationForTest(handle);
     final reply = conversation.sendMessageStream(Message.user('hi')).toList();
     await pumpEventQueue();
     handle.sends.single
@@ -100,7 +100,7 @@ void main() {
 
   test('sendMessage gathers the reply into one message', () async {
     final handle = _Handle();
-    final conversation = Conversation.forTest(handle);
+    final conversation = conversationForTest(handle);
     final reply = conversation.sendMessage(Message.user('hi'));
     await pumpEventQueue();
     handle.sends.single
@@ -130,7 +130,7 @@ void main() {
 
   test('cancel() stops native and keeps what was generated', () async {
     final handle = _Handle();
-    final conversation = Conversation.forTest(handle);
+    final conversation = conversationForTest(handle);
     final reply = conversation.sendMessageStream(Message.user('hi')).toList();
     await pumpEventQueue();
     handle.sends.single.chunk(_text('Par'));
@@ -143,7 +143,7 @@ void main() {
   test('cancelling the subscription stops native, and its future completes '
       'once native has ended the turn', () async {
     final handle = _Handle();
-    final conversation = Conversation.forTest(handle);
+    final conversation = conversationForTest(handle);
     final seen = <String>[];
     final subscription = conversation
         .sendMessageStream(Message.user('hi'))
@@ -163,7 +163,7 @@ void main() {
 
   test('one reply at a time; a cancelled one does not hold the next', () async {
     final handle = _Handle();
-    final conversation = Conversation.forTest(handle);
+    final conversation = conversationForTest(handle);
     final first = conversation
         .sendMessageStream(Message.user('a'))
         .listen((_) {});
@@ -183,7 +183,7 @@ void main() {
   test("the message's options reach the send; extraContext merges over the "
       "conversation's", () async {
     final handle = _Handle();
-    final conversation = Conversation.forTest(
+    final conversation = conversationForTest(
       handle,
       config: ConversationConfig(
         extraContext: const {'a': 1, 'b': 1},
@@ -215,7 +215,7 @@ void main() {
     'a message overrides the thinking config; off sends no budget',
     () async {
       final handle = _Handle();
-      final conversation = Conversation.forTest(
+      final conversation = conversationForTest(
         handle,
         config: ConversationConfig(
           thinkingConfig: ThinkingConfig(thinkingTokenBudget: 64),
@@ -236,7 +236,7 @@ void main() {
   test('a response format with a thinking budget ends the stream with the '
       'refusal, before a send', () async {
     final handle = _Handle();
-    final conversation = Conversation.forTest(
+    final conversation = conversationForTest(
       handle,
       config: ConversationConfig(
         responseFormat: ResponseFormat.json(const {'type': 'string'}),
@@ -251,7 +251,7 @@ void main() {
   });
 
   test('an extraContext that is not JSON is refused at the call', () {
-    final conversation = Conversation.forTest(_Handle());
+    final conversation = conversationForTest(_Handle());
     expect(
       () => conversation.sendMessageStream(
         Message.user('x'),
@@ -263,7 +263,7 @@ void main() {
 
   test('a stream nobody listens to sends nothing and blocks nothing', () async {
     final handle = _Handle();
-    final conversation = Conversation.forTest(handle);
+    final conversation = conversationForTest(handle);
     conversation.sendMessageStream(Message.user('dropped'));
     conversation.sendMessageStream(Message.user('kept')).listen((_) {});
     await pumpEventQueue();
@@ -276,7 +276,7 @@ void main() {
     'closed before it is listened to: ConversationClosedException',
     () async {
       final handle = _Handle();
-      final conversation = Conversation.forTest(handle);
+      final conversation = conversationForTest(handle);
       final stream = conversation.sendMessageStream(Message.user('x'));
       await conversation.close();
       await expectLater(stream, emitsError(isA<ConversationClosedException>()));
@@ -286,7 +286,7 @@ void main() {
 
   test('cancel() lets the next message be sent at once', () async {
     final handle = _Handle();
-    final conversation = Conversation.forTest(handle);
+    final conversation = conversationForTest(handle);
     conversation.sendMessageStream(Message.user('a')).listen((_) {});
     await pumpEventQueue();
     conversation.cancel();
@@ -298,7 +298,7 @@ void main() {
   test('a reply native wrote in a shape this release cannot read is a '
       'TurnFailedException on the stream, not a lost chunk', () async {
     final handle = _Handle();
-    final conversation = Conversation.forTest(handle);
+    final conversation = conversationForTest(handle);
     final errors = <Object>[];
     final texts = <String>[];
     final done = Completer<void>();
@@ -324,7 +324,7 @@ void main() {
       void Function(_Handle handle, NativeTurnStream<String> send) end,
     ) async {
       final handle = _Handle();
-      final conversation = Conversation.forTest(handle);
+      final conversation = conversationForTest(handle);
       final reply = conversation.sendMessageStream(Message.user('x')).toList();
       await pumpEventQueue();
       end(handle, handle.sends.single);
@@ -390,7 +390,7 @@ void main() {
           (_, send) => send.cancelled(),
         ]) {
           final handle = _Handle();
-          final conversation = Conversation.forTest(handle);
+          final conversation = conversationForTest(handle);
           final reply = conversation
               .sendMessageStream(Message.user('x'))
               .toList();
@@ -405,7 +405,7 @@ void main() {
 
   test('the last turn end, metrics, token count and close', () async {
     final handle = _Handle()..turnEnd = NativeLastTurnEnd.outputLimit;
-    final conversation = Conversation.forTest(handle);
+    final conversation = conversationForTest(handle);
     expect(conversation.lastTurnEnd, TurnEnd.outputLimit);
     handle.turnEnd = NativeLastTurnEnd.none;
     expect(conversation.lastTurnEnd, isNull);

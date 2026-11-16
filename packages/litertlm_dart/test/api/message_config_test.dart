@@ -270,7 +270,7 @@ void main() {
     test('an engine config without a backend runs on the CPU', () {
       expect(EngineConfig(modelPath: 'm').backend, const Backend.cpu());
       expect(const Backend.cpu(threadCount: 4), isNot(const Backend.cpu()));
-      expect(Backend.npu(dispatchDir: '/d').kind, BackendKind.npu);
+      expect(backendKindOf(Backend.npu(dispatchDir: '/d')), BackendKind.npu);
     });
   });
 }

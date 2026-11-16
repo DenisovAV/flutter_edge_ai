@@ -5,8 +5,6 @@
 import 'dart:async';
 import 'dart:convert' show JsonUnsupportedObjectError, jsonEncode;
 
-import 'package:meta/meta.dart' show internal, visibleForTesting;
-
 import '../ffi/litert_lm_client.dart'
     show ConversationHandle, NativeLastTurnEnd;
 import '../ffi/native_turns.dart'
@@ -94,33 +92,17 @@ final class TurnFailedException extends LiteRtLmException {
 /// closed as a finished exchange; a turn that produced nothing, failed or did
 /// not fit is taken back.
 final class Conversation {
-  @internal
-  Conversation.internal(
+  Conversation._(
     this._handle, {
     required this._config,
     required void Function() thinkingTokenBudgetCapsNothing,
   }) : _budgetCapsNothing = thinkingTokenBudgetCapsNothing;
-
-  /// A conversation over [handle], for tests that drive it with a fake.
-  @visibleForTesting
-  factory Conversation.forTest(
-    ConversationHandle handle, {
-    ConversationConfig? config,
-  }) => Conversation.internal(
-    handle,
-    config: config ?? ConversationConfig(),
-    thinkingTokenBudgetCapsNothing: () {},
-  );
 
   final ConversationHandle _handle;
   final ConversationConfig _config;
   final void Function() _budgetCapsNothing;
   bool _sending = false;
   bool _closed = false;
-
-  /// The handle under this conversation, for tests.
-  @visibleForTesting
-  ConversationHandle get handleForTest => _handle;
 
   /// Sends [message] and streams the reply.
   ///
@@ -370,3 +352,28 @@ final class Conversation {
     _handle.close();
   }
 }
+
+/// A conversation over [handle], as [Engine] makes one.
+Conversation newConversation(
+  ConversationHandle handle, {
+  required ConversationConfig config,
+  required void Function() thinkingTokenBudgetCapsNothing,
+}) => Conversation._(
+  handle,
+  config: config,
+  thinkingTokenBudgetCapsNothing: thinkingTokenBudgetCapsNothing,
+);
+
+/// A conversation over [handle], for tests that drive it with a fake.
+Conversation conversationForTest(
+  ConversationHandle handle, {
+  ConversationConfig? config,
+}) => Conversation._(
+  handle,
+  config: config ?? ConversationConfig(),
+  thinkingTokenBudgetCapsNothing: () {},
+);
+
+/// The handle under [conversation].
+ConversationHandle conversationHandle(Conversation conversation) =>
+    conversation._handle;

@@ -243,8 +243,9 @@ void main() {
     client.virtualRewindForTest = (conv, exchange, extraContext) async =>
         StoppedTurnRewind.rewound;
 
-    final handle =
-        (session as FfiInferenceModelSession).conversation.handleForTest;
+    final handle = conversationHandle(
+      (session as FfiInferenceModelSession).conversation,
+    );
     final subscription = handle.chat('one').listen((_) {});
     await pumpEventQueue();
     sends.single.chunk(
@@ -386,7 +387,7 @@ void main() {
       expect(await bText, isEmpty);
       expect(await bTurn.end, TurnEnd.closed);
       expect(
-        virtualConversationHistoryForTest(b.conversation.handleForTest),
+        virtualConversationHistoryForTest(conversationHandle(b.conversation)),
         isEmpty,
       );
       expect(
@@ -443,7 +444,9 @@ void main() {
     expect(await turn.end, TurnEnd.closed);
     expect(sends, 0);
     expect(
-      virtualConversationHistoryForTest(session.conversation.handleForTest),
+      virtualConversationHistoryForTest(
+        conversationHandle(session.conversation),
+      ),
       isEmpty,
     );
     expect(creatingClient.isConversationLiveForTest(conv), isFalse);

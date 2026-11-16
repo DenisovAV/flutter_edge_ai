@@ -8,7 +8,12 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/litertlm_decision_section.dart';
 import 'package:litertlm_dart/internal_io.dart'
-    show ConversationHandle, LiteRtLmFfiClient, OpenSessionBacking;
+    show
+        ConversationHandle,
+        LiteRtLmFfiClient,
+        OpenSessionBacking,
+        conversationForTest,
+        engineForTest;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
 /// A model over [ffiClient], for tests that drive it with a fake client.
@@ -31,7 +36,7 @@ FfiInferenceModel ffiModelForClient({
   ),
   required VoidCallback onClose,
 }) => FfiInferenceModel(
-  engine: lm.Engine.forTest(
+  engine: engineForTest(
     ffiClient,
     backend: switch (activeBackend) {
       PreferredBackend.gpu => const lm.Backend.gpu(),
@@ -69,7 +74,7 @@ FfiInferenceModelSession ffiSessionForHandle({
   int? maxOutputTokens,
   required VoidCallback onClose,
 }) => FfiInferenceModelSession(
-  conversation: lm.Conversation.forTest(handle),
+  conversation: conversationForTest(handle),
   modelType: modelType,
   fileType: fileType,
   supportImage: supportImage,

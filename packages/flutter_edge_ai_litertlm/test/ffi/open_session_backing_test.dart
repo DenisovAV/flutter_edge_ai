@@ -264,7 +264,7 @@ void main() {
       onClose: () {},
     );
     final session = await m.openSession() as FfiInferenceModelSession;
-    final handle = session.conversation.handleForTest;
+    final handle = conversationHandle(session.conversation);
     // A context_full end recorded for this session's token.
     client.watchVirtualTurnEnd(
       (handle as dynamic).token as Object,
@@ -289,7 +289,8 @@ void main() {
     );
     final session = await m.openSession() as FfiInferenceModelSession;
     final handle =
-        session.conversation.handleForTest as RecoveringConversationHandle;
+        conversationHandle(session.conversation)
+            as RecoveringConversationHandle;
     expect(handle.noRewindReason, contains('could not be read'));
     // One rule for every conversation of the model: createSession's too,
     // which before litertlm_dart rewound a model it could not read.

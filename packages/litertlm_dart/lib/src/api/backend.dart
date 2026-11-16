@@ -31,10 +31,14 @@ sealed class Backend {
   /// it is, and [platform] is then not asked for one.
   const factory Backend.npu({NpuPlatform? platform, String? dispatchDir}) =
       NpuBackend;
-
-  /// The runtime's name for this backend.
-  BackendKind get kind;
 }
+
+/// The runtime's name for [backend].
+BackendKind backendKindOf(Backend backend) => switch (backend) {
+  CpuBackend() => BackendKind.cpu,
+  GpuBackend() => BackendKind.gpu,
+  NpuBackend() => BackendKind.npu,
+};
 
 /// [Backend.cpu].
 final class CpuBackend extends Backend {
@@ -44,9 +48,6 @@ final class CpuBackend extends Backend {
 
   /// Threads of the CPU executor; null is LiteRT-LM's default.
   final int? threadCount;
-
-  @override
-  BackendKind get kind => BackendKind.cpu;
 
   @override
   bool operator ==(Object other) =>
@@ -63,9 +64,6 @@ final class CpuBackend extends Backend {
 /// [Backend.gpu].
 final class GpuBackend extends Backend {
   const GpuBackend() : super._();
-
-  @override
-  BackendKind get kind => BackendKind.gpu;
 
   @override
   bool operator ==(Object other) => other is GpuBackend;
@@ -86,9 +84,6 @@ final class NpuBackend extends Backend {
 
   /// A directory already holding the vendor's dispatch libraries.
   final String? dispatchDir;
-
-  @override
-  BackendKind get kind => BackendKind.npu;
 
   @override
   bool operator ==(Object other) =>

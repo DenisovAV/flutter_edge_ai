@@ -56,30 +56,30 @@ void main() {
   test('on a virtual-backed engine conversations share one native '
       "conversation; createOwnConversation gets one of its own", () async {
     final client = _Client();
-    final engine = Engine.forTest(client);
+    final engine = engineForTest(client);
     final a = await engine.createConversation();
     final b = await engine.createConversation();
-    expect(a.handleForTest, isA<VirtualConversationHandle>());
-    expect(b.handleForTest, isA<VirtualConversationHandle>());
+    expect(conversationHandle(a), isA<VirtualConversationHandle>());
+    expect(conversationHandle(b), isA<VirtualConversationHandle>());
     expect(client.creates, isEmpty);
     final own = await createOwnConversation(engine);
-    expect(own.handleForTest, isA<RecoveringConversationHandle>());
+    expect(conversationHandle(own), isA<RecoveringConversationHandle>());
     expect(client.creates, hasLength(1));
   });
 
   test('on a native-backed engine every conversation has its own', () async {
     final client = _Client();
-    final engine = Engine.forTest(client, backing: OpenSessionBacking.native);
+    final engine = engineForTest(client, backing: OpenSessionBacking.native);
     final a = await engine.createConversation();
     final b = await engine.createConversation();
-    expect(a.handleForTest, isA<RecoveringConversationHandle>());
-    expect(b.handleForTest, isA<RecoveringConversationHandle>());
+    expect(conversationHandle(a), isA<RecoveringConversationHandle>());
+    expect(conversationHandle(b), isA<RecoveringConversationHandle>());
     expect(client.creates, hasLength(2));
   });
 
   test("the caller's sampler is the caller's; a default is not", () async {
     final client = _Client();
-    final engine = Engine.forTest(client, backing: OpenSessionBacking.native);
+    final engine = engineForTest(client, backing: OpenSessionBacking.native);
     final mine = SamplerConfig(topK: 1, topP: 1, temperature: 0, seed: 3);
     await engine.createConversation(ConversationConfig(samplerConfig: mine));
     await engine.createConversation(
@@ -97,7 +97,7 @@ void main() {
   test('what a conversation is created with: system, tools, history, cap, '
       'constraint and extras', () async {
     final client = _Client();
-    final engine = Engine.forTest(client, backing: OpenSessionBacking.native);
+    final engine = engineForTest(client, backing: OpenSessionBacking.native);
     await engine.createConversation(
       ConversationConfig(
         systemInstruction: 'be brief',
@@ -150,7 +150,7 @@ void main() {
       (const Backend.cpu(), null, false),
     ]) {
       final client = _Client();
-      final engine = Engine.forTest(
+      final engine = engineForTest(
         client,
         backend: backend,
         backing: OpenSessionBacking.native,
@@ -158,12 +158,12 @@ void main() {
       );
       await engine.createConversation();
       expect(client.creates.single.filterChannelContent, filters);
-      expect(engine.filtersChannelContent, filters);
+      expect(engineFiltersChannelContent(engine), filters);
     }
   });
 
   test('a closed engine opens no conversation and tokenizes nothing', () async {
-    final engine = Engine.forTest(_Client());
+    final engine = engineForTest(_Client());
     await engine.close();
     expect(engine.createConversation, throwsStateError);
     expect(() => engine.tokenize('x'), throwsStateError);

@@ -1,8 +1,9 @@
 # litertlm_dart
 
-[LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) from Dart, without
-Flutter: `dart:ffi` over LiteRT-LM's C API, with the native libraries fetched
-and bundled by a build hook. It is the runtime under
+[LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) in pure Dart, with
+no Flutter dependency: `dart:ffi` over LiteRT-LM's C API, with the native
+libraries fetched and bundled by a build hook. Today it runs inside Flutter
+apps (see [Where it runs today](#where-it-runs-today)). It is the runtime under
 [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm)
 and [`flutter_edge_ai_speech`](https://pub.dev/packages/flutter_edge_ai_speech);
 a Flutter app uses those, through
@@ -41,6 +42,11 @@ await conversation.close();
 await engine.close();
 ```
 
+`Message`, `Tool`, `ResponseFormat` and `ActivationDataType` carry the names
+of LiteRT-LM's Kotlin and Swift APIs, and `flutter_edge_ai` has types of the
+same names. In code that imports both, import this package with a prefix:
+`import 'package:litertlm_dart/litertlm_dart.dart' as lm;`.
+
 - **Messages** are `Message`s of `Content` parts in any order:
   `Content.text`, `.imageBytes`/`.imageFile`, `.audioBytes`/`.audioFile`,
   `.toolResponse`. A reply streams as `Message`s: text parts, a thought in
@@ -54,24 +60,25 @@ await engine.close();
   message `RepetitionPenaltyConfig`, `NoRepeatNgramConfig`, `suppressTokens`,
   `extraContext`. `SpeculativeDecodingMode` on the engine and per conversation.
 - **Stopping**: `Conversation.cancel()` stops and keeps what was generated;
-  cancelling the subscription stops and drops the rest. `lastTurnEnd` says how
-  a turn ended (`completed`, `outputLimit`, `contextFull`, …). A failed turn
-  ends the stream with a `LiteRtLmException`: `ContextFullException`,
-  `ConversationClosedException`, `TurnFailedException`, ….
+  cancelling the subscription stops and drops the rest. A reply that ends
+  completes its stream; a failed turn ends it with a `LiteRtLmException`:
+  `ContextFullException`, `ConversationClosedException`,
+  `TurnFailedException`, ….
 - **Embeddings** (`EmbeddingEngine`): a per-SoC bundle runs on its NPU only;
   the GPU is taken where it was measured and refused elsewhere — nothing moves
   to another backend on its own.
 - **Backends**: `Backend.cpu(threadCount:)`, `.gpu()`, `.npu()`. The NPU
-  vendor (Qualcomm, Google Tensor, MediaTek, Intel) is read from the bundle;
-  on Android `Backend.npu` needs a `platform:` (or a prepared `dispatchDir:`)
-  that puts the vendor's libraries in a directory LiteRT can load;
+  vendor (Qualcomm, Google Tensor, Intel) is read from the bundle;
+  `Backend.npu(dispatchDir:)` names a directory holding that vendor's
+  dispatch libraries, and only that vendor's (null: beside the executable,
+  where the build puts them on Linux and Windows; on Android see below);
   vision and audio encoders load only when asked (`EngineConfig.visionBackend`,
   `audioBackend`), `BundleInfo.declaredVisionBackend` is where the file wants
   them.
 
 What it adds to the official APIs: several conversations per engine, with a
 stopped, refused or failed turn recovered before the next (rewound where the
-backend can, our patch); how a turn ended; the bundle read without loading it
+backend can, our patch); the bundle read without loading it
 (`readBundleInfo`); `Engine.tokenize`/`detokenize` and `scoreTargets` (exact
 log-probabilities of continuations); EmbeddingGemma 2 with images, audio and
 both in one vector, on the CPU, the GPU where measured and per-SoC NPU bundles.
@@ -92,24 +99,48 @@ Not yet: LoRA, `tool_choice` and the other LiteRT-LM 0.20 additions.
 The version is the upstream LiteRT-LM version this package is built from,
 plus a build number for our native rebuilds of it: `0.19.1+1` is LiteRT-LM
 0.19.1 on `native-v0.19.1-b`. Within one upstream version the Dart API stays
-compatible; a breaking change comes with an upstream version change. So depend
-on it with an upper bound at the next upstream patch, `'>=0.19.1+1 <0.19.2'`,
-not with a caret: `^0.19.1` would also take 0.19.2.
+compatible; a breaking change of the Dart API comes only with an upstream
+version change, so the API of one upstream version is fixed once published.
+
+`dart pub add litertlm_dart` writes `^0.19.1+1`. For a 0.x version a caret
+range stays below the next minor, so it also takes 0.19.2 and later 0.19.x
+releases, which follow newer LiteRT-LM releases and may change the Dart API.
+To stay on one LiteRT-LM release, bound it at the next upstream patch:
+
+```yaml
+dependencies:
+  litertlm_dart: '>=0.19.1+1 <0.19.2'
+```
 
 ## Where it runs today
 
 The runtime and the hook are what `flutter_edge_ai_litertlm` runs on Android,
-iOS, macOS, Linux and Windows. Outside a Flutter app it is not yet a finished
-CLI or server story:
+iOS, macOS, Linux and Windows. On its own, without that package, it is not yet
+a finished story:
 
+- **Android:** `flutter_edge_ai`'s manifest declares the vendor libraries the
+  GPU and the NPU load (`libOpenCL.so`, `libvndksupport.so`, `libcdsprpc.so`,
+  the Google Tensor and NeuroPilot libraries) as `uses-native-library`; an app
+  without it declares them itself, or the GPU and the NPU do not load from
+  Android 12. For `Backend.npu`, the NPU dispatch is inside the APK: an app's
+  `nativeLibraryDir` holds it only with `extractNativeLibs="true"`, and then
+  holds every vendor the app ships, of which LiteRT takes the first.
+  `flutter_edge_ai_litertlm` copies one vendor's libraries into a directory of
+  their own through its platform channel; an app without it has to do the
+  same and pass that directory as `dispatchDir:`.
 - **macOS:** the hook leaves two companion libraries (the constraint provider
   and the Metal accelerator) to the app's build — `flutter_edge_ai_litertlm`'s
-  Swift package or its Podfile step embeds them. A plain Dart program on macOS
-  cannot load the engine yet.
+  Swift package or its Podfile step embeds them. A macOS app that depends on
+  `litertlm_dart` alone, and a plain Dart program on macOS, cannot load the
+  engine yet.
 - **Library lookup** follows the layout of a Flutter app bundle; `dart run` and
   `dart build cli` layouts are not looked up yet.
+- **With `flutter_edge_ai_litertlm` 1.20.x or older** in the same app, both
+  build hooks bundle `libLiteRtLm` and the build fails on the duplicate; use
+  `flutter_edge_ai_litertlm` 1.21.0 or newer, which builds on this package.
 
-Both are planned with a command-line example.
+A plain Dart program and the macOS companions are planned with a
+command-line example.
 
 ## Libraries
 
@@ -131,8 +162,11 @@ hooks:
     litertlm_dart:
       qualcomm_npu: true       # bundle Qualcomm's QNN runtime (Android, Linux arm64)
       google_tensor_npu: true  # Google Tensor G5/G6
-      mediatek_npu: true       # MediaTek Dimensity
 ```
+
+The MediaTek NPU is refused in this release (`mediatek_npu: true` fails the
+build): its LiteRT cannot load Google's MediaTek dispatch, and on MT6989 a
+conversation's second message comes back empty (LiteRT-LM #4256).
 
 The key apps set before this package existed, `flutter_edge_ai_litertlm:`, is
 still read, with a warning, until the next upstream LiteRT-LM version.

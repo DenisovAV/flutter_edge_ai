@@ -182,7 +182,7 @@ keeps out of Native Assets. How they get there depends on Swift Package Manager:
 
 A green build proves nothing: without the libraries the first model load fails
 with an error that contains
-`flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names the fix.
+`litertlm_dart: LiteRT-LM did not load on macOS` and names the fix.
 
 ```ruby
 post_install do |installer|

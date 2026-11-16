@@ -1077,7 +1077,7 @@ entitlements, and macOS 14.0. On macOS the companion libraries come from this
 package's Swift package with Swift Package Manager on (since 1.19.0), and from
 a `post_install` block in `macos/Podfile` with it off ([Desktop → macOS](https://flutteredge.ai/docs/desktop#macos)).
 Without them the first model load fails; the error contains
-`flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names the fix
+`litertlm_dart: LiteRT-LM did not load on macOS` and names the fix
 ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)). See
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 

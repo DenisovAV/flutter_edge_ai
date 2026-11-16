@@ -75,9 +75,12 @@ MacOSLoadCause diagnoseMacOSLoadError(String dyldText) {
 String macOSLoadErrorMessage(String dyldText) {
   final String fix = switch (diagnoseMacOSLoadError(dyldText)) {
     MacOSLoadCause.missingCompanion =>
-      "LiteRT-LM's companion libraries are not in the app. With Swift Package "
-          "Manager on (Flutter's default), flutter_edge_ai_litertlm's Swift "
-          'package embeds them: run `flutter clean` and build again. With '
+      "LiteRT-LM's companion libraries are not in the app. "
+          'flutter_edge_ai_litertlm embeds them; an app that depends on '
+          'litertlm_dart alone has nothing that does, so add '
+          'flutter_edge_ai_litertlm. With Swift Package Manager on '
+          "(Flutter's default), its Swift package embeds them: run "
+          '`flutter clean` and build again. With '
           '`enable-swift-package-manager: false`, the post_install block in '
           'macos/Podfile copies them: replace the post_install block with the '
           'one from https://flutteredge.ai/docs/desktop#macos, keeping any '
@@ -97,13 +100,13 @@ String macOSLoadErrorMessage(String dyldText) {
           'com.apple.security.cs.disable-library-validation entitlement.',
     MacOSLoadCause.notBundled =>
       'LiteRtLm.framework is not in the app. Run `flutter clean` and build '
-          'again; the flutter_edge_ai_litertlm build hook bundles it.',
+          "again; litertlm_dart's build hook bundles it.",
     MacOSLoadCause.unknown =>
       'Run `flutter clean` and build again. If it still fails, please open an '
           'issue at https://github.com/DenisovAV/flutter_edge_ai/issues with the '
           'text below.',
   };
-  return 'flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS, so no '
+  return 'litertlm_dart: LiteRT-LM did not load on macOS, so no '
       'LiteRT feature works in this app (LLM, embeddings, speech). $fix\n'
       'dyld: $dyldText';
 }
@@ -191,7 +194,7 @@ DynamicLibrary openMacOSLiteRtLmForTflite({
     }
     if (isOwnBuild != null && !isOwnBuild(library)) {
       failed.add(
-        '$path: loads, but is not a flutter_edge_ai_litertlm build on '
+        '$path: loads, but is not a litertlm_dart build on '
         'LiteRT-LM C API 1.x',
       );
       continue;
@@ -199,10 +202,9 @@ DynamicLibrary openMacOSLiteRtLmForTflite({
     return library;
   }
   throw UnsupportedError(
-    'flutter_edge_ai_litertlm: LiteRT-LM did not load. Outside an app it is '
-    'loaded from a local prebuilt or from the flutter_edge_ai_litertlm build '
-    "hook's cache, which a build or `flutter test` of a package that depends "
-    'on it fills. '
+    'litertlm_dart: LiteRT-LM did not load. Outside an app it is loaded from '
+    "a local prebuilt or from litertlm_dart's build hook cache, which a build "
+    'or a test run of a package that depends on it fills. '
     '${failed.isEmpty ? 'No copy exists.' : 'These copies did not load:\n${failed.join('\n')}'}'
     '${missing.isEmpty ? '' : '\nNot found: ${missing.join(', ')}'}'
     '\n$macOSLiteRtLmFramework: $bundledError',

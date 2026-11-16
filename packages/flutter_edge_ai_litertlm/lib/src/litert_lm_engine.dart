@@ -4,18 +4,18 @@ import 'dart:io' show FileSystemException;
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:litertlm_dart/internal_io.dart'
     show
-        BundleInfo,
         backendKindOf,
+        createEngineWithBundle,
         LlmModelFamily,
         gpuActivationFor,
         liteRtLmEncoderOnNpu,
         liteRtLmTextCandidates,
-        readBundleInfo,
+        readEngineBundle,
         readLlmModelFamily,
         tryReadBundleActivationDeclaration;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'package:litertlm_dart/litertlm_dart.dart'
-    show LiteRtLmBundleException, LiteRtLmBundleProblem, LiteRtLmLogLevel;
+    show LiteRtLmBundleException, LiteRtLmLogLevel;
 
 import 'adapter/backend_fallback.dart';
 import 'adapter/ffi_inference_model.dart';
@@ -157,7 +157,8 @@ class LiteRtLmEngine
     // one `Engine.create`, which refuses what cannot run before any engine
     // exists, chooses the NPU vendor from the bundle and applies the context
     // floor and the GPU activation rules.
-    final bundle = await _readBundle(config.modelPath);
+    final read = await readEngineBundle(config.modelPath);
+    final bundle = read.info;
     final candidates = liteRtLmTextCandidates(
       path: config.modelPath,
       bundle: bundle,
@@ -213,7 +214,7 @@ class LiteRtLmEngine
           key.toCore: value,
       },
       initializeClient: (slot, backend) async {
-        slot.engine = await lm.Engine.create(
+        slot.engine = await createEngineWithBundle(
           lm.EngineConfig(
             modelPath: config.modelPath,
             backend: backendOf(backend),
@@ -231,6 +232,7 @@ class LiteRtLmEngine
               null => null,
             },
           ),
+          read,
         );
       },
       shutdownClient: (slot) => slot.engine?.close(),
@@ -348,23 +350,6 @@ class LiteRtLmEngine
       declaresActivation: declares,
       maxNumTokens: config.maxTokens,
     ).type;
-  }
-
-  /// [path]'s bundle info, or null when the file is not one this package
-  /// reads (a `.task` bundle, a newer container version, a stamp layout it
-  /// does not know): the load then keeps the rules that need no file. A file
-  /// that ends inside its own header is refused here, as an incomplete one.
-  static Future<BundleInfo?> _readBundle(String path) async {
-    try {
-      return await readBundleInfo(path);
-    } on LiteRtLmBundleException catch (e) {
-      if (e.problem == LiteRtLmBundleProblem.incomplete) rethrow;
-      edgeAiLog('[LiteRtLmEngine] $e; loading without reading the file');
-      return null;
-    } on FileSystemException catch (e) {
-      edgeAiLog('[LiteRtLmEngine] $e; loading without reading the file');
-      return null;
-    }
   }
 }
 

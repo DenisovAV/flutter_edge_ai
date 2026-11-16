@@ -360,6 +360,37 @@ void main() {
     expect(host.creates, isEmpty);
   });
 
+  test(
+    'createEngineWithBundle decides from the bundle it is given, without '
+    'reading the file again; one read from another file is refused',
+    () async {
+      final path = write('n.litertlm', _bundle(npu: ('Qualcomm', 'SM8750')));
+      final read = await readEngineBundle(path);
+      // The file now holds a generic bundle: a create that read it again would
+      // load it on the GPU.
+      write('n.litertlm', _bundle());
+      final config = EngineConfig(
+        modelPath: path,
+        backend: const Backend.gpu(),
+      );
+      await expectLater(
+        createEngineWithBundle(config, read),
+        throwsA(isA<LiteRtLmBundleException>()),
+      );
+      expect(host.creates, isEmpty);
+      final engine = await Engine.create(config);
+      expect(host.creates.single.backend, 'gpu');
+      await engine.close();
+      expect(
+        () => createEngineWithBundle(
+          EngineConfig(modelPath: '${dir.path}/other.litertlm'),
+          read,
+        ),
+        throwsArgumentError,
+      );
+    },
+  );
+
   test('creates run one at a time across engines', () async {
     final path = write('g.litertlm', _bundle());
     final engines = await Future.wait([

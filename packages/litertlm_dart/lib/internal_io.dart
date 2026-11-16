@@ -185,7 +185,10 @@ export 'src/api/engine.dart'
         engineForTest,
         engineNoRewindReason,
         contextTokensFor,
+        EngineBundle,
+        createEngineWithBundle,
         createOwnConversation,
+        readEngineBundle,
         debugEngineHost,
         gpuActivationFor,
         liteRtLmNativeLogLevel;

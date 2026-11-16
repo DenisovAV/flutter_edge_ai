@@ -269,13 +269,14 @@ final class Engine {
     // Read when the caller asks, not when the create's turn comes: a caller
     // that sets the level and then creates gets its own level.
     final nativeLevel = liteRtLmNativeLogLevel;
-    return _oneCreateAtATime(() => _create(config, _host, nativeLevel));
+    return _oneCreateAtATime(() => _create(config, _host, nativeLevel, null));
   }
 
   static Future<Engine> _create(
     EngineConfig config,
     EngineHost host,
     LiteRtLmLogLevel? nativeLevel,
+    EngineBundle? read,
   ) async {
     final kind = backendKindOf(config.backend);
     final path = config.modelPath;
@@ -293,7 +294,7 @@ final class Engine {
     final abi = host.abi;
     final supportImage = config.visionBackend != null;
     final supportAudio = config.audioBackend != null;
-    final bundle = await _readBundle(path);
+    final bundle = (read ?? await readEngineBundle(path)).info;
     // An encoder asked for where its file wants it is the file's choice: the
     // plan checks a request against the file, and the file's own default
     // passes by definition (its declared constraint, even without a stamp).
@@ -524,21 +525,6 @@ final class Engine {
     }
   }
 
-  /// [path]'s bundle info, or null when the file is not one this package
-  /// reads; an incomplete file is refused.
-  static Future<BundleInfo?> _readBundle(String path) async {
-    try {
-      return await readBundleInfo(path);
-    } on LiteRtLmBundleException catch (e) {
-      if (e.problem == LiteRtLmBundleProblem.incomplete) rethrow;
-      runtimeLog('[LiteRtLmEngine] $e; loading without reading the file');
-      return null;
-    } on FileSystemException catch (e) {
-      runtimeLog('[LiteRtLmEngine] $e; loading without reading the file');
-      return null;
-    }
-  }
-
   static Future<LlmModelFamily?> _readFamily(String path) async {
     try {
       return await readLlmModelFamily(path);
@@ -757,6 +743,51 @@ final class Engine {
     _closed = true;
     await _client.shutdown();
   }
+}
+
+/// What [Engine.create] reads of [path] before any engine exists: its bundle
+/// info, or null when the file is not one this package reads; an incomplete
+/// file is refused.
+Future<EngineBundle> readEngineBundle(String path) async {
+  try {
+    return EngineBundle._(path, await readBundleInfo(path));
+  } on LiteRtLmBundleException catch (e) {
+    if (e.problem == LiteRtLmBundleProblem.incomplete) rethrow;
+    runtimeLog('[LiteRtLmEngine] $e; loading without reading the file');
+  } on FileSystemException catch (e) {
+    runtimeLog('[LiteRtLmEngine] $e; loading without reading the file');
+  }
+  return EngineBundle._(path, null);
+}
+
+/// A model file as [readEngineBundle] read it.
+final class EngineBundle {
+  const EngineBundle._(this.path, this.info);
+
+  final String path;
+
+  /// Null when the file is not one this package reads.
+  final BundleInfo? info;
+}
+
+/// [Engine.create] with the file already read: a caller that reads it to plan
+/// its attempts does not pay for the read again in each one (an in-app read
+/// took ~0.57 s on a Linux VM). [bundle] must be [config.modelPath]'s.
+Future<Engine> createEngineWithBundle(
+  EngineConfig config,
+  EngineBundle bundle,
+) {
+  if (bundle.path != config.modelPath) {
+    throw ArgumentError.value(
+      bundle.path,
+      'bundle',
+      'was read from another file than ${config.modelPath}',
+    );
+  }
+  final nativeLevel = liteRtLmNativeLogLevel;
+  return Engine._oneCreateAtATime(
+    () => Engine._create(config, _host, nativeLevel, bundle),
+  );
 }
 
 /// A conversation of [engine] with a native conversation of its own whatever

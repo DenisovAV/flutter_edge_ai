@@ -1050,7 +1050,7 @@ Future<Directory> _ensureMediatekRuntime(
   final rawAar = _defines[mediatekNpuAarUserDefine];
   if (rawAar != null && rawAar is! String) {
     throw FormatException(
-      'hooks.user_defines.$_packageName.$mediatekNpuAarUserDefine must be a path string',
+      'hooks.user_defines.${_defines.packageOf(mediatekNpuAarUserDefine)}.$mediatekNpuAarUserDefine must be a path string',
     );
   }
   final localAar = _defines.path(mediatekNpuAarUserDefine);
@@ -1077,7 +1077,7 @@ Future<Directory> _ensureMediatekRuntime(
   final mirror = _defines[mediatekNpuMavenUrlUserDefine];
   if (mirror != null && mirror is! String) {
     throw FormatException(
-      'hooks.user_defines.$_packageName.$mediatekNpuMavenUrlUserDefine must '
+      'hooks.user_defines.${_defines.packageOf(mediatekNpuMavenUrlUserDefine)}.$mediatekNpuMavenUrlUserDefine must '
       'be a URL string',
     );
   }
@@ -1168,7 +1168,7 @@ Future<Directory> _ensureQnnRuntime(
   final rawAar = _defines[qualcommNpuAarUserDefine];
   if (rawAar != null && rawAar is! String) {
     throw FormatException(
-      'hooks.user_defines.$_packageName.$qualcommNpuAarUserDefine must be a path string',
+      'hooks.user_defines.${_defines.packageOf(qualcommNpuAarUserDefine)}.$qualcommNpuAarUserDefine must be a path string',
     );
   }
   final localAar = _defines.path(qualcommNpuAarUserDefine);
@@ -1196,7 +1196,7 @@ Future<Directory> _ensureQnnRuntime(
   final mirror = _defines[qualcommNpuMavenUrlUserDefine];
   if (mirror != null && mirror is! String) {
     throw FormatException(
-      'hooks.user_defines.$_packageName.$qualcommNpuMavenUrlUserDefine must '
+      'hooks.user_defines.${_defines.packageOf(qualcommNpuMavenUrlUserDefine)}.$qualcommNpuMavenUrlUserDefine must '
       'be a URL string',
     );
   }

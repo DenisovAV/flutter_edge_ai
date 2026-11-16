@@ -248,7 +248,7 @@ Future<bool> _intelBrokenNpuMasks(
     // runs its broken masks and degrades past ~2,048 tokens.
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] NPU: could not hash the tf_lite_aux '
+      '[litertlm_dart] NPU: could not hash the tf_lite_aux '
       'section of $path ($e); use_hw_masking_for_npu stays false',
     );
     return false;
@@ -542,7 +542,7 @@ NpuStackCheck checkIntelNpuStack(String dir) =>
     ? const NpuStackCheck.bundled()
     : NpuStackCheck.missing(
         '$intelNpuDispatchLib is not beside the executable ($dir). Every '
-        'Windows x64 build with flutter_edge_ai_litertlm puts the Intel NPU '
+        'Windows x64 build with litertlm_dart puts the Intel NPU '
         'stack there; ship all the DLLs the build put next to the executable '
         'with the app',
       );

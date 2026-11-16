@@ -413,7 +413,7 @@ void main() {
     // for release builds carry the package name.
     List<String> releaseLines(List<String> printed) => [
       for (final line in printed)
-        if (line.startsWith('[flutter_edge_ai_litertlm]')) line,
+        if (line.startsWith('[litertlm_dart]')) line,
     ];
 
     Map<String, Object?> textReply(String text) => {

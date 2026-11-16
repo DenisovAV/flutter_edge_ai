@@ -335,15 +335,17 @@ Iterable<NpuStack> get offeredNpuStacks => NpuStack.values.where(
 
 /// Why the MediaTek NPU is refused ([mediatekNpuRefused]).
 const mediatekNpuRefusedReason =
-    'the MediaTek NPU is not supported by this flutter_edge_ai_litertlm '
+    'the MediaTek NPU is not supported by this litertlm_dart '
     'release. Its LiteRT loads an NPU dispatch only through '
     "LiteRtDispatchQueryInterface, which Google's litert-npu-runtime-mediatek "
     'dispatch does not export, and on the one MediaTek NPU measured (MT6989) a '
     "conversation's second message comes back empty (LiteRT-LM #4256). "
-    'flutter_edge_ai_litertlm 1.19.x runs the MediaTek NPU; otherwise use '
-    'PreferredBackend.cpu or .gpu, and remove '
-    '`$mediatekNpuUserDefine: true` from the hooks.user_defines of the '
-    "app's pubspec.yaml";
+    'flutter_edge_ai_litertlm 1.19.x runs the MediaTek NPU; otherwise load '
+    'the generic bundle on the CPU or the GPU (Backend.cpu() or '
+    'Backend.gpu(); in flutter_edge_ai, PreferredBackend.cpu or .gpu), and '
+    'remove `$mediatekNpuUserDefine: true` from the hooks.user_defines of the '
+    "app's pubspec.yaml (under litertlm_dart:, or flutter_edge_ai_litertlm: "
+    'in an app written for 1.20 and older)';
 
 /// Our Intel OpenVINO dispatch (built from the LiteRT pin), `LiteRtDispatch.dll`.
 const intelDispatchLib = 'LiteRtDispatch';

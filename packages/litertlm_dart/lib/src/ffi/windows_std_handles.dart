@@ -88,7 +88,7 @@ DynamicLibrary openBundledWindowsLibrary(
       if (calls != null) {
         for (final which in alignStdHandles(calls)) {
           runtimeLog(
-            '[flutter_edge_ai_litertlm] Windows: '
+            '[litertlm_dart] Windows: '
             '${which == stdErrorHandle ? 'STD_ERROR_HANDLE' : 'STD_OUTPUT_HANDLE'} '
             "was the parent's console while the app's "
             "${which == stdErrorHandle ? 'stderr' : 'stdout'} is redirected; "
@@ -99,7 +99,7 @@ DynamicLibrary openBundledWindowsLibrary(
     } on Object catch (e) {
       // ignore: avoid_print
       print(
-        '[flutter_edge_ai_litertlm] Windows: could not align the standard '
+        '[litertlm_dart] Windows: could not align the standard '
         "handles with the app's redirected output ($e); the native log may go "
         "to the parent's console.",
       );

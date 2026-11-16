@@ -90,7 +90,7 @@ Set<String>? listIntelWeightBanks({List<Directory>? dirs}) {
     } on FileSystemException catch (e) {
       // ignore: avoid_print
       print(
-        '[flutter_edge_ai_litertlm] Could not list ${dir.path} for Intel NPU '
+        '[litertlm_dart] Could not list ${dir.path} for Intel NPU '
         'weight banks: $e',
       );
       return null;
@@ -127,7 +127,7 @@ class IntelWeightBankClaim {
     if (before == null || after == null) {
       // ignore: avoid_print
       print(
-        '[flutter_edge_ai_litertlm] The Intel NPU weight banks of this load '
+        '[litertlm_dart] The Intel NPU weight banks of this load '
         'are not claimed: a temp directory could not be listed. If the app '
         'exits without closing the model, they stay until the PC restarts.',
       );
@@ -141,7 +141,7 @@ class IntelWeightBankClaim {
       } on FileSystemException catch (e) {
         // ignore: avoid_print
         print(
-          '[flutter_edge_ai_litertlm] Could not claim Intel NPU weight bank '
+          '[litertlm_dart] Could not claim Intel NPU weight bank '
           '$bank ($e): if the app exits without closing the model, it stays '
           'until the PC restarts.',
         );
@@ -232,7 +232,7 @@ int _sweep(
   } on FileSystemException catch (e) {
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] Could not list ${dir.path} for stale Intel '
+      '[litertlm_dart] Could not list ${dir.path} for stale Intel '
       'NPU weight banks: $e',
     );
     return 0;
@@ -295,7 +295,7 @@ int _sweep(
     if (n.count == 0) return;
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] Deleted ${n.count} Intel NPU weight '
+      '[litertlm_dart] Deleted ${n.count} Intel NPU weight '
       'bank${n.count == 1 ? '' : 's'} '
       '(${(n.bytes / (1 << 30)).toStringAsFixed(2)} GiB) from ${dir.path}: '
       '$why',
@@ -313,7 +313,7 @@ int _sweep(
   for (final f in failed) {
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] Could not delete the stale Intel NPU '
+      '[litertlm_dart] Could not delete the stale Intel NPU '
       'weight bank $f',
     );
   }

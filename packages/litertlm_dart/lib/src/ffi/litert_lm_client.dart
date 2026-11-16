@@ -138,7 +138,7 @@ String? thinkingBudgetChannelWarning(
   String modelPath,
 ) {
   if (budget == null || read.declaresChannel != false) return null;
-  return '[flutter_edge_ai_litertlm] WARNING: '
+  return '[litertlm_dart] WARNING: '
       'LiteRtLmEngine(thinkingTokenBudget: $budget) caps nothing on '
       '${modelPath.split(RegExp(r'[/\\]')).last}: the file declares no '
       'output channel (LlmMetadata.channels), so a turn with thinking on can '
@@ -208,7 +208,7 @@ const absResourceExhausted = 8;
 String? npuContextWindowNote({required int asked, required int window}) =>
     window == asked
     ? null
-    : '[flutter_edge_ai_litertlm] this NPU bundle runs with a context window '
+    : '[litertlm_dart] this NPU bundle runs with a context window '
           'of $window tokens, not the maxTokens $asked asked for: it is '
           'compiled for one KV cache size. Shown once per engine.';
 
@@ -2022,7 +2022,7 @@ class LiteRtLmFfiClient {
       throw StateError(
         'StreamProxy does not export ${missingEntry.join(', ')}: this native '
         'bundle predates LiteRT-LM C API 1.0, which this '
-        'flutter_edge_ai_litertlm release needs. A stale local prebuilt under '
+        'litertlm_dart release needs. A stale local prebuilt under '
         'native/litert_lm/prebuilt/ or in the native cache is the usual cause.',
       );
     }
@@ -2587,8 +2587,9 @@ class LiteRtLmFfiClient {
         throw LiteRtLmEngineCreateException(
           'This .litertlm model requires the "$constraint" backend — it '
           'declares section_backend_constraint: $constraint, but the '
-          '"$backend" backend was requested. Use PreferredBackend.$constraint '
-          '(or omit preferredBackend to try GPU first).',
+          '"$backend" backend was requested. Load it on the $constraint '
+          '(Backend.$constraint(); in flutter_edge_ai, preferredBackend: '
+          'PreferredBackend.$constraint, or none).',
           nativeCode: nativeCode,
           nativeMessage: nativeMessage,
         );
@@ -2652,7 +2653,7 @@ class LiteRtLmFfiClient {
     runtimeLog('[LiteRtLmFfi] bundle sampler read failed: $error');
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] WARNING: could not read the sampler this '
+      '[litertlm_dart] WARNING: could not read the sampler this '
       '.litertlm file ships, so sessions that set no sampling use the model '
       'family defaults instead. ${error.split('\n').first}',
     );
@@ -2675,7 +2676,7 @@ class LiteRtLmFfiClient {
     // is silent there.
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] WARNING: ${note.message} Shown once per '
+      '[litertlm_dart] WARNING: ${note.message} Shown once per '
       'engine.',
     );
   }
@@ -2873,7 +2874,7 @@ class LiteRtLmFfiClient {
           _warnedNpuSampling = true;
           // ignore: avoid_print
           print(
-            '[flutter_edge_ai_litertlm] WARNING: NPU backend: sampler params '
+            '[litertlm_dart] WARNING: NPU backend: sampler params '
             '($sampling) are sent but the NPU executor decodes greedily and never '
             'reads them, so output is deterministic argmax. Use '
             'PreferredBackend.cpu or .gpu if you need sampling. Shown once per '
@@ -3495,7 +3496,7 @@ class LiteRtLmFfiClient {
           } catch (e) {
             // ignore: avoid_print
             print(
-              '[flutter_edge_ai_litertlm] could not rewind the stopped '
+              '[litertlm_dart] could not rewind the stopped '
               'virtual conversation ($e); rebuilding it',
             );
           }
@@ -4491,7 +4492,7 @@ class LiteRtLmFfiClient {
     _turnEndUnreadWarned = true;
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] WARNING: a turn end could not be read '
+      '[litertlm_dart] WARNING: a turn end could not be read '
       '($why). Turns still run, but a turn whose input does not fit the '
       'context window cannot be told from another failure, so the '
       'conversation is not restored after it. Shown once.',

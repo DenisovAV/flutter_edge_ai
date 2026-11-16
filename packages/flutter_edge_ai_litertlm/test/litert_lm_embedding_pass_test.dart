@@ -2478,7 +2478,7 @@ void main() {
                 allOf(
                   contains('could not run $_file on the GPU'),
                   contains('DEADLINE_EXCEEDED'),
-                  contains('preferredBackend: cpu'),
+                  contains('PreferredBackend.cpu'),
                   isNot(contains('NPU')),
                 ),
               )
@@ -2520,7 +2520,7 @@ void main() {
             'message',
             allOf(
               contains('on the GPU: no WebGPU adapter'),
-              contains('preferredBackend: cpu'),
+              contains('PreferredBackend.cpu'),
               isNot(contains('cache directory')),
             ),
           ),

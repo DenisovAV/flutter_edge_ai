@@ -2,7 +2,7 @@ import 'package:litertlm_dart/src/hook/unsupported_target.dart';
 import 'package:test/test.dart';
 
 String? _notice(String dirName) => missingArchiveNotice(
-  packageName: 'flutter_edge_ai_litertlm',
+  packageName: 'litertlm_dart',
   dirName: dirName,
   archiveName: 'litertlm-$dirName.tar.gz',
 );
@@ -12,7 +12,7 @@ void main() {
     'Windows ARM64 gets the notice, with the cause, the options and #326',
     () {
       final notice = _notice('windows_arm64')!;
-      expect(notice, startsWith('[flutter_edge_ai_litertlm] '));
+      expect(notice, startsWith('[litertlm_dart] '));
       expect(notice, contains('litertlm-windows_arm64.tar.gz'));
       expect(notice, contains('MediaPipe has no desktop engine'));
       expect(notice, contains('flutter_edge_ai_onnx'));

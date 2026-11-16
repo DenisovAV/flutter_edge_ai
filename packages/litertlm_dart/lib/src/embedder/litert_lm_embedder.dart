@@ -554,7 +554,7 @@ final class LiteRtLmEmbedder {
       // model was loaded with, and never an input without a part); reaching
       // here is a host bug.
       throw EmbedderEngineException(
-        'flutter_edge_ai_litertlm embeds text and the media this model was '
+        'litertlm_dart embeds text and the media this model was '
         'loaded with, got $input',
       );
     }
@@ -855,7 +855,8 @@ final class LiteRtLmEmbedder {
         throw EmbedderLoadException(
           target == null
               ? 'LiteRT-LM could not run $_file on the GPU: $message. Load it '
-                    'with preferredBackend: cpu to embed on the CPU.'
+                    'on the CPU to embed there (Backend.cpu(); in '
+                    'flutter_edge_ai, preferredBackend: PreferredBackend.cpu).'
               : 'LiteRT-LM could not run $_file on the NPU of this device: '
                     '$message. The bundle is compiled for $target; '
                     '${liteRtLmNpuProbeFailureCauses(target)}, it fails this '
@@ -1213,7 +1214,7 @@ final class LiteRtLmEmbedder {
       }
       // ignore: avoid_print
       print(
-        '[flutter_edge_ai_litertlm] WARNING: $what. '
+        '[litertlm_dart] WARNING: $what. '
         'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
         'failure.',
       );
@@ -1274,7 +1275,7 @@ final class LiteRtLmEmbedder {
       }
       // ignore: avoid_print
       print(
-        '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no weight cache '
+        '[litertlm_dart] WARNING: LiteRT-LM wrote no weight cache '
         'to $cacheDir$whose while loading $_file, so this embedder runs '
         'without one ($cost). $why '
         'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
@@ -1293,7 +1294,7 @@ final class LiteRtLmEmbedder {
     // then vision, then audio).
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no weight cache for '
+      '[litertlm_dart] WARNING: LiteRT-LM wrote no weight cache for '
       '${missing.map(towerName).join(' and ')} of $_file to $cacheDir, so '
       '${missing.length == 1 ? 'it runs' : 'they run'} without one (slower to '
       'load, more memory). ${pathAndCauses(missing.last)}',
@@ -1348,7 +1349,7 @@ final class LiteRtLmEmbedder {
     }
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] WARNING: $what '
+      '[litertlm_dart] WARNING: $what '
       'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
       'failure.',
     );
@@ -1403,7 +1404,7 @@ final class LiteRtLmEmbedder {
       }
       // ignore: avoid_print
       print(
-        '[flutter_edge_ai_litertlm] WARNING: $what. '
+        '[litertlm_dart] WARNING: $what. '
         'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
         'failure.',
       );
@@ -1432,7 +1433,7 @@ final class LiteRtLmEmbedder {
       }
       // ignore: avoid_print
       print(
-        '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no GPU cache (ML '
+        '[litertlm_dart] WARNING: LiteRT-LM wrote no GPU cache (ML '
         'Drift weight and program caches) to $cacheDir while loading $_file: '
         '$_coldGpuCost. $why LiteRtEmbeddingBackend(requireWeightCache: true) '
         'makes this a load failure.',
@@ -1442,7 +1443,7 @@ final class LiteRtLmEmbedder {
     final missing = unwarned.single;
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no GPU $missing '
+      '[litertlm_dart] WARNING: LiteRT-LM wrote no GPU $missing '
       'cache (ML Drift) to $cacheDir while loading $_file, so the next GPU '
       'load ${missing == 'program' ? 'compiles the programs' : 'uploads the weights'} '
       'again. $why',
@@ -1615,8 +1616,9 @@ final class LiteRtLmEmbedder {
               // WebGPU adapter or an op it cannot place fails here.
               : _config.gpu
               ? 'LiteRT-LM could not create the embedding engine for $_file '
-                    'on the GPU: $message. Load it with preferredBackend: cpu '
-                    'to embed on the CPU.'
+                    'on the GPU: $message. Load it on the CPU to embed there '
+                    '(Backend.cpu(); in flutter_edge_ai, preferredBackend: '
+                    'PreferredBackend.cpu).'
               // Measured: a missing or read-only cache dir is code 3 at create.
               : code == _statusInvalidArgument
               ? 'LiteRT-LM refused the embedding cache directory $cacheDir '

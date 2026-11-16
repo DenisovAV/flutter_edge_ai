@@ -189,8 +189,8 @@ NpuStamp? liteRtLmLoadNpuTarget({
     throw LiteRtLmBundleException(
       LiteRtLmBundleProblem.unsupportedNpu,
       '$path has sections the load turns on compiled for different NPUs '
-      '(${targets.join(', ')}); flutter_edge_ai_litertlm runs one NPU\'s '
-      'dispatch per load. Load it without supportImage or supportAudio to run '
+      '(${targets.join(', ')}); litertlm_dart runs one NPU\'s '
+      'dispatch per load. Load it ${_withoutEncoders(['vision', 'audio'])} to run '
       'the text model alone, or install a bundle compiled for one NPU '
       'throughout.',
       path: path,
@@ -305,14 +305,14 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
       );
     }
     if (textBackends.any((text) => text != BackendKind.npu)) {
-      final flag = kind == 'vision' ? 'supportImage' : 'supportAudio';
       throw LiteRtLmBundleException(
         LiteRtLmBundleProblem.unsupportedNpu,
         '$runs, and its text model would be tried on '
         '${textBackends.map((text) => text.name).join(', then ')}, not '
-        'on the NPU alone. flutter_edge_ai_litertlm runs an encoder on the NPU '
+        'on the NPU alone. litertlm_dart runs an encoder on the NPU '
         'only together with a text model on the NPU (a bundle compiled for the '
-        'NPU throughout). Load it without $flag to run the text model alone, '
+        'NPU throughout). Load it ${_withoutEncoders([kind])} to run the text '
+        'model alone, '
         'or install the generic bundle of this model.',
         path: path,
       );
@@ -400,9 +400,8 @@ String _wrongTextBackend(
     // Set: with none asked, a bundle compiled for an NPU runs there.
     final asked = requested!;
     return '${_textRulesOut(path, bundle, asked)}, not on ${asked.name}. Load '
-        'it with preferredBackend: PreferredBackend.npu, or omit '
-        'preferredBackend; to run on the ${asked.name}, install the generic '
-        'bundle of this model.';
+        'it ${_loadOn([BackendKind.npu])}; to run on the ${asked.name}, '
+        'install the generic bundle of this model.';
   }
   final runs = [
     BackendKind.gpu,
@@ -415,18 +414,31 @@ String _wrongTextBackend(
         'so no backend here can run it: on the NPU $_npuRunsItOnTheCpu. '
         "Install the bundle compiled for this device's NPU.";
   }
-  final options = runs.length == 1
-      ? 'PreferredBackend.${runs.single.name}'
-      : 'PreferredBackend.gpu or .cpu';
+  final options = _loadOn(runs);
   // Set: with none asked, the text model runs on [runs].
   final asked = requested!;
   if (_noNpuGraphRulesOut(bundle, asked)) {
-    return '${_textRulesOut(path, bundle, asked)}. Load it with $options, or '
-        'omit preferredBackend; to run on the NPU, install the bundle compiled '
-        "for this device's NPU.";
+    return '${_textRulesOut(path, bundle, asked)}. Load it $options; to run '
+        "on the NPU, install the bundle compiled for this device's NPU.";
   }
   return '${_textRulesOut(path, bundle, asked)}, not on ${asked.name}. Load it '
-      'with $options, or omit preferredBackend.';
+      '$options.';
+}
+
+/// Where to load a model that runs on [backends] (the NPU, or the GPU and/or
+/// the CPU), said for both callers of the load: litertlm_dart's
+/// `EngineConfig.backend` and flutter_edge_ai's `preferredBackend`, which
+/// left unset loads where the file runs.
+String _loadOn(List<BackendKind> backends) {
+  String upper(BackendKind b) => b.name.toUpperCase();
+  final where = backends.map((b) => 'the ${upper(b)}').join(' or ');
+  final runtime = backends.map((b) => 'Backend.${b.name}()').join(' or ');
+  final adapter = backends.length == 1
+      ? 'PreferredBackend.${backends.single.name}'
+      : 'PreferredBackend.${backends.first.name} or '
+            '.${backends.skip(1).map((b) => b.name).join(' or .')}';
+  return 'on $where ($runtime; in flutter_edge_ai, preferredBackend: '
+      '$adapter, or none)';
 }
 
 /// Whether [backend] is ruled out for [bundle]'s text model because it is
@@ -550,13 +562,13 @@ void _checkNpuVendor(
   // An encoder that is off is not run: the load works without it.
   final instead = switch (encoder) {
     null => 'install',
-    'vision' => 'load it without supportImage, or install',
-    _ => 'load it without supportAudio, or install',
+    'vision' => 'load it ${_withoutEncoders(['vision'])}, or install',
+    _ => 'load it ${_withoutEncoders(['audio'])}, or install',
   };
   throw LiteRtLmBundleException(
     LiteRtLmBundleProblem.unsupportedNpu,
     vendor == null
-        ? '$what is compiled for the $target NPU. flutter_edge_ai_litertlm '
+        ? '$what is compiled for the $target NPU. litertlm_dart '
               'runs ${npuSentenceList(offeredNpuStacks.map((v) => v.label))} '
               'NPU bundles only; $instead the generic bundle of this model to '
               'run it on the GPU or the CPU.'
@@ -565,4 +577,18 @@ void _checkNpuVendor(
               'the generic bundle of this model to run it here.',
     path: path,
   );
+}
+
+/// "without" the [encoders] (`vision`, `audio`), said for both callers of the
+/// load: litertlm_dart's `EngineConfig.visionBackend`/`audioBackend` null,
+/// flutter_edge_ai's `supportImage`/`supportAudio` false.
+String _withoutEncoders(List<String> encoders) {
+  final runtime = [for (final e in encoders) '${e}Backend: null'].join(', ');
+  final adapter = [
+    for (final e in encoders) e == 'vision' ? 'supportImage' : 'supportAudio',
+  ].join(' or ');
+  final what = encoders.length == 1
+      ? 'its ${encoders.single} encoder'
+      : 'its encoders';
+  return 'without $what ($runtime; in flutter_edge_ai, without $adapter)';
 }

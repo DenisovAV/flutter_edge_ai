@@ -14,11 +14,11 @@ import 'package:test/test.dart';
 void main() {
   test('mediatek_npu: true fails the build with the reason, the release that '
       'runs it and the define to remove', () {
-    final refusal = mediatekNpuBuildRefusal('flutter_edge_ai_litertlm');
+    final refusal = mediatekNpuBuildRefusal('litertlm_dart');
     expect(
       refusal,
       allOf(
-        startsWith('[flutter_edge_ai_litertlm] mediatek_npu is set'),
+        startsWith('[litertlm_dart] mediatek_npu is set'),
         contains('LiteRtDispatchQueryInterface'),
         contains('#4256'),
         contains('flutter_edge_ai_litertlm 1.19.x'),

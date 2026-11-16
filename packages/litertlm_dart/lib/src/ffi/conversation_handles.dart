@@ -319,14 +319,14 @@ class RecoveringConversationHandle implements ConversationHandle {
         if (failure != null) {
           // ignore: avoid_print
           print(
-            '[flutter_edge_ai_litertlm] could not rewind the conversation '
+            '[litertlm_dart] could not rewind the conversation '
             'after a stopped turn or a full context ($failure); rebuilding it',
           );
         }
       } else if (canRewind && rebuildBecause != null) {
         // ignore: avoid_print
         print(
-          '[flutter_edge_ai_litertlm] rebuilding the conversation: '
+          '[litertlm_dart] rebuilding the conversation: '
           '$rebuildBecause',
         );
       }

@@ -184,7 +184,7 @@ void main() {
           isA<StateError>().having(
             (e) => e.message,
             'message',
-            contains('is not the one flutter_edge_ai_litertlm ships'),
+            contains('is not the one litertlm_dart ships'),
           ),
         ),
       );
@@ -223,7 +223,7 @@ void main() {
             allOf(
               contains(
                 'The LiteRT-LM library at $_iosPath is not the one '
-                'flutter_edge_ai_litertlm ships',
+                'litertlm_dart ships',
               ),
               contains('(it lacks $liteRtLmOwnBuildSymbol)'),
               contains(

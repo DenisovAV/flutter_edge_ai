@@ -382,7 +382,7 @@ class NativeTurnStream<C extends Object> {
             // Release builds too: the engine stays locked until native ends it.
             // ignore: avoid_print
             print(
-              '[flutter_edge_ai_litertlm] a stopped generation has not ended '
+              '[litertlm_dart] a stopped generation has not ended '
               'after ${consumerCancelWait.inSeconds} s; the next one waits for it',
             );
           },

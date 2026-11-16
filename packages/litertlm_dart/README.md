@@ -55,9 +55,16 @@ await engine.close();
   `extraContext`. `SpeculativeDecodingMode` on the engine and per conversation.
 - **Stopping**: `Conversation.cancel()` stops and keeps what was generated;
   cancelling the subscription stops and drops the rest. `lastTurnEnd` says how
-  a turn ended (`completed`, `outputLimit`, `contextFull`, …).
+  a turn ended (`completed`, `outputLimit`, `contextFull`, …). A failed turn
+  ends the stream with a `LiteRtLmException`: `ContextFullException`,
+  `ConversationClosedException`, `TurnFailedException`, ….
+- **Embeddings** (`EmbeddingEngine`): a per-SoC bundle runs on its NPU only;
+  the GPU is taken where it was measured and refused elsewhere — nothing moves
+  to another backend on its own.
 - **Backends**: `Backend.cpu(threadCount:)`, `.gpu()`, `.npu()`. The NPU
   vendor (Qualcomm, Google Tensor, MediaTek, Intel) is read from the bundle;
+  on Android `Backend.npu` needs a `platform:` (or a prepared `dispatchDir:`)
+  that puts the vendor's libraries in a directory LiteRT can load;
   vision and audio encoders load only when asked (`EngineConfig.visionBackend`,
   `audioBackend`), `BundleInfo.declaredVisionBackend` is where the file wants
   them.

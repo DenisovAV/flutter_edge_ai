@@ -145,16 +145,22 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   @override
   Future<EmbeddingPassInfo> load() => _withCoreErrors(() async {
     if (_loading || _closed) {
-      throw StateError('LiteRtLmEmbedder.load() runs once, before close');
+      throw StateError('LiteRtLmEmbeddingPass.load() runs once, before close');
     }
     _loading = true;
     bindRuntimeLogToCore();
-    final engine = _engine = await createEmbeddingEngineWith(
+    final engine = await createEmbeddingEngineWith(
       _config,
       openBindings: _openBindings,
       allocator: _allocator,
       clock: _clock,
     );
+    if (_closed) {
+      // Closed while it loaded: nobody will close this engine but us.
+      await engine.close();
+      throw StateError('The embedding pass was closed while it loaded.');
+    }
+    _engine = engine;
     final info = engine.info;
     final images = info.modalities.contains(EmbedderModality.image);
     final audio = info.modalities.contains(EmbedderModality.audio);
@@ -175,7 +181,9 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       _withCoreErrors(() async {
         final engine = _engine;
         if (engine == null || _closed) {
-          throw StateError('LiteRtLmEmbedder.embed() needs a loaded engine');
+          throw StateError(
+            'LiteRtLmEmbeddingPass.embed() needs a loaded engine',
+          );
         }
         final vector = await engine.computeEmbedding([
           if (input.text case final text?)

@@ -12,7 +12,7 @@
 //
 // Gemma 4 declares the key, and is still given FP32 on the GPU above a 2,048
 // token context, where its FP16 rotary positions break (LiteRT-LM #4001): see
-// `gpuActivationDefault`.
+// `gpuActivationFor` (lib/src/api/engine.dart).
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -118,7 +118,7 @@ Future<Uint8List> _readExactly(
 /// GPU attempt runs at FP32 (LiteRT-LM #4001).
 const gemma4Fp16MaxContextTokens = 2048;
 
-/// Why [gpuActivationDefault] chose FP32 for a GPU attempt, for the engine's
+/// Why `gpuActivationFor` (`Engine.create`) chose FP32 for a GPU load, for the engine's
 /// log line.
 enum GpuActivationReason {
   /// A FunctionGemma bundle that declares no `prefer_activation_type`.

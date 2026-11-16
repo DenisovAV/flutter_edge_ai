@@ -29,6 +29,12 @@ import 'litertlm_decision_section.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 import 'thinking_token_budget.dart';
 
+/// Minimum context window (`max_num_tokens`) of a CPU or GPU `.litertlm`
+/// load: litertlm_dart's [lm.minCpuGpuContextTokens], where the floor is
+/// applied (`Engine.create`). `maxTokens` is the CONTEXT WINDOW, not the
+/// reply length; cap a reply with `maxOutputTokens` on the session.
+const int kMinLitertlmContextTokens = lm.minCpuGpuContextTokens;
+
 /// LiteRT-LM (.litertlm) inference engine. Pure factory: builds and returns a
 /// bare [InferenceModel]; core owns the singleton lifecycle and registers its
 /// reset via [InferenceModel.addCloseListener].
@@ -318,11 +324,25 @@ class LiteRtLmEngine
         named == LlmModelFamily.functionGemma) {
       return null;
     }
-    final declares = family == LlmModelFamily.functionGemma
-        ? (await tryReadBundleActivationDeclaration(
-            config.modelPath,
-          )).declaresKey
-        : null;
+    bool? declares;
+    if (family == LlmModelFamily.functionGemma) {
+      final read = await tryReadBundleActivationDeclaration(config.modelPath);
+      declares = read.declaresKey;
+      final error = read.error;
+      if (error != null) {
+        // A failed read leaves the GPU at float16, where this bundle can
+        // answer with nothing; a release build is where that gets reported.
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai_litertlm] WARNING: could not read which '
+          'activation type this FunctionGemma .litertlm declares, so a GPU '
+          'attempt runs at the engine default (float16), where a bundle '
+          'without one can answer with nothing. Pass '
+          'activationDataType: ActivationDataType.float32 to be sure. '
+          '${error.split('\n').first}',
+        );
+      }
+    }
     return gpuActivationFor(
       family: family,
       declaresActivation: declares,

@@ -101,22 +101,28 @@ void main() {
     }
   });
 
-  test('images on a bundle without a vision tower are refused on the GPU',
-      () async {
-    final abi = '${Abi.current()}';
-    if (!(liteRtLmEmbeddingGpuMeasured[abi] ?? const {}).contains(
-      LiteRtLmEg2Bundle.text270m,
-    )) {
-      return;
-    }
-    final path = write('t.litertlm', eg2Container());
-    await expectLater(
-      embedderConfigFor(
-        config(path, backend: const Backend.gpu(), vision: const Backend.cpu()),
-      ),
-      throwsA(isA<EmbedderLoadException>()),
-    );
-  });
+  test(
+    'images on a bundle without a vision tower are refused on the GPU',
+    () async {
+      final abi = '${Abi.current()}';
+      if (!(liteRtLmEmbeddingGpuMeasured[abi] ?? const {}).contains(
+        LiteRtLmEg2Bundle.text270m,
+      )) {
+        return;
+      }
+      final path = write('t.litertlm', eg2Container());
+      await expectLater(
+        embedderConfigFor(
+          config(
+            path,
+            backend: const Backend.gpu(),
+            vision: const Backend.cpu(),
+          ),
+        ),
+        throwsA(isA<EmbedderLoadException>()),
+      );
+    },
+  );
 
   test('an unreadable file is a load failure', () async {
     final path = write('junk.litertlm', Uint8List.fromList([1, 2, 3]));

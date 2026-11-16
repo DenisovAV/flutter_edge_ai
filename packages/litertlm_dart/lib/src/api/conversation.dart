@@ -23,7 +23,8 @@ enum TurnEnd {
   /// The model ended its reply.
   completed,
 
-  /// The subscriber cancelled the turn.
+  /// The turn was stopped ([Conversation.cancel], or the subscription
+  /// cancelled).
   cancelled,
 
   /// Native failed the turn, or cancelled it unasked.

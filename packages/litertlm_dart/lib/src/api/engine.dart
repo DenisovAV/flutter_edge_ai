@@ -56,11 +56,11 @@ int contextTokensFor(int maxNumTokens, BackendKind backend) {
     return maxNumTokens;
   }
   runtimeLog(
-    '[LiteRtLmEngine] maxTokens ($maxNumTokens) is below the minimum context '
-    'size for .litertlm models; clamping to $minCpuGpuContextTokens. '
-    'maxTokens is the CONTEXT WINDOW (KV-cache, input + output) — not the '
-    'generation length. Use maxOutputTokens on createSession to cap how many '
-    'tokens are generated.',
+    '[LiteRtLmEngine] maxNumTokens ($maxNumTokens) is below the minimum '
+    'context size for .litertlm models on the CPU and the GPU; clamping to '
+    '$minCpuGpuContextTokens. It is the CONTEXT WINDOW (KV-cache, input + '
+    'output), not the reply length: ConversationConfig.maxOutputTokens caps '
+    'how many tokens are generated.',
   );
   return minCpuGpuContextTokens;
 }
@@ -265,10 +265,18 @@ final class Engine {
   /// [LiteRtLmEngineCreateException] when LiteRT-LM refuses the engine.
   /// Creations run one at a time in the process: what one touches is
   /// process-wide (the Qualcomm dispatch's environment, the cache files).
-  static Future<Engine> create(EngineConfig config) =>
-      _oneCreateAtATime(() => _create(config, _host));
+  static Future<Engine> create(EngineConfig config) {
+    // Read when the caller asks, not when the create's turn comes: a caller
+    // that sets the level and then creates gets its own level.
+    final nativeLevel = liteRtLmNativeLogLevel;
+    return _oneCreateAtATime(() => _create(config, _host, nativeLevel));
+  }
 
-  static Future<Engine> _create(EngineConfig config, EngineHost host) async {
+  static Future<Engine> _create(
+    EngineConfig config,
+    EngineHost host,
+    LiteRtLmLogLevel? nativeLevel,
+  ) async {
     final kind = backendKindOf(config.backend);
     final path = config.modelPath;
     final platform = switch ((
@@ -454,7 +462,7 @@ final class Engine {
         activationDataType: activationDataTypeWireValue(activation),
         gpuActivationReason: reason,
         npuDispatch: dispatch,
-        nativeLogLevel: liteRtLmNativeLogLevel,
+        nativeLogLevel: nativeLevel,
       );
     } on LiteRtLmEngineCreateException catch (e, st) {
       await client.shutdown();
@@ -477,36 +485,43 @@ final class Engine {
       rethrow;
     }
 
-    final linearAttentionState = await host.linearAttentionState(path);
-    final backing = liteRtLmOpenSessionBacking(
-      abi: abi,
-      backend: kind,
-      npuVendor: vendor,
-      androidGpu: kind == BackendKind.gpu ? host.androidGpuFamily() : null,
-    );
-    runtimeLog(
-      '[LiteRtLmEngine] open sessions: ${backing.name} conversations on '
-      '${kind.name} ($abi); linear attention state: '
-      '${linearAttentionState ?? 'unread'}',
-    );
-    return Engine._(
-      client: client,
-      backend: config.backend,
-      visionBackend: switch (plan.visionBackend) {
-        final k? => backendOf(k, platform: platform),
-        null => null,
-      },
-      audioBackend: switch (plan.audioBackend) {
-        final k? => backendOf(k, platform: platform),
-        null => null,
-      },
-      maxNumTokens: maxTokens,
-      activationDataType: kind == BackendKind.gpu ? activation : null,
-      npuVendor: kind == BackendKind.npu ? vendor : null,
-      bundleInfo: bundle,
-      backing: backing,
-      linearAttentionState: linearAttentionState,
-    );
+    try {
+      final linearAttentionState = await host.linearAttentionState(path);
+      final backing = liteRtLmOpenSessionBacking(
+        abi: abi,
+        backend: kind,
+        npuVendor: vendor,
+        androidGpu: kind == BackendKind.gpu ? host.androidGpuFamily() : null,
+      );
+      runtimeLog(
+        '[LiteRtLmEngine] open sessions: ${backing.name} conversations on '
+        '${kind.name} ($abi); linear attention state: '
+        '${linearAttentionState ?? 'unread'}',
+      );
+      return Engine._(
+        client: client,
+        backend: config.backend,
+        visionBackend: switch (plan.visionBackend) {
+          final k? => backendOf(k, platform: platform),
+          null => null,
+        },
+        audioBackend: switch (plan.audioBackend) {
+          final k? => backendOf(k, platform: platform),
+          null => null,
+        },
+        maxNumTokens: maxTokens,
+        activationDataType: kind == BackendKind.gpu ? activation : null,
+        npuVendor: kind == BackendKind.npu ? vendor : null,
+        bundleInfo: bundle,
+        backing: backing,
+        linearAttentionState: linearAttentionState,
+      );
+    } catch (_) {
+      // The engine exists: it is deleted before the failure reaches the
+      // caller.
+      await client.shutdown();
+      rethrow;
+    }
   }
 
   /// [path]'s bundle info, or null when the file is not one this package
@@ -533,6 +548,16 @@ final class Engine {
           e is! RangeError) {
         rethrow;
       }
+      // A release build is where a degraded GPU load gets reported, and
+      // runtimeLog is silent there.
+      // ignore: avoid_print
+      print(
+        '[litertlm_dart] WARNING: could not read which model family this '
+        ".litertlm names ($e), so a GPU load runs at the bundle's activation "
+        'type: Gemma 4 above 2,048 tokens and a FunctionGemma without a '
+        'declared type need ActivationDataType.float32; set it if this is '
+        'one.',
+      );
       return null;
     }
   }

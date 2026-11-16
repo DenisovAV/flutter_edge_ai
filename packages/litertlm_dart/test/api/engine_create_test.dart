@@ -36,6 +36,7 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
   final String abiName;
   final bool npuShips;
   final creates = <_Create>[];
+  final nativeLevels = <LiteRtLmLogLevel?>[];
   final prepared = <NpuStack>[];
   int creating = 0;
   int mostAtOnce = 0;
@@ -85,6 +86,7 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     required NpuDispatch? npuDispatch,
     required LiteRtLmLogLevel? nativeLogLevel,
   }) async {
+    nativeLevels.add(nativeLogLevel);
     mostAtOnce = max(mostAtOnce, ++creating);
     await Future<void>.delayed(const Duration(milliseconds: 10));
     creating--;
@@ -367,5 +369,18 @@ void main() {
     for (final e in engines) {
       await e.close();
     }
+  });
+
+  test('each create takes the native log level set when it was asked for, '
+      'not when its turn came', () async {
+    final path = write('g.litertlm', _bundle());
+    LiteRtLmLog.nativeLevel = LiteRtLmLogLevel.silent;
+    final quiet = create(path);
+    LiteRtLmLog.nativeLevel = null;
+    final plain = create(path);
+    for (final e in await Future.wait([quiet, plain])) {
+      await e.close();
+    }
+    expect(host.nativeLevels, [LiteRtLmLogLevel.silent, null]);
   });
 }

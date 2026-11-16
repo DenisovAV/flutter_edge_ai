@@ -1,8 +1,7 @@
-// Exceptions the runtime throws where the adapter throws a core exception
-// instead: lib/src/adapter/runtime_mapping.dart maps each to its core
-// counterpart at the boundary, so an app sees the same types as before.
+// The base of litertlm_dart's exceptions, and two of them.
+// flutter_edge_ai_litertlm maps each to its core counterpart at the boundary
+// (lib/src/adapter/runtime_mapping.dart).
 
-/// An option-scoring run was cancelled. Core: `DeciderCancelledException`.
 /// What every exception litertlm_dart throws for a LiteRT-LM failure
 /// extends: one type to catch. Programming errors stay [ArgumentError] and
 /// [StateError].
@@ -16,6 +15,7 @@ abstract class LiteRtLmException implements Exception {
   String toString() => '$runtimeType: $message';
 }
 
+/// An option-scoring run was cancelled. Core: `DeciderCancelledException`.
 final class ScoringCancelledException extends LiteRtLmException {
   const ScoringCancelledException(super.message);
 

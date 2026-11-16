@@ -88,7 +88,7 @@ final class ThinkingConfig {
   /// [thinkingTokenBudget] caps the tokens one generation spends thinking,
   /// with thinking on; null sets no cap. LiteRT-LM caps the first channel the
   /// bundle declares (`thought` on the Gemma 4 bundles); a bundle that
-  /// declares none is not capped, which the conversation says once. The
+  /// declares none is not capped, which the engine says once. The
   /// thinking counts towards `maxOutputTokens`. Throws [ArgumentError] for a
   /// budget outside 1..[maxThinkingTokenBudget].
   ThinkingConfig({this.enableThinking = true, this.thinkingTokenBudget}) {
@@ -237,7 +237,7 @@ final class EngineConfig {
   /// The context window: the prompt, the history and every reply, the KV
   /// cache's length. Not the reply length (that is `maxOutputTokens`). On the
   /// CPU and the GPU a value below 1024 is raised to 1024 (the cache length
-  /// those bundles bake); null is LiteRT-LM's default.
+  /// those bundles bake); null is 2048.
   final int? maxNumTokens;
 
   /// The most images one message may carry; null is 1 with a vision encoder.

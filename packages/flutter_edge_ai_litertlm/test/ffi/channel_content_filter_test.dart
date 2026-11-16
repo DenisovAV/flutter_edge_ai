@@ -97,8 +97,6 @@ void main() {
           backend: backend,
           linearAttentionState: linear,
           backing: OpenSessionBacking.virtual,
-          // Another conversation holds the engine's own one: this one shares.
-          ownConversations: 1,
         );
         final session = await model.openSession();
         expect(client.recorder.filterCalls, isEmpty, reason: 'no create yet');
@@ -172,7 +170,6 @@ FfiInferenceModel _model(
   required PreferredBackend? backend,
   required bool? linearAttentionState,
   OpenSessionBacking backing = OpenSessionBacking.virtual,
-  int ownConversations = 0,
 }) => ffiModelForClient(
   ffiClient: client,
   maxTokens: 1024,
@@ -180,7 +177,6 @@ FfiInferenceModel _model(
   activeBackend: backend,
   openSessionBacking: backing,
   linearAttentionState: linearAttentionState,
-  ownConversations: ownConversations,
   onClose: () {},
 );
 

@@ -178,6 +178,7 @@ export 'src/api/engine.dart'
     show
         EngineHost,
         contextTokensFor,
+        createOwnConversation,
         debugEngineHost,
         gpuActivationFor,
         liteRtLmNativeLogLevel;

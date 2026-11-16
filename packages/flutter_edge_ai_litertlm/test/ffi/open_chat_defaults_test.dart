@@ -13,8 +13,6 @@ class _Client extends LiteRtLmFfiClient {
 
 FfiInferenceModel _model() => ffiModelForClient(
   ffiClient: _Client(),
-  // Sessions share: opening one makes no native call.
-  ownConversations: 1,
   maxTokens: 1024,
   modelType: ModelType.qwen3,
   activeBackend: PreferredBackend.cpu,
@@ -50,8 +48,6 @@ void main() {
   test('openSession still counts against maxConcurrentSessions', () async {
     final model = ffiModelForClient(
       ffiClient: _Client(),
-      // Sessions share: opening one makes no native call.
-      ownConversations: 1,
       maxTokens: 1024,
       modelType: ModelType.qwen3,
       activeBackend: PreferredBackend.cpu,

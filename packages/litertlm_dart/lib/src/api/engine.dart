@@ -226,9 +226,7 @@ final class Engine {
   });
 
   /// An engine over [client], for tests that drive conversations with a fake
-  /// client. [ownConversations] counts conversations already holding the
-  /// one native conversation of a virtual-backed engine, so that the next
-  /// share one.
+  /// client.
   @visibleForTesting
   factory Engine.forTest(
     LiteRtLmFfiClient client, {
@@ -237,7 +235,6 @@ final class Engine {
     OpenSessionBacking backing = OpenSessionBacking.virtual,
     bool? linearAttentionState = false,
     NpuStack? npuVendor,
-    int ownConversations = 0,
   }) => Engine._(
     client: client,
     backend: backend,
@@ -249,7 +246,7 @@ final class Engine {
     bundleInfo: null,
     backing: backing,
     linearAttentionState: linearAttentionState,
-  ).._ownConversations = ownConversations;
+  );
 
   final LiteRtLmFfiClient _client;
   final OpenSessionBacking _backing;
@@ -292,9 +289,6 @@ final class Engine {
   bool _closed = false;
   bool _channelWarned = false;
 
-  /// Open conversations with a native conversation of their own on an
-  /// engine whose conversations otherwise share one ([_backing] virtual).
-  int _ownConversations = 0;
 
   /// Loads [config.modelPath] on [config.backend]: one attempt, no fallback.
   ///
@@ -615,13 +609,20 @@ final class Engine {
   );
 
   /// Starts a conversation. On the backends where several live native
-  /// conversations were measured to work, each has its own. Elsewhere one
-  /// open at a time has its own (one live conversation always worked there),
-  /// and the others, while it is open, share one native conversation and
-  /// replay their messages when they take it over. Either way a stopped,
-  /// refused or failed turn is recovered before the next one (see
-  /// [Conversation]).
-  Future<Conversation> createConversation([ConversationConfig? config]) async {
+  /// conversations were measured to work, it has its own. Elsewhere the
+  /// engine's conversations share one native conversation and replay their
+  /// messages when they take it over. Either way a stopped, refused or failed
+  /// turn is recovered before the next one (see [Conversation]).
+  Future<Conversation> createConversation([ConversationConfig? config]) =>
+      _createConversation(
+        config,
+        own: _backing == OpenSessionBacking.native,
+      );
+
+  Future<Conversation> _createConversation(
+    ConversationConfig? config, {
+    required bool own,
+  }) async {
     if (_closed) throw StateError('The engine is closed.');
     final c = config ?? ConversationConfig();
     final format = c.responseFormat;
@@ -644,7 +645,6 @@ final class Engine {
       speculativeDecoding: c.speculativeDecoding,
     );
     final filter = filtersChannelContent;
-    final own = _backing == OpenSessionBacking.native || _ownConversations == 0;
     final ConversationHandle handle;
     switch (own) {
       case true:
@@ -661,14 +661,7 @@ final class Engine {
               filterChannelContent: filter,
               extras: extras,
             );
-        if (_backing == OpenSessionBacking.virtual) _ownConversations++;
-        final LiteRtLmConversationHandle first;
-        try {
-          first = await open(null);
-        } catch (_) {
-          if (_backing == OpenSessionBacking.virtual) _ownConversations--;
-          rethrow;
-        }
+        final first = await open(null);
         if (_closed) {
           first.close();
           throw StateError(
@@ -701,9 +694,6 @@ final class Engine {
       handle,
       config: c,
       thinkingTokenBudgetCapsNothing: _budgetCapsNothing,
-      onClose: own && _backing == OpenSessionBacking.virtual
-          ? () => _ownConversations--
-          : null,
     );
   }
 
@@ -770,3 +760,12 @@ final class Engine {
     await _client.shutdown();
   }
 }
+
+/// A conversation of [engine] with a native conversation of its own whatever
+/// the engine's backing: what `flutter_edge_ai_litertlm`'s singleton
+/// `createSession` always had, also where the engine's other conversations
+/// share one (one live conversation runs on every backend).
+Future<Conversation> createOwnConversation(
+  Engine engine, [
+  ConversationConfig? config,
+]) => engine._createConversation(config, own: true);

@@ -53,22 +53,18 @@ class _Client extends LiteRtLmFfiClient {
 }
 
 void main() {
-  test('on a virtual-backed engine the first open conversation has its own; '
-      'the others share while it is open', () async {
+  test('on a virtual-backed engine conversations share one native '
+      "conversation; createOwnConversation gets one of its own", () async {
     final client = _Client();
     final engine = Engine.forTest(client);
-    final first = await engine.createConversation();
-    final second = await engine.createConversation();
-    expect(first.handleForTest, isA<RecoveringConversationHandle>());
-    expect(second.handleForTest, isA<VirtualConversationHandle>());
+    final a = await engine.createConversation();
+    final b = await engine.createConversation();
+    expect(a.handleForTest, isA<VirtualConversationHandle>());
+    expect(b.handleForTest, isA<VirtualConversationHandle>());
+    expect(client.creates, isEmpty);
+    final own = await createOwnConversation(engine);
+    expect(own.handleForTest, isA<RecoveringConversationHandle>());
     expect(client.creates, hasLength(1));
-    await first.close();
-    final third = await engine.createConversation();
-    expect(third.handleForTest, isA<RecoveringConversationHandle>());
-    expect(client.creates, hasLength(2));
-    for (final c in [second, third]) {
-      await c.close();
-    }
   });
 
   test('on a native-backed engine every conversation has its own', () async {

@@ -420,7 +420,6 @@ void main() {
       modelType: ModelType.gemmaIt,
       activeBackend: PreferredBackend.gpu,
       openSessionBacking: OpenSessionBacking.virtual,
-      ownConversations: 1,
       structuredOutput: const StructuredOutputSupport(
         keywords: ResponseFormat.dialect,
       ),

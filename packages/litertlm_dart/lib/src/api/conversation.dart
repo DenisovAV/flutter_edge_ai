@@ -99,7 +99,6 @@ final class Conversation {
     this._handle, {
     required this._config,
     required void Function() thinkingTokenBudgetCapsNothing,
-    this._onClose,
   }) : _budgetCapsNothing = thinkingTokenBudgetCapsNothing;
 
   /// A conversation over [handle], for tests that drive it with a fake.
@@ -116,7 +115,6 @@ final class Conversation {
   final ConversationHandle _handle;
   final ConversationConfig _config;
   final void Function() _budgetCapsNothing;
-  final void Function()? _onClose;
   bool _sending = false;
   bool _closed = false;
 
@@ -303,6 +301,5 @@ final class Conversation {
     if (_closed) return;
     _closed = true;
     _handle.close();
-    _onClose?.call();
   }
 }

@@ -128,8 +128,6 @@ void main() {
           supportImage: true,
           maxConcurrentSessions: cap,
           openSessionBacking: backing,
-          // For virtual: another conversation holds the engine's own one.
-          ownConversations: backing == OpenSessionBacking.virtual ? 1 : 0,
           onClose: () {},
         );
 
@@ -263,8 +261,6 @@ void main() {
       modelType: ModelType.gemmaIt,
       activeBackend: PreferredBackend.cpu,
       supportImage: true,
-      // Another conversation holds the engine's own one: this one shares.
-      ownConversations: 1,
       onClose: () {},
     );
     final session = await m.openSession() as FfiInferenceModelSession;

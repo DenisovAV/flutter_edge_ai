@@ -100,7 +100,6 @@ void main() {
       destroyProxy: (_) {},
     );
     final model = ffiModelForClient(
-      ownConversations: 1,
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -189,7 +188,6 @@ void main() {
       }
       ..metricsForTest = (_) => BenchmarkInfo(tokensPerSecond: 42);
     final model = ffiModelForClient(
-      ownConversations: 1,
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -245,7 +243,6 @@ void main() {
       }
       ..metricsForTest = (_) => BenchmarkInfo(tokensPerSecond: 42);
     final model = ffiModelForClient(
-      ownConversations: 1,
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,

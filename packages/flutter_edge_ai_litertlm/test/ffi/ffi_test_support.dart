@@ -12,8 +12,6 @@ import 'package:litertlm_dart/internal_io.dart'
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
 /// A model over [ffiClient], for tests that drive it with a fake client.
-/// [ownConversations] 1 makes every conversation of a virtual-backed engine
-/// share the one native conversation, as when another one holds its own.
 FfiInferenceModel ffiModelForClient({
   required LiteRtLmFfiClient ffiClient,
   required int maxTokens,
@@ -27,7 +25,6 @@ FfiInferenceModel ffiModelForClient({
   int? maxConcurrentSessions,
   OpenSessionBacking openSessionBacking = OpenSessionBacking.virtual,
   bool? linearAttentionState = false,
-  int ownConversations = 0,
   int? thinkingTokenBudget,
   StructuredOutputSupport structuredOutput = const StructuredOutputSupport.none(
     'This LiteRT-LM model was not loaded through LiteRtLmEngine.',
@@ -44,7 +41,6 @@ FfiInferenceModel ffiModelForClient({
     maxNumTokens: maxTokens,
     backing: openSessionBacking,
     linearAttentionState: linearAttentionState,
-    ownConversations: ownConversations,
   ),
   maxTokens: maxTokens,
   modelType: modelType,

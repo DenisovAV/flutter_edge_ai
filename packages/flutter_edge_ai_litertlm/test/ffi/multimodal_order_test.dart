@@ -153,11 +153,9 @@ void main() {
         modelType: type,
         activeBackend: null,
         multimodalOrder: multimodalOrder,
-        // A shared conversation: opening it makes no native call.
-        ownConversations: 1,
         onClose: () {},
       );
-      final session = await model.createSession() as FfiInferenceModelSession;
+      final session = await model.openSession() as FfiInferenceModelSession;
       final order = session.multimodalOrder;
       await session.close();
       return order;

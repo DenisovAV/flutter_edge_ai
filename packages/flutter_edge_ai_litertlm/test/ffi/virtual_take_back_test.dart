@@ -43,7 +43,6 @@ void main() {
         return send;
       };
     model = ffiModelForClient(
-      ownConversations: 1,
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -358,7 +357,6 @@ void main() {
           return send;
         };
       final queuedModel = ffiModelForClient(
-        ownConversations: 1,
         ffiClient: queuedClient,
         maxTokens: 1024,
         modelType: ModelType.gemmaIt,
@@ -425,7 +423,6 @@ void main() {
         return creatingClient.newTurnForTest(conversation);
       };
     final creatingModel = ffiModelForClient(
-      ownConversations: 1,
       ffiClient: creatingClient,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,

@@ -76,18 +76,14 @@ class _Captured implements Exception {
   const _Captured();
 }
 
-/// [shared]: another conversation holds the engine's own one, so an
-/// openSession shares (a virtual turn), as these tests read it.
 FfiInferenceModel _model(
   _CapturingClient client,
-  ModelType type, {
-  bool shared = false,
-}) => ffiModelForClient(
+  ModelType type,
+) => ffiModelForClient(
   ffiClient: client,
   maxTokens: 1024,
   modelType: type,
   activeBackend: null,
-  ownConversations: shared ? 1 : 0,
   onClose: () {},
 );
 
@@ -170,7 +166,6 @@ void main() {
     final session = await _model(
       client,
       ModelType.qwen3,
-      shared: true,
     ).openSession(topK: 1);
     await session.addQueryChunk(const Message(text: 'hi', isUser: true));
     await expectLater(session.getResponse(), throwsA(isA<_Captured>()));
@@ -188,7 +183,6 @@ void main() {
       final session = await _model(
         client,
         ModelType.gemma4,
-        shared: true,
       ).openSession(enableThinking: enableThinking);
       await session.addQueryChunk(const Message(text: 'hi', isUser: true));
       await expectLater(session.getResponse(), throwsA(isA<_Captured>()));

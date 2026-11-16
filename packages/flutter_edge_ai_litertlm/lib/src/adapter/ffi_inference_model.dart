@@ -11,7 +11,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:litertlm_dart/internal_io.dart'
-    show ScoringStoppedError, isReleaseBuild, runtimeLog;
+    show ScoringStoppedError, createOwnConversation, isReleaseBuild, runtimeLog;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
 import '../litertlm_decision_section.dart';
@@ -428,7 +428,10 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       final beforeConv = sessionSw.elapsedMilliseconds;
       final lm.Conversation conversation;
       try {
-        conversation = await engine.createConversation(
+        // The singleton lane's conversation is always its own native one,
+        // also where open sessions share one by replay.
+        conversation = await createOwnConversation(
+          engine,
           _conversationConfig(
             explicit: explicit,
             sampling: sampling,

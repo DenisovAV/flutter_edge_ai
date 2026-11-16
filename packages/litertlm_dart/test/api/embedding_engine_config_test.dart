@@ -195,4 +195,22 @@ void main() {
     expect(placed.audioTowerOnCpu, isTrue);
     expect(placed.visionTowerOnCpu, isFalse);
   });
+
+  test(
+    'the GPU off the measured hosts is refused, not run on the CPU',
+    () async {
+      debugEngineHost = const _Host('android_arm64');
+      final path = write('t.litertlm', eg2Container());
+      await expectLater(
+        embedderConfigFor(config(path, backend: const Backend.gpu())),
+        throwsA(
+          isA<EmbedderLoadException>().having(
+            (e) => e.message,
+            'message',
+            contains('and this is android_arm64'),
+          ),
+        ),
+      );
+    },
+  );
 }

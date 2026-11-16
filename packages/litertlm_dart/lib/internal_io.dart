@@ -76,6 +76,7 @@ export 'src/ffi/litert_default_scope.dart'
     show openLiteRtLmPreferringDefaultScope, openLiteRtLmRequiringDefaultScope;
 export 'src/ffi/litert_lm_client.dart'
     show
+        capturesNativeStderr,
         ConversationHandle,
         EngineCreateRequest,
         EngineCreateResult,
@@ -158,7 +159,12 @@ export 'src/ffi/open_session_backing.dart'
 export 'src/ffi/windows_std_handles.dart'
     show StdHandleCalls, openBundledWindowsLibrary;
 export 'src/runtime/build_mode.dart'
-    show isDebugBuild, isProductBuild, isProfileBuild, isReleaseBuild;
+    show
+        isDebugBuild,
+        isFlutterDebugBuild,
+        isProductBuild,
+        isProfileBuild,
+        isReleaseBuild;
 export 'src/runtime/native_release.dart' show liteRtLmNativeVersion;
 export 'src/runtime/response_text.dart' show extractResponseText;
 export 'src/runtime/runtime_log.dart'

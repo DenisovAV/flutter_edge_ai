@@ -1474,6 +1474,14 @@ EngineCreateResult createEngineWith(
   }
 }
 
+/// Whether loading the libraries moves native stderr to a log file
+/// (`litertlm_native.log` in the system temp directory): in a Flutter debug
+/// build on iOS, macOS and Linux, as before the runtime left the adapter;
+/// never in a plain Dart program or a profile or release build.
+bool get capturesNativeStderr =>
+    isFlutterDebugBuild &&
+    (Platform.isIOS || Platform.isLinux || Platform.isMacOS);
+
 /// High-level Dart wrapper around the LiteRT-LM C API.
 ///
 /// Provides a clean async interface over the native C functions,
@@ -2288,18 +2296,18 @@ class LiteRtLmFfiClient {
           'stream_proxy_free_string',
         );
 
-    // DEBUG-only: redirect native stderr to a file so we can dump absl/glog
-    // output through the runtime log after engine_create failure. Skipped in
-    // release builds — production users see crashes via os_log/Crashlytics
-    // streams (or systemd journal on Linux); redirecting stderr would
-    // silently swallow those.
+    // Flutter debug builds only: redirect native stderr to a file so we can
+    // dump absl/glog output through the runtime log after engine_create
+    // failure. Skipped in release builds — production users see crashes via
+    // os_log/Crashlytics streams (or systemd journal on Linux); redirecting
+    // stderr would silently swallow those — and in a plain Dart program,
+    // whose own stderr (and an unhandled exception's trace) would end up in
+    // the file for the rest of the process.
     //
     // Linux: flutter test does not surface child-process stderr, so without
     // this Linux integration tests get the same opaque 'Failed to create
     // engine' as iOS without any native diagnostics.
-    if (isDebugBuild &&
-        (Platform.isIOS || Platform.isLinux || Platform.isMacOS) &&
-        !_stderrRedirectTried) {
+    if (capturesNativeStderr && !_stderrRedirectTried) {
       _stderrRedirectTried = true;
       _nativeLogPath = '${Directory.systemTemp.path}/litertlm_native.log';
       final redirect = proxyLib

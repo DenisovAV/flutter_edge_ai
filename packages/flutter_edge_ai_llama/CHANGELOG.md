@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Offload only the GPU layers that fit free VRAM, so loads no longer crash the driver.
+
 ## 0.1.0
 
 - `responseFormat` on `openSession`/`openChat`, enforced by llamadart's grammar (#195).

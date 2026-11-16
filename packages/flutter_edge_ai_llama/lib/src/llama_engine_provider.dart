@@ -7,12 +7,18 @@ import 'backend_config.dart';
 import 'llama_inference_model.dart';
 import 'runtime_error.dart';
 import 'structured_output_platform.dart';
+import 'gpu_layer_plan.dart'
+    if (dart.library.js_interop) 'gpu_layer_plan_web.dart';
 import 'model_location.dart'
     if (dart.library.js_interop) 'model_location_web.dart';
 
 /// Engine loading seam for deterministic connector contract tests.
 typedef _LlamaEngineLoader =
     Future<llama.LlamaEngine> Function(String path, llama.ModelParams params);
+
+/// GPU layer count seam: how many layers of [location] go to the GPU.
+typedef _GpuLayerPlanner =
+    Future<int> Function(String location, int contextTokens);
 
 /// Resolves the projector paired with the selected model, natively or on Web.
 ///
@@ -29,7 +35,9 @@ typedef LlamaProjectorResolver =
 /// Models are selected by the declared [edge.ModelFileType.gguf] type.
 final class LlamaEngineProvider implements InferenceEngineProvider {
   /// Creates a provider, optionally resolving model-specific projectors.
-  const LlamaEngineProvider({this.projectorResolver}) : _loader = null;
+  const LlamaEngineProvider({this.projectorResolver})
+    : _loader = null,
+      _gpuLayerPlanner = null;
 
   /// Test-only injection; applications use the default constructor.
   // ignore: prefer_initializing_formals — keeps the test callback parameter readable.
@@ -37,10 +45,16 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
     required Future<llama.LlamaEngine> Function(String, llama.ModelParams)
     loader,
     this.projectorResolver,
-  }) : _loader = loader; // ignore: prefer_initializing_formals
+    _GpuLayerPlanner? gpuLayerPlanner,
+  }) : _loader = loader, // ignore: prefer_initializing_formals
+       // ignore: prefer_initializing_formals
+       _gpuLayerPlanner = gpuLayerPlanner;
 
   /// Optional engine factory for tests.
   final _LlamaEngineLoader? _loader;
+
+  /// Optional GPU layer planner for tests; null sizes layers from the device.
+  final _GpuLayerPlanner? _gpuLayerPlanner;
 
   /// Application-owned projector installation and pairing policy.
   final LlamaProjectorResolver? projectorResolver;
@@ -104,7 +118,7 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
         'A resolved local path or installed Web model URL is required.',
       );
     }
-    final device = switch (config.preferredBackend) {
+    var device = switch (config.preferredBackend) {
       edge.PreferredBackend.cpu => llama.ComputeDevice.cpu,
       edge.PreferredBackend.gpu => llama.ComputeDevice.gpu,
       _ => llama.ComputeDevice.auto,
@@ -122,6 +136,21 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
         );
       }
     }
+    var gpuLayers = 0;
+    if (device != llama.ComputeDevice.cpu) {
+      gpuLayers = await (_gpuLayerPlanner ?? planGpuLayers)(
+        location,
+        config.maxTokens,
+      );
+      if (gpuLayers == 0) {
+        if (config.preferredBackend == edge.PreferredBackend.gpu) {
+          throw UnsupportedError(
+            'No model layers fit in free GPU memory at ${config.maxTokens} context tokens. Use a smaller context or PreferredBackend.cpu.',
+          );
+        }
+        device = llama.ComputeDevice.cpu;
+      }
+    }
     final params = llama.ModelParams(
       contextSize: config.maxTokens,
       loras: [
@@ -131,9 +160,7 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
           ),
       ],
       device: device,
-      gpuLayers: device == llama.ComputeDevice.cpu
-          ? 0
-          : llama.ModelParams.maxGpuLayers,
+      gpuLayers: gpuLayers,
     );
     final llama.LlamaEngine engine;
     try {
@@ -269,7 +296,13 @@ Future<llama.LlamaEngine> _loadGgufEngine(
 LlamaEngineProvider createLlamaProviderForTest({
   required Future<llama.LlamaEngine> Function(String, llama.ModelParams) loader,
   LlamaProjectorResolver? projectorResolver,
+  Future<int> Function(String location, int contextTokens)? gpuLayerPlanner,
 }) => LlamaEngineProvider._withLoader(
   loader: loader,
   projectorResolver: projectorResolver,
+  gpuLayerPlanner: gpuLayerPlanner ?? _allGpuLayers,
 );
+
+/// Test default: every layer on the GPU, with no device probe.
+Future<int> _allGpuLayers(String location, int contextTokens) async =>
+    llama.ModelParams.maxGpuLayers;

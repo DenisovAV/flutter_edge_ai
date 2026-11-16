@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'ffi_test_support.dart';
 
 /// Fake [ConversationHandle] that echoes scripted responses without touching
 /// native code. Each fake owns its own response script, so two fakes model
@@ -65,8 +66,16 @@ class _FakeConversationHandle implements ConversationHandle {
   Stream<String> chatRawMessage(
     String messageJson, {
     bool enableThinking = false,
+    SendOptions options = SendOptions.none,
   }) async* {
-    sentMessages.add(messageJson);
+    // The session sends every turn as a prebuilt message: a user message's
+    // text is what chat()/chatRaw() staged, a tool result is a message.
+    final message = sentMessage(messageJson);
+    if (message.role == 'user') {
+      sentTexts.add(message.text);
+    } else {
+      sentMessages.add(messageJson);
+    }
     for (final c in _scriptedChunks) {
       yield '{"role":"assistant","content":[{"type":"text","text":"$c"}]}';
     }
@@ -81,7 +90,7 @@ class _FakeConversationHandle implements ConversationHandle {
   ) async => StoppedTurnRewind.unsupported;
 
   @override
-  TurnMetrics getSessionMetrics() => const TurnMetrics();
+  BenchmarkInfo getSessionMetrics() => const BenchmarkInfo();
 
   @override
   NativeLastTurnEnd? get lastTurnEnd => null;
@@ -97,7 +106,7 @@ void main() {
   group('FfiInferenceModelSession with fake handle', () {
     test('routes getResponse through its own handle (non-Gemma4)', () async {
       final handle = _FakeConversationHandle(['Hello', ' world']);
-      final session = FfiInferenceModelSession(
+      final session = ffiSessionForHandle(
         handle: handle,
         modelType: ModelType.gemmaIt,
         fileType: ModelFileType.litertlm,
@@ -116,7 +125,7 @@ void main() {
 
     test('captures raw response for Gemma 4 tool-call path', () async {
       final handle = _FakeConversationHandle(['Hi']);
-      final session = FfiInferenceModelSession(
+      final session = ffiSessionForHandle(
         handle: handle,
         modelType: ModelType.gemma4,
         fileType: ModelFileType.litertlm,
@@ -138,7 +147,7 @@ void main() {
     FfiInferenceModelSession nativeToolSession(
       _FakeConversationHandle handle, {
       ModelType modelType = ModelType.functionGemma,
-    }) => FfiInferenceModelSession(
+    }) => ffiSessionForHandle(
       handle: handle,
       modelType: modelType,
       fileType: ModelFileType.litertlm,
@@ -261,7 +270,7 @@ void main() {
 
     test('a model without native tools keeps tool results in text', () async {
       final handle = _FakeConversationHandle(['ok']);
-      final session = FfiInferenceModelSession(
+      final session = ffiSessionForHandle(
         handle: handle,
         modelType: ModelType.gemmaIt,
         fileType: ModelFileType.litertlm,
@@ -285,7 +294,7 @@ void main() {
         final handleA = _FakeConversationHandle(['I am A']);
         final handleB = _FakeConversationHandle(['I am B']);
 
-        final sessionA = FfiInferenceModelSession(
+        final sessionA = ffiSessionForHandle(
           handle: handleA,
           modelType: ModelType.gemmaIt,
           fileType: ModelFileType.litertlm,
@@ -293,7 +302,7 @@ void main() {
           supportAudio: false,
           onClose: () {},
         );
-        final sessionB = FfiInferenceModelSession(
+        final sessionB = ffiSessionForHandle(
           handle: handleB,
           modelType: ModelType.gemmaIt,
           fileType: ModelFileType.litertlm,
@@ -320,7 +329,7 @@ void main() {
         final handleB = _FakeConversationHandle(['b']);
         var onCloseACalled = false;
 
-        final sessionA = FfiInferenceModelSession(
+        final sessionA = ffiSessionForHandle(
           handle: handleA,
           modelType: ModelType.gemmaIt,
           fileType: ModelFileType.litertlm,
@@ -328,7 +337,7 @@ void main() {
           supportAudio: false,
           onClose: () => onCloseACalled = true,
         );
-        final sessionB = FfiInferenceModelSession(
+        final sessionB = ffiSessionForHandle(
           handle: handleB,
           modelType: ModelType.gemmaIt,
           fileType: ModelFileType.litertlm,
@@ -349,7 +358,7 @@ void main() {
     );
 
     test('methods throw StateError after close', () async {
-      final session = FfiInferenceModelSession(
+      final session = ffiSessionForHandle(
         handle: _FakeConversationHandle(['x']),
         modelType: ModelType.gemmaIt,
         fileType: ModelFileType.litertlm,
@@ -368,7 +377,7 @@ void main() {
 
     test('stopGeneration cancels via the handle', () async {
       final handle = _FakeConversationHandle(['x']);
-      final session = FfiInferenceModelSession(
+      final session = ffiSessionForHandle(
         handle: handle,
         modelType: ModelType.gemmaIt,
         fileType: ModelFileType.litertlm,
@@ -388,7 +397,7 @@ void main() {
       // cap=0 means the very first openSession exceeds the cap. The check
       // runs before any native call, so a bare (uninitialized) client never
       // gets touched. Proves the cap gates openSession.
-      final model = FfiInferenceModel(
+      final model = ffiModelForClient(
         ffiClient: LiteRtLmFfiClient(),
         maxTokens: 256,
         modelType: ModelType.gemmaIt,
@@ -413,7 +422,7 @@ void main() {
       // With no cap, the cap check never trips. We can't drive the native
       // path here, but constructing with a null cap and reading the field
       // confirms the default is unlimited (backward-compatible).
-      final model = FfiInferenceModel(
+      final model = ffiModelForClient(
         ffiClient: LiteRtLmFfiClient(),
         maxTokens: 256,
         modelType: ModelType.gemmaIt,
@@ -427,7 +436,7 @@ void main() {
 
   group('sizeInTokens', () {
     FfiInferenceModelSession sessionWith(ConversationHandle handle) =>
-        FfiInferenceModelSession(
+        ffiSessionForHandle(
           handle: handle,
           modelType: ModelType.gemmaIt,
           fileType: ModelFileType.litertlm,

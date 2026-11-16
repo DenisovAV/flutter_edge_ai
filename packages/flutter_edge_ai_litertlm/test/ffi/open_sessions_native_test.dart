@@ -22,7 +22,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -150,11 +150,11 @@ void main() {
 
   test('the load chose native backing', () {
     _result(
-      'backing=${model.openSessionBacking.name} '
+      'backing=${model.engine.conversationBacking.name} '
       'active=${model.activeBackend?.name} noRewind=${model.noRewindReason} '
       'maxTokens=${model.maxTokens}',
     );
-    expect(model.openSessionBacking, OpenSessionBacking.native);
+    expect(model.engine.conversationBacking, OpenSessionBacking.native);
   }, skip: _skip);
 
   test('three interleaved sessions each recall only their own word', () async {
@@ -463,7 +463,7 @@ void main() {
       final sameSends = <int>[];
       for (var i = 0; i < 10; i++) {
         await _ask(first, 'Reply with OK only.');
-        sameSends.add(model.ffiClient.lastSendCallMicros!);
+        sameSends.add(model.engine.clientForTest.lastSendCallMicros!);
       }
       final base = ProcessInfo.currentRss;
       final extra = _idle;
@@ -491,8 +491,8 @@ void main() {
         final sw = Stopwatch()..start();
         for (var i = 0; i < _switches; i++) {
           await _ask(i.isEven ? first : b, 'Reply with OK only.');
-          switchSends.add(model.ffiClient.lastSendCallMicros!);
-          switchNative.add(model.ffiClient.lastSendNativeMicros!);
+          switchSends.add(model.engine.clientForTest.lastSendCallMicros!);
+          switchNative.add(model.engine.clientForTest.lastSendNativeMicros!);
           if ((i + 1) % 50 == 0) {
             debugPrint(
               '[open] after ${i + 1} switches: '

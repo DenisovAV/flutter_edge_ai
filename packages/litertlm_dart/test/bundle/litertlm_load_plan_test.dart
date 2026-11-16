@@ -1,12 +1,12 @@
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart';
 import 'package:litertlm_dart/src/bundle/litertlm_load_plan.dart';
 import 'package:test/test.dart';
 import 'package:litertlm_dart/src/runtime/types.dart';
 import 'package:litertlm_dart/src/bundle/litertlm_bundle_info.dart';
 
-const npu = Backend.npu;
-const gpu = Backend.gpu;
-const cpu = Backend.cpu;
+const npu = BackendKind.npu;
+const gpu = BackendKind.gpu;
+const cpu = BackendKind.cpu;
 const sm8750 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8750');
 
 /// A Gemma 4-shaped bundle: text model, vision and audio encoders, optionally
@@ -85,12 +85,12 @@ void main() {
 
   LiteRtLmLoadPlan plan({
     BundleInfo? info,
-    Backend? preferred,
+    BackendKind? preferred,
     bool fallback = true,
     bool image = false,
     bool audio = false,
-    Backend? visionBackend,
-    Backend? audioBackend,
+    BackendKind? visionBackend,
+    BackendKind? audioBackend,
     bool npuHere = true,
     String abi = 'android_arm64',
   }) => planLiteRtLmLoad(
@@ -358,14 +358,16 @@ void main() {
 
     test("liteRtLmTextCandidates is the plan's text order, which the engine "
         'reads to know whether to look for an NPU stack', () {
-      List<Backend> candidates(BundleInfo? info, [Backend? preferred]) =>
-          liteRtLmTextCandidates(
-            path: 'model.litertlm',
-            bundle: info,
-            preferredBackend: preferred,
-            backendFallback: true,
-            abi: 'android_arm64',
-          ).backends;
+      List<BackendKind> candidates(
+        BundleInfo? info, [
+        BackendKind? preferred,
+      ]) => liteRtLmTextCandidates(
+        path: 'model.litertlm',
+        bundle: info,
+        preferredBackend: preferred,
+        backendFallback: true,
+        abi: 'android_arm64',
+      ).backends;
       expect(candidates(officialSm8750), [npu]);
       expect(candidates(generic), [gpu, cpu]);
       expect(candidates(generic, npu), [gpu, cpu]);
@@ -679,7 +681,7 @@ void main() {
           'windows_x64; load it without supportAudio',
         ),
       );
-      for (final backend in Backend.values) {
+      for (final backend in BackendKind.values) {
         expect(
           () => plan(
             info: visionSm8750,
@@ -807,7 +809,7 @@ void main() {
         BundleInfo? info, {
         bool image = false,
         bool audio = false,
-        Backend? visionBackend,
+        BackendKind? visionBackend,
       }) => liteRtLmEncoderOnNpu(
         bundle: info,
         supportImage: image,

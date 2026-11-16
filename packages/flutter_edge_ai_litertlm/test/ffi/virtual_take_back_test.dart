@@ -10,8 +10,9 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:litertlm_dart/bindings.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
+import 'ffi_test_support.dart';
 
 void main() {
   late LiteRtLmFfiClient client;
@@ -41,7 +42,8 @@ void main() {
         sentOn.add(c);
         return send;
       };
-    model = FfiInferenceModel(
+    model = ffiModelForClient(
+      ownConversations: 1,
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -242,7 +244,8 @@ void main() {
     client.virtualRewindForTest = (conv, exchange, extraContext) async =>
         StoppedTurnRewind.rewound;
 
-    final handle = (session as FfiInferenceModelSession).handle;
+    final handle =
+        (session as FfiInferenceModelSession).conversation.handleForTest;
     final subscription = handle.chat('one').listen((_) {});
     await pumpEventQueue();
     sends.single.chunk(
@@ -354,7 +357,8 @@ void main() {
           queuedSends.add(send);
           return send;
         };
-      final queuedModel = FfiInferenceModel(
+      final queuedModel = ffiModelForClient(
+        ownConversations: 1,
         ffiClient: queuedClient,
         maxTokens: 1024,
         modelType: ModelType.gemmaIt,
@@ -383,7 +387,10 @@ void main() {
       expect(queuedSends, hasLength(1), reason: 'closed B never sends');
       expect(await bText, isEmpty);
       expect(await bTurn.end, TurnEnd.closed);
-      expect(virtualConversationHistoryForTest(b.handle), isEmpty);
+      expect(
+        virtualConversationHistoryForTest(b.conversation.handleForTest),
+        isEmpty,
+      );
       expect(
         convs,
         hasLength(1),
@@ -417,7 +424,8 @@ void main() {
         sends++;
         return creatingClient.newTurnForTest(conversation);
       };
-    final creatingModel = FfiInferenceModel(
+    final creatingModel = ffiModelForClient(
+      ownConversations: 1,
       ffiClient: creatingClient,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -437,7 +445,10 @@ void main() {
     expect(await text, isEmpty);
     expect(await turn.end, TurnEnd.closed);
     expect(sends, 0);
-    expect(virtualConversationHistoryForTest(session.handle), isEmpty);
+    expect(
+      virtualConversationHistoryForTest(session.conversation.handleForTest),
+      isEmpty,
+    );
     expect(creatingClient.isConversationLiveForTest(conv), isFalse);
   });
 

@@ -41,6 +41,8 @@ import 'sigprof_mask.dart';
 import 'stderr_redirect.dart';
 import 'windows_std_handles.dart';
 import 'thinking_context.dart';
+import 'send_options.dart';
+import '../api/backend.dart' show SpeculativeDecodingMode;
 import '../runtime/load_errors.dart';
 import '../runtime/litert_lm_log_level.dart';
 
@@ -458,7 +460,11 @@ abstract class ConversationHandle {
   /// Streams raw SDK JSON for a prebuilt message. This is how tool results go
   /// back: [chatRaw] always sends role `user`, and a tool result has to be role
   /// `tool` for the model to read it as the answer to its call.
-  Stream<String> chatRawMessage(String messageJson, {bool enableThinking});
+  Stream<String> chatRawMessage(
+    String messageJson, {
+    bool enableThinking,
+    SendOptions options,
+  });
 
   void cancelGeneration();
 
@@ -476,7 +482,7 @@ abstract class ConversationHandle {
     Map<String, Object?>? partialReply,
   );
 
-  TurnMetrics getSessionMetrics();
+  BenchmarkInfo getSessionMetrics();
 
   /// How native's last send on this conversation ended (§23's record, read
   /// when the send ended), or null before one has ended here.
@@ -511,7 +517,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     this._client,
     this._conversation,
     this._multimodalOrder,
-    this._jsonSchema, [
+    this._constraint, [
     this._releaseOnClose = true,
   ]);
 
@@ -526,7 +532,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
          client,
          conversation,
          MediaOrder.imagesAudioText,
-         jsonSchema,
+         jsonSchema == null ? null : Constraint.jsonSchema(jsonSchema),
          false,
        );
 
@@ -535,7 +541,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
 
   /// Where [chat] and [chatRaw] put a message's media around its text.
   final MediaOrder _multimodalOrder;
-  final String? _jsonSchema;
+  final Constraint? _constraint;
   final bool _releaseOnClose;
 
   bool get isClosed => _conversation == null;
@@ -563,6 +569,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     String messageJson,
     String? extraContext, {
     required bool thinking,
+    SendOptions options = SendOptions.none,
   }) {
     final record = (messageJson: messageJson, extraContext: extraContext);
     _lastSend = _client._hasTurnRewind ? record : null;
@@ -571,7 +578,8 @@ class LiteRtLmConversationHandle implements ConversationHandle {
       messageJson,
       extraContext: extraContext,
       thinking: thinking,
-      jsonSchema: _jsonSchema,
+      constraint: _constraint,
+      options: options,
       onEnded: (how) {
         // Kept only after a cancelled send, the one a rewind puts back, and
         // after one native ended context_full (section 23): its input never
@@ -624,12 +632,14 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   Stream<String> chatRawMessage(
     String messageJson, {
     bool enableThinking = false,
+    SendOptions options = SendOptions.none,
   }) {
     _assertOpen();
     return _send(
       messageJson,
-      thinkingExtraContext(enableThinking),
+      sendExtraContext(enableThinking, options.extraContext),
       thinking: enableThinking,
+      options: options,
     );
   }
 
@@ -683,8 +693,8 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   }
 
   @override
-  TurnMetrics getSessionMetrics() {
-    if (_conversation == null) return const TurnMetrics();
+  BenchmarkInfo getSessionMetrics() {
+    if (_conversation == null) return const BenchmarkInfo();
     return _client._getMetricsOn(_conversation!);
   }
 
@@ -1109,6 +1119,8 @@ class EngineCreateRequest {
     this.cacheDir,
     this.maxNumImages = 0,
     this.enableSpeculativeDecoding,
+    this.speculativeDecodingMode,
+    this.numThreads,
     this.activationDataType,
     this.nativeLogLevel,
     this.dispatchLibDir,
@@ -1142,6 +1154,13 @@ class EngineCreateRequest {
 
   /// Null leaves the model's own default.
   final bool? enableSpeculativeDecoding;
+
+  /// `LiteRtLmSpeculativeDecodingMode` set through a speculative decoding
+  /// config (adaptive has no boolean); null sets none.
+  final int? speculativeDecodingMode;
+
+  /// The CPU executor's threads; null leaves LiteRT-LM's default.
+  final int? numThreads;
 
   /// The C API's number; null leaves the engine's own choice.
   final int? activationDataType;
@@ -1328,6 +1347,39 @@ EngineCreateResult createEngineWith(
           ),
         );
       }
+      final speculativeMode = r.speculativeDecodingMode;
+      if (speculativeMode != null) {
+        final config = createLiteRtLm(
+          'litert_lm_speculative_decoding_config_create',
+          b.litert_lm_speculative_decoding_config_create,
+          b.lastError,
+        );
+        try {
+          setter(
+            'litert_lm_speculative_decoding_config_set_mode',
+            b.litert_lm_speculative_decoding_config_set_mode(
+              config,
+              LiteRtLmSpeculativeDecodingMode.fromValue(speculativeMode),
+            ),
+          );
+          setter(
+            'litert_lm_engine_settings_set_speculative_decoding_config',
+            b.litert_lm_engine_settings_set_speculative_decoding_config(
+              settings,
+              config,
+            ),
+          );
+        } finally {
+          b.litert_lm_speculative_decoding_config_delete(config);
+        }
+      }
+      final numThreads = r.numThreads;
+      if (numThreads != null) {
+        setter(
+          'litert_lm_engine_settings_set_num_threads',
+          b.litert_lm_engine_settings_set_num_threads(settings, numThreads),
+        );
+      }
 
       // Activation type (0 F32, 1 F16, 2 I16, 3 I8). Skip when null: the
       // engine then takes the model file's `prefer_activation_type`, else F16
@@ -1443,6 +1495,10 @@ class LiteRtLmFfiClient {
   /// Why the bundle's sampler could not be read, or null. When set, a session
   /// that sets no sampling gets its family's defaults, not the bundle's.
   String? get bundleSamplerError => _bundleSamplerRead.error;
+
+  /// Whether the bundle declares an output channel, which a thinking budget
+  /// caps; null when it was not read.
+  bool? get bundleDeclaresChannel => _bundleSamplerRead.declaresChannel;
   BundleSamplerRead _bundleSamplerRead = const BundleSamplerRead.notRead();
 
   /// How long starting the last `send_message_stream` call held the calling
@@ -1517,11 +1573,16 @@ class LiteRtLmFfiClient {
     Pointer<LiteRtLmConversation> conv,
     String messageJson, {
     String? jsonSchema,
+    Constraint? constraint,
+    SendOptions options = SendOptions.none,
   }) => _sendMessageStreamRawOn(
     conv,
     messageJson,
     thinking: false,
-    jsonSchema: jsonSchema,
+    constraint:
+        constraint ??
+        (jsonSchema == null ? null : Constraint.jsonSchema(jsonSchema)),
+    options: options,
   );
 
   /// Test seam at the native send boundary, shared by native handles and the
@@ -1533,6 +1594,11 @@ class LiteRtLmFfiClient {
     String? jsonSchema,
   )?
   structuredSendForTest;
+
+  /// Test seam: the optional args of the last send built through
+  /// [structuredSendForTest], as a description of what native would get.
+  @visibleForTesting
+  SendOptions? lastSendOptionsForTest;
 
   /// Test seam at the raw conversation-create boundary. It is below every
   /// native and virtual rebuild caller, so tests observe the schema actually
@@ -1546,7 +1612,7 @@ class LiteRtLmFfiClient {
 
   /// Test seam for virtual sessions' per-turn benchmark snapshot.
   @visibleForTesting
-  TurnMetrics Function(Pointer<LiteRtLmConversation> conv)? metricsForTest;
+  BenchmarkInfo Function(Pointer<LiteRtLmConversation> conv)? metricsForTest;
 
   /// Test seam: whether a send on [conv] has started (`_sentConvs`).
   @visibleForTesting
@@ -1602,7 +1668,10 @@ class LiteRtLmFfiClient {
   void constraintProviderForTest(
     Pointer<LiteRtLmConversationConfig> config,
     String? jsonSchema,
-  ) => _setConstraintProvider(config, jsonSchema);
+  ) => _setConstraintProvider(
+    config,
+    jsonSchema == null ? null : Constraint.jsonSchema(jsonSchema),
+  );
 
   /// Exercises the same per-send constraint guard and binding call as a real
   /// streamed send.
@@ -1610,7 +1679,10 @@ class LiteRtLmFfiClient {
   void constraintForTest(
     Pointer<LiteRtLmConversationOptionalArgs> args,
     String? jsonSchema,
-  ) => _setConstraint(args, jsonSchema);
+  ) => _setConstraint(
+    args,
+    jsonSchema == null ? null : Constraint.jsonSchema(jsonSchema),
+  );
 
   /// Test seam: whether the loaded library has the section 16 rewind.
   @visibleForTesting
@@ -2321,6 +2393,8 @@ class LiteRtLmFfiClient {
     bool enableAudio = false,
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
+    int? speculativeDecodingMode,
+    int? numThreads,
     int? activationDataType,
     GpuActivationReason? gpuActivationReason,
     NpuDispatch? npuDispatch,
@@ -2447,6 +2521,8 @@ class LiteRtLmFfiClient {
         cacheDir: cacheDir,
         maxNumImages: maxNumImages,
         enableSpeculativeDecoding: enableSpeculativeDecoding,
+        speculativeDecodingMode: speculativeDecodingMode,
+        numThreads: numThreads,
         activationDataType: activationDataType,
         nativeLogLevel: nativeLogLevel,
         dispatchLibDir: npuDispatchDir,
@@ -2625,8 +2701,9 @@ class LiteRtLmFfiClient {
     required bool samplingExplicit,
     int? maxOutputTokens,
     required MediaOrder multimodalOrder,
-    String? jsonSchema,
+    Constraint? constraint,
     required bool filterChannelContent,
+    ConversationExtras extras = ConversationExtras.none,
   }) {
     // The handle must be registered before the guard lifts: otherwise shutdown()
     // can clear _handles between the create and the add, leaving a live
@@ -2648,8 +2725,9 @@ class LiteRtLmFfiClient {
           sampling: sampling,
           samplingExplicit: samplingExplicit,
           maxOutputTokens: maxOutputTokens,
-          jsonSchema: jsonSchema,
+          constraint: constraint,
           filterChannelContent: filterChannelContent,
+          extras: extras,
         ),
       );
       runtimeLog('[LiteRtLmFfi] Conversation created');
@@ -2657,7 +2735,7 @@ class LiteRtLmFfiClient {
         this,
         conv,
         multimodalOrder,
-        jsonSchema,
+        constraint,
       );
       _handles.add(handle);
       return handle;
@@ -2678,8 +2756,9 @@ class LiteRtLmFfiClient {
     required Sampler sampling,
     required bool samplingExplicit,
     int? maxOutputTokens,
-    String? jsonSchema,
+    Constraint? constraint,
     required bool filterChannelContent,
+    ConversationExtras extras = ConversationExtras.none,
   }) async {
     final testCreate = structuredCreateForTest;
     if (testCreate == null) _assertInitialized();
@@ -2813,6 +2892,10 @@ class LiteRtLmFfiClient {
             ),
           );
         }
+        final speculative = extras.speculativeDecoding;
+        if (speculative != null) {
+          _setSessionSpeculativeDecoding(sessionConfig, speculative, check);
+        }
 
         // No-argument create + setter chain: the session config carries
         // everything the native side needs.
@@ -2824,6 +2907,9 @@ class LiteRtLmFfiClient {
         final systemPtr = systemMessage?.toNativeUtf8();
         final toolsPtr = toolsJson?.toNativeUtf8();
         final messagesPtr = messagesJson?.toNativeUtf8();
+        final extraContextPtr = extras.extraContext.isEmpty
+            ? null
+            : jsonEncode(extras.extraContext).toNativeUtf8();
         try {
           check(
             'litert_lm_conversation_config_set_session_config',
@@ -2866,6 +2952,15 @@ class LiteRtLmFfiClient {
               ),
             );
           }
+          if (extraContextPtr != null) {
+            check(
+              'litert_lm_conversation_config_set_extra_context',
+              b.litert_lm_conversation_config_set_extra_context(
+                convConfig,
+                extraContextPtr.cast(),
+              ),
+            );
+          }
         } catch (_) {
           b.litert_lm_conversation_config_delete(convConfig);
           rethrow;
@@ -2873,6 +2968,7 @@ class LiteRtLmFfiClient {
           if (systemPtr != null) calloc.free(systemPtr);
           if (toolsPtr != null) calloc.free(toolsPtr);
           if (messagesPtr != null) calloc.free(messagesPtr);
+          if (extraContextPtr != null) calloc.free(extraContextPtr);
         }
       } finally {
         b.litert_lm_session_config_delete(sessionConfig);
@@ -2882,10 +2978,10 @@ class LiteRtLmFfiClient {
     final Pointer<LiteRtLmConversation> conv;
     final ({int address, int code, String? message}) created;
     try {
-      _setConstraintProvider(convConfig, jsonSchema);
+      _setConstraintProvider(convConfig, constraint);
       _setChannelContentFilter(convConfig, filter: filterChannelContent);
       if (testCreate != null) {
-        conv = await testCreate(messagesJson, jsonSchema);
+        conv = await testCreate(messagesJson, constraint?.text);
         created = (address: conv.address, code: 0, message: null);
       } else {
         created = await _createConversationOffMainIsolate(
@@ -2942,9 +3038,9 @@ class LiteRtLmFfiClient {
 
   void _setConstraintProvider(
     Pointer<LiteRtLmConversationConfig> config,
-    String? jsonSchema,
+    Constraint? constraint,
   ) {
-    if (jsonSchema == null) return;
+    if (constraint == null) return;
     final b = _bindings!;
     checkLiteRtLmSetter(
       'litert_lm_conversation_config_set_constraint_provider',
@@ -2955,6 +3051,38 @@ class LiteRtLmFfiClient {
       ),
       b.lastError,
     );
+  }
+
+  /// Sets [mode] on a session config through a speculative decoding config.
+  void _setSessionSpeculativeDecoding(
+    Pointer<LiteRtLmSessionConfig> sessionConfig,
+    SpeculativeDecodingMode mode,
+    void Function(String name, int code) check,
+  ) {
+    final b = _bindings!;
+    final config = createLiteRtLm(
+      'litert_lm_speculative_decoding_config_create',
+      b.litert_lm_speculative_decoding_config_create,
+      b.lastError,
+    );
+    try {
+      check(
+        'litert_lm_speculative_decoding_config_set_mode',
+        b.litert_lm_speculative_decoding_config_set_mode(
+          config,
+          LiteRtLmSpeculativeDecodingMode.fromValue(mode.index),
+        ),
+      );
+      check(
+        'litert_lm_session_config_set_speculative_decoding_config',
+        b.litert_lm_session_config_set_speculative_decoding_config(
+          sessionConfig,
+          config,
+        ),
+      );
+    } finally {
+      b.litert_lm_speculative_decoding_config_delete(config);
+    }
   }
 
   /// Turns off LiteRT-LM's channel filter when [filter] is false; when true
@@ -2978,17 +3106,19 @@ class LiteRtLmFfiClient {
 
   void _setConstraint(
     Pointer<LiteRtLmConversationOptionalArgs> args,
-    String? jsonSchema,
+    Constraint? constraint,
   ) {
-    if (jsonSchema == null) return;
+    if (constraint == null) return;
     final b = _bindings!;
-    final schemaPtr = jsonSchema.toNativeUtf8();
+    final schemaPtr = constraint.text.toNativeUtf8();
     try {
       checkLiteRtLmSetter(
         'litert_lm_conversation_optional_args_set_constraint',
         b.litert_lm_conversation_optional_args_set_constraint(
           args,
-          LiteRtLmConstraintType.kLiteRtLmConstraintTypeJsonSchema,
+          constraint.regex
+              ? LiteRtLmConstraintType.kLiteRtLmConstraintTypeRegex
+              : LiteRtLmConstraintType.kLiteRtLmConstraintTypeJsonSchema,
           schemaPtr.cast(),
         ),
         b.lastError,
@@ -3000,11 +3130,13 @@ class LiteRtLmFfiClient {
 
   Pointer<LiteRtLmConversationOptionalArgs> _createOptionalArgs({
     required bool thinking,
-    required String? jsonSchema,
+    required Constraint? constraint,
+    SendOptions options = SendOptions.none,
   }) {
-    final b = _bindings!;
     final testSend = structuredSendForTest != null;
-    final optionalArgs = testSend
+    // The test seam stands in for native: no bindings are needed then.
+    final b = testSend ? null : _bindings!;
+    final optionalArgs = b == null
         ? Pointer<LiteRtLmConversationOptionalArgs>.fromAddress(0x40)
         : createLiteRtLm(
             'litert_lm_conversation_optional_args_create',
@@ -3012,20 +3144,21 @@ class LiteRtLmFfiClient {
             b.lastError,
           );
     try {
-      if (!testSend) {
+      if (b != null) {
         applyThinkingTokenBudget(
           b,
           optionalArgs,
           thinking: thinking,
-          budget: thinkingTokenBudget,
+          budget: options.thinkingTokenBudget ?? thinkingTokenBudget,
         );
+        applySendOptions(b, optionalArgs, options);
+      } else {
+        lastSendOptionsForTest = options;
       }
-      _setConstraint(optionalArgs, jsonSchema);
+      _setConstraint(optionalArgs, constraint);
       return optionalArgs;
     } catch (_) {
-      if (!testSend) {
-        b.litert_lm_conversation_optional_args_delete(optionalArgs);
-      }
+      b?.litert_lm_conversation_optional_args_delete(optionalArgs);
       rethrow;
     }
   }
@@ -3176,7 +3309,8 @@ class LiteRtLmFfiClient {
     String messageJson, {
     String? extraContext,
     required bool thinking,
-    String? jsonSchema,
+    Constraint? constraint,
+    SendOptions options = SendOptions.none,
     void Function(NativeTurnEnd how)? onEnded,
   }) {
     final stalled = _nativeTurnStallError;
@@ -3189,7 +3323,8 @@ class LiteRtLmFfiClient {
         messageJson,
         extraContext: extraContext,
         thinking: thinking,
-        jsonSchema: jsonSchema,
+        constraint: constraint,
+        options: options,
       );
       if (onEnded != null) unawaited(send.turn.ended.then(onEnded));
       return send;
@@ -3279,8 +3414,10 @@ class LiteRtLmFfiClient {
     String? extraContext,
     required bool thinking,
     int? maxOutputTokens,
-    String? jsonSchema,
+    Constraint? constraint,
     required bool filterChannelContent,
+    SendOptions options = SendOptions.none,
+    ConversationExtras extras = ConversationExtras.none,
   }) {
     // StreamController (not async*) so the mutex release is tied to the native
     // turn's end — done, error, or a cancel that native has finished — and not
@@ -3460,8 +3597,9 @@ class LiteRtLmFfiClient {
                     sampling: sampling,
                     samplingExplicit: samplingExplicit,
                     maxOutputTokens: maxOutputTokens,
-                    jsonSchema: jsonSchema,
+                    constraint: constraint,
                     filterChannelContent: filterChannelContent,
+                    extras: extras,
                   );
             _virtualConv = conv;
             _virtualActiveToken = conversationToken;
@@ -3509,7 +3647,8 @@ class LiteRtLmFfiClient {
               messageJson,
               extraContext: extraContext,
               thinking: thinking,
-              jsonSchema: jsonSchema,
+              constraint: constraint,
+              options: options,
             );
         // Read when native ends the turn, in the same event as the release
         // below: a session queued on the lock resumes only after it, so the
@@ -3714,16 +3853,18 @@ class LiteRtLmFfiClient {
     String messageJson, {
     String? extraContext,
     required bool thinking,
-    String? jsonSchema,
+    Constraint? constraint,
+    SendOptions options = SendOptions.none,
   }) {
     final testSend = structuredSendForTest;
     if (testSend != null) {
       final optionalArgs = _createOptionalArgs(
         thinking: thinking,
-        jsonSchema: jsonSchema,
+        constraint: constraint,
+        options: options,
       );
       try {
-        return testSend(conv, jsonSchema);
+        return testSend(conv, constraint?.text);
       } finally {
         // The opaque test handle has no native allocation to release.
         assert(optionalArgs.address == 0x40);
@@ -3853,7 +3994,8 @@ class LiteRtLmFfiClient {
     try {
       optionalArgs = _createOptionalArgs(
         thinking: thinking,
-        jsonSchema: jsonSchema,
+        constraint: constraint,
+        options: options,
       );
     } catch (e) {
       releaseNative();
@@ -3905,7 +4047,7 @@ class LiteRtLmFfiClient {
         code: recorded?.code ?? result,
       );
       send.failed(
-        liteRtLmConstraintFailure(jsonSchema, nativeError) ??
+        liteRtLmConstraintFailure(constraint?.text, nativeError) ??
             Exception(
               streamStartFailureMessage(
                 code: result,
@@ -4360,8 +4502,8 @@ class LiteRtLmFfiClient {
   int? virtualLastTurnCode(Object token) => _virtualTurnEnds[token]?.code;
 
   /// Last completed native benchmark snapshot for [token].
-  TurnMetrics virtualSessionMetrics(Object token) =>
-      _virtualMetrics[token] ?? const TurnMetrics();
+  BenchmarkInfo virtualSessionMetrics(Object token) =>
+      _virtualMetrics[token] ?? const BenchmarkInfo();
 
   /// The end of each virtual session's last turn, snapshot when native ended
   /// it ([watchVirtualTurnEnd]): the shared conversation's own record goes
@@ -4370,7 +4512,7 @@ class LiteRtLmFfiClient {
   final Expando<({NativeLastTurnEnd end, int code})> _virtualTurnEnds =
       Expando();
 
-  final Expando<TurnMetrics> _virtualMetrics = Expando();
+  final Expando<BenchmarkInfo> _virtualMetrics = Expando();
 
   /// When native ends the virtual turn [ended] of the session holding
   /// [token] on [conv], keeps how it ended for that session, and marks the
@@ -4875,12 +5017,12 @@ class LiteRtLmFfiClient {
   }
 
   /// Get session metrics from the given conversation including token usage.
-  /// Returns empty TurnMetrics if benchmark unavailable.
-  TurnMetrics _getMetricsOn(Pointer<LiteRtLmConversation> conv) {
+  /// Returns empty BenchmarkInfo if benchmark unavailable.
+  BenchmarkInfo _getMetricsOn(Pointer<LiteRtLmConversation> conv) {
     final testMetrics = metricsForTest;
     if (testMetrics != null) return testMetrics(conv);
     final b = _bindings;
-    if (b == null) return const TurnMetrics();
+    if (b == null) return const BenchmarkInfo();
 
     final out = calloc<Pointer<LiteRtLmBenchmarkInfo>>();
     final Pointer<LiteRtLmBenchmarkInfo> info;
@@ -4890,7 +5032,7 @@ class LiteRtLmFfiClient {
     } finally {
       calloc.free(out);
     }
-    if (info == nullptr) return const TurnMetrics();
+    if (info == nullptr) return const BenchmarkInfo();
 
     try {
       int size(String call, int Function(Pointer<Size>) get) =>
@@ -4949,7 +5091,7 @@ class LiteRtLmFfiClient {
         if (last > 0) tokensPerSecond = last;
       }
 
-      return TurnMetrics(
+      return BenchmarkInfo(
         inputTokens: inputTokens,
         outputTokens: outputTokens,
         totalTokens: inputTokens + outputTokens,
@@ -4961,16 +5103,16 @@ class LiteRtLmFfiClient {
       );
     } on LiteRtLmCallException catch (e) {
       runtimeLog('[LiteRtLmFfiClient] Error getting metrics: $e');
-      return const TurnMetrics();
+      return const BenchmarkInfo();
     } finally {
       b.litert_lm_benchmark_info_delete(info);
     }
   }
 
   /// Legacy: metrics for the implicit [_legacyHandle] conversation.
-  TurnMetrics getSessionMetrics() {
+  BenchmarkInfo getSessionMetrics() {
     final h = _legacyHandle;
-    if (h == null) return const TurnMetrics();
+    if (h == null) return const BenchmarkInfo();
     return h.getSessionMetrics();
   }
 

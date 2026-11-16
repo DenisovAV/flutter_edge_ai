@@ -68,7 +68,7 @@ jobs:
       # lib/src imports Flutter, core or a Flutter plugin (the workspace would
       # resolve them, so pub alone does not stop it).
       - name: litertlm_dart is Flutter-free
-        run: python3 tool/check_litertlm_runtime_gate.py packages/litertlm_dart/lib litertlm_dart ffi bundle runtime hook embedder
+        run: python3 tool/check_litertlm_runtime_gate.py packages/litertlm_dart/lib litertlm_dart ffi bundle runtime hook embedder api
 
       # The web compilers do not reject a native import that leaks into the web
       # graph (dart2js lists dart:io and dart:isolate, dart2wasm accepts all

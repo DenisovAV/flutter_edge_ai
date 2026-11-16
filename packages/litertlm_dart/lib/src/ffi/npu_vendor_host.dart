@@ -55,7 +55,7 @@ abstract interface class LiteRtLmNpuHost {
 /// dispatch directory the app's native side prepares. The Flutter one is
 /// `FlutterNpuPlatform` (flutter_npu_platform.dart), which reads the manifest
 /// through `rootBundle` and asks core's `flutter_gemma_bundled` channel.
-abstract interface class NpuPlatformBindings {
+abstract interface class NpuPlatform {
   /// The text of the build's `NativeAssetsManifest.json`. Throws when it
   /// cannot be read; [checkNpuStackInManifest] turns that into
   /// [NpuStackCheck.unknown].
@@ -87,7 +87,7 @@ final class LiteRtLmPlatformNpuHost implements LiteRtLmNpuHost {
 
   /// The manifest, the Android dispatch directory and the executable's
   /// directory.
-  final NpuPlatformBindings platform;
+  final NpuPlatform platform;
 
   @override
   String get operatingSystem => Platform.operatingSystem;
@@ -352,26 +352,22 @@ bool npuStagesWeightBanks(NpuStack vendor) => switch (vendor) {
 /// ([checkIntelNpuStack]) — the directory LiteRT is pointed at, and a stack
 /// that answers [NpuStackCheck.unknown] there would go unchecked: Intel's
 /// [prepareNpuDispatchDir] checks nothing (it only sweeps stale weight banks).
-Future<NpuStackCheck> npuStackOf(
-  NpuStack vendor,
-  NpuPlatformBindings platform,
-) async => switch (vendor) {
-  NpuStack.qualcomm => await _checkManifest(vendor, platform),
-  NpuStack.googleTensor => await _checkManifest(vendor, platform),
-  NpuStack.mediatek => await _checkManifest(vendor, platform),
-  NpuStack.intel => checkIntelNpuStack(
-    windowsNpuDispatchDirOf(platform.executableDir),
-  ),
-};
+Future<NpuStackCheck> npuStackOf(NpuStack vendor, NpuPlatform platform) async =>
+    switch (vendor) {
+      NpuStack.qualcomm => await _checkManifest(vendor, platform),
+      NpuStack.googleTensor => await _checkManifest(vendor, platform),
+      NpuStack.mediatek => await _checkManifest(vendor, platform),
+      NpuStack.intel => checkIntelNpuStack(
+        windowsNpuDispatchDirOf(platform.executableDir),
+      ),
+    };
 
-Future<NpuStackCheck> _checkManifest(
-  NpuStack vendor,
-  NpuPlatformBindings platform,
-) => checkNpuStackInManifest(
-  vendor,
-  read: platform.readNativeAssetsManifest,
-  cache: true,
-);
+Future<NpuStackCheck> _checkManifest(NpuStack vendor, NpuPlatform platform) =>
+    checkNpuStackInManifest(
+      vendor,
+      read: platform.readNativeAssetsManifest,
+      cache: true,
+    );
 
 /// The `dispatch_lib_dir` to hand LiteRT for [vendor] on this host: the
 /// prepared Qualcomm libraries on Android ([prepareAndroidNpuDispatchDir]) and
@@ -385,7 +381,7 @@ Future<NpuStackCheck> _checkManifest(
 /// unreachable from a test run on another host.
 Future<String> prepareNpuDispatchDir(
   NpuStack vendor,
-  NpuPlatformBindings platform, {
+  NpuPlatform platform, {
   String? operatingSystem,
 }) async => switch (vendor) {
   NpuStack.qualcomm => switch (operatingSystem ?? Platform.operatingSystem) {
@@ -450,7 +446,7 @@ Future<String> prepareNpuDispatchDir(
 Future<String> prepareAndroidNpuDispatchDir(
   List<String> libs,
   NpuStack vendor,
-  NpuPlatformBindings platform,
+  NpuPlatform platform,
 ) async {
   final dir = await platform.prepareAndroidDispatchDir([
     for (final n in libs) androidLibFileName(n),
@@ -477,7 +473,7 @@ Future<String> prepareAndroidNpuDispatchDir(
 /// change after the process started. A library already loaded under that
 /// SONAME is matched first, so the Stubs are loaded here by full path, after
 /// the libcdsprpc.so shim they NEED. [executableDir] is the running app's
-/// directory ([NpuPlatformBindings.executableDir]).
+/// directory ([NpuPlatform.executableDir]).
 String prepareLinuxNpuDispatchDir(String executableDir) {
   final libDir = '$executableDir/lib';
   final missing = [

@@ -8,11 +8,11 @@ import 'package:meta/meta.dart' show immutable;
 
 /// Where LiteRT-LM runs a model's main graph, or one of its encoders. Its
 /// [name] is LiteRT-LM's wire name (`cpu`, `gpu`, `npu`).
-enum Backend { cpu, gpu, npu }
+enum BackendKind { cpu, gpu, npu }
 
 /// The numeric type of a GPU model's activations, LiteRT-LM's
 /// `ActivationDataType` without I16/I8.
-enum ActivationType { float32, float16 }
+enum ActivationDataType { float32, float16 }
 
 /// The sampler sent to LiteRT-LM, every value set.
 @immutable
@@ -131,10 +131,13 @@ final class MediaOrder {
       'MediaOrder(images: ${images.name}, audio: ${audio.name})';
 }
 
-/// What LiteRT-LM reports about a conversation's turns.
+/// What LiteRT-LM's benchmark reports about a conversation: its tokens over
+/// every turn so far, the last decode's speed, the first token's latency and
+/// the engine's load time. LiteRT-LM's Kotlin/Swift `BenchmarkInfo`, summed
+/// over the conversation rather than its last turn.
 @immutable
-final class TurnMetrics {
-  const TurnMetrics({
+final class BenchmarkInfo {
+  const BenchmarkInfo({
     this.inputTokens = 0,
     this.outputTokens = 0,
     this.totalTokens = 0,
@@ -152,7 +155,7 @@ final class TurnMetrics {
 
   @override
   String toString() =>
-      'TurnMetrics(inputTokens: $inputTokens, outputTokens: $outputTokens, '
+      'BenchmarkInfo(inputTokens: $inputTokens, outputTokens: $outputTokens, '
       'totalTokens: $totalTokens, ttft: $timeToFirstTokenMs, '
       'tps: $tokensPerSecond, init: $initTimeMs)';
 }

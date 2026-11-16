@@ -9,7 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart'
     show EdgeAiLogLevel, edgeAiLogLevel;
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_log_binding.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
 
 /// What [body] printed through `print`.

@@ -4,15 +4,19 @@
 // ignore_for_file: experimental_member_use, deprecated_member_use
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_edge_ai/engine.dart';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:litertlm_dart/internal_io.dart'
+    show ScoringStoppedError, isReleaseBuild, runtimeLog;
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
+
 import '../litertlm_decision_section.dart';
 import '../option_scoring_self_check.dart';
 import '../reported_engine_turn.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
 import 'runtime_log_binding.dart';
 import 'runtime_mapping.dart';
 
@@ -22,14 +26,63 @@ import 'runtime_mapping.dart';
 @visibleForTesting
 bool liteRtLmScoringReleaseMode = isReleaseBuild;
 
-/// The tool calls of a raw LiteRT-LM reply, read by core's parser: what the
-/// runtime's history replays for an assistant turn that made calls.
-List<({String name, Map<String, Object?> arguments})> liteRtLmToolCalls(
-  String rawReply,
-) => [
-  for (final call in SdkResponseParser.extractToolCalls(rawReply))
-    (name: call.name, arguments: call.args),
-];
+/// The text a streamed LiteRT-LM reply chunk shows core's chat: a thought as
+/// `<|channel>thought\n…<channel|>` (what core's parser reads as thinking),
+/// else its text parts; a chunk that carries only tool calls shows as its
+/// JSON, as the SDK's chunk did.
+String liteRtLmChunkText(lm.Message chunk) {
+  final thought = chunk.channels['thought'];
+  if (thought != null && thought.isNotEmpty) {
+    return '<|channel>thought\n$thought<channel|>';
+  }
+  if (chunk.contents.isEmpty && chunk.toolCalls.isNotEmpty) {
+    return liteRtLmChunkJson(chunk);
+  }
+  return chunk.text;
+}
+
+/// [chunk] as the Conversation API JSON core's [SdkResponseParser] reads
+/// (`tool_calls`, `content`, `channels`).
+String liteRtLmChunkJson(lm.Message chunk) => jsonEncode({
+  'role': 'assistant',
+  if (chunk.contents.isNotEmpty)
+    'content': [
+      for (final part in chunk.contents)
+        if (part case lm.TextContent(:final text))
+          {'type': 'text', 'text': text},
+    ],
+  if (chunk.toolCalls.isNotEmpty)
+    'tool_calls': [
+      for (final call in chunk.toolCalls)
+        {
+          'type': 'function',
+          'function': {'name': call.name, 'arguments': call.arguments},
+        },
+    ],
+  if (chunk.channels.isNotEmpty) 'channels': chunk.channels,
+});
+
+/// A user message of [text] with its media placed by [order]: images, then
+/// audio, before the text or after it, as each [MediaPosition] says.
+lm.Message liteRtLmUserMessage(
+  String text, {
+  List<Uint8List> images = const [],
+  Uint8List? audio,
+  required MultimodalOrder order,
+}) {
+  final before = <lm.Content>[];
+  final after = <lm.Content>[];
+  List<lm.Content> side(MediaPosition position) =>
+      position == MediaPosition.beforeText ? before : after;
+  for (final image in images) {
+    side(order.images).add(lm.Content.imageBytes(image));
+  }
+  if (audio != null) side(order.audio).add(lm.Content.audioBytes(audio));
+  return lm.Message(
+    role: lm.Role.user,
+    contents: [...before, lm.Content.text(text), ...after],
+  );
+}
 
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
@@ -39,7 +92,7 @@ List<({String name, Map<String, Object?> arguments})> liteRtLmToolCalls(
 /// model file ([decisionRead], read when the model was loaded).
 base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   FfiInferenceModel({
-    required this.ffiClient,
+    required this.engine,
     required this.maxTokens,
     required this.modelType,
     required this.activeBackend,
@@ -51,8 +104,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     this.supportAudio = false,
     MultimodalOrder? multimodalOrder,
     this.maxConcurrentSessions,
-    this.openSessionBacking = OpenSessionBacking.virtual,
-    this.linearAttentionState = false,
+    this.thinkingTokenBudget,
     this.structuredOutput = const StructuredOutputSupport.none(
       'This LiteRT-LM model was not loaded through LiteRtLmEngine.',
     ),
@@ -63,8 +115,24 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     bindRuntimeLogToCore();
   }
 
-  final LiteRtLmFfiClient ffiClient;
+  /// The loaded LiteRT-LM engine.
+  final lm.Engine engine;
+
+  /// Why a conversation of this model is rebuilt from history instead of
+  /// being rewound after a stopped turn or a full context; null when it
+  /// rewinds.
+  @visibleForTesting
+  String? get noRewindReason => engine.noRewindReason;
+
+  /// Whether LiteRT-LM may strip a finished reply's thought from the KV
+  /// cache ([lm.Engine.filtersChannelContent]).
+  @visibleForTesting
+  bool get filterChannelContent => engine.filtersChannelContent;
   final ModelType modelType;
+
+  /// The thinking budget of every generation with thinking on
+  /// (`LiteRtLmEngine.thinkingTokenBudget`); null sets none.
+  final int? thinkingTokenBudget;
 
   /// The decision the loaded `.litertlm` carries, read with the model so
   /// that a decider reads the file the engine loaded; null only for a model
@@ -98,19 +166,6 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   /// Cap on concurrent [openSession] sessions; null = unlimited.
   final int? maxConcurrentSessions;
 
-  /// How each [openSession] session holds its context, decided at load from
-  /// the backend and the host ([liteRtLmOpenSessionBacking]): its own native
-  /// conversation where that backend ran several live conversations
-  /// correctly, a virtual one (full-message replay) elsewhere.
-  final OpenSessionBacking openSessionBacking;
-
-  /// The model keeps linear attention state (a hybrid model such as LFM2.5,
-  /// `readLiteRtLmHasLinearAttentionState`): no conversation of it is ever
-  /// rewound, since a rewind restores the KV cache but not that state. Null
-  /// when the file could not be read to tell: `createSession` then rewinds
-  /// as before, and `openSession` sessions are rebuilt from full messages.
-  final bool? linearAttentionState;
-
   /// LLGuidance qualification for the exact host and backend that loaded the
   /// model. The engine computes it from the package's device-run allow-list.
   final StructuredOutputSupport structuredOutput;
@@ -121,7 +176,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   @override
   ResponseFormatUnsupportedException? engineRefusalFor(
     JsonSchemaResponseFormat format,
-  ) => ffiClient.thinkingTokenBudget == null
+  ) => thinkingTokenBudget == null
       ? null
       : const ResponseFormatUnsupportedException(
           'LiteRT-LM cannot combine a response format with a model loaded '
@@ -129,41 +184,6 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           'thinkingTokenBudget and load the model again.',
         );
 
-  /// Why a [createSession] conversation of this model is rebuilt from history
-  /// instead of being rewound after a stopped turn or a full context, or null
-  /// when it rewinds.
-  @visibleForTesting
-  String? get noRewindReason => _noRewindReason;
-
-  String? get _noRewindReason => activeBackend == PreferredBackend.npu
-      ? 'the NPU executor rolls back one token at most'
-      : linearAttentionState == true
-      ? 'this model keeps linear attention state, which a rewind cannot '
-            'restore'
-      : null;
-
-  /// Whether LiteRT-LM may strip a completed reply's channel content (a
-  /// thought) from the KV cache, which it does by rewinding over the whole
-  /// reply ([liteRtLmFiltersChannelContent], where the trade-off is
-  /// described): only where every conversation is known to rewind, the rule
-  /// of [openSessionNoRewindReason], since the native rewind runs before Dart
-  /// could rebuild instead. The same for every conversation of this model,
-  /// native or virtual.
-  @visibleForTesting
-  bool get filterChannelContent => liteRtLmFiltersChannelContent(
-    npu: activeBackend == PreferredBackend.npu,
-    linearAttentionState: linearAttentionState,
-  );
-
-  /// The same for an [openSession] conversation: also rebuilt when whether
-  /// the model keeps linear attention state could not be read.
-  @visibleForTesting
-  String? get openSessionNoRewindReason =>
-      _noRewindReason ??
-      (linearAttentionState == null
-          ? 'whether this model keeps linear attention state could not be '
-                'read from its file'
-          : null);
   final VoidCallback onClose;
 
   FfiInferenceModelSession? _session;
@@ -217,7 +237,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         // Stopped by the scorer that ran it, or by this model's close: run
         // it again unless this scorer or the model is the one closed. A
         // native failure is not retried here: it reaches this caller.
-        scorer._client;
+        scorer._engine;
       }
     }
   }
@@ -246,20 +266,10 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         targets: targets,
         tokenize: scorer.tokenize,
         detokenize: scorer.detokenize,
-        scoreOneToken: (prompt, token) async => single(
-          (await scorer._client.scoreTargets(prompt, [
-            token,
-          ], stops: scorer._stops)).toCore,
-          [token],
-        ).single,
-        scoreInRun: (prompt, tokens) async => single(
-          (await scorer._client.scoreTargets(
-            prompt,
-            tokens,
-            stops: scorer._stops,
-          )).toCore,
-          tokens,
-        ),
+        scoreOneToken: (prompt, token) async =>
+            single(await scorer._score(prompt, [token]), [token]).single,
+        scoreInRun: (prompt, tokens) async =>
+            single(await scorer._score(prompt, tokens), tokens),
       ),
     );
     _scoringCheck = check;
@@ -316,8 +326,39 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     explicit,
     modelType: modelType,
     thinking: thinking,
-    modelDefaults: ffiClient.bundleSampler.toCore,
+    modelDefaults: engine.bundleSampler.toCore,
   );
+
+  /// The conversation config of a session: [explicit] sampling marks the
+  /// caller's choice; without any, the resolved values are the model's own
+  /// default, which never counts as the caller's.
+  lm.ConversationConfig _conversationConfig({
+    required SamplingParams explicit,
+    required ResolvedSampling sampling,
+    required String? systemInstruction,
+    required List<Tool> tools,
+    required int? maxOutputTokens,
+    String? jsonSchema,
+  }) {
+    final config = lm.SamplerConfig(
+      topK: sampling.topK,
+      topP: sampling.topP,
+      temperature: sampling.temperature,
+      seed: sampling.randomSeed,
+    );
+    return lm.ConversationConfig(
+      systemInstruction: systemInstruction,
+      tools: _nativeTools(tools),
+      samplerConfig: explicit.isEmpty ? null : config,
+      defaultSamplerConfig: explicit.isEmpty ? config : null,
+      maxOutputTokens: maxOutputTokens,
+      responseFormat: jsonSchema == null
+          ? null
+          : lm.ResponseFormat.json(
+              (jsonDecode(jsonSchema) as Map).cast<String, Object?>(),
+            ),
+    );
+  }
 
   @override
   Future<InferenceModelSession> createSession({
@@ -384,29 +425,24 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       // new one. See PR #310 review.
       await _session?.close();
 
-      final toolsJson = _nativeToolsJson(tools);
-
       final beforeConv = sessionSw.elapsedMilliseconds;
-      // Same config every time, so a conversation rebuilt after a stopped turn
-      // is this one again, plus its history.
-      Future<LiteRtLmConversationHandle> open({String? messagesJson}) =>
-          ffiClient.createConversationHandle(
-            systemMessage: systemInstruction,
-            toolsJson: toolsJson,
-            messagesJson: messagesJson,
-            sampling: sampling.toRuntime,
-            samplingExplicit: !explicit.isEmpty,
+      final lm.Conversation conversation;
+      try {
+        conversation = await engine.createConversation(
+          _conversationConfig(
+            explicit: explicit,
+            sampling: sampling,
+            systemInstruction: systemInstruction,
+            tools: tools,
             maxOutputTokens: maxOutputTokens,
-            multimodalOrder: multimodalOrder.toRuntime,
-            filterChannelContent: filterChannelContent,
-          );
-      final handle = RecoveringConversationHandle(
-        await open(),
-        reopen: (messagesJson) => open(messagesJson: messagesJson),
-        toolCallsOf: liteRtLmToolCalls,
-        noRewindReason: _noRewindReason,
-        mediaOrder: multimodalOrder.toRuntime,
-      );
+          ),
+        );
+      } on StateError {
+        if (_isClosed) {
+          throw StateError('Model was closed while creating a session');
+        }
+        rethrow;
+      }
       runtimeLog(
         '[FfiInferenceModel/perf] createConversation (FFI): ${sessionSw.elapsedMilliseconds - beforeConv}ms',
       );
@@ -415,13 +451,15 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       // close() can have run while we were away. Without this the caller gets a
       // working-looking session whose conversation belongs to a dead engine.
       if (_isClosed) {
-        handle.close();
+        await conversation.close();
         throw StateError('Model was closed while creating a session');
       }
 
       late final FfiInferenceModelSession session;
       session = FfiInferenceModelSession(
-        handle: handle,
+        conversation: conversation,
+        multimodalOrder: multimodalOrder,
+        thinkingTokenBudget: thinkingTokenBudget,
         modelType: modelType,
         fileType: fileType,
         supportImage: enableVisionModality ?? supportImage,
@@ -495,7 +533,6 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       );
     }
 
-    final toolsJson = _nativeToolsJson(tools);
     final explicit = SamplingParams(
       temperature: temperature,
       topK: topK,
@@ -504,70 +541,44 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     );
     final sampling = _resolveSampling(explicit, thinking: enableThinking);
 
-    final ConversationHandle handle;
-    switch (openSessionBacking) {
-      case OpenSessionBacking.native:
-        // LiteRT-LM 0.19 keeps several live conversations on one engine
-        // (upstream #966 lifted; §22 on the NPU), so each session gets its
-        // own, as createSession's: images and audio stay in it, and a stopped
-        // turn or a full context is rewound where the backend can. Every idle
-        // conversation keeps a snapshot of its KV cache, so a session costs
-        // memory while open (litertlm README, "Open sessions").
-        Future<LiteRtLmConversationHandle> open({String? messagesJson}) =>
-            ffiClient.createConversationHandle(
-              systemMessage: systemInstruction,
-              toolsJson: toolsJson,
-              messagesJson: messagesJson,
-              sampling: sampling.toRuntime,
-              samplingExplicit: !explicit.isEmpty,
-              maxOutputTokens: maxOutputTokens,
-              multimodalOrder: multimodalOrder.toRuntime,
-              jsonSchema: jsonSchema,
-              filterChannelContent: filterChannelContent,
-            );
-        _openSessionsPending++;
-        final LiteRtLmConversationHandle first;
-        try {
-          first = await open();
-        } finally {
-          _openSessionsPending--;
-        }
-        // The create suspends across an isolate round trip, so close() can
-        // have run meanwhile.
-        if (_isClosed) {
-          first.close();
-          throw StateError('Model was closed while opening a session');
-        }
-        handle = RecoveringConversationHandle(
-          first,
-          reopen: (messagesJson) => open(messagesJson: messagesJson),
-          toolCallsOf: liteRtLmToolCalls,
-          noRewindReason: openSessionNoRewindReason,
-          mediaOrder: multimodalOrder.toRuntime,
-        );
-      case OpenSessionBacking.virtual:
-        // Where several live conversations were not verified on this backend,
-        // each session keeps its history in Dart and replays it into one
-        // shared conversation on demand (serialized by the client mutex), as
-        // on LiteRT-LM 0.18. Logically concurrent contexts, serialized
-        // inference; openSession() itself makes no native call.
-        handle = VirtualConversationHandle(
-          client: ffiClient,
-          systemMessage: systemInstruction,
-          toolsJson: toolsJson,
-          sampling: sampling.toRuntime,
-          samplingExplicit: !explicit.isEmpty,
+    // Each session is a conversation of the engine: its own native one where
+    // that backend runs several live conversations correctly, a turn of the
+    // engine's shared one (its messages replayed) elsewhere. Every idle
+    // native conversation keeps a snapshot of its KV cache, so a session
+    // costs memory while open (litertlm README, "Open sessions").
+    _openSessionsPending++;
+    final lm.Conversation conversation;
+    try {
+      conversation = await engine.createConversation(
+        _conversationConfig(
+          explicit: explicit,
+          sampling: sampling,
+          systemInstruction: systemInstruction,
+          tools: tools,
           maxOutputTokens: maxOutputTokens,
-          multimodalOrder: multimodalOrder.toRuntime,
           jsonSchema: jsonSchema,
-          filterChannelContent: filterChannelContent,
-          toolCallsOf: liteRtLmToolCalls,
-        );
+        ),
+      );
+    } on StateError {
+      if (_isClosed) {
+        throw StateError('Model was closed while opening a session');
+      }
+      rethrow;
+    } finally {
+      _openSessionsPending--;
+    }
+    // The create suspends across an isolate round trip, so close() can have
+    // run meanwhile.
+    if (_isClosed) {
+      await conversation.close();
+      throw StateError('Model was closed while opening a session');
     }
 
     late final FfiInferenceModelSession session;
     session = FfiInferenceModelSession(
-      handle: handle,
+      conversation: conversation,
+      multimodalOrder: multimodalOrder,
+      thinkingTokenBudget: thinkingTokenBudget,
       modelType: modelType,
       fileType: fileType,
       supportImage: enableVisionModality ?? supportImage,
@@ -667,11 +678,18 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   /// declarations from it, parses calls into `tool_calls` and takes results as
   /// role `tool`. Same predicate [InferenceChat] uses to skip its own prompt,
   /// so the declarations are rendered exactly once.
-  String? _nativeToolsJson(List<Tool> tools) =>
+  List<lm.Tool> _nativeTools(List<Tool> tools) =>
       tools.isNotEmpty &&
           FunctionCallParser.usesSdkPassthrough(modelType, fileType: fileType)
-      ? SdkResponseParser.serializeToolsForSdk(tools)
-      : null;
+      ? [
+          for (final tool in tools)
+            lm.Tool(
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
+            ),
+        ]
+      : const [];
 
   /// The teardown in progress, shared by every caller of [close]: a second
   /// call waits for it instead of returning at once, so core can tell when
@@ -704,39 +722,44 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     } finally {
       // Awaited: shutdown() defers engine_delete until any conversation create
       // suspended on its spawned isolate has finished.
-      await ffiClient.shutdown();
+      await engine.close();
       onClose(); // legacy hook (engine passes a no-op)
       fireCloseListeners(); // core's singleton-reset, registered via addCloseListener
     }
   }
 }
 
-/// FFI implementation of InferenceModelSession.
+/// FFI implementation of InferenceModelSession over one [lm.Conversation].
 /// Buffers query chunks until [getResponse] is called.
-///
-/// Routes all per-conversation native calls through [handle] — its own
-/// [ConversationHandle] — so multiple sessions on one model are fully
-/// isolated. [extractTextFromResponse] is a static helper on
-/// [LiteRtLmFfiClient] and needs no instance.
 class FfiInferenceModelSession extends InferenceModelSession
     with RawSdkResponseSession {
   FfiInferenceModelSession({
-    required this.handle,
+    required this.conversation,
     required this.modelType,
     required this.fileType,
     required this.supportImage,
     required this.supportAudio,
+    this.multimodalOrder = const MultimodalOrder(),
     this.enableThinking = false,
+    this.thinkingTokenBudget,
     this.maxOutputTokens,
     required this.onClose,
   });
 
-  final ConversationHandle handle;
+  /// The session's conversation.
+  final lm.Conversation conversation;
+
   final ModelType modelType;
   final ModelFileType fileType;
   final bool supportImage;
   final bool supportAudio;
+
+  /// Where a message's images and audio go around its text.
+  final MultimodalOrder multimodalOrder;
   final bool enableThinking;
+
+  /// The thinking budget of each generation with thinking on.
+  final int? thinkingTokenBudget;
 
   /// The cap on each reply, which decides what a completed turn reports.
   final int? maxOutputTokens;
@@ -745,33 +768,23 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// [stopGeneration] was called during the current turn.
   bool _stopAsked = false;
 
-  /// [turn] with a failure native ended `context_full` replaced by core's
-  /// public [ContextLimitException], which says what happened and preserves
-  /// native's token-count details; any other failure is passed on as it is.
-  Stream<String> _namingContextFull(Stream<String> turn) => turn.transform(
-    StreamTransformer.fromHandlers(
-      handleError: (error, stack, sink) {
-        sink.addError(
-          handle.lastTurnEnd == NativeLastTurnEnd.contextFull
-              ? ContextLimitException(
-                  'The input token count does not fit the context window space '
-                  'left; the session was restored to before this turn. Send a '
-                  'shorter message, or close the session and open a new one. '
-                  'Native token counts: $error',
-                )
-              : error,
-          stack,
-        );
-        if (error is ResponseFormatUnsupportedException) {
-          // Deliver and settle the failed turn before close changes
-          // reportedEngineTurn's end to `closed`. CreateConstraint has already
-          // pushed a ghost user message, so refuse another send immediately
-          // and delete the conversation on the next event-loop turn.
-          _closeAfterFormatRefusal();
-        }
-      },
-    ),
-  );
+  /// The runtime's turn errors as core's: a message that did not fit is
+  /// [ContextLimitException], which says what happened and keeps native's
+  /// token counts; the rest as [mapRuntimeError] maps them.
+  Object _coreTurnError(Object error) {
+    if (error is lm.ConversationClosedException) {
+      return LiteRtLmSessionClosedError(error.message);
+    }
+    if (error is lm.ContextFullException) {
+      return ContextLimitException(
+        'The input token count does not fit the context window space '
+        'left; the session was restored to before this turn. Send a '
+        'shorter message, or close the session and open a new one. '
+        'Native token counts: ${error.message}',
+      );
+    }
+    return mapRuntimeError(error);
+  }
 
   void _closeAfterFormatRefusal() {
     if (_isClosed || _rejectFurtherSends) return;
@@ -802,7 +815,7 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// Whether anything other than a tool result was staged for this turn.
   bool _stagedNonToolContent = false;
 
-  /// Last full raw JSON response from SDK. For native tool models this is the
+  /// Last full raw JSON response. For native tool models this is the
   /// structured OpenAI Chat Completions object (with `tool_calls` if any).
   /// chat.dart reads it via [lastRawResponse] before fallback to text
   /// extraction.
@@ -864,104 +877,64 @@ class FfiInferenceModelSession extends InferenceModelSession
     }
   }
 
-  /// The staged tool results as one role-`tool` message, when they are the
-  /// whole turn. LiteRT-LM's template continues the model's own turn only after
-  /// a `tool` message; sent as user text, the model opens a new turn and calls
-  /// the same function again. A turn that also carries user text or media is a
-  /// user message, so there the results stay in the text they were staged as —
-  /// the history replay after a context trim stages exactly that mix.
-  String? _takeToolResponseMessage() {
+  /// This turn's message: the staged tool results as one role-`tool` message
+  /// when they are the whole turn — LiteRT-LM's template continues the
+  /// model's own turn only after a `tool` message; sent as user text, the
+  /// model opens a new turn and calls the same function again — else the
+  /// staged user message. A turn that also carries user text or media is a
+  /// user message, so there the results stay in the text they were staged
+  /// as; the history replay after a context trim stages exactly that mix.
+  lm.Message _takeTurnMessage() {
+    final text = _queryBuffer.toString();
+    _queryBuffer.clear();
+    final images = List<Uint8List>.of(_pendingImages);
+    final audio = _pendingAudio;
+    _pendingAudio = null;
+    _pendingImages.clear();
     final onlyTools =
         _pendingToolResponses.isNotEmpty && !_stagedNonToolContent;
     final message = onlyTools
-        ? SdkResponseParser.buildToolResponsesJson(_pendingToolResponses)
-        : null;
+        ? lm.Message.tool([
+            for (final r in _pendingToolResponses)
+              lm.Content.toolResponse(r.name, r.response),
+          ])
+        : liteRtLmUserMessage(
+            text,
+            images: images,
+            audio: audio,
+            order: multimodalOrder,
+          );
     _pendingToolResponses.clear();
     _stagedNonToolContent = false;
     return message;
   }
 
-  /// This turn's raw SDK stream: the tool-result message when there is one,
-  /// the staged user message otherwise.
-  Stream<String> _rawTurn(
-    String text,
-    List<Uint8List>? images,
-    Uint8List? audio,
-    String? toolMessage,
-  ) => mapRuntimeErrors(
-    toolMessage != null
-        ? handle.chatRawMessage(toolMessage, enableThinking: enableThinking)
-        : handle.chatRaw(
-            text,
-            imageBytes: images,
-            audioBytes: audio,
-            enableThinking: enableThinking,
-          ),
-  );
+  /// One turn's reply, with core's errors.
+  Stream<lm.Message> _turn(lm.Message message) => conversation
+      .sendMessageStream(
+        message,
+        thinkingConfig: lm.ThinkingConfig(
+          enableThinking: enableThinking,
+          thinkingTokenBudget: thinkingTokenBudget,
+        ),
+      )
+      .handleError((Object error, StackTrace stack) {
+        if (error is lm.ConstraintUnsupportedException) {
+          // Settle the failed turn before close changes reportedEngineTurn's
+          // end to `closed`. CreateConstraint has already pushed a ghost user
+          // message, so refuse another send immediately and delete the
+          // conversation on the next event-loop turn.
+          _closeAfterFormatRefusal();
+        }
+        Error.throwWithStackTrace(_coreTurnError(error), stack);
+      });
 
   @override
   Future<String> getResponse() async {
-    _assertNotClosed();
-    final text = _queryBuffer.toString();
-    _queryBuffer.clear();
-    final audio = _pendingAudio;
-    final images = _pendingImages.isNotEmpty
-        ? List<Uint8List>.from(_pendingImages)
-        : null;
-    _pendingAudio = null;
-    _pendingImages.clear();
-    final toolMessage = _takeToolResponseMessage();
-
-    final genSw = Stopwatch()..start();
-    int? firstChunkMs;
-    var chunkCount = 0;
-
-    // Native tool models walk raw SDK JSON so chat.dart can read `tool_calls`
-    // via [SdkResponseParser.extractToolCalls]. Other models keep the existing
-    // text-only fast path (raw JSON cache stays null).
-    if (_nativeTools) {
-      final rawBuffer = StringBuffer();
-      final textBuffer = StringBuffer();
-      await for (final rawChunk in _namingContextFull(
-        _rawTurn(text, images, audio, toolMessage),
-      )) {
-        if (firstChunkMs == null) {
-          firstChunkMs = genSw.elapsedMilliseconds;
-          runtimeLog(
-            '[FfiInferenceModelSession/perf] time-to-first-chunk (prefill): ${firstChunkMs}ms',
-          );
-        }
-        chunkCount++;
-        rawBuffer.write(rawChunk);
-        textBuffer.write(LiteRtLmFfiClient.extractTextFromResponse(rawChunk));
-      }
-      _lastRawResponse = rawBuffer.toString();
-      _logGenerationStats(genSw, firstChunkMs, chunkCount);
-      return textBuffer.toString();
-    }
-
-    _lastRawResponse = null;
     final buffer = StringBuffer();
-    await for (final chunk in _namingContextFull(
-      mapRuntimeErrors(
-        handle.chat(
-          text,
-          imageBytes: images,
-          audioBytes: audio,
-          enableThinking: enableThinking,
-        ),
-      ),
-    )) {
-      if (firstChunkMs == null) {
-        firstChunkMs = genSw.elapsedMilliseconds;
-        runtimeLog(
-          '[FfiInferenceModelSession/perf] time-to-first-chunk (prefill): ${firstChunkMs}ms',
-        );
-      }
-      chunkCount++;
+    await for (final chunk in getResponseAsync()) {
       buffer.write(chunk);
     }
-    _logGenerationStats(genSw, firstChunkMs, chunkCount);
     return buffer.toString();
   }
 
@@ -984,70 +957,35 @@ class FfiInferenceModelSession extends InferenceModelSession
     );
   }
 
+  /// The reply's text, chunk by chunk ([liteRtLmChunkText]). For a model
+  /// whose tool calling LiteRT-LM runs natively, the reply's JSON is kept for
+  /// [lastRawResponse], where chat.dart reads `tool_calls`.
   @override
   Stream<String> getResponseAsync() async* {
     _assertNotClosed();
-    final text = _queryBuffer.toString();
-    _queryBuffer.clear();
-    final audio = _pendingAudio;
-    final images = _pendingImages.isNotEmpty
-        ? List<Uint8List>.from(_pendingImages)
-        : null;
-    _pendingAudio = null;
-    _pendingImages.clear();
-    final toolMessage = _takeToolResponseMessage();
-
+    final message = _takeTurnMessage();
     final genSw = Stopwatch()..start();
     int? firstChunkMs;
     var chunkCount = 0;
-
-    if (_nativeTools) {
-      final rawBuffer = StringBuffer();
-      await for (final rawChunk in _namingContextFull(
-        _rawTurn(text, images, audio, toolMessage),
-      )) {
-        if (firstChunkMs == null) {
-          firstChunkMs = genSw.elapsedMilliseconds;
-          runtimeLog(
-            '[FfiInferenceModelSession/perf] (async) time-to-first-chunk (prefill): ${firstChunkMs}ms',
-          );
-        }
-        chunkCount++;
-        rawBuffer.write(rawChunk);
-        yield LiteRtLmFfiClient.extractTextFromResponse(rawChunk);
-      }
-      _lastRawResponse = rawBuffer.toString();
-      _logGenerationStats(genSw, firstChunkMs, chunkCount);
-      return;
-    }
-
+    final raw = _nativeTools ? StringBuffer() : null;
     _lastRawResponse = null;
-    await for (final chunk in _namingContextFull(
-      mapRuntimeErrors(
-        handle.chat(
-          text,
-          imageBytes: images,
-          audioBytes: audio,
-          enableThinking: enableThinking,
-        ),
-      ),
-    )) {
+    await for (final chunk in _turn(message)) {
       if (firstChunkMs == null) {
         firstChunkMs = genSw.elapsedMilliseconds;
         runtimeLog(
-          '[FfiInferenceModelSession/perf] (async) time-to-first-chunk (prefill): ${firstChunkMs}ms',
+          '[FfiInferenceModelSession/perf] time-to-first-chunk (prefill): ${firstChunkMs}ms',
         );
       }
       chunkCount++;
-      yield chunk;
+      raw?.write(liteRtLmChunkJson(chunk));
+      yield liteRtLmChunkText(chunk);
     }
+    if (raw != null) _lastRawResponse = raw.toString();
     _logGenerationStats(genSw, firstChunkMs, chunkCount);
   }
 
   @override
-  SessionMetrics getSessionMetrics() {
-    return handle.getSessionMetrics().toCore;
-  }
+  SessionMetrics getSessionMetrics() => conversation.getBenchmarkInfo().toCore;
 
   @override
   Future<int> sizeInTokens(String text) async {
@@ -1061,47 +999,20 @@ class FfiInferenceModelSession extends InferenceModelSession
     //   english   1.23x     russian  1.00x     repeated ru words  1.40x
     //   code      0.75x     chinese  0.44x
     //
-    // So the folklore is half right. Four chars per token is fine for English
-    // and — surprisingly — near-exact for Russian, whose words this tokenizer
-    // covers well. It is CJK that breaks it: Chinese runs ~1.8 characters per
-    // token, so the estimate undercounts by more than half. Code undercounts by
-    // a third.
-    //
-    // InferenceChat budgets the context window with this (chat.dart accumulates
-    // `_currentTokens += await session.sizeInTokens(...)` and recreates the
-    // session near `maxTokens`), so an undercount means it believes there is
-    // headroom while the native KV cache is already full — surfacing as the
-    // #318-class DYNAMIC_UPDATE_SLICE failure or silent truncation, and read as
-    // a model problem rather than an estimator one. The same conversation on a
-    // .task model trimmed correctly.
-    //
-    // The ratios are per-tokenizer, not universal: re-measure rather than
-    // re-quote if the model family changes.
-    // Same closed-session contract as every sibling method. Without it this
-    // was the one call that survived close() — and it would have answered with
-    // a plausible estimate instead of the use-after-close error the caller
-    // gets everywhere else.
+    // InferenceChat budgets the context window with this, so an undercount
+    // means it believes there is headroom while the native KV cache is
+    // already full — the #318-class DYNAMIC_UPDATE_SLICE failure. Same
+    // closed-session contract as every sibling method.
     _assertNotClosed();
-
-    final exact = await handle.tokenCount(text);
+    final exact = await conversation.countTokens(text);
     if (exact != null) return exact;
 
-    // Engine down, or the native call failed. Fall back to the estimate rather
-    // than throw — this feeds budgeting, not correctness — but say so, because
-    // a silent estimate is what got us here.
-    // Fall back, but err HIGH — and note that this warning does not reach a
-    // release build at all (`gemmaLog` is `kDebugMode`-gated and
-    // dead-code-eliminated), so the fallback has to be safe on its own rather
-    // than merely announced.
-    //
-    // The two directions are not symmetric. Overcounting trims history and
-    // recreates the session a little early — cheap, recoverable, visible.
-    // Undercounting overruns the native KV cache, which is the #318-class
-    // DYNAMIC_UPDATE_SLICE crash. `len/4` was measured at 0.44x on Chinese and
-    // 0.75x on code, i.e. it errs in the crash direction on exactly the inputs
-    // that break. Two characters per token bounds every case measured
-    // (densest was ~1.8), so it over-counts English by roughly 2x and never
-    // under-counts.
+    // Engine down, or the native call failed. Fall back to an estimate that
+    // errs HIGH — overcounting trims history early (cheap, visible);
+    // undercounting overruns the KV cache. Two characters per token bounds
+    // every case measured (densest ~1.8). Said once per session; runtimeLog
+    // does not reach a release build, so the fallback has to be safe on its
+    // own rather than merely announced.
     if (!_tokenFallbackWarned) {
       _tokenFallbackWarned = true;
       runtimeLog(
@@ -1114,29 +1025,30 @@ class FfiInferenceModelSession extends InferenceModelSession
     return (text.length / 2).ceil();
   }
 
-  /// One-shot latch for the estimate warning. Without it the message fires
-  /// once per turn and once per trimmed message, which is the volume that
-  /// teaches people to scroll past it.
+  /// One-shot latch for the estimate warning.
   bool _tokenFallbackWarned = false;
 
+  /// Stops the turn in flight: native stops at its next token and the text
+  /// ends with what was generated; the conversation keeps the exchange
+  /// (closed) before the next turn.
   @override
   Future<void> stopGeneration() async {
     _stopAsked = true;
-    handle.cancelGeneration();
+    conversation.cancel();
   }
 
   /// How the turn ended, for core's chat: a close the consumer did not ask
-  /// for ends [getResponseAsync] with a [LiteRtLmTurnClosedException]; here
-  /// the text ends cleanly and `end` is [TurnEnd.closed], so the chat keeps
-  /// the partial reply before it raises (decision H).
+  /// for ends [getResponseAsync] with a [LiteRtLmSessionClosedError];
+  /// here the text ends cleanly and `end` is [TurnEnd.closed], so the chat
+  /// keeps the partial reply before it raises (decision H).
   ///
   /// A turn's end is what native's turn-end record says
   /// ([liteRtLmCompletedTurnEnd]). A turn native ended `context_full` (the
   /// input did not fit what the window has left) fails its text with a
-  /// [ContextLimitException], and its end is [TurnEnd.contextLimit];
-  /// core's chat then takes the refused message back out of its history. The
-  /// handle restores the conversation before the next turn (core 2.6.0
-  /// design §6.4b).
+  /// [ContextLimitException], and its end is [TurnEnd.contextLimit]; core's
+  /// chat then takes the refused message back out of its history. The
+  /// conversation restores itself before the next turn (core 2.6.0 design
+  /// §6.4b).
   @override
   EngineTurn startTurn() {
     _stopAsked = false;
@@ -1144,9 +1056,9 @@ class FfiInferenceModelSession extends InferenceModelSession
       getResponseAsync(),
       stopped: () => _stopAsked,
       closed: () => _isClosed,
-      isCloseError: (error) => error is LiteRtLmTurnClosedException,
+      isCloseError: (error) => error is LiteRtLmSessionClosedError,
       completed: () =>
-          liteRtLmCompletedTurnEnd(handle.lastTurnEnd, maxOutputTokens),
+          liteRtLmCompletedTurnEnd(conversation.lastTurnEnd, maxOutputTokens),
     );
   }
 
@@ -1155,41 +1067,38 @@ class FfiInferenceModelSession extends InferenceModelSession
     // Idempotent: a superseded singleton session and the live one can both
     // be closed by a caller, and createSession also closes the prior
     // session before opening a new one — a second close must not re-run
-    // handle.close() / onClose(). See the createSession comment and #308.
+    // conversation.close() / onClose(). See the createSession comment and
+    // #308.
     if (_isClosed) return;
     _isClosed = true;
     _queryBuffer.clear();
     _pendingImages.clear();
     _pendingAudio = null;
     _pendingToolResponses.clear();
-    handle.close();
+    await conversation.close();
     onClose();
   }
 }
 
 /// How a native turn whose text ran to its end ended, from native's turn-end
-/// record ([NativeLastTurnEnd], §23): the end of the reply is
+/// record ([lm.TurnEnd], §23): the end of the reply is
 /// [TurnEnd.endOfSequence], `max_output_tokens` [TurnEnd.outputLimit], a
 /// decode that filled the context window (and an input that did not fit,
 /// should one ever end without an error) [TurnEnd.contextLimit]. Without a
 /// record, or with one no completed send leaves, it is
 /// [liteRtLmPlaceholderCompletedEnd]'s guess.
 @visibleForTesting
-TurnEnd liteRtLmCompletedTurnEnd(
-  NativeLastTurnEnd? end,
-  int? maxOutputTokens,
-) => switch (end) {
-  NativeLastTurnEnd.completed => TurnEnd.endOfSequence,
-  NativeLastTurnEnd.outputLimit => TurnEnd.outputLimit,
-  NativeLastTurnEnd.contextLimit ||
-  NativeLastTurnEnd.contextFull => TurnEnd.contextLimit,
-  NativeLastTurnEnd.none ||
-  NativeLastTurnEnd.cancelled ||
-  NativeLastTurnEnd.failed ||
-  NativeLastTurnEnd.running ||
-  NativeLastTurnEnd.refused ||
-  null => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
-};
+TurnEnd liteRtLmCompletedTurnEnd(lm.TurnEnd? end, int? maxOutputTokens) =>
+    switch (end) {
+      lm.TurnEnd.completed => TurnEnd.endOfSequence,
+      lm.TurnEnd.outputLimit => TurnEnd.outputLimit,
+      lm.TurnEnd.contextLimit || lm.TurnEnd.contextFull => TurnEnd.contextLimit,
+      lm.TurnEnd.cancelled ||
+      lm.TurnEnd.failed ||
+      lm.TurnEnd.running ||
+      lm.TurnEnd.refused ||
+      null => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
+    };
 
 /// [OptionScorer] over the engine an [FfiInferenceModel] loaded. Holds no
 /// native resource between calls: each scoring pass opens and deletes its own
@@ -1200,28 +1109,52 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
   final FfiInferenceModel _model;
   bool _closed = false;
 
-  /// The stop flags of this scorer's native runs, its share of the self-check
-  /// included: [close] stops them.
-  final ScoringStops _stops = ScoringStops();
+  /// Fired by [close]: stops this scorer's native runs, its share of the
+  /// self-check included.
+  final _closeSignal = _ScorerCloseSignal();
 
   /// Every call goes through here, so a scorer or model closed between calls
   /// is a stop, not a failure: a scorer waiting on this one's self-check runs
   /// it again for itself (see `_scoringCheckFor`).
-  LiteRtLmFfiClient get _client {
+  lm.Engine get _engine {
     if (_closed) throw ScoringStoppedError('The option scorer is closed.');
     if (_model.isClosed) throw ScoringStoppedError('The model is closed.');
-    return _model.ffiClient;
+    return _model.engine;
+  }
+
+  /// One scoring run, stopped by [close] or [cancelToken]; a stop by [close]
+  /// is a [ScoringStoppedError], as a closed scorer's call is.
+  Future<OptionScoringRun> _score(
+    String prompt,
+    List<String> targets, {
+    CancelToken? cancelToken,
+  }) async {
+    final engine = _engine;
+    final signals = [
+      _closeSignal,
+      if (cancelToken != null) CancelTokenSignal(cancelToken),
+    ];
+    try {
+      return (await engine.scoreTargets(
+        prompt,
+        targets,
+        cancel: _AnyCancelSignal(signals),
+      )).toCore;
+    } on lm.ScoringCancelledException {
+      if (_closed) throw ScoringStoppedError('The option scorer is closed.');
+      rethrow;
+    }
   }
 
   @override
-  Future<List<int>> tokenize(String text) => _client.tokenIds(text);
+  Future<List<int>> tokenize(String text) => _engine.tokenize(text);
 
   @override
-  Future<String> detokenize(List<int> ids) => _client.detokenizeIds(ids);
+  Future<String> detokenize(List<int> ids) => _engine.detokenize(ids);
 
   @override
   Future<String> renderUserMessage(String content) =>
-      _client.renderUserMessage(content);
+      _engine.renderUserMessage(content);
 
   @override
   Future<void> prepare(List<String> targets) =>
@@ -1243,14 +1176,7 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
       );
     }
     return withCoreErrors(
-      () async => (await _client.scoreTargets(
-        prompt,
-        targets,
-        cancelSignal: cancelToken == null
-            ? null
-            : CancelTokenSignal(cancelToken),
-        stops: _stops,
-      )).toCore,
+      () => _score(prompt, targets, cancelToken: cancelToken),
     );
   }
 
@@ -1260,6 +1186,42 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
   @override
   Future<void> close() async {
     _closed = true;
-    _stops.stopAll();
+    _closeSignal.fire();
   }
+}
+
+/// A scorer's close, as a cancel signal.
+final class _ScorerCloseSignal implements lm.CancelSignal {
+  final _fired = Completer<void>();
+
+  void fire() {
+    if (!_fired.isCompleted) _fired.complete();
+  }
+
+  @override
+  bool get isCancelled => _fired.isCompleted;
+
+  @override
+  Future<void> get whenCancelled => _fired.future;
+}
+
+/// Cancelled when any of [signals] is.
+final class _AnyCancelSignal implements lm.CancelSignal {
+  _AnyCancelSignal(this.signals);
+
+  final List<lm.CancelSignal> signals;
+
+  @override
+  bool get isCancelled => signals.any((s) => s.isCancelled);
+
+  @override
+  Future<void> get whenCancelled =>
+      Future.any([for (final s in signals) s.whenCancelled]);
+}
+
+/// The session, or its model, was closed while a reply streamed: a
+/// [StateError], as a use of a closed session is.
+@visibleForTesting
+final class LiteRtLmSessionClosedError extends StateError {
+  LiteRtLmSessionClosedError(super.message);
 }

@@ -3,10 +3,21 @@
 // counterpart at the boundary, so an app sees the same types as before.
 
 /// An option-scoring run was cancelled. Core: `DeciderCancelledException`.
-final class ScoringCancelledException implements Exception {
-  const ScoringCancelledException(this.message);
+/// What every exception litertlm_dart throws for a LiteRT-LM failure
+/// extends: one type to catch. Programming errors stay [ArgumentError] and
+/// [StateError].
+abstract class LiteRtLmException implements Exception {
+  const LiteRtLmException(this.message);
 
+  /// What went wrong.
   final String message;
+
+  @override
+  String toString() => '$runtimeType: $message';
+}
+
+final class ScoringCancelledException extends LiteRtLmException {
+  const ScoringCancelledException(super.message);
 
   @override
   String toString() => 'ScoringCancelledException: $message';
@@ -14,10 +25,8 @@ final class ScoringCancelledException implements Exception {
 
 /// LiteRT-LM refused a response constraint (a JSON schema LLGuidance cannot
 /// compile). Core: `ResponseFormatUnsupportedException`.
-final class ConstraintUnsupportedException implements Exception {
-  const ConstraintUnsupportedException(this.message);
-
-  final String message;
+final class ConstraintUnsupportedException extends LiteRtLmException {
+  const ConstraintUnsupportedException(super.message);
 
   @override
   String toString() => 'ConstraintUnsupportedException: $message';

@@ -8,6 +8,68 @@ and [`flutter_edge_ai_speech`](https://pub.dev/packages/flutter_edge_ai_speech);
 a Flutter app uses those, through
 [`flutter_edge_ai`](https://pub.dev/packages/flutter_edge_ai).
 
+## Use
+
+The API follows LiteRT-LM's Kotlin and Swift APIs: an `Engine` loads a
+`.litertlm` model on a backend, a `Conversation` streams replies, an
+`EmbeddingEngine` embeds with EmbeddingGemma 2.
+
+```dart
+import 'dart:io';
+
+import 'package:litertlm_dart/litertlm_dart.dart';
+
+final engine = await Engine.create(
+  EngineConfig(
+    modelPath: 'gemma-4-E2B-it.litertlm',
+    backend: const Backend.gpu(),
+    maxNumTokens: 4096, // the context window, not the reply length
+  ),
+);
+final conversation = await engine.createConversation(
+  ConversationConfig(
+    systemInstruction: 'Answer in one sentence.',
+    maxOutputTokens: 256,
+  ),
+);
+await for (final piece in conversation.sendMessageStream(
+  Message.user('Why is the sky blue?'),
+)) {
+  stdout.write(piece.text);
+}
+await conversation.close();
+await engine.close();
+```
+
+- **Messages** are `Message`s of `Content` parts in any order:
+  `Content.text`, `.imageBytes`/`.imageFile`, `.audioBytes`/`.audioFile`,
+  `.toolResponse`. A reply streams as `Message`s: text parts, a thought in
+  `channels['thought']`, calls in `toolCalls`.
+- **Tools** are declared with `Tool(name:, description:, parameters:)`; the
+  model's calls arrive as `ToolCall`s and you answer with
+  `Message.tool([Content.toolResponse(name, result)])`. There is no automatic
+  tool loop: running app code is the caller's policy.
+- **Decoding**: `SamplerConfig` (unset: the model file's own sampler),
+  `ThinkingConfig` with a token budget, `ResponseFormat.json`/`.regex`, and per
+  message `RepetitionPenaltyConfig`, `NoRepeatNgramConfig`, `suppressTokens`,
+  `extraContext`. `SpeculativeDecodingMode` on the engine and per conversation.
+- **Stopping**: `Conversation.cancel()` stops and keeps what was generated;
+  cancelling the subscription stops and drops the rest. `lastTurnEnd` says how
+  a turn ended (`completed`, `outputLimit`, `contextFull`, …).
+- **Backends**: `Backend.cpu(threadCount:)`, `.gpu()`, `.npu()`. The NPU
+  vendor (Qualcomm, Google Tensor, MediaTek, Intel) is read from the bundle;
+  vision and audio encoders load only when asked (`EngineConfig.visionBackend`,
+  `audioBackend`), `BundleInfo.declaredVisionBackend` is where the file wants
+  them.
+
+What it adds to the official APIs: several conversations per engine, with a
+stopped, refused or failed turn recovered before the next (rewound where the
+backend can, our patch); how a turn ended; the bundle read without loading it
+(`readBundleInfo`); `Engine.tokenize`/`detokenize` and `scoreTargets` (exact
+log-probabilities of continuations); EmbeddingGemma 2 with images, audio and
+both in one vector, on the CPU, the GPU where measured and per-SoC NPU bundles.
+Not yet: LoRA, `tool_choice` and the other LiteRT-LM 0.20 additions.
+
 ## What it holds
 
 - **The native build.** `hook/build.dart` downloads our patched LiteRT-LM build
@@ -17,10 +79,6 @@ a Flutter app uses those, through
   NPU fixes and the thinking-budget fix (`native/litert_lm/patch_c_api.sh`).
 - **NPU stacks.** Qualcomm (Android, Linux arm64), Google Tensor and MediaTek
   (Android), Intel (Windows x64), with the vendor runtimes fetched on request.
-- **The runtime.** The `.litertlm` bundle reader and load plan, the LLM client
-  with native and replayed sessions, sampler resolution from the bundle,
-  response constraints, the thinking budget, the EmbeddingGemma 2 embedder
-  and option scoring.
 
 ## Versions
 
@@ -48,11 +106,12 @@ Both are planned with a command-line example.
 
 ## Libraries
 
-- `package:litertlm_dart/litertlm_dart.dart` — the runtime (native only).
-- `package:litertlm_dart/common.dart` — the types, limits and errors, with no
-  `dart:io` or `dart:ffi`, so code that names them compiles for the web.
+- `package:litertlm_dart/litertlm_dart.dart` — the API above (native only).
 - `package:litertlm_dart/bindings.dart`, `litert_bindings.dart` — the raw
-  ffigen bindings to LiteRT-LM's and LiteRT's C APIs.
+  ffigen bindings to LiteRT-LM's and LiteRT's C APIs, outside the
+  compatibility promise.
+- `package:litertlm_dart/internal.dart`, `internal_io.dart` — what
+  `flutter_edge_ai_litertlm` and its tests build on; no compatibility promise.
 
 ## Build options
 

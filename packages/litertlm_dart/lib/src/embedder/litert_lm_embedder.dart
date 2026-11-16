@@ -268,11 +268,11 @@ final class LiteRtLmEmbeddingConfig {
   final bool audioTowerOnCpu;
 
   /// The backend the engine is created on.
-  Backend get backend => npuTarget != null
-      ? Backend.npu
+  BackendKind get backend => npuTarget != null
+      ? BackendKind.npu
       : gpu
-      ? Backend.gpu
-      : Backend.cpu;
+      ? BackendKind.gpu
+      : BackendKind.cpu;
 }
 
 /// Why a bundle compiled for [target] fails the NPU probe embed, for the
@@ -478,7 +478,7 @@ final class LiteRtLmEmbedder {
       // above, and the 440m/740m vision and audio towers beside it run on CPU
       // (named so at create, declared or not) and write XNNPack's.
       // Inside the try: a refusal deletes the engine and the options it made.
-      final onCpu = _config.backend == Backend.cpu;
+      final onCpu = _config.backend == BackendKind.cpu;
       final vision = onCpu ? _hasVision(info) : _config.visionTowerOnCpu;
       final audioOnCpu = audio || _config.audioTowerOnCpu;
       if (onCpu ||

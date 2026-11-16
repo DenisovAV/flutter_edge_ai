@@ -10,6 +10,7 @@ import 'dart:typed_data';
 import 'package:meta/meta.dart' show immutable;
 
 import '../runtime/types.dart';
+import '../runtime/errors.dart';
 
 /// A kind of input an embedder takes.
 enum EmbedderModality { text, image, audio }
@@ -56,14 +57,12 @@ final class EmbedderInfo {
   final int? visionTokensPerImage;
 
   /// Where the text tower runs.
-  final Backend activeBackend;
+  final BackendKind activeBackend;
 }
 
 /// The embedder could not load. Core: `EmbeddingLoadException`.
-final class EmbedderLoadException implements Exception {
-  const EmbedderLoadException(this.message, {this.nativeCode, this.cause});
-
-  final String message;
+final class EmbedderLoadException extends LiteRtLmException {
+  const EmbedderLoadException(super.message, {this.nativeCode, this.cause});
 
   /// LiteRT-LM's status code, when a native call failed.
   final int? nativeCode;
@@ -76,10 +75,8 @@ final class EmbedderLoadException implements Exception {
 }
 
 /// A loaded embedder failed a request. Core: `EmbeddingEngineException`.
-final class EmbedderEngineException implements Exception {
-  const EmbedderEngineException(this.message, {this.nativeCode, this.cause});
-
-  final String message;
+final class EmbedderEngineException extends LiteRtLmException {
+  const EmbedderEngineException(super.message, {this.nativeCode, this.cause});
 
   /// LiteRT-LM's status code, when a native call failed.
   final int? nativeCode;
@@ -93,14 +90,13 @@ final class EmbedderEngineException implements Exception {
 
 /// An input longer than the embedder takes; never truncated. Core:
 /// `EmbeddingInputTooLongException`.
-final class EmbedderInputTooLongException implements Exception {
+final class EmbedderInputTooLongException extends LiteRtLmException {
   const EmbedderInputTooLongException(
-    this.message, {
+    super.message, {
     required this.maxInputTokens,
     this.actualTokens,
   });
 
-  final String message;
   final int maxInputTokens;
   final int? actualTokens;
 

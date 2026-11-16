@@ -1,8 +1,9 @@
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'ffi_test_support.dart';
 
 /// No native layer: openSession on the FFI engine makes no native call.
 class _Client extends LiteRtLmFfiClient {
@@ -10,8 +11,10 @@ class _Client extends LiteRtLmFfiClient {
   BundleSampler get bundleSampler => const BundleSampler();
 }
 
-FfiInferenceModel _model() => FfiInferenceModel(
+FfiInferenceModel _model() => ffiModelForClient(
   ffiClient: _Client(),
+  // Sessions share: opening one makes no native call.
+  ownConversations: 1,
   maxTokens: 1024,
   modelType: ModelType.qwen3,
   activeBackend: PreferredBackend.cpu,
@@ -45,8 +48,10 @@ void main() {
   });
 
   test('openSession still counts against maxConcurrentSessions', () async {
-    final model = FfiInferenceModel(
+    final model = ffiModelForClient(
       ffiClient: _Client(),
+      // Sessions share: opening one makes no native call.
+      ownConversations: 1,
       maxTokens: 1024,
       modelType: ModelType.qwen3,
       activeBackend: PreferredBackend.cpu,

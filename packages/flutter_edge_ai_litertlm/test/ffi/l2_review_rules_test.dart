@@ -7,8 +7,9 @@
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
+import 'ffi_test_support.dart';
 
 void main() {
   test('a generated text or reply past 64 KiB is read whole; an error message '
@@ -81,7 +82,7 @@ void main() {
       'report it as passed', () async {
     liteRtLmScoringReleaseMode = true;
     addTearDown(() => liteRtLmScoringReleaseMode = false);
-    final model = FfiInferenceModel(
+    final model = ffiModelForClient(
       ffiClient: LiteRtLmFfiClient(),
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,

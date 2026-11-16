@@ -11,6 +11,7 @@ import 'dart:typed_data';
 
 import 'litertlm_flatbuffer.dart';
 import '../runtime/npu_stacks.dart' show NpuStack;
+import '../runtime/errors.dart';
 
 /// The SoC a `.litertlm` bundle's compiled sections target: the
 /// `LiteRtStamp` the AOT compiler writes into each section it compiles, with
@@ -251,11 +252,10 @@ enum LiteRtLmBundleProblem {
 
 /// A `.litertlm` file that cannot be read, or cannot run as asked — thrown
 /// before any engine is created.
-final class LiteRtLmBundleException implements Exception {
-  const LiteRtLmBundleException(this.problem, this.message, {this.path});
+final class LiteRtLmBundleException extends LiteRtLmException {
+  const LiteRtLmBundleException(this.problem, super.message, {this.path});
 
   final LiteRtLmBundleProblem problem;
-  final String message;
 
   /// The file, when known.
   final String? path;

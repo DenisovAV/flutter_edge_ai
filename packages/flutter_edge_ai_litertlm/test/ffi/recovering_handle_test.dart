@@ -2,9 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 
 /// A conversation that answers with scripted text chunks, one turn at a time,
 /// and can be held open mid-turn so a test can stop it there.
@@ -100,6 +99,7 @@ class _Conversation implements ConversationHandle {
   Stream<String> chatRawMessage(
     String messageJson, {
     bool enableThinking = false,
+    SendOptions options = SendOptions.none,
   }) => _reply(messageJson);
 
   @override
@@ -127,7 +127,7 @@ class _Conversation implements ConversationHandle {
   }
 
   @override
-  TurnMetrics getSessionMetrics() => TurnMetrics();
+  BenchmarkInfo getSessionMetrics() => BenchmarkInfo();
 
   /// How native's last send ended, as the handle would read it.
   NativeLastTurnEnd? turnEnd;
@@ -164,7 +164,7 @@ void main() {
     reopenGate = null;
     handle = RecoveringConversationHandle(
       first,
-      toolCallsOf: liteRtLmToolCalls,
+      toolCallsOf: nativeToolCalls,
       reopen: (messagesJson) async {
         await reopenGate?.future;
         final c = _Conversation(
@@ -375,7 +375,7 @@ void main() {
       'block the next turn forever', () async {
     handle = RecoveringConversationHandle(
       first,
-      toolCallsOf: liteRtLmToolCalls,
+      toolCallsOf: nativeToolCalls,
       reopen: (messagesJson) async {
         final c = _Conversation('rebuilt', seed: messagesJson);
         reopened.add(c);
@@ -522,7 +522,7 @@ void main() {
     test('on the NPU a stop rebuilds without trying to rewind', () async {
       handle = RecoveringConversationHandle(
         first,
-        toolCallsOf: liteRtLmToolCalls,
+        toolCallsOf: nativeToolCalls,
         reopen: (messagesJson) async {
           final c = _Conversation('rebuilt', seed: messagesJson);
           reopened.add(c);
@@ -584,7 +584,7 @@ void main() {
         'rebuilt, not rewound: its reply is not known in time', () async {
       handle = RecoveringConversationHandle(
         first,
-        toolCallsOf: liteRtLmToolCalls,
+        toolCallsOf: nativeToolCalls,
         reopen: (messagesJson) async {
           final c = _Conversation('rebuilt', seed: messagesJson);
           reopened.add(c);
@@ -704,7 +704,7 @@ void main() {
         'one is not cut off and nothing is rebuilt', () async {
       handle = RecoveringConversationHandle(
         first,
-        toolCallsOf: liteRtLmToolCalls,
+        toolCallsOf: nativeToolCalls,
         reopen: (messagesJson) async {
           final c = _Conversation('rebuilt', seed: messagesJson);
           reopened.add(c);
@@ -781,7 +781,7 @@ void main() {
         'wind-down bound, instead of rebuilding under it', () async {
       handle = RecoveringConversationHandle(
         first,
-        toolCallsOf: liteRtLmToolCalls,
+        toolCallsOf: nativeToolCalls,
         reopen: (messagesJson) async {
           final c = _Conversation('rebuilt', seed: messagesJson);
           reopened.add(c);
@@ -888,7 +888,7 @@ void main() {
         'refused input is not in', () async {
       handle = RecoveringConversationHandle(
         first,
-        toolCallsOf: liteRtLmToolCalls,
+        toolCallsOf: nativeToolCalls,
         reopen: (messagesJson) async {
           final c = _Conversation('rebuilt', seed: messagesJson);
           reopened.add(c);
@@ -936,7 +936,7 @@ void main() {
       () async {
         handle = RecoveringConversationHandle(
           first,
-          toolCallsOf: liteRtLmToolCalls,
+          toolCallsOf: nativeToolCalls,
           reopen: (messagesJson) async {
             final c = _Conversation(
               'rebuilt ${reopened.length}',

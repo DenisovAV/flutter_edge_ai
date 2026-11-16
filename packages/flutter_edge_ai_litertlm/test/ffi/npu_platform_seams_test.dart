@@ -8,10 +8,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_cache_dir.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -207,19 +207,11 @@ void main() {
       await expectLater(future, throwsStateError);
     });
 
-    test('by default the app support directory and the Flutter NPU host', () {
+    test('by default the app support directory and the Flutter NPU '
+        'platform', () {
       const host = LiteRtLmEngineHost();
       expect(host.cacheDirectory, applicationSupportDirectoryPath);
-      expect(identical(host.npu, flutterNpuHost), isTrue);
-    });
-
-    test('NPU questions go to the injected host', () async {
-      final npu = _FakeNpuHost();
-      final host = LiteRtLmEngineHost(npu: npu);
-      expect((await host.stack(NpuStack.intel)).bundled, isTrue);
-      expect(host.unreachable(NpuStack.intel), 'fake');
-      expect(await host.prepareDispatchDir(NpuStack.intel), '/fake/intel');
-      expect(npu.asked, ['stack:intel', 'probe:intel', 'prepare:intel']);
+      expect(host.npuPlatform, isA<FlutterNpuPlatform>());
     });
   });
 
@@ -229,7 +221,7 @@ void main() {
   });
 }
 
-final class _FakePlatform implements NpuPlatformBindings {
+final class _FakePlatform implements NpuPlatform {
   _FakePlatform({this.executableDir = '/nowhere', this.androidDir});
 
   @override
@@ -252,33 +244,5 @@ final class _FakePlatform implements NpuPlatformBindings {
   ) async {
     androidAsked.add((libFileNames, vendor));
     return androidDir;
-  }
-}
-
-final class _FakeNpuHost implements LiteRtLmNpuHost {
-  final asked = <String>[];
-
-  @override
-  String get abi => 'windows_x64';
-
-  @override
-  String get operatingSystem => 'windows';
-
-  @override
-  Future<NpuStackCheck> stack(NpuStack vendor) async {
-    asked.add('stack:${vendor.name}');
-    return const NpuStackCheck.bundled();
-  }
-
-  @override
-  String? unreachable(NpuStack vendor) {
-    asked.add('probe:${vendor.name}');
-    return 'fake';
-  }
-
-  @override
-  Future<String> prepareDispatchDir(NpuStack vendor) async {
-    asked.add('prepare:${vendor.name}');
-    return '/fake/${vendor.name}';
   }
 }

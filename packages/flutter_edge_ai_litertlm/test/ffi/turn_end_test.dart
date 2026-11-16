@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'ffi_test_support.dart';
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
 /// A conversation whose native side the test plays: each send is a real
 /// [NativeTurnStream] on [turns], and the test posts its chunks and its end
@@ -16,11 +17,10 @@ class _Handle implements ConversationHandle {
   final sent = Completer<void>();
 
   @override
-  Stream<String> chat(
-    String text, {
-    List<Uint8List>? imageBytes,
-    Uint8List? audioBytes,
+  Stream<String> chatRawMessage(
+    String messageJson, {
     bool enableThinking = false,
+    SendOptions options = SendOptions.none,
   }) {
     send = NativeTurnStream(turns, 'c');
     sent.complete();
@@ -37,7 +37,7 @@ class _Handle implements ConversationHandle {
   Future<int?> tokenCount(String text) async => text.length;
 
   @override
-  TurnMetrics getSessionMetrics() => const TurnMetrics();
+  BenchmarkInfo getSessionMetrics() => const BenchmarkInfo();
 
   /// Native's turn-end record, as the test sets it.
   NativeLastTurnEnd? turnEnd;
@@ -53,7 +53,7 @@ class _Handle implements ConversationHandle {
 }
 
 FfiInferenceModelSession _session(_Handle handle, {int? maxOutputTokens}) =>
-    FfiInferenceModelSession(
+    ffiSessionForHandle(
       handle: handle,
       modelType: ModelType.gemmaIt,
       fileType: ModelFileType.litertlm,
@@ -145,7 +145,7 @@ void main() {
     await handle.sent.future;
     await session.close();
     handle.send.cancelled();
-    await expectLater(text, throwsA(isA<LiteRtLmTurnClosedException>()));
+    await expectLater(text, throwsA(isA<LiteRtLmSessionClosedError>()));
   });
 
   for (final (cap, expected) in [
@@ -230,14 +230,14 @@ void main() {
   });
 
   test('liteRtLmCompletedTurnEnd: each record, and the guess without one', () {
-    for (final end in [...NativeLastTurnEnd.values, null]) {
+    for (final end in [...lm.TurnEnd.values, null]) {
       for (final cap in [null, 64]) {
         final guess = cap == null ? TurnEnd.endOfSequence : TurnEnd.outputLimit;
         expect(liteRtLmCompletedTurnEnd(end, cap), switch (end) {
-          NativeLastTurnEnd.completed => TurnEnd.endOfSequence,
-          NativeLastTurnEnd.outputLimit => TurnEnd.outputLimit,
-          NativeLastTurnEnd.contextLimit ||
-          NativeLastTurnEnd.contextFull => TurnEnd.contextLimit,
+          lm.TurnEnd.completed => TurnEnd.endOfSequence,
+          lm.TurnEnd.outputLimit => TurnEnd.outputLimit,
+          lm.TurnEnd.contextLimit ||
+          lm.TurnEnd.contextFull => TurnEnd.contextLimit,
           _ => guess,
         }, reason: '$end, cap $cap');
       }

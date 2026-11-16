@@ -2,7 +2,7 @@
 // `SdkTextExtractor`, which the web engine uses, on every chunk shape.
 
 import 'package:flutter_edge_ai/engine.dart' show SdkTextExtractor;
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

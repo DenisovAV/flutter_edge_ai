@@ -6,13 +6,13 @@ import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:litertlm_dart/bindings.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai_litertlm/src/adapter/structured_output_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'ffi_test_support.dart';
 
 void main() {
   test('the generated C API 1.0 bindings pass both constraint setters', () {
@@ -333,7 +333,9 @@ void main() {
             sampling: sampling,
             samplingExplicit: false,
             thinking: false,
-            jsonSchema: jsonSchema,
+            constraint: jsonSchema == null
+                ? null
+                : Constraint.jsonSchema(jsonSchema),
             filterChannelContent: true,
           )
           .toList();
@@ -411,13 +413,14 @@ void main() {
         sends.add(send);
         return send;
       }
-      ..metricsForTest = (_) => const TurnMetrics(tokensPerSecond: 51);
-    final model = FfiInferenceModel(
+      ..metricsForTest = (_) => const BenchmarkInfo(tokensPerSecond: 51);
+    final model = ffiModelForClient(
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
       activeBackend: PreferredBackend.gpu,
       openSessionBacking: OpenSessionBacking.virtual,
+      ownConversations: 1,
       structuredOutput: const StructuredOutputSupport(
         keywords: ResponseFormat.dialect,
       ),
@@ -482,7 +485,7 @@ void main() {
       sends.add(send);
       return send;
     };
-    final model = FfiInferenceModel(
+    final model = ffiModelForClient(
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -576,7 +579,7 @@ void main() {
 
   test('the loaded model reports the support supplied by its engine', () {
     const support = StructuredOutputSupport(keywords: ResponseFormat.dialect);
-    final model = FfiInferenceModel(
+    final model = ffiModelForClient(
       ffiClient: LiteRtLmFfiClient(),
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -589,11 +592,12 @@ void main() {
   });
 
   test('a model loaded with a thinking budget refuses formats', () {
-    final model = FfiInferenceModel(
-      ffiClient: _BudgetClient(),
+    final model = ffiModelForClient(
+      ffiClient: LiteRtLmFfiClient(),
       maxTokens: 1024,
       modelType: ModelType.gemma4,
       activeBackend: PreferredBackend.cpu,
+      thinkingTokenBudget: 64,
       structuredOutput: const StructuredOutputSupport(
         keywords: ResponseFormat.dialect,
       ),
@@ -609,11 +613,6 @@ void main() {
       ),
     );
   });
-}
-
-class _BudgetClient extends LiteRtLmFfiClient {
-  @override
-  int? get thinkingTokenBudget => 64;
 }
 
 class _SchemaClient extends LiteRtLmFfiClient {
@@ -636,7 +635,7 @@ _ConstraintRecorder _installConstraintRecorder(LiteRtLmFfiClient client) {
   final recorder = _ConstraintRecorder();
   client
     ..bindingsForTest = recorder.bindings
-    ..metricsForTest = (_) => const TurnMetrics();
+    ..metricsForTest = (_) => const BenchmarkInfo();
   addTearDown(recorder.close);
   return recorder;
 }

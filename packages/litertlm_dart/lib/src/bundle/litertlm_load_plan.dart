@@ -44,15 +44,15 @@ import 'litertlm_bundle_info.dart';
 /// What a `.litertlm` load does.
 typedef LiteRtLmLoadPlan = ({
   /// The backends to try for the text model, in order; never empty.
-  List<Backend> textBackends,
+  List<BackendKind> textBackends,
 
   /// The vision encoder's backend; null when vision is off or the bundle (read)
   /// has no vision encoder.
-  Backend? visionBackend,
+  BackendKind? visionBackend,
 
   /// The audio encoder's backend; null when audio is off or the bundle (read)
   /// has no audio encoder.
-  Backend? audioBackend,
+  BackendKind? audioBackend,
 
   /// The NPU the text model is compiled for, else the one an encoder that is
   /// on is compiled for; null when none of them is.
@@ -63,7 +63,7 @@ typedef LiteRtLmLoadPlan = ({
   /// compiled for an NPU), for the notice that the requested backend is not
   /// tried. An NPU left out because this device cannot reach it is not here:
   /// `initializeFfiRuntime` words that reason from the host.
-  Map<Backend, String> dropped,
+  Map<BackendKind, String> dropped,
 });
 
 /// The text backends a load of [path] tries before it asks whether the NPU
@@ -73,11 +73,11 @@ typedef LiteRtLmLoadPlan = ({
 /// the backends.
 ///
 /// Throws [LiteRtLmBundleException] as [planLiteRtLmLoad] does.
-({List<Backend> backends, Map<Backend, String> dropped})
+({List<BackendKind> backends, Map<BackendKind, String> dropped})
 liteRtLmTextCandidates({
   required String path,
   required BundleInfo? bundle,
-  required Backend? preferredBackend,
+  required BackendKind? preferredBackend,
   required bool backendFallback,
   required String abi,
 }) {
@@ -98,7 +98,7 @@ liteRtLmTextCandidates({
   final requested = preferredBackend;
   final order = switch (requested) {
     null => [
-      ...[Backend.gpu, Backend.cpu].where(allowed.contains),
+      ...[BackendKind.gpu, BackendKind.cpu].where(allowed.contains),
     ],
     final backend when !backendFallback => [backend],
     final backend => [
@@ -107,7 +107,7 @@ liteRtLmTextCandidates({
     ],
   };
   var textBackends = order.isEmpty && requested == null
-      ? [if (allowed.contains(Backend.npu)) Backend.npu]
+      ? [if (allowed.contains(BackendKind.npu)) BackendKind.npu]
       : order;
   if (!backendFallback && textBackends.length > 1) {
     textBackends = [textBackends.first];
@@ -141,12 +141,13 @@ bool liteRtLmEncoderOnNpu({
   required BundleInfo? bundle,
   required bool supportImage,
   required bool supportAudio,
-  Backend? preferredVisionBackend,
-  Backend? preferredAudioBackend,
+  BackendKind? preferredVisionBackend,
+  BackendKind? preferredAudioBackend,
 }) {
   if (bundle == null) return false;
-  bool onNpu(BundleSection? encoder, Backend? requested) =>
-      encoder != null && (requested ?? _encoderDefault(encoder)) == Backend.npu;
+  bool onNpu(BundleSection? encoder, BackendKind? requested) =>
+      encoder != null &&
+      (requested ?? _encoderDefault(encoder)) == BackendKind.npu;
   return (supportImage &&
           onNpu(bundle.visionEncoder, preferredVisionBackend)) ||
       (supportAudio && onNpu(bundle.audioEncoder, preferredAudioBackend));
@@ -216,12 +217,12 @@ NpuStamp? liteRtLmLoadNpuTarget({
 LiteRtLmLoadPlan planLiteRtLmLoad({
   required String path,
   required BundleInfo? bundle,
-  required Backend? preferredBackend,
+  required BackendKind? preferredBackend,
   required bool backendFallback,
   required bool supportImage,
   required bool supportAudio,
-  Backend? preferredVisionBackend,
-  Backend? preferredAudioBackend,
+  BackendKind? preferredVisionBackend,
+  BackendKind? preferredAudioBackend,
   required bool Function() npuAvailable,
   required String Function() npuUnavailableReason,
   required String abi,
@@ -246,10 +247,10 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
   bool? reachable;
   bool npuReachable() => reachable ??= npuAvailable();
 
-  if (textBackends.contains(Backend.npu) && !npuReachable()) {
+  if (textBackends.contains(BackendKind.npu) && !npuReachable()) {
     final rest = [
       for (final backend in textBackends)
-        if (backend != Backend.npu) backend,
+        if (backend != BackendKind.npu) backend,
     ];
     if (rest.isEmpty) {
       final reason = npuUnavailableReason();
@@ -293,7 +294,7 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
     ('vision', visionBackend, bundle?.visionEncoder),
     ('audio', audioBackend, bundle?.audioEncoder),
   ]) {
-    if (backend != Backend.npu || encoder == null) continue;
+    if (backend != BackendKind.npu || encoder == null) continue;
     final runs = encoder.npuTarget == null
         ? "$path's $kind encoder runs only on the NPU"
         : "$path's $kind encoder is compiled for the ${encoder.npuTarget} NPU "
@@ -303,7 +304,7 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
         '$runs, and ${npuUnavailableReason()}',
       );
     }
-    if (textBackends.any((text) => text != Backend.npu)) {
+    if (textBackends.any((text) => text != BackendKind.npu)) {
       final flag = kind == 'vision' ? 'supportImage' : 'supportAudio';
       throw LiteRtLmBundleException(
         LiteRtLmBundleProblem.unsupportedNpu,
@@ -327,10 +328,10 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
 }
 
 /// The backends tried for a [requested] backend when falling back.
-List<Backend> _fallbackOrder(Backend requested) => switch (requested) {
-  Backend.npu => const [Backend.npu, Backend.gpu, Backend.cpu],
-  Backend.gpu => const [Backend.gpu, Backend.cpu],
-  Backend.cpu => const [Backend.cpu],
+List<BackendKind> _fallbackOrder(BackendKind requested) => switch (requested) {
+  BackendKind.npu => const [BackendKind.npu, BackendKind.gpu, BackendKind.cpu],
+  BackendKind.gpu => const [BackendKind.gpu, BackendKind.cpu],
+  BackendKind.cpu => const [BackendKind.cpu],
 };
 
 /// The backends the text model can run on: the NPU only for a bundle compiled
@@ -349,19 +350,19 @@ List<Backend> _fallbackOrder(Backend requested) => switch (requested) {
 /// `litert-npu-runtime-mediatek` AAR carries one; the hook takes only its
 /// dispatch (`mediatekNpuLibs`). A file that could not be read keeps every
 /// backend.
-Set<Backend> _textBackendsAllowed(BundleInfo? bundle) {
-  if (bundle == null) return Backend.values.toSet();
-  if (bundle.isCompiledForNpu) return {Backend.npu};
+Set<BackendKind> _textBackendsAllowed(BundleInfo? bundle) {
+  if (bundle == null) return BackendKind.values.toSet();
+  if (bundle.isCompiledForNpu) return {BackendKind.npu};
   final declared = _backends(bundle.textModel?.backendConstraint);
   return declared.isEmpty
-      ? const {Backend.gpu, Backend.cpu}
-      : declared.difference(const {Backend.npu});
+      ? const {BackendKind.gpu, BackendKind.cpu}
+      : declared.difference(const {BackendKind.npu});
 }
 
 /// [_textBackendsAllowed], for the catalog test that checks the generated
 /// catalog against it.
 @visibleForTesting
-Set<Backend> textBackendsAllowedForTesting(BundleInfo? bundle) =>
+Set<BackendKind> textBackendsAllowedForTesting(BundleInfo? bundle) =>
     _textBackendsAllowed(bundle);
 
 /// Why a text model is compiled for no NPU
@@ -382,15 +383,19 @@ NpuStamp? _textNpuTarget(BundleInfo? bundle) =>
     bundle?.textModel?.npuTarget ?? bundle?.sectionOf('tf_lite_aux')?.npuTarget;
 
 /// The backends a `backend_constraint` names that this package knows.
-Set<Backend> _backends(List<String>? constraint) => {
+Set<BackendKind> _backends(List<String>? constraint) => {
   for (final name in constraint ?? const <String>[])
-    for (final backend in Backend.values)
+    for (final backend in BackendKind.values)
       if (backend.name == name) backend,
 };
 
 /// The refusal of a text model that cannot run on [requested] — or, for a
 /// file that declares only the NPU it is not compiled for, on anything.
-String _wrongTextBackend(String path, BundleInfo bundle, Backend? requested) {
+String _wrongTextBackend(
+  String path,
+  BundleInfo bundle,
+  BackendKind? requested,
+) {
   if (bundle.isCompiledForNpu) {
     // Set: with none asked, a bundle compiled for an NPU runs there.
     final asked = requested!;
@@ -400,8 +405,8 @@ String _wrongTextBackend(String path, BundleInfo bundle, Backend? requested) {
         'bundle of this model.';
   }
   final runs = [
-    Backend.gpu,
-    Backend.cpu,
+    BackendKind.gpu,
+    BackendKind.cpu,
   ].where(_textBackendsAllowed(bundle).contains).toList();
   if (runs.isEmpty) {
     final declared = bundle.textModel!.backendConstraint!.join(', ');
@@ -427,16 +432,16 @@ String _wrongTextBackend(String path, BundleInfo bundle, Backend? requested) {
 /// Whether [backend] is ruled out for [bundle]'s text model because it is
 /// compiled for no NPU, and not by its own `backend_constraint`: the NPU, when
 /// the file declares nothing or declares the NPU too.
-bool _noNpuGraphRulesOut(BundleInfo bundle, Backend backend) {
-  if (bundle.isCompiledForNpu || backend != Backend.npu) return false;
+bool _noNpuGraphRulesOut(BundleInfo bundle, BackendKind backend) {
+  if (bundle.isCompiledForNpu || backend != BackendKind.npu) return false;
   final declared = _backends(bundle.textModel?.backendConstraint);
-  return declared.isEmpty || declared.contains(Backend.npu);
+  return declared.isEmpty || declared.contains(BackendKind.npu);
 }
 
 /// Why the file rules [backend] out for its text model: it is compiled for an
 /// NPU; it is compiled for none ([_noNpuGraphRulesOut]); else it declares the
 /// backends it runs on ([_textBackendsAllowed]).
-String _textRulesOut(String path, BundleInfo bundle, Backend backend) {
+String _textRulesOut(String path, BundleInfo bundle, BackendKind backend) {
   if (bundle.isCompiledForNpu) {
     final target = _textNpuTarget(bundle);
     return '$path is compiled for the ${target == null ? 'NPU' : '$target NPU'} '
@@ -458,16 +463,16 @@ String _textRulesOut(String path, BundleInfo bundle, Backend backend) {
 ///
 /// Called only for an encoder that is on, so only then is an encoder compiled
 /// for an NPU checked against [abi].
-Backend? _encoderBackend(
+BackendKind? _encoderBackend(
   String path,
   String kind,
   BundleInfo? bundle,
   BundleSection? encoder,
-  Backend? requested,
+  BackendKind? requested,
   String abi,
 ) {
   if (encoder == null) {
-    return bundle != null ? null : requested ?? Backend.cpu;
+    return bundle != null ? null : requested ?? BackendKind.cpu;
   }
   final compiledFor = encoder.npuTarget;
   if (compiledFor != null) {
@@ -488,7 +493,7 @@ Backend? _encoderBackend(
         path: path,
       );
     }
-    if (requested == Backend.npu && compiledFor == null) {
+    if (requested == BackendKind.npu && compiledFor == null) {
       throw LiteRtLmBundleException(
         LiteRtLmBundleProblem.wrongBackend,
         "$path's $kind encoder is not compiled for an NPU (its section "
@@ -498,7 +503,7 @@ Backend? _encoderBackend(
         path: path,
       );
     }
-    if (requested != Backend.npu && compiledFor != null) {
+    if (requested != BackendKind.npu && compiledFor != null) {
       throw LiteRtLmBundleException(
         LiteRtLmBundleProblem.wrongBackend,
         "$path's $kind encoder is compiled for the $compiledFor NPU and runs "
@@ -515,15 +520,19 @@ Backend? _encoderBackend(
 /// Where an encoder runs when the caller does not say: its declared
 /// `backend_constraint` (the CPU when that allows it, as before), the NPU it
 /// is compiled for, else the CPU.
-Backend _encoderDefault(BundleSection encoder) {
+/// Where an encoder runs when the caller does not say (see [_encoderDefault]).
+BackendKind encoderDefaultBackend(BundleSection encoder) =>
+    _encoderDefault(encoder);
+
+BackendKind _encoderDefault(BundleSection encoder) {
   final declared = _backends(encoder.backendConstraint);
-  if (declared.isNotEmpty && !declared.contains(Backend.cpu)) {
-    return [Backend.gpu, Backend.npu].firstWhere(declared.contains);
+  if (declared.isNotEmpty && !declared.contains(BackendKind.cpu)) {
+    return [BackendKind.gpu, BackendKind.npu].firstWhere(declared.contains);
   }
   if (declared.isEmpty && encoder.npuTarget != null) {
-    return Backend.npu;
+    return BackendKind.npu;
   }
-  return Backend.cpu;
+  return BackendKind.cpu;
 }
 
 /// Refuses a [target] NPU this package has no dispatch for on [abi]

@@ -11,11 +11,11 @@ import 'dart:io';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
-import 'package:litertlm_dart/litertlm_dart.dart'
+import 'package:litertlm_dart/internal_io.dart'
     show textBackendsAllowedForTesting;
 import 'package:flutter_edge_ai_litertlm/src/catalog/litert_catalog.dart'
     show debugLiteRtCatalogHost;
-import 'package:litertlm_dart/common.dart' show mediatekNpuRefused;
+import 'package:litertlm_dart/internal.dart' show mediatekNpuRefused;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
 

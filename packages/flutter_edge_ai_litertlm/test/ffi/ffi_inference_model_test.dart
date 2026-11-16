@@ -8,16 +8,17 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai_litertlm/src/litertlm_decision_section.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../litertlm_container_fixture.dart';
+import 'ffi_test_support.dart';
 
 void main() {
   test('FfiInferenceModel exposes the backend initialized by the runtime', () {
-    final model = FfiInferenceModel(
+    final model = ffiModelForClient(
       ffiClient: LiteRtLmFfiClient(),
       maxTokens: 2048,
       modelType: ModelType.gemmaIt,
@@ -30,7 +31,7 @@ void main() {
 
   group('readDecisionSection', () {
     FfiInferenceModel modelWith(LitetuneDecisionRead? read) =>
-        FfiInferenceModel(
+        ffiModelForClient(
           ffiClient: LiteRtLmFfiClient(),
           maxTokens: 2048,
           modelType: ModelType.gemmaIt,
@@ -83,7 +84,7 @@ void main() {
   });
 
   group('openOptionScorer', () {
-    FfiInferenceModel modelOn(PreferredBackend? backend) => FfiInferenceModel(
+    FfiInferenceModel modelOn(PreferredBackend? backend) => ffiModelForClient(
       ffiClient: LiteRtLmFfiClient(),
       maxTokens: 2048,
       modelType: ModelType.gemmaIt,
@@ -132,7 +133,7 @@ void main() {
   test('isClosed is true from the moment close() starts', () async {
     // Core's getActiveModel cache checks this: its close listener fires only
     // once the teardown has ended.
-    final model = FfiInferenceModel(
+    final model = ffiModelForClient(
       ffiClient: LiteRtLmFfiClient(),
       maxTokens: 2048,
       modelType: ModelType.gemmaIt,
@@ -152,7 +153,7 @@ void main() {
       final client = _FailingShutdownClient();
       var legacyCloses = 0;
       var listenerCloses = 0;
-      final model = FfiInferenceModel(
+      final model = ffiModelForClient(
         ffiClient: client,
         maxTokens: 2048,
         modelType: ModelType.gemmaIt,

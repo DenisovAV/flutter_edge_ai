@@ -23,11 +23,11 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
 import 'package:flutter_edge_ai_litertlm/src/catalog/litert_catalog.dart'
     show debugLiteRtCatalogHost;
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 // ignore: implementation_imports — the fake LiteRT-LM implements the generated EmbeddingEngine bindings class
 import 'package:litertlm_dart/src/ffi/litert_lm_embedding_bindings.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 
 const _file = 'eg2.litertlm';
 const _noAudioEncoder =

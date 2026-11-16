@@ -1,135 +1,32 @@
-import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter/foundation.dart' show visibleForTesting;
-
-import 'catalog/litert_catalog.dart' show LiteRtLmModels;
-
 import 'dart:async';
 import 'dart:io' show FileSystemException;
 
+import 'package:flutter_edge_ai/engine.dart';
+import 'package:litertlm_dart/internal_io.dart'
+    show
+        BundleInfo,
+        LlmModelFamily,
+        gpuActivationFor,
+        liteRtLmEncoderOnNpu,
+        liteRtLmTextCandidates,
+        readBundleInfo,
+        readLlmModelFamily,
+        tryReadBundleActivationDeclaration;
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
+import 'package:litertlm_dart/litertlm_dart.dart'
+    show LiteRtLmBundleException, LiteRtLmBundleProblem, LiteRtLmLogLevel;
+
 import 'adapter/backend_fallback.dart';
 import 'adapter/ffi_inference_model.dart';
+import 'adapter/runtime_log_binding.dart';
 import 'adapter/runtime_mapping.dart';
-import 'litertlm_decision_section.dart';
 import 'adapter/structured_output_support.dart';
+import 'catalog/litert_catalog.dart' show LiteRtLmModels;
 import 'litert_lm_engine_host.dart';
-import 'package:litertlm_dart/common.dart';
-import 'adapter/gpu_activation.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
 import 'litert_lm_load_errors.dart';
+import 'litertlm_decision_section.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 import 'thinking_token_budget.dart';
-import 'adapter/runtime_log_binding.dart';
-
-/// Minimum context window (`max_num_tokens`) for `.litertlm` models.
-///
-/// `.litertlm` models bake a fixed `kv_cache_max_len` (1024 for every
-/// supported model — e.g. Gemma 4 E2B, FunctionGemma). The native engine sizes
-/// its KV-cache from `max_num_tokens`; a value below the baked length
-/// underflows the magic-number tensor resize and `DYNAMIC_UPDATE_SLICE` then
-/// fails to allocate tensors at generation time (#318 — verified on a Pixel
-/// 8a: 512 crashes, 1024 works). No native API reports the model's minimum, so
-/// we clamp up to the largest known minimum. Clamping up only over-allocates a
-/// few MB of KV-cache and never under-allocates.
-const int kMinLitertlmContextTokens = 1024;
-
-/// Raises [maxTokens] to [kMinLitertlmContextTokens] when a caller passes a
-/// value below it. Such values were almost certainly meant to cap *output*
-/// length — `maxTokens` is the whole CONTEXT WINDOW (input + output, the
-/// KV-cache), not the generation length. To limit generation, pass
-/// `maxOutputTokens` to `createSession`.
-///
-/// **Not applied on [PreferredBackend.npu].** The floor above is a CPU/GPU
-/// fact: those bundles bake `kv_cache_max_len` 1024 and underflow below it.
-/// NPU bundles are compiled for one `cache_length`, which can sit BELOW this
-/// floor. In a Gemma 3 bundle built with litert-torch's `npu_export` for the
-/// Qualcomm NPU, the prefill mask the compiled graph carries
-/// (`2 B x (attention heads / KV heads) x prefill x (cache_length + prefill)`)
-/// must stay at or under ~1 MiB or every prefill chunk after the first is
-/// dropped — the model answers from chunk 0 alone, with no error. With 4
-/// attention heads per KV head that puts the largest working `cache_length` at
-/// prefill 128 at **896** (LiteRT-LM#3508). That limit is set when the bundle
-/// is built, not by `maxTokens`. LiteRT-LM's NPU executor (v0.18.0,
-/// `DetermineMaxSequenceLengthStaticModel`) lowers a larger value to the
-/// bundle's `LlmMetadata.max_num_tokens` when it sets one, and to the KV-cache
-/// length read from the graph only when it does not; nothing compares the two
-/// (LiteRT-LM#4184). So a value above the cache is lowered to it only when the
-/// metadata says the cache length or nothing, which litert-torch writes by
-/// default; with metadata above the cache, a context past the cache fails at
-/// the KV-cache update or is not checked (from the code, not run on a device).
-/// Garbled Qwen3 output on the NPU is a different bug (LiteRT-LM#3846). The
-/// floor is skipped on NPU because it is a CPU/GPU fact: the caller's number
-/// is passed through untouched, since the context is a property of the bundle
-/// and only the caller knows it.
-///
-/// Pass the backend of the ATTEMPT, not the one the caller asked for. The load
-/// plan (`planLiteRtLmLoad`) tries a bundle compiled for an NPU on the NPU
-/// alone and a generic bundle never on the NPU, so a requested NPU becomes GPU
-/// and CPU attempts for a generic bundle, and npu -> gpu -> cpu only for a
-/// file the plan cannot read (a `.task`, a newer container); the floor has to
-/// apply to every GPU and CPU attempt.
-@visibleForTesting
-int clampLitertlmContextTokens(
-  int maxTokens, {
-  PreferredBackend? preferredBackend,
-}) {
-  if (preferredBackend == PreferredBackend.npu) return maxTokens;
-  if (maxTokens >= kMinLitertlmContextTokens) return maxTokens;
-  edgeAiLog(
-    '[LiteRtLmEngine] maxTokens ($maxTokens) is below the minimum context '
-    'size for .litertlm models; clamping to $kMinLitertlmContextTokens. '
-    'maxTokens is the CONTEXT WINDOW (KV-cache, input + output) — not the '
-    'generation length. Use maxOutputTokens on createSession to cap how many '
-    'tokens are generated.',
-  );
-  return kMinLitertlmContextTokens;
-}
-
-/// Pure map from a [RuntimeConfig] + resolved text backend to the encoder /
-/// backend / activation args of [LiteRtLmFfiClient.initialize]. Extracted from
-/// [LiteRtLmEngine.createModel] so the vision↔audio wiring is unit-testable
-/// without path_provider or a real FFI `dlopen` — the swap it guards is silent
-/// under the default config (both encoders resolve to `cpu`). The activation
-/// type is here for the same reason: a dropped value is silent until a GPU
-/// writes wrong digits.
-@visibleForTesting
-({
-  String backend,
-  bool enableVision,
-  String visionBackend,
-  int maxNumImages,
-  bool enableAudio,
-  String audioBackend,
-  int? activationDataType,
-})
-encoderInitArgs(
-  RuntimeConfig config,
-  PreferredBackend activeBackend, {
-  ActivationDataType? gpuDefaultActivation,
-  PreferredBackend? visionBackend,
-  PreferredBackend? audioBackend,
-}) => (
-  backend: ffiBackendWireName(activeBackend.toRuntime),
-  enableVision: config.supportImage,
-  // The load plan's choice (`planLiteRtLmLoad`), else the request.
-  visionBackend: encoderBackendWireName(
-    (visionBackend ?? config.preferredVisionBackend)?.toRuntime,
-  ),
-  maxNumImages: config.supportImage ? (config.maxNumImages ?? 1) : 0,
-  enableAudio: config.supportAudio,
-  audioBackend: encoderBackendWireName(
-    (audioBackend ?? config.preferredAudioBackend)?.toRuntime,
-  ),
-  // The caller's value wins on every backend. The engine's own default (see
-  // `gpuActivationDefault`) is for a GPU attempt only: only the GPU executor
-  // reads the type, and a CPU or NPU attempt is left as the bundle has it.
-  activationDataType: activationDataTypeWireValue(
-    (config.activationDataType ??
-            (activeBackend == PreferredBackend.gpu
-                ? gpuDefaultActivation
-                : null))
-        ?.toRuntime,
-  ),
-);
 
 /// LiteRT-LM (.litertlm) inference engine. Pure factory: builds and returns a
 /// bare [InferenceModel]; core owns the singleton lifecycle and registers its
@@ -243,343 +140,187 @@ class LiteRtLmEngine
     bindRuntimeLogToCore();
     final host = liteRtLmEngineHost;
     final cacheDir = await host.cacheDir();
+    // Set before every engine this one creates; null leaves the process's
+    // level as it is.
+    lm.LiteRtLmLog.nativeLevel = nativeLogLevel;
 
-    // What the file says about itself decides where it can run
-    // (`planLiteRtLmLoad`). A file the reader cannot read keeps the rules that
-    // need no file: LiteRT-LM also opens `.task` bundles, which have no
-    // container header.
+    // What the file says about itself decides where it can run: the text
+    // backends to try, in order, and those the file rules out (a file the
+    // reader cannot read keeps the rules that need no file). Each attempt is
+    // one `Engine.create`, which refuses what cannot run before any engine
+    // exists, chooses the NPU vendor from the bundle and applies the context
+    // floor and the GPU activation rules.
     final bundle = await _readBundle(config.modelPath);
-    // Whether the NPU is one of the backends the load tries, from the same
-    // rules the plan below applies: a request for it, a bundle compiled for
-    // it, a text model that declares it alone, or an encoder that is on and
-    // runs there. The plan asks whether the NPU is reachable only then, so the
-    // app's stack is looked up first.
-    final npuMayRun =
-        liteRtLmTextCandidates(
-          path: config.modelPath,
-          bundle: bundle,
-          preferredBackend: config.preferredBackend?.toRuntime,
-          backendFallback: backendFallback,
-          abi: host.abi,
-        ).backends.contains(Backend.npu) ||
-        liteRtLmEncoderOnNpu(
-          bundle: bundle,
-          supportImage: config.supportImage,
-          supportAudio: config.supportAudio,
-          preferredVisionBackend: config.preferredVisionBackend?.toRuntime,
-          preferredAudioBackend: config.preferredAudioBackend?.toRuntime,
-        );
-
-    // Whose NPU a load that tries it runs on, decided once, before the plan
-    // and before any engine (`chooseNpuVendor`, the rule the EmbeddingGemma 2
-    // placement follows too): the vendor the bundle is compiled for, else the
-    // first vendor of this host whose stack the build carries and whose device
-    // answers. Asked only when the NPU is one of the backends the load tries:
-    // on Android it opens a vendor library.
-    final npu = npuMayRun
-        ? await chooseNpuVendor(
-            target: liteRtLmLoadNpuTarget(
-              path: config.modelPath,
-              bundle: bundle,
-              supportImage: config.supportImage,
-              supportAudio: config.supportAudio,
-              abi: host.abi,
-            ),
-            host: host,
-          )
-        : null;
-    String npuRefusal() => switch (npu) {
-      NpuRefused(:final reason) => reason,
-      _ => npuNoVendorReason(host.abi),
-    };
-
-    // What a GPU attempt runs at when the caller set no activation type
-    // (`gpuActivationDefault`): FP32 for a FunctionGemma bundle converted
-    // before litetune 0.1.4, which declares no activation type and at the
-    // GPU's FP16 answers with `<pad>` or nothing, and for Gemma 4 with a
-    // context above 2,048 tokens, whose FP16 rotary positions break there
-    // (LiteRT-LM #4001). The header is read only when the answer can depend on it (see
-    // `activationHeaderMatters`).
-    ActivationDataType? gpuDefaultActivation;
-    GpuActivationReason? gpuDefaultReason;
-    if (config.activationDataType == null) {
-      BundleActivationRead? read;
-      if (activationHeaderMatters(
-        requested: null,
-        preferredBackend: config.preferredBackend,
-        modelType: spec.modelType,
-        maxTokens: config.maxTokens,
-      )) {
-        read = await tryReadBundleActivationDeclaration(config.modelPath);
-        final error = read.error;
-        if (error != null) {
-          // A failed read leaves the GPU attempt at FP16, where this bundle
-          // can answer with nothing. A release build is where that gets
-          // reported and edgeAiLog is silent there, so it is printed, once per
-          // load.
-          // ignore: avoid_print
-          print(
-            '[flutter_edge_ai_litertlm] WARNING: could not read which '
-            'activation type this FunctionGemma .litertlm declares, so a GPU '
-            'attempt runs at the engine default (float16), where a bundle '
-            'without one can answer with nothing. Pass '
-            'activationDataType: ActivationDataType.float32 to be sure. '
-            '${error.split('\n').first}',
-          );
-        }
-      }
-      final chosen = gpuActivationDefault(
-        requested: null,
-        preferredBackend: config.preferredBackend,
-        modelType: spec.modelType,
-        declaresKey: read?.declaresKey,
-        maxTokens: config.maxTokens,
-      );
-      gpuDefaultActivation = chosen.type;
-      gpuDefaultReason = chosen.reason;
-      switch (chosen.reason) {
-        case GpuActivationReason.functionGemmaWithoutKey:
-          edgeAiLog(
-            '[LiteRtLmEngine] this FunctionGemma bundle declares no '
-            'prefer_activation_type, and at the GPU default of float16 such '
-            'a bundle answers with <pad> only: a GPU attempt uses '
-            '${chosen.type?.name}. Pass '
-            'activationDataType: ActivationDataType.float16 to keep the '
-            'default.',
-          );
-        case GpuActivationReason.gemma4LongContext:
-          edgeAiLog(
-            '[LiteRtLmEngine] Gemma 4 with maxTokens ${config.maxTokens}, '
-            'above $gemma4Fp16MaxContextTokens: at float16 its rotary '
-            'positions past ~2,048 tokens stop being distinct and a long '
-            'prompt degrades (LiteRT-LM #4001), so a GPU attempt uses '
-            '${chosen.type?.name}. Pass '
-            'activationDataType: ActivationDataType.float16 to keep the '
-            'bundle\'s float16.',
-          );
-        case null:
-          break;
-      }
-    }
-
-    final LiteRtLmLoadPlan plan;
-    try {
-      plan = planLiteRtLmLoad(
-        path: config.modelPath,
-        bundle: bundle,
-        preferredBackend: config.preferredBackend?.toRuntime,
-        backendFallback: backendFallback,
-        supportImage: config.supportImage,
-        supportAudio: config.supportAudio,
-        preferredVisionBackend: config.preferredVisionBackend?.toRuntime,
-        preferredAudioBackend: config.preferredAudioBackend?.toRuntime,
-        npuAvailable: () => npu is NpuChosen,
-        npuUnavailableReason: npuRefusal,
-        abi: host.abi,
-      );
-    } on NpuDispatchUnavailableException catch (e, st) {
-      // The NPU was the only backend to try (or an encoder runs only there)
-      // and is not reachable: one NPU attempt that failed, as it always was.
-      final exception = BackendInitException(
-        attempts: [
-          BackendInitAttemptFailure(
-            backend: PreferredBackend.npu,
-            error: e,
-            stackTrace: st,
-          ),
-        ],
-      );
-      Error.throwWithStackTrace(exception, st);
-    }
-    final planVisionBackend = plan.visionBackend?.toCore;
-    final planAudioBackend = plan.audioBackend?.toCore;
-
-    final ffiRuntime = await initializeFfiRuntime<LiteRtLmFfiClient>(
-      preferredBackend: config.preferredBackend,
-      logTag: '[LiteRtLmEngine]',
-      createClient: host.createClient,
-      npuUnavailableBecause: npu is NpuRefused ? npu.reason : null,
-      backends: [for (final b in plan.textBackends) b.toCore],
-      droppedBecause: {
-        for (final MapEntry(:key, :value) in plan.dropped.entries)
-          key.toCore: value,
-      },
-      initializeClient: (client, backend) => _oneCreateAtATime(() async {
-        final args = encoderInitArgs(
-          config,
-          backend,
-          gpuDefaultActivation: gpuDefaultActivation,
-          visionBackend: planVisionBackend,
-          audioBackend: planAudioBackend,
-        );
-        // Per ATTEMPT, not per request: a requested NPU runs as GPU and CPU
-        // attempts for a generic bundle, and as npu -> gpu -> cpu for a file
-        // the plan cannot read (`plan.textBackends`), and the floor this
-        // skips exists for those. Computing it once from the REQUESTED
-        // backend would hand an unclamped NPU-sized context to a CPU engine,
-        // which is the #318 crash.
-        final maxTokens = clampLitertlmContextTokens(
-          config.maxTokens,
-          preferredBackend: backend,
-        );
-        // The NPU attempt's dispatch, prepared inside the attempt: a stack
-        // that cannot be prepared (NpuDispatchUnavailableException) is a
-        // failed attempt, which the fallback order then handles.
-        final npuDispatch = backend != PreferredBackend.npu
-            ? null
-            : switch (npu) {
-                NpuChosen(:final vendor) => (
-                  dir: await host.prepareDispatchDir(vendor),
-                  useHwMasking: await npuHwMasking(
-                    vendor,
-                    bundle,
-                    path: config.modelPath,
-                    broken: brokenNpuMaskAuxInUse,
-                  ),
-                  stagesWeightBanks: npuStagesWeightBanks(vendor),
-                ),
-                _ => throw StateError(
-                  'an npu attempt without a chosen NPU vendor',
-                ),
-              };
-        try {
-          await host.initializeClient(
-            client,
-            modelPath: config.modelPath,
-            backend: args.backend,
-            maxTokens: maxTokens,
-            cacheDir: cacheDir,
-            enableVision: args.enableVision,
-            visionBackend: args.visionBackend,
-            maxNumImages: args.maxNumImages,
-            enableAudio: args.enableAudio,
-            audioBackend: args.audioBackend,
-            enableSpeculativeDecoding: config.enableSpeculativeDecoding,
-            activationDataType: args.activationDataType,
-            // Why the engine chose that type, for a failed create's message;
-            // only a GPU attempt gets the engine's choice (encoderInitArgs).
-            gpuActivationReason: backend == PreferredBackend.gpu
-                ? gpuDefaultReason
-                : null,
-            npuDispatch: npuDispatch,
-            nativeLogLevel: nativeLogLevel,
-            thinkingTokenBudget: thinkingTokenBudget,
-          );
-        } on LiteRtLmEngineCreateException catch (e, stackTrace) {
-          final target = plan.npuTarget;
-          if (backend != PreferredBackend.npu || target == null) rethrow;
-          // The SoC of the device is not read before the load (nothing
-          // reports it reliably on every platform), so a bundle for another
-          // SoC fails here. Other causes fail here too, so the SoC is named
-          // as a possible cause, not the cause.
-          Error.throwWithStackTrace(
-            LiteRtLmEngineCreateException(
-              '${e.message}. The bundle is compiled for the $target NPU; if '
-              'this device is not a $target, that is the cause.',
-              nativeCode: e.nativeCode,
-              nativeMessage: e.nativeMessage,
-            ),
-            stackTrace,
-          );
-        }
-      }),
-      shutdownClient: (client) => client.shutdown(),
+    final candidates = liteRtLmTextCandidates(
+      path: config.modelPath,
+      bundle: bundle,
+      preferredBackend: config.preferredBackend?.toRuntime,
+      backendFallback: backendFallback,
+      abi: host.abi,
     );
 
-    // Only the GPU executor reads the activation type. A GPU attempt that
-    // failed — float32 needs more GPU memory — falls back to CPU without an
-    // error, so say that the setting did nothing here.
-    if (config.activationDataType != null &&
-        ffiRuntime.activeBackend != PreferredBackend.gpu) {
-      edgeAiLog(
-        '[LiteRtLmEngine] activationDataType '
-        '(${config.activationDataType!.name}) has no effect: the model runs on '
-        '${ffiRuntime.activeBackend.name}, and only the GPU executor reads it.',
-      );
-    }
+    lm.Backend backendOf(PreferredBackend backend) => switch (backend) {
+      PreferredBackend.cpu => const lm.Backend.cpu(),
+      PreferredBackend.gpu => const lm.Backend.gpu(),
+      PreferredBackend.npu => lm.Backend.npu(platform: host.npuPlatform),
+    };
+    // An encoder the caller left unset loads where the file wants it.
+    lm.Backend? encoder(
+      bool on,
+      PreferredBackend? requested,
+      lm.Backend? declared,
+    ) => !on
+        ? null
+        : requested != null
+        ? backendOf(requested)
+        : switch (declared) {
+            lm.NpuBackend() => lm.Backend.npu(platform: host.npuPlatform),
+            final declared? => declared,
+            null => const lm.Backend.cpu(),
+          };
+    final visionBackend = encoder(
+      config.supportImage,
+      config.preferredVisionBackend,
+      bundle?.declaredVisionBackend,
+    );
+    final audioBackend = encoder(
+      config.supportAudio,
+      config.preferredAudioBackend,
+      bundle?.declaredAudioBackend,
+    );
+
+    // The GPU activation rule is the runtime's, from the bundle's own model
+    // type. A Gemma 4 or FunctionGemma bundle that does not name its type
+    // keeps the rule by the type the app declared.
+    final gpuActivation = config.activationDataType == null
+        ? await _declaredTypeActivation(spec, config)
+        : null;
+
+    final attempt = await initializeFfiRuntime<_EngineAttempt>(
+      preferredBackend: config.preferredBackend,
+      logTag: '[LiteRtLmEngine]',
+      createClient: _EngineAttempt.new,
+      backends: [for (final b in candidates.backends) b.toCore],
+      droppedBecause: {
+        for (final MapEntry(:key, :value) in candidates.dropped.entries)
+          key.toCore: value,
+      },
+      initializeClient: (slot, backend) async {
+        slot.engine = await lm.Engine.create(
+          lm.EngineConfig(
+            modelPath: config.modelPath,
+            backend: backendOf(backend),
+            visionBackend: visionBackend,
+            audioBackend: audioBackend,
+            maxNumTokens: config.maxTokens,
+            maxNumImages: config.supportImage ? config.maxNumImages : null,
+            cacheDir: cacheDir,
+            activationDataType:
+                config.activationDataType?.toRuntime ??
+                (backend == PreferredBackend.gpu ? gpuActivation : null),
+            speculativeDecoding: switch (config.enableSpeculativeDecoding) {
+              true => lm.SpeculativeDecodingMode.on,
+              false => lm.SpeculativeDecodingMode.off,
+              null => null,
+            },
+          ),
+        );
+      },
+      shutdownClient: (slot) => slot.engine?.close(),
+      // An NPU this device cannot reach, with other backends left: dropped
+      // with a notice, as the load did before it tried any engine.
+      skipAttempt: (backend, error) =>
+          backend == PreferredBackend.npu &&
+          error is NpuDispatchUnavailableException,
+      // The file cannot run as asked on any backend (an encoder, an
+      // incomplete download), or an encoder needs an NPU out of reach
+      // whatever the text runs on: refused at once, not tried again.
+      isFatal: (error) =>
+          error is LiteRtLmBundleException ||
+          (error is NpuDispatchUnavailableException &&
+              liteRtLmEncoderOnNpu(
+                bundle: bundle,
+                supportImage: config.supportImage,
+                supportAudio: config.supportAudio,
+                preferredVisionBackend:
+                    config.preferredVisionBackend?.toRuntime,
+                preferredAudioBackend: config.preferredAudioBackend?.toRuntime,
+              )),
+    );
+    final engine = attempt.client.engine!;
+    final activeBackend = attempt.activeBackend;
 
     // Read with the model, so that a decider reads the file the engine
     // loaded; a file without a decision costs one header read.
     final decisionRead = await LitetuneDecisionRead.read(config.modelPath);
-    final linearAttentionState = await _readLinearAttentionState(
-      config.modelPath,
-    );
-    final openSessionBacking = liteRtLmOpenSessionBacking(
-      abi: host.abi,
-      backend: ffiRuntime.activeBackend.toRuntime,
-      npuVendor: switch (npu) {
-        NpuChosen(:final vendor) => vendor,
-        _ => null,
-      },
-      androidGpu: ffiRuntime.activeBackend == PreferredBackend.gpu
-          ? host.androidGpuFamily()
-          : null,
-    );
-    final npuVendor = switch (npu) {
-      NpuChosen(:final vendor) => vendor,
-      _ => null,
-    };
-    final androidGpu = ffiRuntime.activeBackend == PreferredBackend.gpu
+    final androidGpu = activeBackend == PreferredBackend.gpu
         ? host.androidGpuFamily()
         : null;
-    edgeAiLog(
-      '[LiteRtLmEngine] open sessions: ${openSessionBacking.name} '
-      'conversations on ${ffiRuntime.activeBackend.name} (${host.abi})'
-      '; linear attention state: ${linearAttentionState ?? 'unread'}',
-    );
     return FfiInferenceModel(
-      ffiClient: ffiRuntime.client,
+      engine: engine,
       decisionRead: decisionRead,
-      // The value the engine was actually built with: the same rule, resolved
-      // against the backend whose attempt succeeded rather than the requested
-      // one, so a fallback to CPU reports the clamped context it really has.
-      maxTokens: clampLitertlmContextTokens(
-        config.maxTokens,
-        preferredBackend: ffiRuntime.activeBackend,
-      ),
+      // The context the engine was actually created with (the CPU/GPU floor
+      // applied to the backend that loaded).
+      maxTokens: engine.maxNumTokens,
       modelType: spec.modelType,
-      activeBackend: ffiRuntime.activeBackend,
-      activeVisionBackend: planVisionBackend,
-      activeAudioBackend: planAudioBackend,
+      activeBackend: activeBackend,
+      activeVisionBackend: engine.visionBackend?.kind.toCore,
+      activeAudioBackend: engine.audioBackend?.kind.toCore,
       fileType: spec.fileType,
       supportImage: config.supportImage,
       supportAudio: config.supportAudio,
       multimodalOrder: config.multimodalOrder,
       maxConcurrentSessions: config.maxConcurrentSessions,
-      openSessionBacking: openSessionBacking,
-      linearAttentionState: linearAttentionState,
+      thinkingTokenBudget: thinkingTokenBudget,
       structuredOutput: liteRtLmStructuredOutputSupport(
         abi: host.abi,
-        backend: ffiRuntime.activeBackend,
-        npuVendor: npuVendor,
+        backend: activeBackend,
+        npuVendor: engine.npuVendor,
         androidGpu: androidGpu,
       ),
       onClose: () {}, // no-op: core resets its own state via addCloseListener
     );
   }
 
-  /// Whether the model at [path] keeps linear attention state
-  /// ([readLiteRtLmHasLinearAttentionState]), or null when the file cannot be
-  /// read to tell. Then `createSession` rewinds as before and `openSession`
-  /// sessions are rebuilt from full messages, and the cause is printed once
-  /// per load:
-  /// it changes how a stopped turn is recovered.
-  static Future<bool?> _readLinearAttentionState(String path) async {
-    Object cause;
+  /// The GPU activation a [spec] of a family with a known float16 failure
+  /// gets when its bundle does not name its model type (`llm_model_type`):
+  /// the rule the runtime applies from the bundle, by the type the app
+  /// declared instead. Null when the bundle names its type (the runtime
+  /// decides) or the rule does not apply.
+  static Future<lm.ActivationDataType?> _declaredTypeActivation(
+    InferenceModelSpec spec,
+    RuntimeConfig config,
+  ) async {
+    final family = switch (spec.modelType) {
+      ModelType.gemma4 => LlmModelFamily.gemma4,
+      ModelType.functionGemma => LlmModelFamily.functionGemma,
+      _ => null,
+    };
+    if (family == null) return null;
+    LlmModelFamily? named;
     try {
-      return await readLiteRtLmHasLinearAttentionState(path);
-    } on LiteRtLmBundleException catch (e) {
-      cause = e;
-    } on FileSystemException catch (e) {
-      cause = e;
+      named = await readLlmModelFamily(config.modelPath);
+    } on Object catch (e) {
+      if (e is! FileSystemException &&
+          e is! FormatException &&
+          e is! RangeError) {
+        rethrow;
+      }
     }
-    // ignore: avoid_print
-    print(
-      '[flutter_edge_ai_litertlm] could not read whether this model keeps '
-      'linear attention state ($cause): its openSession sessions are rebuilt '
-      'from full messages after a stop or a full context, never rewound.',
-    );
-    return null;
+    if (named == LlmModelFamily.gemma4 ||
+        named == LlmModelFamily.functionGemma) {
+      return null;
+    }
+    final declares = family == LlmModelFamily.functionGemma
+        ? (await tryReadBundleActivationDeclaration(
+            config.modelPath,
+          )).declaresKey
+        : null;
+    return gpuActivationFor(
+      family: family,
+      declaresActivation: declares,
+      maxNumTokens: config.maxTokens,
+    ).type;
   }
 
   /// [path]'s bundle info, or null when the file is not one this package
@@ -598,20 +339,9 @@ class LiteRtLmEngine
       return null;
     }
   }
+}
 
-  static Future<void> _createTail = Future.value();
-
-  /// Runs engine creations one at a time, on every backend; generation on
-  /// engines already created is not held. With `FlutterEdgeAi.openModel`
-  /// several engines can be created at once, and what a create touches is
-  /// process-wide: the Qualcomm dispatch sets `ADSP_LIBRARY_PATH` with
-  /// `setenv` while other drivers read the environment, and two engines on
-  /// one file write the same cache files in the engine cache directory.
-  /// A create is bound by reading the model, so queueing costs little.
-  static Future<void> _oneCreateAtATime(Future<void> Function() body) {
-    final previous = _createTail;
-    final done = Completer<void>();
-    _createTail = done.future;
-    return previous.then((_) => body()).whenComplete(done.complete);
-  }
+/// One backend attempt's engine, for [initializeFfiRuntime].
+final class _EngineAttempt {
+  lm.Engine? engine;
 }

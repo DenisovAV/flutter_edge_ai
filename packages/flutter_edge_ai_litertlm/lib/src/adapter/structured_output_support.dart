@@ -1,7 +1,7 @@
 import 'package:flutter_edge_ai/engine.dart';
 
-import 'package:litertlm_dart/common.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 
 /// One native LiteRT-LM host/backend row whose constrained decoding needs its
 /// own discriminating run before it can be advertised.

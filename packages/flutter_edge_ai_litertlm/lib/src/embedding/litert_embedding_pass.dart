@@ -33,7 +33,7 @@ import 'package:flutter_edge_ai/engine.dart';
 // stub, so the bindings would appear undefined during analysis.
 import 'package:flutter_edge_ai_litertlm/litert_bindings.dart';
 
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 
 import '../adapter/runtime_log_binding.dart';
 

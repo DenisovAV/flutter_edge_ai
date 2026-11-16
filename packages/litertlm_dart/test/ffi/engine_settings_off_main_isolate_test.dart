@@ -3,7 +3,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:litertlm_dart/litertlm_dart.dart'
+import 'package:litertlm_dart/internal_io.dart'
     show LiteRtLmEngineCreateException, LiteRtLmLogLevel;
 import 'package:litertlm_dart/src/ffi/litert_lm_bindings.dart';
 import 'package:litertlm_dart/src/ffi/litert_lm_client.dart';

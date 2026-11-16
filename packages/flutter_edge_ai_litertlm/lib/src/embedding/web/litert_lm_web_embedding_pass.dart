@@ -80,7 +80,7 @@ import 'package:flutter_edge_ai/engine.dart';
 
 import '../../web/litert_lm_page_lock.dart';
 import '../litert_lm_embedding_common.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import '../vision_budget.dart' show liteRtLmDefaultVisionTokensPerImage;
 
 /// The `@litert-lm/core` backends the pass can ask for (`Backend.CPU`,

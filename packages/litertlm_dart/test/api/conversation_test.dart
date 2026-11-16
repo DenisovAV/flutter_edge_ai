@@ -128,6 +128,53 @@ void main() {
     expect(message.toolCalls.single.name, 'f');
   });
 
+  test('a cancelled reply that ends late does not free the reply after it: '
+      'one reply at a time still holds', () async {
+    final handle = _Handle();
+    final conversation = conversationForTest(handle);
+    final a = conversation.sendMessageStream(Message.user('a')).toList();
+    await pumpEventQueue();
+    conversation.cancel();
+    final b = conversation.sendMessageStream(Message.user('b')).toList();
+    await pumpEventQueue();
+    expect(handle.sends, hasLength(2));
+    // A ends only now, while B streams.
+    handle.sends.first.cancelled();
+    await a;
+    expect(
+      () => conversation.sendMessageStream(Message.user('c')),
+      throwsStateError,
+    );
+    handle.sends.last.finished();
+    await b;
+    // B over: the next message goes.
+    final c = conversation.sendMessageStream(Message.user('c')).toList();
+    await pumpEventQueue();
+    handle.sends.last.finished();
+    await c;
+    expect(handle.sends, hasLength(3));
+  });
+
+  test('a cancelled reply whose subscription is cancelled while the next '
+      'reply streams does not free that reply', () async {
+    final handle = _Handle();
+    final conversation = conversationForTest(handle);
+    final a = conversation.sendMessageStream(Message.user('a')).listen((_) {});
+    await pumpEventQueue();
+    conversation.cancel();
+    final b = conversation.sendMessageStream(Message.user('b')).toList();
+    await pumpEventQueue();
+    final aCancelled = a.cancel();
+    handle.sends.first.cancelled();
+    await aCancelled;
+    expect(
+      () => conversation.sendMessageStream(Message.user('c')),
+      throwsStateError,
+    );
+    handle.sends.last.finished();
+    await b;
+  });
+
   test('cancel() stops native and keeps what was generated', () async {
     final handle = _Handle();
     final conversation = conversationForTest(handle);

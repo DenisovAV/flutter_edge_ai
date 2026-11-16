@@ -102,7 +102,9 @@ final class Conversation {
   final ConversationHandle _handle;
   final ConversationConfig _config;
   final void Function() _budgetCapsNothing;
-  bool _sending = false;
+  // The turn whose reply is being listened to; a turn that ended, or was
+  // let go by a cancel, clears it only while it is still the current one.
+  Object? _sending;
   bool _closed = false;
 
   /// Sends [message] and streams the reply.
@@ -168,6 +170,10 @@ final class Conversation {
     // with): a done event, and a subscriber that cancels on the error, also
     // run onCancel, and there is nothing left to stop.
     var ended = false;
+    final turn = Object();
+    void release() {
+      if (identical(_sending, turn)) _sending = null;
+    }
 
     void endWith(Object error, StackTrace stack) {
       ended = true;
@@ -188,11 +194,12 @@ final class Conversation {
           );
           return;
         }
-        if (_sending) {
+        if (_sending != null) {
           endWith(StateError(_stillSending), StackTrace.current);
           return;
         }
-        _sending = true;
+        _sending = turn;
+
         inner = _handle
             .chatRawMessage(json, enableThinking: enable, options: options)
             .listen(
@@ -217,13 +224,13 @@ final class Conversation {
               onError: (Object error, StackTrace stack) {
                 // The handle's stream ends with its error: this turn is over.
                 ended = true;
-                _sending = false;
+                release();
                 if (cancelled) return;
                 controller.addError(_mapError(error), stack);
               },
               onDone: () {
                 ended = true;
-                _sending = false;
+                release();
                 if (!controller.isClosed) controller.close();
               },
             );
@@ -235,7 +242,7 @@ final class Conversation {
         cancelled = true;
         // The next message may be sent at once: it waits for this turn to
         // end and for the conversation's recovery before it is sent.
-        _sending = false;
+        release();
         final sub = inner;
         if (sub == null) return null;
         // Ask native to stop, then wait for the turn to end on its own, as a
@@ -268,8 +275,12 @@ final class Conversation {
       'sending the next message.';
 
   void _checkNotSending() {
-    if (_sending) throw StateError(_stillSending);
+    if (_sending != null) throw StateError(_stillSending);
   }
+
+  /// The current reply no longer holds the conversation: the next message
+  /// may be sent, and the current turn's end no longer frees anything.
+  void _letGo() => _sending = null;
 
   /// Stops the reply in flight, keeping what was generated: native stops at
   /// its next token (a prefill in progress finishes first) and the stream
@@ -279,7 +290,7 @@ final class Conversation {
   /// at once: it waits for the stopped turn to end. A message still waiting
   /// for the turn before it is not sent.
   void cancel() {
-    _sending = false;
+    _letGo();
     _handle.cancelGeneration();
   }
 

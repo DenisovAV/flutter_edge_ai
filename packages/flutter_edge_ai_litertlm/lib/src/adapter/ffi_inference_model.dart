@@ -1193,10 +1193,13 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
       if (cancelToken != null) CancelTokenSignal(cancelToken),
     ];
     try {
-      return (await engine.scoreTargets(
-        prompt,
-        targets,
-        cancel: _AnyCancelSignal(signals),
+      // A native failure as option scoring has always reported it.
+      return (await liteRtLmAsStateError(
+        () => engine.scoreTargets(
+          prompt,
+          targets,
+          cancel: _AnyCancelSignal(signals),
+        ),
       )).toCore;
     } on lm.ScoringCancelledException {
       if (_closed) throw ScoringStoppedError('The option scorer is closed.');

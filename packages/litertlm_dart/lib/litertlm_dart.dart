@@ -4,7 +4,7 @@
 // only (dart:ffi); the build hook bundles libLiteRtLm for the target.
 //
 // What it adds to the official APIs: several conversations per engine with
-// a stopped turn recovered, how a turn ended ([TurnEnd]), the NPU vendor
+// a stopped turn recovered, the NPU vendor
 // chosen from the bundle, the bundle read without loading it ([BundleInfo]),
 // tokenize and option scoring, and EmbeddingGemma 2's images and audio.
 library;
@@ -29,7 +29,6 @@ export 'src/api/conversation.dart'
         ContextFullException,
         Conversation,
         ConversationClosedException,
-        TurnEnd,
         TurnFailedException;
 export 'src/api/embedding_engine.dart'
     show EmbeddingEngine, EmbeddingEngineConfig;

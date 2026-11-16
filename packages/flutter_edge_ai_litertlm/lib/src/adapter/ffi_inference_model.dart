@@ -12,7 +12,9 @@ import 'package:flutter/foundation.dart';
 
 import 'package:litertlm_dart/internal_io.dart'
     show
+        NativeLastTurnEnd,
         ScoringStoppedError,
+        conversationHandle,
         createOwnConversation,
         engineFiltersChannelContent,
         engineNoRewindReason,
@@ -1071,8 +1073,10 @@ class FfiInferenceModelSession extends InferenceModelSession
       stopped: () => _stopAsked,
       closed: () => _isClosed,
       isCloseError: (error) => error is LiteRtLmSessionClosedError,
-      completed: () =>
-          liteRtLmCompletedTurnEnd(conversation.lastTurnEnd, maxOutputTokens),
+      completed: () => liteRtLmCompletedTurnEnd(
+        conversationHandle(conversation).lastTurnEnd,
+        maxOutputTokens,
+      ),
     );
   }
 
@@ -1095,24 +1099,29 @@ class FfiInferenceModelSession extends InferenceModelSession
 }
 
 /// How a native turn whose text ran to its end ended, from native's turn-end
-/// record ([lm.TurnEnd], §23): the end of the reply is
-/// [TurnEnd.endOfSequence], `max_output_tokens` [TurnEnd.outputLimit], a
-/// decode that filled the context window (and an input that did not fit,
-/// should one ever end without an error) [TurnEnd.contextLimit]. Without a
-/// record, or with one no completed send leaves, it is
-/// [liteRtLmPlaceholderCompletedEnd]'s guess.
+/// record ([NativeLastTurnEnd], §23; litertlm_dart keeps it internal, as
+/// LiteRT-LM's Kotlin and Swift APIs report no end reason): the end of the
+/// reply is [TurnEnd.endOfSequence], `max_output_tokens`
+/// [TurnEnd.outputLimit], a decode that filled the context window (and an
+/// input that did not fit, should one ever end without an error)
+/// [TurnEnd.contextLimit]. Without a record, or with one no completed send
+/// leaves, it is [liteRtLmPlaceholderCompletedEnd]'s guess.
 @visibleForTesting
-TurnEnd liteRtLmCompletedTurnEnd(lm.TurnEnd? end, int? maxOutputTokens) =>
-    switch (end) {
-      lm.TurnEnd.completed => TurnEnd.endOfSequence,
-      lm.TurnEnd.outputLimit => TurnEnd.outputLimit,
-      lm.TurnEnd.contextLimit || lm.TurnEnd.contextFull => TurnEnd.contextLimit,
-      lm.TurnEnd.cancelled ||
-      lm.TurnEnd.failed ||
-      lm.TurnEnd.running ||
-      lm.TurnEnd.refused ||
-      null => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
-    };
+TurnEnd liteRtLmCompletedTurnEnd(
+  NativeLastTurnEnd? end,
+  int? maxOutputTokens,
+) => switch (end) {
+  NativeLastTurnEnd.completed => TurnEnd.endOfSequence,
+  NativeLastTurnEnd.outputLimit => TurnEnd.outputLimit,
+  NativeLastTurnEnd.contextLimit ||
+  NativeLastTurnEnd.contextFull => TurnEnd.contextLimit,
+  NativeLastTurnEnd.none ||
+  NativeLastTurnEnd.cancelled ||
+  NativeLastTurnEnd.failed ||
+  NativeLastTurnEnd.running ||
+  NativeLastTurnEnd.refused ||
+  null => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
+};
 
 /// [OptionScorer] over the engine an [FfiInferenceModel] loaded. Holds no
 /// native resource between calls: each scoring pass opens and deletes its own

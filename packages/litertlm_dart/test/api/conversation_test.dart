@@ -450,12 +450,9 @@ void main() {
     );
   });
 
-  test('the last turn end, metrics, token count and close', () async {
-    final handle = _Handle()..turnEnd = NativeLastTurnEnd.outputLimit;
+  test('metrics, token count and close', () async {
+    final handle = _Handle();
     final conversation = conversationForTest(handle);
-    expect(conversation.lastTurnEnd, TurnEnd.outputLimit);
-    handle.turnEnd = NativeLastTurnEnd.none;
-    expect(conversation.lastTurnEnd, isNull);
     expect(conversation.getBenchmarkInfo().outputTokens, 3);
     expect(await conversation.countTokens('four'), 4);
     await conversation.close();

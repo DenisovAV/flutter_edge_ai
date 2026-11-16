@@ -15,47 +15,6 @@ import '../runtime/types.dart' show BenchmarkInfo;
 import 'config.dart';
 import 'message.dart';
 
-/// How a conversation's last turn ended, from native's own record.
-enum TurnEnd {
-  /// The turn is still generating.
-  running,
-
-  /// The model ended its reply.
-  completed,
-
-  /// The turn was stopped ([Conversation.cancel], or the subscription
-  /// cancelled).
-  cancelled,
-
-  /// Native failed the turn, or cancelled it unasked.
-  failed,
-
-  /// The reply reached `maxOutputTokens`.
-  outputLimit,
-
-  /// The reply filled the context window.
-  contextLimit,
-
-  /// The message did not fit what the context window had left; it was not
-  /// added.
-  contextFull,
-
-  /// Native refused the message before generating.
-  refused,
-}
-
-TurnEnd? _turnEndOf(NativeLastTurnEnd? end) => switch (end) {
-  null || NativeLastTurnEnd.none => null,
-  NativeLastTurnEnd.running => TurnEnd.running,
-  NativeLastTurnEnd.completed => TurnEnd.completed,
-  NativeLastTurnEnd.cancelled => TurnEnd.cancelled,
-  NativeLastTurnEnd.failed => TurnEnd.failed,
-  NativeLastTurnEnd.outputLimit => TurnEnd.outputLimit,
-  NativeLastTurnEnd.contextLimit => TurnEnd.contextLimit,
-  NativeLastTurnEnd.contextFull => TurnEnd.contextFull,
-  NativeLastTurnEnd.refused => TurnEnd.refused,
-};
-
 /// The conversation, or its engine, was closed while a reply streamed. The
 /// text that arrived before it stays in the conversation's history.
 final class ConversationClosedException extends LiteRtLmException {
@@ -341,13 +300,6 @@ final class Conversation {
     if (error is Error) return error;
     return TurnFailedException('$error', cause: error);
   }
-
-  /// How the last turn ended; null before the first one reached native.
-  TurnEnd? get lastTurnEnd => _turnEndOf(_handle.lastTurnEnd);
-
-  /// The absl status code native ended the last turn with: non-zero only for
-  /// [TurnEnd.failed] and [TurnEnd.contextFull].
-  int? get lastTurnCode => _handle.lastTurnCode;
 
   /// How many tokens [text] is, by the model's own tokenizer; null when the
   /// engine cannot tell (closed, or the native call failed).

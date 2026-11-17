@@ -10,12 +10,39 @@ import 'package:test/test.dart';
 
 import '../litertlm_container_fixture.dart';
 
-/// The host [abi], for the NPU placements.
-class _Host extends EngineHost {
-  const _Host(this.abiName);
+/// The host [abi], for the NPU placements: its NPU stack is in the build and
+/// the device reaches it unless [stackMissing] or [unreachableBecause] says
+/// otherwise.
+class _Host extends EngineHost implements LiteRtLmNpuHost {
+  const _Host(
+    this.abiName, {
+    this.stackMissing = false,
+    this.unreachableBecause,
+  });
   final String abiName;
+  final bool stackMissing;
+  final String? unreachableBecause;
+
   @override
   String get abi => abiName;
+
+  @override
+  String get operatingSystem => abiName.split('_').first;
+
+  @override
+  LiteRtLmNpuHost npuHost(NpuPlatform? platform) => this;
+
+  @override
+  Future<NpuStackCheck> stack(NpuStack vendor) async => stackMissing
+      ? const NpuStackCheck.missing('the build does not bundle it')
+      : const NpuStackCheck.bundled();
+
+  @override
+  String? unreachable(NpuStack vendor) => unreachableBecause;
+
+  @override
+  Future<String> prepareDispatchDir(NpuStack vendor) async =>
+      '/prepared/${vendor.name}';
 }
 
 void main() {
@@ -143,6 +170,45 @@ void main() {
       embedderConfigFor(config(path, backend: Backend.npu(dispatchDir: '/x'))),
       throwsA(isA<EmbedderLoadException>()),
     );
+  });
+
+  test(
+    'a prepared directory does not skip the stack and device checks',
+    () async {
+      final path = write(
+        'q.litertlm',
+        eg2Container(textStamp: ('Qualcomm', 'SM8650')),
+      );
+      for (final host in [
+        const _Host('android_arm64', stackMissing: true),
+        const _Host('android_arm64', unreachableBecause: 'no FastRPC here'),
+      ]) {
+        debugEngineHost = host;
+        await expectLater(
+          embedderConfigFor(
+            config(path, backend: Backend.npu(dispatchDir: '/ready')),
+          ),
+          throwsA(isA<EmbedderLoadException>()),
+          reason: '${host.stackMissing} ${host.unreachableBecause}',
+        );
+      }
+    },
+  );
+
+  test('the request: nothing to embed, or images or audio the engine was not '
+      'loaded for, are ArgumentErrors', () {
+    void check({bool text = false, bool images = false, bool audio = false}) =>
+        checkEmbeddingRequest(
+          const [],
+          modalities: {EmbedderModality.text},
+          hasText: text,
+          hasImages: images,
+          hasAudio: audio,
+        );
+    check(text: true);
+    expect(() => check(), throwsArgumentError);
+    expect(() => check(text: true, images: true), throwsArgumentError);
+    expect(() => check(text: true, audio: true), throwsArgumentError);
   });
 
   test('a per-SoC bundle runs on its NPU only, with a prepared directory '

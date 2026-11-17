@@ -96,11 +96,16 @@ final class EmbeddingEngine {
   /// The engine's own cache directory, once loaded.
   String? get cacheDir => _embedder.cacheDir;
 
+  bool _closed = false;
+
   /// The embedding of [contents]: at most one text part (its task prefix
   /// already in front), any image parts and at most one audio part, one
   /// vector for all of them. Throws [EmbedderInputTooLongException] for an
-  /// input over the limit (never truncated).
+  /// input over the limit (never truncated), [ArgumentError] for contents it
+  /// does not take (none, two texts, images or audio the engine was not
+  /// loaded for) and [StateError] after [close].
   Future<Float32List> computeEmbedding(List<Content> contents) async {
+    if (_closed) throw StateError('The embedding engine is closed.');
     String? text;
     final images = <Uint8List>[];
     Uint8List? audio;
@@ -126,6 +131,13 @@ final class EmbeddingEngine {
           );
       }
     }
+    checkEmbeddingRequest(
+      contents,
+      modalities: info.modalities,
+      hasText: text != null && text.isNotEmpty,
+      hasImages: images.isNotEmpty,
+      hasAudio: audio != null,
+    );
     final vector = await _embedder.embed(
       EmbedderInput(text: text, images: images, audio: audio),
     );
@@ -133,7 +145,38 @@ final class EmbeddingEngine {
   }
 
   /// Deletes the engine.
-  Future<void> close() => _embedder.close();
+  Future<void> close() {
+    _closed = true;
+    return _embedder.close();
+  }
+}
+
+/// Refuses, as an [ArgumentError], [contents] with no part, or with images
+/// or audio an engine of [modalities] was not loaded for.
+void checkEmbeddingRequest(
+  List<Content> contents, {
+  required Set<EmbedderModality> modalities,
+  required bool hasText,
+  required bool hasImages,
+  required bool hasAudio,
+}) {
+  if (!hasText && !hasImages && !hasAudio) {
+    throw ArgumentError.value(contents, 'contents', 'has nothing to embed');
+  }
+  if (hasImages && !modalities.contains(EmbedderModality.image)) {
+    throw ArgumentError.value(
+      contents,
+      'contents',
+      'has images; load with visionBackend to embed them',
+    );
+  }
+  if (hasAudio && !modalities.contains(EmbedderModality.audio)) {
+    throw ArgumentError.value(
+      contents,
+      'contents',
+      'has audio; load with audioBackend to embed it',
+    );
+  }
 }
 
 /// Where [config] runs, as the embedder's own config: the bundle's NPU
@@ -234,17 +277,16 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
         );
       }
       npuTarget = target;
-      if (dir != null) {
-        dispatchDir = dir;
-      } else {
-        final host = currentEngineHost.npuHost(npuPlatformOf(npu));
-        if (await chooseNpuVendor(target: target, host: host) case NpuRefused(
-          :final reason,
-        )) {
-          refuse('$file needs the $target NPU, and $reason.');
-        }
-        dispatchDir = await host.prepareDispatchDir(vendor);
+      // The stack and the device are checked as for Engine.create, a
+      // prepared directory or not; the directory only replaces the one the
+      // host would prepare.
+      final host = currentEngineHost.npuHost(npuPlatformOf(npu));
+      if (await chooseNpuVendor(target: target, host: host) case NpuRefused(
+        :final reason,
+      )) {
+        refuse('$file needs the $target NPU, and $reason.');
       }
+      dispatchDir = dir ?? await host.prepareDispatchDir(vendor);
   }
   // The towers run where the bundle puts them: vision on the NPU beside an
   // NPU text tower and on the CPU otherwise, audio on the CPU everywhere

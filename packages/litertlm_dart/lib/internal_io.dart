@@ -190,7 +190,7 @@ export 'src/runtime/runtime_log.dart'
         runtimeLogSinkSetByApp;
 export 'src/ffi/litert_bindings.dart' show liteRtLmHostLibraryCandidates;
 export 'src/api/embedding_engine.dart'
-    show createEmbeddingEngineWith, embedderConfigFor;
+    show checkEmbeddingRequest, createEmbeddingEngineWith, embedderConfigFor;
 export 'src/api/backend.dart' show backendKindOf, npuBackendOn, npuPlatformOf;
 export 'src/api/conversation.dart'
     show

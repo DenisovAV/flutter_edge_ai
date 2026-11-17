@@ -24,6 +24,7 @@ import 'package:litertlm_dart/internal_io.dart'
         engineFiltersChannelContent,
         engineNoRewindReason,
         isReleaseBuild,
+        messageRawJson,
         runtimeLog;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
@@ -55,8 +56,12 @@ String liteRtLmChunkText(lm.Message chunk) {
 }
 
 /// [chunk] as the Conversation API JSON core's [SdkResponseParser] reads
-/// (`tool_calls`, `content`, `channels`).
-String liteRtLmChunkJson(lm.Message chunk) => jsonEncode({
+/// (`tool_calls`, `content`, `channels`): what native wrote for it, which
+/// keeps what [lm.Message] does not (a call's id, a flat call), else rebuilt.
+String liteRtLmChunkJson(lm.Message chunk) =>
+    messageRawJson(chunk) ?? _rebuiltChunkJson(chunk);
+
+String _rebuiltChunkJson(lm.Message chunk) => jsonEncode({
   'role': 'assistant',
   if (chunk.contents.isNotEmpty)
     'content': [
@@ -962,51 +967,24 @@ class FfiInferenceModelSession extends InferenceModelSession
   ({Future<void> done, _TurnStop stop})? _lastTurn;
 
   /// One turn's reply, with core's errors.
-  Stream<lm.Message> _turn(lm.Message message, _TurnStop stop) async* {
-    final previous = _lastTurn;
-    final done = Completer<void>();
-    _lastTurn = (done: done.future, stop: stop);
-    _liveTurnStops.add(stop);
-    try {
-      if (previous != null && !previous.stop.asked) {
-        await Future.any([
-          previous.done,
-          previous.stop.signal,
-          stop.signal,
-          _closedSignal.future,
-        ]);
-      }
-      if (_isClosed) {
-        throw LiteRtLmSessionClosedError(
-          'The session was closed before this turn was sent.',
-        );
-      }
-      // Stopped while it waited: nothing reached the model.
-      if (stop.asked) return;
-      yield* conversation
-          .sendMessageStream(
-            message,
-            thinkingConfig: lm.ThinkingConfig(
-              enableThinking: enableThinking,
-              thinkingTokenBudget: thinkingTokenBudget,
-            ),
-          )
-          .handleError((Object error, StackTrace stack) {
-            if (error is lm.ConstraintUnsupportedException) {
-              // Settle the failed turn before close changes
-              // reportedEngineTurn's end to `closed`. CreateConstraint has
-              // already pushed a ghost user message, so refuse another send
-              // immediately and delete the conversation on the next
-              // event-loop turn.
-              _closeAfterFormatRefusal();
-            }
-            Error.throwWithStackTrace(_coreTurnError(error), stack);
-          });
-    } finally {
-      _liveTurnStops.remove(stop);
-      done.complete();
-    }
-  }
+  Stream<lm.Message> _turn(lm.Message message) => conversation
+      .sendMessageStream(
+        message,
+        thinkingConfig: lm.ThinkingConfig(
+          enableThinking: enableThinking,
+          thinkingTokenBudget: thinkingTokenBudget,
+        ),
+      )
+      .handleError((Object error, StackTrace stack) {
+        if (error is lm.ConstraintUnsupportedException) {
+          // Settle the failed turn before close changes reportedEngineTurn's
+          // end to `closed`. CreateConstraint has already pushed a ghost user
+          // message, so refuse another send immediately and delete the
+          // conversation on the next event-loop turn.
+          _closeAfterFormatRefusal();
+        }
+        Error.throwWithStackTrace(_coreTurnError(error), stack);
+      });
 
   @override
   Future<String> getResponse() async {
@@ -1042,15 +1020,104 @@ class FfiInferenceModelSession extends InferenceModelSession
   @override
   Stream<String> getResponseAsync() => _response(_TurnStop());
 
-  Stream<String> _response(_TurnStop stop) async* {
-    _assertNotClosed();
-    final message = _takeTurnMessage();
+  /// The reply of the message staged now, sent once the turn before it
+  /// lets it: that one has ended, or either is stopped, or the session
+  /// closes, or this reply's consumer cancels. The wait is outside the
+  /// `async*` body ([_reply]), which would not see a cancel until the turn
+  /// before it ended; the forwarding is synchronous, so the body's events
+  /// reach the listener as they always have.
+  Stream<String> _response(_TurnStop stop) {
+    StreamSubscription<String>? body;
+    late final Completer<void> done;
+    var listened = false;
+    void finish() {
+      _liveTurnStops.remove(stop);
+      if (!done.isCompleted) done.complete();
+    }
+
+    late final StreamController<String> out;
+    out = StreamController<String>(
+      sync: true,
+      onListen: () async {
+        listened = true;
+        final previous = _lastTurn;
+        done = Completer<void>();
+        _lastTurn = (done: done.future, stop: stop);
+        _liveTurnStops.add(stop);
+        final lm.Message message;
+        try {
+          _assertNotClosed();
+          message = _takeTurnMessage();
+          if (previous != null && !previous.stop.asked) {
+            await Future.any([
+              previous.done,
+              previous.stop.signal,
+              stop.signal,
+              _closedSignal.future,
+            ]);
+          }
+          // Let go by its consumer while it waited: onCancel finished it.
+          if (!out.hasListener) return;
+          if (_isClosed) {
+            throw LiteRtLmSessionClosedError(
+              'The session was closed before this turn was sent.',
+            );
+          }
+        } catch (error, stack) {
+          finish();
+          out
+            ..addError(error, stack)
+            ..close();
+          return;
+        }
+        // Stopped while it waited: nothing reached the model.
+        if (stop.asked) {
+          finish();
+          await out.close();
+          return;
+        }
+        body = _reply(message).listen(
+          out.add,
+          // The body's error is its last event; its end follows once it has
+          // let go of the conversation, which is when the queue moves on.
+          onError: (Object error, StackTrace stack) {
+            if (out.isClosed) return;
+            out
+              ..addError(error, stack)
+              ..close();
+          },
+          onDone: () {
+            finish();
+            if (!out.isClosed) out.close();
+          },
+        );
+        if (out.isPaused) body!.pause();
+      },
+      onPause: () => body?.pause(),
+      onResume: () => body?.resume(),
+      onCancel: () {
+        if (!listened) return null;
+        final sub = body;
+        if (sub == null) {
+          // Cancelled while it waited: a stop of a turn never sent.
+          stop.ask();
+          finish();
+          return null;
+        }
+        return sub.cancel().whenComplete(finish);
+      },
+    );
+    return out.stream;
+  }
+
+  /// The reply to [message], with the timings the perf log reports.
+  Stream<String> _reply(lm.Message message) async* {
     final genSw = Stopwatch()..start();
     int? firstChunkMs;
     var chunkCount = 0;
     final raw = _nativeTools ? StringBuffer() : null;
     _lastRawResponse = null;
-    await for (final chunk in _turn(message, stop)) {
+    await for (final chunk in _turn(message)) {
       if (firstChunkMs == null) {
         firstChunkMs = genSw.elapsedMilliseconds;
         runtimeLog(

@@ -257,6 +257,32 @@ void main() {
       },
     );
 
+    test('cancelling a turn queued behind a paused one does not wait for it, '
+        'and the turn is never sent', () async {
+      final session = await model(fresh: false).openSession();
+      final engineSession = session as FfiInferenceModelSession;
+      await session.addQueryChunk(const Message(text: 'one', isUser: true));
+      final a = engineSession.startTurn();
+      final subA = a.text.listen((_) {});
+      await pumpEventQueue();
+      sends.single.chunk(
+        '{"role":"assistant","content":[{"type":"text","text":"o"}]}',
+      );
+      await pumpEventQueue();
+      subA.pause();
+      await session.addQueryChunk(const Message(text: 'two', isUser: true));
+      final b = engineSession.startTurn();
+      final subB = b.text.listen((_) {});
+      await pumpEventQueue();
+      await subB.cancel().timeout(const Duration(seconds: 2));
+      expect(await b.end!.timeout(const Duration(seconds: 2)), TurnEnd.stopped);
+      subA.resume();
+      sends.single.finished();
+      await pumpEventQueue();
+      expect(sends, hasLength(1), reason: 'the cancelled turn is not sent');
+      await subA.cancel();
+    });
+
     test('a stop drops a turn still waiting for the one before it', () async {
       final session = await model(fresh: false).openSession();
       await session.addQueryChunk(const Message(text: 'one', isUser: true));

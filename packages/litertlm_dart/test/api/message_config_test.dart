@@ -9,41 +9,32 @@ import 'package:test/test.dart';
 
 void main() {
   group('Message', () {
-    test('tool-call arguments a reply writes as a non-JSON string, or as JSON '
-        'that is not an object, read as no arguments rather than failing the '
-        'turn; a flat {name, arguments} call is read too', () {
-      final message = messageFromChunk(
-        jsonEncode({
-          'role': 'assistant',
-          'tool_calls': [
-            {
-              'type': 'function',
-              'function': {'name': 'a', 'arguments': 'not json'},
-            },
-            {
-              'type': 'function',
-              'function': {'name': 'b', 'arguments': '[1, 2]'},
-            },
-            {
-              'type': 'function',
-              'function': {'name': 'c', 'arguments': '{"x": 1}'},
-            },
-            {
-              'name': 'd',
-              'arguments': {'y': 2},
-            },
-          ],
-        }),
-      );
-      expect([for (final c in message.toolCalls) c.name], ['a', 'b', 'c', 'd']);
+    test('a turn whose calls cannot all be read has none, as core reads it: '
+        'arguments that are not a JSON object (a reply cut mid-arguments), '
+        'an empty name; flat calls and JSON-string arguments are read', () {
+      List<String> names(List<Object?> calls) => [
+        for (final c in messageFromChunk(
+          jsonEncode({'role': 'assistant', 'tool_calls': calls}),
+        ).toolCalls)
+          c.name,
+      ];
+      Map<String, Object?> fn(String name, Object? args) => {
+        'type': 'function',
+        'function': {'name': name, 'arguments': args},
+      };
+      expect(names([fn('a', '{"time": "7:0'), fn('b', {})]), isEmpty);
+      expect(names([fn('a', '[1, 2]')]), isEmpty);
+      expect(names([fn('', {})]), isEmpty);
       expect(
-        [for (final c in message.toolCalls) c.arguments],
-        [
-          isEmpty,
-          isEmpty,
-          {'x': 1},
-          {'y': 2},
-        ],
+        names([
+          fn('c', '{"x": 1}'),
+          {
+            'name': 'd',
+            'arguments': {'y': 2},
+          },
+          fn('e', null),
+        ]),
+        ['c', 'd', 'e'],
       );
     });
 
@@ -153,8 +144,8 @@ void main() {
       expect(messageFromChunk('{"role":"assistant","content":"s"}').text, 's');
     });
 
-    test('the calls a replay keeps: arguments that are not JSON are none, '
-        'a reply it cannot read has no calls, and nothing throws', () {
+    test('the calls a replay keeps: a reply it cannot read has none, and '
+        'does not throw', () {
       expect(
         nativeToolCalls(
           '{"role":"assistant","tool_calls":[{"function":{"name":"f",'
@@ -163,7 +154,7 @@ void main() {
           '{"role":"assistant","tool_calls":[{"function":{"name":"g",'
           '"arguments":{}}}]}',
         ).map((c) => c.name),
-        ['f', 'g'],
+        ['g'],
       );
     });
 

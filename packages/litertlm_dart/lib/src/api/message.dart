@@ -273,21 +273,10 @@ Message messageFromJson(Map<String, Object?> json) {
         'or a list of parts: ${jsonEncode(json)}',
       );
   }
-  final calls = <ToolCall>[];
-  if (json['tool_calls'] case final List<Object?> list) {
-    for (final call in list) {
-      // OpenAI's `{type: function, function: {name, arguments}}`, or a flat
-      // `{name, arguments}`.
-      final function = switch (call) {
-        {'function': final Map<String, Object?> function} => function,
-        final Map<String, Object?> flat when flat['name'] is String => flat,
-        _ => null,
-      };
-      final name = function?['name'];
-      if (name is! String) continue;
-      calls.add(ToolCall(name, _arguments(function!['arguments'])));
-    }
-  }
+  final calls = switch (json['tool_calls']) {
+    final List<Object?> list => _wholeTurn(list),
+    _ => const <ToolCall>[],
+  };
   final channels = <String, String>{};
   if (json['channels'] case final Map<String, Object?> map) {
     for (final MapEntry(:key, :value) in map.entries) {
@@ -302,18 +291,47 @@ Message messageFromJson(Map<String, Object?> json) {
   );
 }
 
-/// A call's arguments: an object, or a string holding one. Anything else (a
-/// string that is not JSON, JSON that is not an object) is no arguments, as
-/// core's parser reads it, rather than a failed turn.
-Map<String, Object?> _arguments(Object? arguments) {
+/// Every call of [items], or none when one of them cannot be read, as core's
+/// parser reads a turn: a call with arguments that are not a JSON object
+/// would run with none, and a reply cut mid-arguments by maxOutputTokens is
+/// one. A call is OpenAI's `{type: function, function: {name, arguments}}`
+/// or a flat `{name, arguments}`.
+List<ToolCall> _wholeTurn(List<Object?> items) {
+  final calls = <ToolCall>[];
+  for (final item in items) {
+    final call = _call(item);
+    if (call == null) return const [];
+    calls.add(call);
+  }
+  return calls;
+}
+
+ToolCall? _call(Object? raw) {
+  if (raw is! Map<String, Object?>) return null;
+  final function = switch (raw['function']) {
+    final Map<String, Object?> function => function,
+    _ => raw,
+  };
+  final name = function['name'];
+  if (name is! String || name.isEmpty) return null;
+  final arguments = _arguments(function['arguments']);
+  if (arguments == null) return null;
+  return ToolCall(name, arguments);
+}
+
+/// A call's arguments: absent or blank is none, an object, or a string
+/// holding one; anything else cannot be read (null).
+Map<String, Object?>? _arguments(Object? arguments) {
+  if (arguments == null) return const {};
   if (arguments is Map<String, Object?>) return arguments;
-  if (arguments is! String) return const {};
+  if (arguments is! String) return null;
+  if (arguments.trim().isEmpty) return const {};
   try {
     return switch (jsonDecode(arguments)) {
       final Map<String, Object?> map => map,
-      _ => const {},
+      _ => null,
     };
   } on FormatException {
-    return const {};
+    return null;
   }
 }

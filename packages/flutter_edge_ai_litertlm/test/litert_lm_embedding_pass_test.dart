@@ -1763,10 +1763,7 @@ void main() {
         EmbeddingInput.audio(_wav),
         EmbeddingInput(text: 'x', audio: _wav),
       ]) {
-        await expectLater(
-          p.embed(input, TaskType.none),
-          throwsArgumentError,
-        );
+        await expectLater(p.embed(input, TaskType.none), throwsArgumentError);
       }
       expect(native.order, isNot(contains('input_data_create')));
       expect(allocator.live, 0);

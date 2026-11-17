@@ -186,6 +186,9 @@ void main() {
           '${replies.last.toLowerCase().contains('zorblax')}',
         );
         expect(replies, everyElement(isNotEmpty), reason: kind);
+        // The fresh conversation of turn 3 holds turns 1 and 2 only through
+        // the replayed history.
+        expect(replies.last.toLowerCase(), contains('zorblax'), reason: kind);
       }
     } finally {
       await model.close();

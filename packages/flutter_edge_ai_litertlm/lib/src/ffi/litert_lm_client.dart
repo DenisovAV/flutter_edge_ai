@@ -3645,8 +3645,13 @@ class LiteRtLmFfiClient {
     required String messageJson,
     required Map<String, Object?>? partialReply,
     String? extraContext,
+    bool freshConversation = false,
   }) {
-    if (_virtualActiveToken == conversationToken && _virtualConvStopped) {
+    // A fresh conversation is rebuilt for the next turn anyway, so a rewind
+    // would only cost a prefill with the mutex held.
+    if (!freshConversation &&
+        _virtualActiveToken == conversationToken &&
+        _virtualConvStopped) {
       _virtualStoppedExchanges[conversationToken] = partialReply == null
           ? null
           : '[$messageJson,${jsonEncode(partialReply)}]';

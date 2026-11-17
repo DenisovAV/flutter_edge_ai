@@ -268,7 +268,7 @@
   hosts: [android_arm64]
   backends: [npu]
   status: documented
-  source: "PR #697 (LiteRT-LM 0.18), run on a DDP Galaxy Tab S10+ (MT6989); on LiteRT-LM 0.19 through the dispatch adapter, the same device on 2026-11-01 (doc/research/mediatek-dispatch-0.19.md)"
+  source: "PR #697 (LiteRT-LM 0.18), run on a DDP Galaxy Tab S10+ (MT6989); on LiteRT-LM 0.19 through the dispatch adapter with the AAR 2.3.2 dispatch staged by hand, the same device on 2026-11-01 (doc/research/mediatek-dispatch-0.19.md)"
 - what: EmbeddingGemma 2 270m on the Intel Panther Lake NPU (Core Ultra X7 358H)
   variants: [embeddinggemma-2-text-270m/npu-ptl]
   hosts: [windows_x64]

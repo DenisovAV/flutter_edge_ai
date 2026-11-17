@@ -108,6 +108,32 @@ void main() {
       ]);
     });
 
+    test('a follow-up started while the turn before it still streams '
+        'replays that turn', () async {
+      final session = await model(fresh: true).openSession();
+      await session.addQueryChunk(const Message(text: 'one', isUser: true));
+      final first = session.getResponseAsync().join();
+      await pumpEventQueue();
+      await session.addQueryChunk(const Message(text: 'two', isUser: true));
+      final second = session.getResponseAsync().join();
+      await pumpEventQueue();
+      expect(sends, hasLength(1), reason: 'the follow-up waits');
+      sends.single
+        ..chunk(
+          '{"role":"assistant","content":[{"type":"text","text":"ok one"}]}',
+        )
+        ..finished();
+      expect(await first, 'ok one');
+      await pumpEventQueue();
+      sends.last
+        ..chunk(
+          '{"role":"assistant","content":[{"type":"text","text":"ok two"}]}',
+        )
+        ..finished();
+      expect(await second, 'ok two');
+      expect(texts(seeds.last).map((t) => t.trim()), ['one', 'ok one']);
+    });
+
     test(
       'without it, a session\'s follow-ups reuse its conversation',
       () async {

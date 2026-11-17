@@ -3817,7 +3817,7 @@
       "android_arm64": {
        "npu": {
         "status": "documented",
-        "source": "PR #697 (LiteRT-LM 0.18), run on a DDP Galaxy Tab S10+ (MT6989); on LiteRT-LM 0.19 through the dispatch adapter, the same device on 2026-11-01 (doc/research/mediatek-dispatch-0.19.md)"
+        "source": "PR #697 (LiteRT-LM 0.18), run on a DDP Galaxy Tab S10+ (MT6989); on LiteRT-LM 0.19 through the dispatch adapter with the AAR 2.3.2 dispatch staged by hand, the same device on 2026-11-01 (doc/research/mediatek-dispatch-0.19.md)"
        }
       }
      }

@@ -78,7 +78,7 @@ final class LibraryLoadStateError extends StateError
 
 final class LibraryLoadUnsupportedError extends UnsupportedError
     implements LibraryLoadFailure {
-  LibraryLoadUnsupportedError(String message) : super(message);
+  LibraryLoadUnsupportedError(super.message);
 
   @override
   String get loadMessage => message ?? '';

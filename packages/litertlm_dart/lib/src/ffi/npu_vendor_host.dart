@@ -82,6 +82,46 @@ String executableDirOf([String? executable]) =>
 
 /// The host this process runs on, with what only the app's platform layer
 /// can answer coming from [platform].
+/// [host], for a load the caller gave a prepared [dispatchDir]: the Intel
+/// stack is checked in that directory, not beside the executable, and the
+/// directory is the one a dispatch loads from. Null [dispatchDir]: [host].
+LiteRtLmNpuHost npuHostWithDispatchDir(
+  LiteRtLmNpuHost host,
+  String? dispatchDir,
+) => dispatchDir == null ? host : _PreparedDirNpuHost(host, dispatchDir);
+
+final class _PreparedDirNpuHost implements LiteRtLmNpuHost {
+  _PreparedDirNpuHost(this._host, this._dir);
+
+  final LiteRtLmNpuHost _host;
+  final String _dir;
+
+  @override
+  String get operatingSystem => _host.operatingSystem;
+
+  @override
+  String get abi => _host.abi;
+
+  @override
+  Future<NpuStackCheck> stack(NpuStack vendor) async {
+    if (vendor != NpuStack.intel) return _host.stack(vendor);
+    return File(
+          '$_dir${Platform.pathSeparator}$intelNpuDispatchLib',
+        ).existsSync()
+        ? const NpuStackCheck.bundled()
+        : NpuStackCheck.missing(
+            '$intelNpuDispatchLib is not in the dispatch directory passed as '
+            'Backend.npu(dispatchDir: $_dir)',
+          );
+  }
+
+  @override
+  String? unreachable(NpuStack vendor) => _host.unreachable(vendor);
+
+  @override
+  Future<String> prepareDispatchDir(NpuStack vendor) async => _dir;
+}
+
 final class LiteRtLmPlatformNpuHost implements LiteRtLmNpuHost {
   const LiteRtLmPlatformNpuHost(this.platform);
 

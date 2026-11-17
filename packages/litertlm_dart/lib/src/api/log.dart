@@ -14,8 +14,10 @@ abstract final class LiteRtLmLog {
   /// above info and [LiteRtLmLogLevel.silent] write none, and only
   /// [LiteRtLmLogLevel.verbose] adds prompts, model output and the native
   /// log's contents. Reads back what was set; unset, the level in force.
-  /// Applies to the isolates the runtime spawns from then on, and is not
-  /// replaced by flutter_edge_ai_litertlm.
+  /// Applies to this isolate and to the isolates litertlm_dart spawns from
+  /// then on, and flutter_edge_ai_litertlm does not replace it there; an
+  /// isolate another package spawns (core's embedding worker) logs at that
+  /// package's level.
   static LiteRtLmLogLevel get level =>
       _level ??
       switch (currentRuntimeLogLevel()) {

@@ -324,7 +324,13 @@ final class Engine {
         npuPlatformOf(config.backend) ??
         npuPlatformOf(config.visionBackend) ??
         npuPlatformOf(config.audioBackend);
-    final npuHost = host.npuHost(platform);
+    final npuHost = npuHostWithDispatchDir(
+      host.npuHost(platform),
+      switch (config.backend) {
+        NpuBackend(:final dispatchDir) => dispatchDir,
+        _ => null,
+      },
+    );
     final abi = host.abi;
     final supportImage = config.visionBackend != null;
     final supportAudio = config.audioBackend != null;

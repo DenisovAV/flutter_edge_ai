@@ -280,7 +280,10 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
       // The stack and the device are checked as for Engine.create, a
       // prepared directory or not; the directory only replaces the one the
       // host would prepare.
-      final host = currentEngineHost.npuHost(npuPlatformOf(npu));
+      final host = npuHostWithDispatchDir(
+        currentEngineHost.npuHost(npuPlatformOf(npu)),
+        dir,
+      );
       if (await chooseNpuVendor(target: target, host: host) case NpuRefused(
         :final reason,
       )) {

@@ -1,6 +1,6 @@
 // ORT-GenAI `InferenceModel` — text-only v1 (hardened plan Phase 3, Task 2).
 // Shape mirrors `FfiInferenceModel`
-// (`flutter_edge_ai_litertlm/lib/src/ffi/ffi_inference_model.dart`)'s
+// (`flutter_edge_ai_litertlm/lib/src/adapter/ffi_inference_model.dart`)'s
 // createSession singleton lane (issue #308 pattern) plus its open-session
 // cap (`openEngineSession`, behind core's `openSession`); the base
 // `InferenceModel.createChat` and core's `openChat`, which route through

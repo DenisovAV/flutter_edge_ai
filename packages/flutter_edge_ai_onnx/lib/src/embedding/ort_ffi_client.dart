@@ -56,7 +56,7 @@ ffi.DynamicLibrary _openOnnxRuntime() {
     // The open MUST use the `@executable_path/Frameworks/` anchor — iOS
     // dyld 4 cannot resolve a bare `<name>.framework/<name>` leaf name (same
     // reasoning, and same anchor shape, as
-    // `flutter_edge_ai_litertlm/lib/src/ffi/litert_lm_client.dart`'s
+    // `litertlm_dart/lib/src/ffi/litert_lm_client.dart`'s
     // `LiteRtLm.framework`/`StreamProxy.framework` opens, and
     // `gen_ai_client.dart`'s `_candidateNames` iOS branch).
     try {

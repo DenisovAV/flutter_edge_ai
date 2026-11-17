@@ -1,6 +1,6 @@
 // ORT-GenAI `InferenceModelSession` — text-only v1 (hardened plan Phase 3,
 // Task 2). Shape mirrors `FfiInferenceModelSession`
-// (`flutter_edge_ai_litertlm/lib/src/ffi/ffi_inference_model.dart`) but drives
+// (`flutter_edge_ai_litertlm/lib/src/adapter/ffi_inference_model.dart`) but drives
 // [GenAiClient] instead of the LiteRT-LM conversation handle.
 import 'dart:async';
 

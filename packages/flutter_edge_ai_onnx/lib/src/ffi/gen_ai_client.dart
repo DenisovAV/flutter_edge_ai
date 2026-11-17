@@ -1021,7 +1021,7 @@ String? guidanceRefusalOf(GenAiClient client, {ffi.Abi? abi}) {
 /// cannot resolve a bare `<name>.framework/<name>` leaf name the way macOS's
 /// dyld does — it needs an explicit anchor, exactly the
 /// `@executable_path/Frameworks/<name>.framework/<name>` shape
-/// `flutter_edge_ai_litertlm/lib/src/ffi/litert_lm_client.dart` already uses
+/// `litertlm_dart/lib/src/ffi/litert_lm_client.dart` already uses
 /// (and documents, with the same "dyld 4 cannot resolve from .framework
 /// names alone" reasoning) for `LiteRtLm.framework`/`StreamProxy.framework`.
 /// A bare leaf name here would dlopen-fail on every real iPhone (and the

@@ -1217,7 +1217,7 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
 
   @override
   Future<String> renderUserMessage(String content) =>
-      engineRenderUserMessage(_engine, content);
+      liteRtLmAsStateError(() => engineRenderUserMessage(_engine, content));
 
   @override
   Future<void> prepare(List<String> targets) =>

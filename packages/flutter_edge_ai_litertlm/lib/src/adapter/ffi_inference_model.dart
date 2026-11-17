@@ -797,8 +797,9 @@ class FfiInferenceModelSession extends InferenceModelSession
   final int? maxOutputTokens;
   final VoidCallback onClose;
 
-  /// [stopGeneration] was called during the current turn.
-  bool _stopAsked = false;
+  /// The turns not yet ended, each with its own stop: [stopGeneration] stops
+  /// every one of them, the one streaming and those waiting for it.
+  final _liveTurnStops = <_TurnStop>{};
 
   /// The runtime's turn errors as core's: a message that did not fit is
   /// [ContextLimitException], which says what happened and keeps native's
@@ -949,26 +950,25 @@ class FfiInferenceModelSession extends InferenceModelSession
     return message;
   }
 
-  /// The end of the last turn sent: a turn asked for while it still streams
-  /// waits for it, as core's sessions always have, since a conversation takes
-  /// one message at a time.
-  Future<void>? _lastTurnDone;
-
-  /// Counts [stopGeneration] calls: a turn still waiting for the one before
-  /// it when a stop comes is not sent.
-  int _stopEpoch = 0;
+  /// The last turn asked for: a turn asked for while it still streams waits
+  /// for it, as core's sessions always have, since a conversation takes one
+  /// message at a time. A stopped turn is not waited for: the conversation
+  /// let it go at the stop and winds it down itself, within a bound, so a
+  /// consumer that paused the stopped stream blocks nothing.
+  ({Future<void> done, _TurnStop stop})? _lastTurn;
 
   /// One turn's reply, with core's errors.
-  Stream<lm.Message> _turn(lm.Message message) async* {
-    final previous = _lastTurnDone;
+  Stream<lm.Message> _turn(lm.Message message, _TurnStop stop) async* {
+    final previous = _lastTurn;
     final done = Completer<void>();
-    _lastTurnDone = done.future;
-    final epoch = _stopEpoch;
+    _lastTurn = (done: done.future, stop: stop);
+    _liveTurnStops.add(stop);
     try {
-      if (previous != null) {
-        await previous;
-        if (_stopEpoch != epoch) return;
+      if (previous != null && !previous.stop.asked) {
+        await Future.any([previous.done, previous.stop.signal, stop.signal]);
       }
+      // Stopped while it waited: nothing reached the model.
+      if (stop.asked) return;
       yield* conversation
           .sendMessageStream(
             message,
@@ -989,6 +989,7 @@ class FfiInferenceModelSession extends InferenceModelSession
             Error.throwWithStackTrace(_coreTurnError(error), stack);
           });
     } finally {
+      _liveTurnStops.remove(stop);
       done.complete();
     }
   }
@@ -1025,7 +1026,9 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// whose tool calling LiteRT-LM runs natively, the reply's JSON is kept for
   /// [lastRawResponse], where chat.dart reads `tool_calls`.
   @override
-  Stream<String> getResponseAsync() async* {
+  Stream<String> getResponseAsync() => _response(_TurnStop());
+
+  Stream<String> _response(_TurnStop stop) async* {
     _assertNotClosed();
     final message = _takeTurnMessage();
     final genSw = Stopwatch()..start();
@@ -1033,7 +1036,7 @@ class FfiInferenceModelSession extends InferenceModelSession
     var chunkCount = 0;
     final raw = _nativeTools ? StringBuffer() : null;
     _lastRawResponse = null;
-    await for (final chunk in _turn(message)) {
+    await for (final chunk in _turn(message, stop)) {
       if (firstChunkMs == null) {
         firstChunkMs = genSw.elapsedMilliseconds;
         runtimeLog(
@@ -1097,8 +1100,9 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// (closed) before the next turn.
   @override
   Future<void> stopGeneration() async {
-    _stopAsked = true;
-    _stopEpoch++;
+    for (final stop in _liveTurnStops) {
+      stop.ask();
+    }
     conversation.cancel();
   }
 
@@ -1116,10 +1120,10 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// §6.4b).
   @override
   EngineTurn startTurn() {
-    _stopAsked = false;
+    final stop = _TurnStop();
     return reportedEngineTurn(
-      getResponseAsync(),
-      stopped: () => _stopAsked,
+      _response(stop),
+      stopped: () => stop.asked,
       closed: () => _isClosed,
       isCloseError: (error) => error is LiteRtLmSessionClosedError,
       completed: () => liteRtLmCompletedTurnEnd(
@@ -1312,4 +1316,19 @@ final class _AnyCancelSignal implements lm.CancelSignal {
 @visibleForTesting
 final class LiteRtLmSessionClosedError extends StateError {
   LiteRtLmSessionClosedError(super.message);
+}
+
+/// One turn's stop: asked by [FfiInferenceModelSession.stopGeneration] while
+/// the turn streams or waits for the one before it.
+final class _TurnStop {
+  final _asked = Completer<void>();
+
+  bool get asked => _asked.isCompleted;
+
+  /// Completes when the stop is asked.
+  Future<void> get signal => _asked.future;
+
+  void ask() {
+    if (!_asked.isCompleted) _asked.complete();
+  }
 }

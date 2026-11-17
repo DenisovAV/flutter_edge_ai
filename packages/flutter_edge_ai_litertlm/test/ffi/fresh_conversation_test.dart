@@ -161,6 +161,68 @@ void main() {
       expect(await second, 'ok two');
     });
 
+    test('a queued turn dropped by a stop reports stopped, even when a later '
+        'turn starts before it settles', () async {
+      final session = await model(fresh: false).openSession();
+      final engineSession = session as FfiInferenceModelSession;
+      await session.addQueryChunk(const Message(text: 'a', isUser: true));
+      final a = engineSession.startTurn();
+      final aText = a.text.join();
+      await pumpEventQueue();
+      await session.addQueryChunk(const Message(text: 'b', isUser: true));
+      final b = engineSession.startTurn();
+      final bText = b.text.join();
+      await pumpEventQueue();
+      await session.stopGeneration();
+      await session.addQueryChunk(const Message(text: 'c', isUser: true));
+      final c = engineSession.startTurn();
+      final cText = c.text.join();
+      await pumpEventQueue();
+      sends.first.cancelled();
+      await aText;
+      expect(await bText, '');
+      expect(await b.end, TurnEnd.stopped);
+      expect(await a.end, TurnEnd.stopped);
+      await pumpEventQueue();
+      sends.last
+        ..chunk(
+          '{"role":"assistant","content":[{"type":"text","text":"ok c"}]}',
+        )
+        ..finished();
+      expect(await cText, 'ok c');
+      expect(await c.end, isNot(TurnEnd.stopped));
+    });
+
+    test('a stopped turn whose stream is paused does not block the next '
+        'turn', () async {
+      final session = await model(fresh: false).openSession();
+      await session.addQueryChunk(const Message(text: 'one', isUser: true));
+      final first = session.getResponseAsync().listen((_) {});
+      await pumpEventQueue();
+      sends.single.chunk(
+        '{"role":"assistant","content":[{"type":"text","text":"o"}]}',
+      );
+      first.pause();
+      await session.stopGeneration();
+      // Native ends the stopped turn; its consumer stays paused.
+      sends.single.cancelled();
+      await session.addQueryChunk(const Message(text: 'two', isUser: true));
+      final second = session.getResponseAsync().join();
+      // The conversation gives the stopped turn its bounded wind-down
+      // (5 s), then sends the next one.
+      for (var i = 0; sends.length < 2 && i < 200; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      expect(sends, hasLength(2), reason: 'the next turn is sent');
+      sends.last
+        ..chunk(
+          '{"role":"assistant","content":[{"type":"text","text":"ok two"}]}',
+        )
+        ..finished();
+      expect(await second.timeout(const Duration(seconds: 10)), 'ok two');
+      await first.cancel();
+    });
+
     test('a stop drops a turn still waiting for the one before it', () async {
       final session = await model(fresh: false).openSession();
       await session.addQueryChunk(const Message(text: 'one', isUser: true));

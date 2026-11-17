@@ -506,7 +506,7 @@ final class Engine {
         nativeLogLevel: nativeLevel,
       );
     } on LiteRtLmEngineCreateException catch (e, st) {
-      await client.shutdown();
+      await _shutdownAfterFailure(client);
       final target = plan.npuTarget;
       if (kind != BackendKind.npu || target == null) rethrow;
       // The device's SoC is not read before the load, so a bundle for another
@@ -522,7 +522,7 @@ final class Engine {
         st,
       );
     } catch (_) {
-      await client.shutdown();
+      await _shutdownAfterFailure(client);
       rethrow;
     }
 
@@ -570,7 +570,7 @@ final class Engine {
     } catch (_) {
       // The engine exists: it is deleted before the failure reaches the
       // caller.
-      await client.shutdown();
+      await _shutdownAfterFailure(client);
       rethrow;
     }
   }
@@ -950,3 +950,13 @@ String? engineNoRewindReason(Engine engine) => engine._noRewindReason;
 /// of [engine]'s conversations.
 bool engineFiltersChannelContent(Engine engine) =>
     engine._filtersChannelContent;
+
+/// Deletes the engine a failed create made, without letting a failure of the
+/// delete replace the create's own error, which is what the caller sees.
+Future<void> _shutdownAfterFailure(LiteRtLmFfiClient client) async {
+  try {
+    await client.shutdown();
+  } on Object catch (e) {
+    runtimeLog('[LiteRtLmEngine] deleting the failed engine failed too: $e');
+  }
+}

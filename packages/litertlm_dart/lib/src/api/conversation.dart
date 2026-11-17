@@ -83,8 +83,9 @@ final class Conversation {
   /// [ConversationClosedException] (closed before or while streaming),
   /// [ConstraintUnsupportedException] (the response format was refused, or
   /// combined with a thinking budget), and [TurnFailedException] for any
-  /// other failure (native failed or cancelled unasked, a reply native wrote
-  /// in a shape this release cannot read). Programming errors stay [Error]s:
+  /// other failure (native failed or cancelled unasked). A chunk native wrote
+  /// in a shape this release cannot read is a [TurnFailedException] event
+  /// too, and the reply streams on after it. Programming errors stay [Error]s:
   /// a send on a conversation that is closed, or whose engine is closed, is a
   /// [StateError] thrown by this call.
   Stream<Message> sendMessageStream(

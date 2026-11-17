@@ -228,7 +228,7 @@ final class LiteRtLmEmbeddingConfig {
 
   /// Whether a load that leaves [cacheBase]'s directory for this bundle
   /// without a real weight cache file is refused with [EmbedderLoadException]
-  /// instead of printing a warning (`LiteRtEmbeddingBackend(requireWeightCache:)`).
+  /// instead of printing a warning (`requireWeightCache`).
   /// Checked on CPU, on the GPU (ML Drift's weight and program caches, whose
   /// path lengths are also checked before create), and on the NPU only when
   /// audio is declared: there the text and vision towers write no cache,
@@ -1072,7 +1072,7 @@ final class LiteRtLmEmbedder {
         _refuse(
           '$_file has vision signatures for ${budgets.join(' and ')} tokens '
           'per image, not $budget: '
-          'LiteRtEmbeddingBackend(visionTokensPerImage: …) must be one of '
+          'visionTokensPerImage must be one of '
           'them.',
         );
       }
@@ -1215,7 +1215,7 @@ final class LiteRtLmEmbedder {
       // ignore: avoid_print
       print(
         '[litertlm_dart] WARNING: $what. '
-        'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
+        '`requireWeightCache: true` makes this a load '
         'failure.',
       );
       return;
@@ -1269,7 +1269,7 @@ final class LiteRtLmEmbedder {
         _deleteStaleSiblings(cacheDir);
         throw EmbedderLoadException(
           'LiteRT-LM wrote no weight cache to $cacheDir$whose while loading '
-          '$_file, and LiteRtEmbeddingBackend(requireWeightCache: true) '
+          '$_file, and `requireWeightCache: true` '
           'refuses to run it without one ($cost). $why',
         );
       }
@@ -1278,7 +1278,7 @@ final class LiteRtLmEmbedder {
         '[litertlm_dart] WARNING: LiteRT-LM wrote no weight cache '
         'to $cacheDir$whose while loading $_file, so this embedder runs '
         'without one ($cost). $why '
-        'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
+        '`requireWeightCache: true` makes this a load '
         'failure.',
       );
       return;
@@ -1343,14 +1343,14 @@ final class LiteRtLmEmbedder {
         'model file name or app cache path, in ASCII, avoids it.';
     if (_config.requireWeightCache) {
       throw EmbedderLoadException(
-        '$what LiteRtEmbeddingBackend(requireWeightCache: true) refuses to '
+        '$what `requireWeightCache: true` refuses to '
         'run it.',
       );
     }
     // ignore: avoid_print
     print(
       '[litertlm_dart] WARNING: $what '
-      'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
+      '`requireWeightCache: true` makes this a load '
       'failure.',
     );
     return check.kinds;
@@ -1405,7 +1405,7 @@ final class LiteRtLmEmbedder {
       // ignore: avoid_print
       print(
         '[litertlm_dart] WARNING: $what. '
-        'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
+        '`requireWeightCache: true` makes this a load '
         'failure.',
       );
       return;
@@ -1427,7 +1427,7 @@ final class LiteRtLmEmbedder {
         throw EmbedderLoadException(
           'LiteRT-LM wrote no GPU cache (ML Drift weight and program caches) '
           'to $cacheDir while loading $_file, and '
-          'LiteRtEmbeddingBackend(requireWeightCache: true) refuses to run it '
+          '`requireWeightCache: true` refuses to run it '
           'without them: $_coldGpuCost. $why',
         );
       }
@@ -1435,7 +1435,7 @@ final class LiteRtLmEmbedder {
       print(
         '[litertlm_dart] WARNING: LiteRT-LM wrote no GPU cache (ML '
         'Drift weight and program caches) to $cacheDir while loading $_file: '
-        '$_coldGpuCost. $why LiteRtEmbeddingBackend(requireWeightCache: true) '
+        '$_coldGpuCost. $why `requireWeightCache: true` '
         'makes this a load failure.',
       );
       return;

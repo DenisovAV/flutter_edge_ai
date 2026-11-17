@@ -57,13 +57,19 @@ Uri qnnRuntimeAarUrl(String mavenBase) {
 /// arrives as the string `true` or `false`. Anything else is a typo in the
 /// app's pubspec, and a typo must not silently mean "off" — the developer
 /// asked for something and would get a build that quietly lacks it.
-bool readBoolUserDefine(Object? value, String key) => switch (value) {
+/// [package] is the `user_defines` key the value came from: `litertlm_dart`,
+/// or `flutter_edge_ai_litertlm` for an app written for 1.20.x and before.
+bool readBoolUserDefine(
+  Object? value,
+  String key, {
+  String package = 'litertlm_dart',
+}) => switch (value) {
   null => false,
   final bool b => b,
   'true' => true,
   'false' => false,
   _ => throw FormatException(
-    'hooks.user_defines.litertlm_dart.$key must be true or false, '
+    'hooks.user_defines.$package.$key must be true or false, '
     'got ${value.runtimeType} "$value"',
   ),
 };

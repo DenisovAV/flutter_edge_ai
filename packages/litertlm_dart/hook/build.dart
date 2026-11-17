@@ -870,7 +870,12 @@ Future<void> _processBundle({
   for (final vendor in NpuStack.values) {
     if (!vendor.abis.any((abi) => abi.startsWith('${os.name}_'))) continue;
     final define = npuUserDefine(vendor);
-    if (define != null && !readBoolUserDefine(_defines[define], define)) {
+    if (define != null &&
+        !readBoolUserDefine(
+          _defines[define],
+          define,
+          package: _defines.packageOf(define),
+        )) {
       continue;
     }
     if (!vendor.abis.contains(targetAbi)) {

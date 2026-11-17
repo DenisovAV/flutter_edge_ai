@@ -1481,7 +1481,7 @@ void main() {
         '(core refuses it first; reaching the pass is a host bug)', () async {
       await expectLater(
         p.embed(EmbeddingInput.image(_png), TaskType.none),
-        throwsA(isA<EmbeddingEngineException>()),
+        throwsArgumentError,
       );
       expect(native.order, isNot(contains('input_data_create')));
       expect(allocator.live, 0);
@@ -1601,7 +1601,7 @@ void main() {
           EmbeddingInput.audio(Uint8List.fromList([1, 2, 3])),
           TaskType.none,
         ),
-        throwsA(isA<EmbeddingEngineException>()),
+        throwsArgumentError,
       );
       expect(native.order, isNot(contains('input_data_create')));
       expect(allocator.live, 0);
@@ -1765,7 +1765,7 @@ void main() {
       ]) {
         await expectLater(
           p.embed(input, TaskType.none),
-          throwsA(isA<EmbeddingEngineException>()),
+          throwsArgumentError,
         );
       }
       expect(native.order, isNot(contains('input_data_create')));

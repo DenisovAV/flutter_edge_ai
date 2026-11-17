@@ -2877,7 +2877,7 @@ class LiteRtLmFfiClient {
             '[litertlm_dart] WARNING: NPU backend: sampler params '
             '($sampling) are sent but the NPU executor decodes greedily and never '
             'reads them, so output is deterministic argmax. Use '
-            'PreferredBackend.cpu or .gpu if you need sampling. Shown once per '
+            'the CPU or the GPU if you need sampling. Shown once per '
             'engine.',
           );
         }
@@ -5029,7 +5029,7 @@ class LiteRtLmFfiClient {
             // a reason of its own is still said, release builds included.
             // ignore: avoid_print
             print(
-              '[flutter_edge_ai] a scoring run cancelled by its caller then '
+              '[litertlm_dart] a scoring run cancelled by its caller then '
               'failed: $e',
             );
           }

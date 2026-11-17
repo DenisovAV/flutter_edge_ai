@@ -134,7 +134,7 @@ final class EmbeddingEngine {
     checkEmbeddingRequest(
       contents,
       modalities: info.modalities,
-      hasText: text != null && text.isNotEmpty,
+      hasText: text != null,
       hasImages: images.isNotEmpty,
       hasAudio: audio != null,
     );

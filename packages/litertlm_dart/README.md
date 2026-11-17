@@ -56,7 +56,9 @@ same names. In code that imports both, import this package with a prefix:
   `Message.tool([Content.toolResponse(name, result)])`. There is no automatic
   tool loop: running app code is the caller's policy.
 - **Decoding**: `SamplerConfig` (unset: the model file's own sampler),
-  `ThinkingConfig` with a token budget, `ResponseFormat.json`/`.regex`, and per
+  `ThinkingConfig` with a token budget, `ResponseFormat.json`/`.regex` (on the
+  hosts and backends where constrained decoding was qualified; elsewhere
+  `createConversation` throws `ConstraintUnsupportedException`), and per
   message `RepetitionPenaltyConfig`, `NoRepeatNgramConfig`, `suppressTokens`,
   `extraContext`. `SpeculativeDecodingMode` on the engine and per conversation.
 - **Stopping**: `Conversation.cancel()` stops and keeps what was generated;
@@ -136,8 +138,11 @@ a finished story:
 - **Library lookup** follows the layout of a Flutter app bundle; `dart run` and
   `dart build cli` layouts are not looked up yet.
 - **With `flutter_edge_ai_litertlm` 1.20.x or older** in the same app, both
-  build hooks bundle `libLiteRtLm` and the build fails on the duplicate; use
-  `flutter_edge_ai_litertlm` 1.21.0 or newer, which builds on this package.
+  build hooks bundle `libLiteRtLm`, each under its own package's asset id,
+  and the build does not catch it: on Android one copy overwrites the other,
+  on Apple a second framework is added. Which LiteRT-LM build the app runs is
+  then not defined. Use `flutter_edge_ai_litertlm` 1.21.0 or newer, which
+  builds on this package.
 
 A plain Dart program and the macOS companions are planned with a
 command-line example.

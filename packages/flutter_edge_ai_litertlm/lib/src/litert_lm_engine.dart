@@ -555,6 +555,10 @@ class LiteRtLmEngine
       multimodalOrder: config.multimodalOrder,
       maxConcurrentSessions: config.maxConcurrentSessions,
       openSessionBacking: openSessionBacking,
+      freshConversationEachTurn: liteRtLmFreshConversationEachTurn(
+        backend: ffiRuntime.activeBackend.toRuntime,
+        npuVendor: npuVendor,
+      ),
       linearAttentionState: linearAttentionState,
       structuredOutput: liteRtLmStructuredOutputSupport(
         abi: host.abi,

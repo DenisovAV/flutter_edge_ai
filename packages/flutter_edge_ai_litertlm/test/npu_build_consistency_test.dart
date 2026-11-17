@@ -107,6 +107,21 @@ void main() {
     }
   });
 
+  test("Google's MediaTek dispatch, which the hook fetches and stores behind "
+      'our adapter, is forbidden in the Android tarball under that name', () {
+    expect(
+      _tarballRules('FORBIDDEN'),
+      contains(
+        '${_tarballOf('android_arm64')}:'
+        '${_fileOf(mediatekLegacyDispatchLib, 'android')}',
+      ),
+    );
+    expect(npuStackLibs(NpuStack.mediatek, 'android'), [
+      mediatekDispatchLib,
+      mediatekLegacyDispatchLib,
+    ]);
+  });
+
   test('every vendor\'s stack holds its dispatch, on each of its OSes', () {
     for (final vendor in NpuStack.values) {
       for (final os in {for (final abi in vendor.abis) _osOf(abi)}) {

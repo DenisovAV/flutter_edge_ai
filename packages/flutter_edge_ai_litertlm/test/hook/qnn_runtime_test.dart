@@ -291,6 +291,9 @@ void main() {
         '0.19.1-a': '2.50.0',
         // Android archive byte-identical to 0.19.1-a.
         '0.19.1-b': '2.50.0',
+        // 0.19.1-b's Android archive plus the MediaTek adapter; the Qualcomm
+        // dispatch is byte-identical.
+        '0.19.1-c': '2.50.0',
       };
       final hook = File('hook/build.dart').readAsStringSync();
       final bundle = RegExp(

@@ -41,6 +41,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     required MediaOrder multimodalOrder,
     String? jsonSchema,
     required bool filterChannelContent,
+    bool freshConversation = false,
   }) {
     this.sampling = sampling;
     this.samplingExplicit = samplingExplicit;
@@ -61,6 +62,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     int? maxOutputTokens,
     String? jsonSchema,
     required bool filterChannelContent,
+    bool freshConversation = false,
   }) {
     this.sampling = sampling;
     this.samplingExplicit = samplingExplicit;

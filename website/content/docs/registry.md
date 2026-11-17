@@ -91,7 +91,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [npu-tensor-g6](https://huggingface.co/litert-community/Gemma3-1B-IT/blob/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_q8_ekv1280_Google_Tensor_G6.litertlm)<br>2.04&nbsp;GB · context&nbsp;1280 | NPU&nbsp;⚪ |  |  |  |  |  |  |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L259-L260)).
-- Documented: [PR #697](https://github.com/DenisovAV/flutter_edge_ai/pull/697) (LiteRT-LM 0.18), run on a DDP Galaxy Tab S10+ (MT6989); on LiteRT-LM 0.19 through the dispatch adapter, the same device on 2026-11-01 (doc/research/mediatek-dispatch-0.19.md).
+- Documented: [PR #697](https://github.com/DenisovAV/flutter_edge_ai/pull/697) (LiteRT-LM 0.18), run on a DDP Galaxy Tab S10+ (MT6989); on LiteRT-LM 0.19 through the dispatch adapter with the AAR 2.3.2 dispatch staged by hand, the same device on 2026-11-01 (doc/research/mediatek-dispatch-0.19.md).
 - Documented: [PR #701](https://github.com/DenisovAV/flutter_edge_ai/pull/701), Gemma 3 NPU prefill chunks (LiteRT-LM#3508).
 
 <a id="gemma-3-270m-it"></a>

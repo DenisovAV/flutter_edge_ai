@@ -485,6 +485,61 @@ void main() {
       );
     });
 
+    RecoveringConversationHandle freshWithBound() =>
+        RecoveringConversationHandle(
+          first,
+          reopen: (messagesJson) async {
+            final c = _Conversation('fresh', seed: messagesJson);
+            reopened.add(c);
+            return c;
+          },
+          noRewindReason: 'the NPU executor rolls back one token at most',
+          freshConversationEachTurn: true,
+          windDownTimeout: const Duration(milliseconds: 50),
+        );
+
+    test('a turn queued behind a healthy, long one waits for it past the '
+        'bound: the long one is not cut off, and the next conversation '
+        'replays it', () async {
+      handle = freshWithBound();
+      final gate = first.hold = Completer<void>();
+      final a = handle.chat('one').join();
+      await pumpEventQueue();
+      final b = handle.chat('two').join();
+      // Several bounds long: the first turn is still generating.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(first.closed, isFalse, reason: 'the healthy turn is not cut off');
+      expect(reopened, isEmpty);
+      gate.complete();
+      expect(await a, 'Hello there.');
+      expect(await b, 'Hello there.');
+      expect(first.sent, ['one']);
+      expect(reopened.single.sent, ['two']);
+      final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+      expect([for (final m in seed) textOf(m)], ['one', 'Hello there.']);
+    });
+
+    test(
+      'a long turn stopped while the next one waits still gets the bound',
+      () async {
+        handle = freshWithBound();
+        first.hold = Completer<void>();
+        // A consumer that pauses the first stream and never resumes it.
+        final sub = handle.chat('one').listen((_) {})..pause();
+        await pumpEventQueue();
+        final b = handle.chat('two').join();
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        handle.cancelGeneration();
+        await b.timeout(const Duration(seconds: 2));
+        expect(
+          reopened,
+          isNotEmpty,
+          reason: 'rebuilt without the stopped turn',
+        );
+        await sub.cancel();
+      },
+    );
+
     test(
       'off, as on every other backend, turns share one conversation',
       () async {

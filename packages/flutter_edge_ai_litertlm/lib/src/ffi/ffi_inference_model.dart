@@ -1452,28 +1452,37 @@ class RecoveringConversationHandle implements ConversationHandle {
         // treated as having damaged the conversation, which is rebuilt without
         // its exchange; a turn that is still generating normally is left
         // alone, and the native lock queues this one behind it.
-        await previous.timeout(
-          windDownTimeout,
-          onTimeout: () {
-            if (!_stopRequested) {
+        // Under [freshConversationEachTurn] this turn closes the conversation
+        // the previous one generates on, so it keeps waiting while that turn
+        // is healthy: it is never cut off, and its exchange is in the history
+        // the new conversation replays. A stop still gets the bound.
+        var ended = false;
+        while (!ended) {
+          ended = true;
+          await previous.timeout(
+            windDownTimeout,
+            onTimeout: () {
+              if (!_stopRequested) {
+                edgeAiLog(
+                  '[FfiInferenceModel] the previous turn is still generating '
+                  'after ${windDownTimeout.inSeconds}s; this one waits for it',
+                );
+                if (freshConversationEachTurn) ended = false;
+                return;
+              }
+              _stopped = true;
+              _stoppedReply = null;
+              _rebuildBecause =
+                  'the previous turn did not wind down within '
+                  '${windDownTimeout.inSeconds}s';
               edgeAiLog(
-                '[FfiInferenceModel] the previous turn is still generating '
-                'after ${windDownTimeout.inSeconds}s; this one waits for it',
+                '[FfiInferenceModel] a stopped turn did not wind down within '
+                '${windDownTimeout.inSeconds}s (is its stream paused?); '
+                'rebuilding without it',
               );
-              return;
-            }
-            _stopped = true;
-            _stoppedReply = null;
-            _rebuildBecause =
-                'the previous turn did not wind down within '
-                '${windDownTimeout.inSeconds}s';
-            edgeAiLog(
-              '[FfiInferenceModel] a stopped turn did not wind down within '
-              '${windDownTimeout.inSeconds}s (is its stream paused?); '
-              'rebuilding without it',
-            );
-          },
-        );
+            },
+          );
+        }
       }
       // A recovery cannot be cut short (native bounds it); one that started
       // while this turn waited is still using the conversation.
@@ -1778,6 +1787,16 @@ class _VirtualConversationHandle implements ConversationHandle {
     if (_stopRequested) {
       // Bounded for the reason given in RecoveringConversationHandle._turn.
       await _turnDone?.timeout(_windDownTimeout, onTimeout: () {});
+    } else if (freshConversationEachTurn) {
+      // The rebuild replays [_history], so the turn before this one must be in
+      // it: wait while it is healthy, and as above once it is stopped.
+      for (var waiting = true; waiting;) {
+        waiting = false;
+        await _turnDone?.timeout(
+          _windDownTimeout,
+          onTimeout: () => waiting = !_stopRequested,
+        );
+      }
     }
     final done = Completer<void>();
     _turnDone = done.future;
@@ -1843,6 +1862,7 @@ class _VirtualConversationHandle implements ConversationHandle {
             ? null
             : _assistantTurn(assistantText.toString(), assistantRaw.toString()),
         extraContext: extraContext,
+        freshConversation: freshConversationEachTurn,
       );
       _inFlight = false;
       done.complete();

@@ -1359,7 +1359,7 @@ Google Maven (checksum-pinned; `mediatek_npu_maven_url` names a mirror,
 `mediatek_npu_aar` a downloaded copy) and bundles its
 `libLiteRtDispatch_MediaTek.so` (Apache 2.0), about 330 KB, into every Android
 arm64 build of the app as `libmtk_litert_dispatch_legacy.so`, beside this
-package's `libLiteRtDispatch_MediaTek.so` (7 KB, native-v0.19.1-c). That one
+package's `libLiteRtDispatch_MediaTek.so` (8 KB, native-v0.19.1-c). That one
 is ours: LiteRT-LM 0.19's LiteRT loads an NPU dispatch only through
 `LiteRtDispatchQueryInterface`, which Google's build does not export, so ours
 exports it and answers with the tables of Google's. Google's is not in this

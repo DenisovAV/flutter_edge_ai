@@ -257,7 +257,7 @@ LITERT_DIR="${LITERT_DIR:-}" "$SCRIPT_DIR/run_mediatek_dispatch_compat_test.sh"
   -Wl,-z,max-page-size=16384 \
   -Wl,-soname,libLiteRtDispatch_MediaTek.so \
   -o "$PREBUILT_DIR/libLiteRtDispatch_MediaTek.so" \
-  "$SCRIPT_DIR/mediatek_dispatch_compat.c"
+  "$SCRIPT_DIR/mediatek_dispatch_compat.c" -llog
 echo "  libLiteRtDispatch_MediaTek.so → $PREBUILT_DIR/"
 
 # 8. Copy companion libs from upstream prebuilt (we don't rebuild these

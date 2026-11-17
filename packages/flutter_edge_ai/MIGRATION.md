@@ -54,7 +54,7 @@ depends on.
   warning naming each one; a key set under both takes the `litertlm_dart:`
   value. The old key is to be dropped with the next upstream LiteRT-LM version.
 - **The native cache moved.** The hook caches each release in its own
-  directory, `litertlm_dart/native/<release tag>/<platform>` (`native-v0.19.1-b`
+  directory, `litertlm_dart/native/<release tag>/<platform>` (`native-v0.19.1-c`
   for 1.21.0) under
   `~/Library/Caches` (macOS), `~/.cache` (Linux) or `%LOCALAPPDATA%` (Windows).
   To force a fresh download, delete `litertlm_dart/native` there and run

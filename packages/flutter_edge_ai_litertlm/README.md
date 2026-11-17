@@ -1697,7 +1697,7 @@ package's `LiteRtEmbeddingBackend` and `flutter_edge_ai_speech` both use it
 through `litertlm_dart`. A stale Native-Assets cache after a
 native version bump can leave the library unbundled, surfacing as an opaque
 `dlopen` "no such file" on the first inference. The hook caches each release
-under its own tag (`<cache>/litertlm_dart/native/native-v0.19.1-b/<platform>`).
+under its own tag (`<cache>/litertlm_dart/native/native-v0.19.1-c/<platform>`).
 Fix with a clean rebuild:
 
 ```bash

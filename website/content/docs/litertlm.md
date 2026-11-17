@@ -185,7 +185,7 @@ checksum and bundles its `libLiteRtDispatch_MediaTek.so` (Apache 2.0, about
 330 KB) as `libmtk_litert_dispatch_legacy.so`. It is not in our release
 because building it needs MediaTek's NeuroPilot SDK, whose licence lets it
 reach users only inside an app. In front of it sits our own
-`libLiteRtDispatch_MediaTek.so` (7 KB, from native-v0.19.1-c): the LiteRT of
+`libLiteRtDispatch_MediaTek.so` (8 KB, from native-v0.19.1-c): the LiteRT of
 LiteRT-LM 0.19 loads a dispatch only through `LiteRtDispatchQueryInterface`,
 which Google's build does not export, so ours exports it and hands LiteRT
 Google's tables. The

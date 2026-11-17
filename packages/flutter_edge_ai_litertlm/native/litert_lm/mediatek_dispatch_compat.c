@@ -32,9 +32,15 @@
 #include <dlfcn.h>
 #include <limits.h>
 #include <pthread.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
+
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
 
 #ifndef LEGACY_NAME
 #define LEGACY_NAME "libmtk_litert_dispatch_legacy.so"
@@ -104,33 +110,67 @@ static BasicV1 g_basic;
 static AsyncV1 g_async;
 static GraphV1 g_graph;
 
+// Why the legacy dispatch did not load, where the app's logs are: LiteRT
+// itself reports only that no dispatch was usable, and the outcome is kept for
+// the life of the process (pthread_once).
+static void LogFailure(const char* format, ...) {
+  char message[PATH_MAX + 256];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(message, sizeof(message), format, args);
+  va_end(args);
+#ifdef __ANDROID__
+  __android_log_print(ANDROID_LOG_ERROR, "LiteRtDispatchMtkCompat", "%s",
+                      message);
+#else
+  fprintf(stderr, "LiteRtDispatchMtkCompat: %s\n", message);
+#endif
+}
+
 static void Load(void) {
   Dl_info info;
-  if (!dladdr((const void*)&Load, &info) || info.dli_fname == NULL) return;
+  if (!dladdr((const void*)&Load, &info) || info.dli_fname == NULL) {
+    LogFailure("cannot find this library's own path (dladdr)");
+    return;
+  }
   const char* slash = strrchr(info.dli_fname, '/');
   size_t dir = slash ? (size_t)(slash - info.dli_fname + 1) : 0;
   char path[PATH_MAX];
-  if (dir + sizeof(LEGACY_NAME) > sizeof(path)) return;
+  if (dir + sizeof(LEGACY_NAME) > sizeof(path)) {
+    LogFailure("the path of %s beside %s is too long", LEGACY_NAME,
+               info.dli_fname);
+    return;
+  }
   memcpy(path, info.dli_fname, dir);
   memcpy(path + dir, LEGACY_NAME, sizeof(LEGACY_NAME));
   // Never closed: the runtime keeps this library loaded (RTLD_NODELETE).
   void* legacy = dlopen(path, RTLD_NOW | RTLD_LOCAL);
   if (legacy == NULL) {
+    const char* error = dlerror();
+    LogFailure("cannot open %s: %s", path, error ? error : "unknown error");
     g_status = kStatusNotFound;
     return;
   }
   LiteRtStatus (*get_api)(LegacyApi*) =
       (LiteRtStatus(*)(LegacyApi*))dlsym(legacy, "LiteRtDispatchGetApi");
   if (get_api == NULL) {
+    const char* error = dlerror();
+    LogFailure("%s has no LiteRtDispatchGetApi: %s", path,
+               error ? error : "unknown error");
     g_status = kStatusNotFound;
     return;
   }
   LiteRtStatus status = get_api(&g_legacy);
   if (status != kStatusOk) {
+    LogFailure("LiteRtDispatchGetApi of %s failed with status %d", path,
+               status);
     g_status = status;
     return;
   }
-  if (g_legacy.interface == NULL) return;
+  if (g_legacy.interface == NULL) {
+    LogFailure("LiteRtDispatchGetApi of %s returned no interface", path);
+    return;
+  }
   g_basic.h = (AbiHeader){sizeof(BasicV1), 1, 0, 0};
   memcpy(g_basic.f, g_legacy.interface, sizeof(g_basic.f));
   if (g_legacy.async_interface != NULL) {

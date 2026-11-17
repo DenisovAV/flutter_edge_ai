@@ -381,7 +381,7 @@ final _litertlmBundle = _NativeBundle(
     'litertlm-ios_sim_arm64.tar.gz':
         'cc2c2de4195692ce89c73451924ac6617bfe7557afddb3fdd81df9022795b5a2',
     'litertlm-android_arm64.tar.gz':
-        '9efb9745356a453f0e9507be8af81e65bc04e78f6e3bf3affb8b5aad57ba0b7f',
+        '9f3f712137a2a1d29915ada08a84eefd5262b2b530b7865f9e5c2cb97501072f',
   },
   companions: [
     'GemmaModelConstraintProvider',

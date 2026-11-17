@@ -66,8 +66,17 @@ for r in "${runners[@]}"; do
   "$D/runner_$r" "$D/minimal/libLiteRtDispatch_MediaTek.so" minimal || {
     echo "FAIL [$r] minimal"; fail=1; }
   if "$D/runner_$r" "$D/missing/libLiteRtDispatch_MediaTek.so" full \
-      >/dev/null 2>&1; then
+      >/dev/null 2>"$D/missing_$r.err"; then
     echo "FAIL [$r] an adapter without the legacy library negotiated"; fail=1
+  fi
+  # The adapter says which file it could not open, and why (dlerror), since
+  # LiteRT reports only that no dispatch was usable.
+  if grep -q "cannot open .*/missing/libmtk_litert_dispatch_legacy.so: ." \
+      "$D/missing_$r.err"; then
+    echo "PASS [$r] a missing legacy library is named with its dlerror"
+  else
+    echo "FAIL [$r] a missing legacy library was not logged:"
+    cat "$D/missing_$r.err"; fail=1
   fi
   # A crash (a NULL slot called) counts as the expected failure too.
   if "$D/runner_$r" "$D/shifted/libLiteRtDispatch_MediaTek.so" full \

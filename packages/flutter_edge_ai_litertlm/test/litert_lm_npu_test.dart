@@ -207,7 +207,8 @@ void main() {
               allOf(
                 contains(
                   'Qualcomm Android and Qualcomm Linux arm64, and on Google '
-                  'Tensor G5/G6 Android devices, and on Intel NPUs with '
+                  'Tensor G5/G6 Android devices, and on MediaTek Dimensity '
+                  'Android devices, and on Intel NPUs with '
                   'Windows x64, only',
                 ),
                 contains('this is $os ($abi)'),
@@ -240,7 +241,9 @@ void main() {
             _refusal(
               allOf(
                 contains('compiled for a ${target.vendor} NPU (${target.soc})'),
-                contains('Qualcomm, Google Tensor and Intel NPUs only'),
+                contains(
+                  'Qualcomm, Google Tensor, MediaTek and Intel NPUs only',
+                ),
               ),
             ),
             reason: '$abi $target',
@@ -259,22 +262,13 @@ void main() {
       expect(host.vendors, {NpuStack.googleTensor});
     });
 
-    test('a MediaTek bundle is refused before anything is asked, naming why '
-        'and the release that runs it (decision K)', () async {
+    test('a MediaTek bundle selects only the MediaTek dispatch', () async {
       const mediatek = NpuStamp(vendor: 'MediaTek', soc: 'mt6991');
-      await expectLater(
-        place(target: mediatek),
-        _refusal(
-          allOf(
-            contains('compiled for the MediaTek mt6991 NPU'),
-            contains(mediatekNpuRefusedReason),
-            contains('1.19.x'),
-            contains('#4256'),
-            contains('generic EmbeddingGemma 2 bundle'),
-          ),
-        ),
-      );
-      expect(host.asked, isEmpty);
+      final placement = await place(target: mediatek);
+      expect(placement.backend, PreferredBackend.npu);
+      expect(placement.target, mediatek);
+      expect(host.asked, ['stack:mediatek', 'reaches', 'dispatchDir']);
+      expect(host.vendors, {NpuStack.mediatek});
     });
 
     test('compiled for Qualcomm is refused on Windows x64, which runs Intel '
@@ -414,7 +408,7 @@ void main() {
               contains('compiled for the IntelOpenVINO PTL NPU'),
               contains(
                 'on $os ($abi) flutter_edge_ai_litertlm runs '
-                '${os == 'android' ? 'Qualcomm and Google Tensor' : 'Qualcomm'} '
+                '${os == 'android' ? 'Qualcomm, Google Tensor and MediaTek' : 'Qualcomm'} '
                 'NPU bundles only; Intel ones run on windows_x64',
               ),
             ),
@@ -455,8 +449,8 @@ void main() {
     expect(
       liteRtLmWebNpuRefusal,
       'EmbeddingGemma 2 runs on the NPU on Qualcomm Android and Qualcomm Linux '
-      'arm64, and on Google Tensor G5/G6 Android devices, and on Intel NPUs '
-      'with Windows x64, only, '
+      'arm64, and on Google Tensor G5/G6 Android devices, and on MediaTek '
+      'Dimensity Android devices, and on Intel NPUs with Windows x64, only, '
       'not on the web. Omit preferredBackend here.',
     );
   });

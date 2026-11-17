@@ -25,12 +25,9 @@ export 'src/runtime/npu_stacks.dart'
         NpuStack,
         androidLibFileName,
         googleTensorNpuLibs,
-        mediatekNpuRefused,
-        mediatekNpuRefusedReason,
         nativeAssetId,
         npuSentenceList,
-        npuStackLibs,
-        offeredNpuStacks;
+        npuStackLibs;
 export 'src/bundle/litertlm_bundle_info.dart'
     show
         BundleInfo,

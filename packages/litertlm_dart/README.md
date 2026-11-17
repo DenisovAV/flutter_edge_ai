@@ -26,7 +26,7 @@ a Flutter app uses those, through
 
 The version is the upstream LiteRT-LM version this package is built from,
 plus a build number for our native rebuilds of it: `0.19.1+1` is LiteRT-LM
-0.19.1 on `native-v0.19.1-b`. Within one upstream version the Dart API stays
+0.19.1 on `native-v0.19.1-c`. Within one upstream version the Dart API stays
 compatible; a breaking change comes with an upstream version change. So depend
 on it with an upper bound at the next upstream patch, `'>=0.19.1+1 <0.19.2'`,
 not with a caret: `^0.19.1` would also take 0.19.2.

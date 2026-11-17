@@ -12,7 +12,7 @@ no engine by default — you opt in by registering `LiteRtLmEngine()`.) It runs
 JVM, no gRPC — and it is the **primary desktop engine** (macOS, Windows, Linux);
 [ONNX Runtime](/docs/onnx) also runs on desktop, and macOS and Windows can additionally
 use [Built-in AI](/docs/builtin-ai). The native library is fetched at build time via
-**Native Assets** (SHA256-verified, from the `native-v0.19.1-b` GitHub release,
+**Native Assets** (SHA256-verified, from the `native-v0.19.1-c` GitHub release,
 containing LiteRT-LM 0.19.1 and C API 1.0), so there is no manual native setup.
 
 The same package also ships **`LiteRtEmbeddingBackend`**: EmbeddingGemma 2 from
@@ -182,8 +182,13 @@ MT6991/MT6993; nothing for Gemma 4) runs on a phone with that SoC and Android
 block (from flutter_edge_ai_litertlm 1.17.0). The build then fetches Google's
 `litert-npu-runtime-mediatek` 2.3.0 AAR from Google Maven, checks its pinned
 checksum and bundles its `libLiteRtDispatch_MediaTek.so` (Apache 2.0, about
-330 KB). It is not in our release because building it needs MediaTek's
-NeuroPilot SDK, whose licence lets it reach users only inside an app. The
+330 KB) as `libmtk_litert_dispatch_legacy.so`. It is not in our release
+because building it needs MediaTek's NeuroPilot SDK, whose licence lets it
+reach users only inside an app. In front of it sits our own
+`libLiteRtDispatch_MediaTek.so` (8 KB, from native-v0.19.1-c): the LiteRT of
+LiteRT-LM 0.19 loads a dispatch only through `LiteRtDispatchQueryInterface`,
+which Google's build does not export, so ours exports it and hands LiteRT
+Google's tables. The
 NeuroPilot runtime it drives is part of the phone; a phone whose vendor does
 not expose it to apps is refused with that reason. Offline, download the AAR
 and add `mediatek_npu_aar: <path>`; `mediatek_npu_maven_url` names a mirror.
@@ -194,7 +199,10 @@ it waiting for NeuroPilot's `INeuronService`, absent on that tablet; first token
 EmbeddingGemma 2 `…_MT6991`/`…_MT6993` bundles are refused when the engine is
 created. The Qwen3 0.6B MT6993 bundle fails on its tokenizer
 ([LiteRT-LM#3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865))
-before the NPU. Not run on an MT6991/MT6993 phone yet.
+before the NPU. Not run on an MT6991/MT6993 phone yet. On that tablet a
+conversation answers its second message empty (LiteRT-LM #4256), so on the
+MediaTek NPU every chat turn runs in a fresh conversation that replays the
+history: each turn pays the history's prefill again.
 
 **Linux arm64 NPU takes the same flag.** On a Qualcomm Linux board with a
 Hexagon V68–V81 compute DSP (Dragonwing QCS6490, QCS8275 — the Arduino

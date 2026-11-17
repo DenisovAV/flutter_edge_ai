@@ -52,6 +52,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     MultimodalOrder? multimodalOrder,
     this.maxConcurrentSessions,
     this.openSessionBacking = OpenSessionBacking.virtual,
+    this.freshConversationEachTurn = false,
     this.linearAttentionState = false,
     this.structuredOutput = const StructuredOutputSupport.none(
       'This LiteRT-LM model was not loaded through LiteRtLmEngine.',
@@ -103,6 +104,12 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   /// conversation where that backend ran several live conversations
   /// correctly, a virtual one (full-message replay) elsewhere.
   final OpenSessionBacking openSessionBacking;
+
+  /// Every turn, in [createSession] and [openSession] sessions alike, runs in
+  /// a fresh native conversation that replays the history as full messages:
+  /// where a conversation answers its second message empty
+  /// ([liteRtLmFreshConversationEachTurn], LiteRT-LM #4256 on MediaTek).
+  final bool freshConversationEachTurn;
 
   /// The model keeps linear attention state (a hybrid model such as LFM2.5,
   /// `readLiteRtLmHasLinearAttentionState`): no conversation of it is ever
@@ -406,6 +413,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         toolCallsOf: liteRtLmToolCalls,
         noRewindReason: _noRewindReason,
         mediaOrder: multimodalOrder.toRuntime,
+        freshConversationEachTurn: freshConversationEachTurn,
       );
       runtimeLog(
         '[FfiInferenceModel/perf] createConversation (FFI): ${sessionSw.elapsedMilliseconds - beforeConv}ms',
@@ -544,6 +552,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           toolCallsOf: liteRtLmToolCalls,
           noRewindReason: openSessionNoRewindReason,
           mediaOrder: multimodalOrder.toRuntime,
+          freshConversationEachTurn: freshConversationEachTurn,
         );
       case OpenSessionBacking.virtual:
         // Where several live conversations were not verified on this backend,
@@ -562,6 +571,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           jsonSchema: jsonSchema,
           filterChannelContent: filterChannelContent,
           toolCallsOf: liteRtLmToolCalls,
+          freshConversationEachTurn: freshConversationEachTurn,
         );
     }
 

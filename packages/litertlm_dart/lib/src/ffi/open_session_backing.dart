@@ -73,7 +73,8 @@ const liteRtLmConversationsAndroidGpus = {
 /// (every KV buffer saved at a switch): Qualcomm SM8750 and Google Tensor G6
 /// on Android, Intel Panther Lake and Lunar Lake on Windows (npu-0.19 runs N2
 /// and N2b; L1 paid runs, `multiconv` and `ctxgroup` at 1104 tokens).
-/// Qualcomm on Linux arm64 was not run. MediaTek is refused at load.
+/// Qualcomm on Linux arm64 was not run; MediaTek answers a second message
+/// empty even in one conversation ([liteRtLmFreshConversationNpus]).
 const liteRtLmConversationsNpus = {
   (NpuStack.qualcomm, 'android_arm64'),
   (NpuStack.googleTensor, 'android_arm64'),
@@ -103,3 +104,21 @@ OpenSessionBacking liteRtLmOpenSessionBacking({
   };
   return verified ? OpenSessionBacking.native : OpenSessionBacking.virtual;
 }
+
+/// The NPU stacks on which a native conversation answers one message only:
+/// on MediaTek (MT6989, LiteRT-LM 0.18.1 and 0.19) the second message in a
+/// conversation comes back empty (LiteRT-LM #4256; measured on a DDP Galaxy
+/// Tab S10+ 2026-11-01, doc/research/mediatek-dispatch-0.19.md). Every turn
+/// there runs in a fresh conversation that replays the history as full
+/// messages, as a rebuild after a stop does.
+const liteRtLmFreshConversationNpus = {NpuStack.mediatek};
+
+/// Whether every turn of a model loaded on [backend] (the NPU stack
+/// [npuVendor]) needs a fresh native conversation that replays the history
+/// ([liteRtLmFreshConversationNpus]), in `createSession` and `openSession`
+/// sessions alike.
+bool liteRtLmFreshConversationEachTurn({
+  required Backend? backend,
+  NpuStack? npuVendor,
+}) =>
+    backend == Backend.npu && liteRtLmFreshConversationNpus.contains(npuVendor);

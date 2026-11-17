@@ -1844,6 +1844,27 @@
         "android"
       ]
     },
+    "embeddingGemma2Text270mMt6991": {
+      "url": "https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_MediaTek_MT6991.litertlm",
+      "filename": "embeddinggemma-2-text-270m_MediaTek_MT6991__rev-9be6e8b90982.litertlm",
+      "tokenizerUrl": null,
+      "tokenizerFilename": null,
+      "sourceType": "network",
+      "sha256": "7acc8e334d882216207c23b7a477179d5af530d67fd8e2cb50ab42d3457f90c0",
+      "ragProfileId": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6991",
+      "imageRagProfileId": null,
+      "dimension": 768,
+      "maxSeqLen": 1024,
+      "embedsImages": false,
+      "embedsAudio": false,
+      "npuSoc": "mt6991",
+      "npuVendor": "mediatek",
+      "embedderBackend": "npu",
+      "needsAuth": false,
+      "listedOn": [
+        "android"
+      ]
+    },
     "gecko64": {
       "url": "https://huggingface.co/litert-community/Gecko-110m-en/resolve/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/Gecko_64_quant.tflite",
       "filename": "Gecko_64_quant__rev-61a0d0c2cdc9.tflite",

@@ -135,7 +135,7 @@ await chat.clearHistory(replayHistory: [
 ]);
 ```
 
-`Message.toolCall` with `calls` alone writes `text` as `{"tool_calls":[{"id","name","arguments"}]}`. Only `flutter_edge_ai_llama` reads `toolCallId` — pass it there when two calls share a name and their results go back out of order; the other engines pair a result with its call by `toolName`, in order.
+`Message.toolCall` with `calls` alone writes `text` as `{"tool_calls":[{"id","name","arguments"}]}`. Only `flutter_edge_ai_llama` reads `toolCallId` — pass it there when two calls share a name and their results go back out of order; the other engines pair a result with its call by `toolName`, in order. `MessageTranscriptCodec` saves a history with both fields and the ids as JSON (see the inference skill).
 
 ## Errors are results
 

@@ -214,6 +214,10 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// waits for the one before it, so turns take the conversation one at a
   /// time, and a stopped turn's end is known before the next one decides how
   /// to recover.
+  /// Stopped turns a later one gave up waiting for and rebuilt without: when
+  /// one of them ends at last, it leaves the history alone.
+  final _abandonedTurns = <Future<void>>{};
+
   Future<void>? _turnDone;
 
   /// The turn that holds the conversation — past its wait — and so owns
@@ -412,6 +416,7 @@ class RecoveringConversationHandle implements ConversationHandle {
               }
               _stopped = true;
               _stoppedReply = null;
+              _abandonedTurns.add(previous);
               _rebuildBecause =
                   'the previous turn did not wind down within '
                   '${windDownTimeout.inSeconds}s';
@@ -477,6 +482,7 @@ class RecoveringConversationHandle implements ConversationHandle {
       // its bound) leaves the shared state to that one.
       final latest = identical(_current, done);
       if (latest) _inFlight = false;
+      final abandoned = _abandonedTurns.remove(done.future);
       if (poisoned) {
         if (latest) {
           _stopped = true;
@@ -524,10 +530,15 @@ class RecoveringConversationHandle implements ConversationHandle {
             _stoppedReply = reply;
           }
           // The message reached the model, so it belongs in the history a
-          // rebuild replays — with whatever of the reply was produced.
-          _history
-            ..add(message)
-            ..add(reply);
+          // rebuild replays — with whatever of the reply was produced. Not a
+          // stopped turn the next one gave up on past its bound: that one
+          // rebuilt without it, so its exchange is not in the conversation,
+          // and written now it would land after the newer one.
+          if (!abandoned) {
+            _history
+              ..add(message)
+              ..add(reply);
+          }
         }
       }
       done.complete();
@@ -723,6 +734,10 @@ class VirtualConversationHandle implements ConversationHandle {
   bool _stopRequested = false;
 
   /// Completes when the current turn has recorded its history.
+  /// Counts the turns started: a turn compares its own number with it to
+  /// tell whether a later one took over.
+  int _generation = 0;
+
   Future<void>? _turnDone;
 
   /// Drive one turn through the multiplexer, then record the sent [message]
@@ -757,6 +772,10 @@ class VirtualConversationHandle implements ConversationHandle {
     _turnDone = done.future;
     _inFlight = true;
     _stopRequested = false;
+    // This turn's place: a stopped turn that ends after a later one took
+    // over (past the bound above) owns neither the busy flag nor the history.
+    final generation = ++_generation;
+    bool superseded() => generation != _generation;
     final messageJson = jsonEncode(message);
     final extraContext = sendExtraContext(enableThinking, options.extraContext);
     // Snapshot history BEFORE this turn — the live message is sent separately.
@@ -766,7 +785,7 @@ class VirtualConversationHandle implements ConversationHandle {
     var recorded = false;
     var failed = false;
     void record() {
-      if (recorded) return;
+      if (recorded || superseded()) return;
       recorded = true;
       // Record both turns so the next switch back replays the full context.
       _history.add(message);
@@ -829,7 +848,7 @@ class VirtualConversationHandle implements ConversationHandle {
         extraContext: extraContext,
         freshConversation: freshConversationEachTurn,
       );
-      _inFlight = false;
+      if (!superseded()) _inFlight = false;
       done.complete();
     }
   }

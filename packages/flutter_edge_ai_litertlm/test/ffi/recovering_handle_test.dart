@@ -401,6 +401,39 @@ void main() {
     await sub.cancel();
   });
 
+  test('a stopped turn that winds down after the next one took over writes '
+      'nothing: the history a rebuild replays keeps its order', () async {
+    handle = RecoveringConversationHandle(
+      first,
+      toolCallsOf: nativeToolCalls,
+      reopen: (messagesJson) async {
+        final c = _Conversation(
+          'rebuilt ${reopened.length}',
+          seed: messagesJson,
+        );
+        reopened.add(c);
+        return c;
+      },
+      windDownTimeout: const Duration(milliseconds: 100),
+    );
+    final sub = handle.chat('one').listen(null)..pause();
+    await pumpEventQueue();
+    handle.cancelGeneration();
+    expect(await handle.chat('two').join(), 'Hello there.');
+    // The stopped turn ends only now, long after 'two' took over.
+    sub.resume();
+    await pumpEventQueue();
+    await stopMidTurn('three', reopened.single);
+    await handle.chat('four').join();
+    final seed = reopened.last.seed!;
+    final users = [
+      for (final m in jsonDecode(seed) as List<Object?>)
+        if ((m as Map)['role'] == 'user') jsonEncode(m['content']),
+    ];
+    expect(users.where((u) => u.contains('one')), isEmpty, reason: seed);
+    expect(users.first, contains('two'), reason: seed);
+  });
+
   test('closing closes the live conversation, rebuilt or not', () async {
     await stopMidTurn('one', first);
     await handle.chat('two').join();

@@ -44,11 +44,10 @@ const publishedTrees = {
   // script from the package root and skips staging without it. tool/web_build
   // is the recipe that rebuilds web/ — lockfile and tests included — and an
   // unanchored `test/` in .pubignore once dropped its tests.
-  'packages/flutter_edge_ai_litertlm': [
-    'web',
-    'tool/stage_macos_companions.sh',
-    'tool/web_build',
-  ],
+  'packages/flutter_edge_ai_litertlm': ['web', 'tool/web_build'],
+  // The hook copies the Podfile stager next to the macOS companions it
+  // fetches (`_shipCompanionStager`); without it a CocoaPods app gets none.
+  'packages/litertlm_dart': ['tool/stage_macos_companions.sh'],
   // Apps copy the vec0-enabled sqlite3.wasm into their web root.
   'packages/flutter_edge_ai_sqlite': ['web'],
   // GGUF consumers copy the bootstrap/helper and run both shipped asset tools.

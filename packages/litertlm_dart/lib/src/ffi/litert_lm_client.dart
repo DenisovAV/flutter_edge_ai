@@ -2330,11 +2330,18 @@ class LiteRtLmFfiClient {
     if (capturesNativeStderr && !_stderrRedirectTried) {
       _stderrRedirectTried = true;
       _nativeLogPath = '${Directory.systemTemp.path}/litertlm_native.log';
-      final redirect = proxyLib
-          .lookupFunction<
-            Int32 Function(Pointer<Utf8>),
-            int Function(Pointer<Utf8>)
-          >('stream_proxy_redirect_stderr');
+      final int Function(Pointer<Utf8>) redirect;
+      try {
+        redirect = proxyLib
+            .lookupFunction<
+              Int32 Function(Pointer<Utf8>),
+              int Function(Pointer<Utf8>)
+            >('stream_proxy_redirect_stderr');
+      } catch (error, stack) {
+        // A StreamProxy without it is not a build this release drives.
+        _bindings = null;
+        Error.throwWithStackTrace(markLibraryLoadFailure(error), stack);
+      }
       final pathPtr = _nativeLogPath!.toNativeUtf8();
       // The native redirect moves stdout too; put it back, or every print
       // after this load leaves `flutter run` on macOS and Linux.

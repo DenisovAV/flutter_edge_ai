@@ -105,4 +105,80 @@ void main() {
     );
     await a.cancel();
   }, timeout: const Timeout(Duration(seconds: 60)));
+
+  test("a superseded turn's late end does not hand its exchange to the "
+      "rewind of the turn that superseded it", () async {
+    final client = LiteRtLmFfiClient()..hasTurnRewindForTest = true;
+    final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
+    final rewound = <String?>[];
+    var created = 0;
+    client
+      ..virtualCreateForTest = (history) async {
+        final c = Pointer<LiteRtLmConversation>.fromAddress(
+          0x9000 + 16 * ++created,
+        );
+        client.registerLiveForTest(c);
+        return c;
+      }
+      ..virtualSendForTest = (c) {
+        final send = client.newTurnForTest(c);
+        sends.add(send);
+        return send;
+      }
+      ..virtualRewindForTest = (conv, exchange, extra) async {
+        rewound.add(exchange);
+        return StoppedTurnRewind.rewound;
+      };
+    final handle = VirtualConversationHandle(
+      client: client,
+      systemMessage: null,
+      toolsJson: null,
+      sampling: const Sampler(
+        temperature: 1,
+        topK: 40,
+        topP: 0.95,
+        randomSeed: 1,
+      ),
+      samplingExplicit: false,
+      multimodalOrder: MediaOrder.imagesAudioText,
+      filterChannelContent: false,
+      toolCallsOf: nativeToolCalls,
+    );
+    String reply(String t) => jsonEncode({
+      'role': 'assistant',
+      'content': [
+        {'type': 'text', 'text': t},
+      ],
+    });
+
+    final a = handle.chat('one').listen(null);
+    await Future<void>.delayed(Duration.zero);
+    a.pause();
+    sends.single.chunk(reply('o'));
+    await Future<void>.delayed(Duration.zero);
+    handle.cancelGeneration();
+    sends.single.cancelled();
+
+    final bText = <String>[];
+    final b = handle.chat('two').listen(bText.add);
+    for (var i = 0; sends.length < 2 && i < 200; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    expect(sends, hasLength(2));
+    sends.last.chunk(reply('t'));
+    await Future<void>.delayed(Duration.zero);
+    handle.cancelGeneration();
+    // A ends now, while B's stop is being settled.
+    a.resume();
+    await Future<void>.delayed(Duration.zero);
+    sends.last.cancelled();
+    await b.asFuture<void>();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(
+      rewound.where((e) => e != null && e.contains('one')),
+      isEmpty,
+      reason: '$rewound',
+    );
+    await a.cancel();
+  }, timeout: const Timeout(Duration(seconds: 60)));
 }

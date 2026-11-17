@@ -834,20 +834,24 @@ class VirtualConversationHandle implements ConversationHandle {
       // A stopped or abandoned turn keeps what it produced, as core's chat
       // does; one that produced nothing is taken back (Rule A).
       if (!failed && assistantText.isNotEmpty) record();
-      client.finishVirtualStoppedTurn(
-        token,
-        messageJson: messageJson,
-        // Decision W takes a failed turn back even if it streamed text.
-        partialReply: failed || assistantText.isEmpty
-            ? null
-            : assistantTurnMessage(
-                toolCallsOf,
-                assistantText.toString(),
-                assistantRaw.toString(),
-              ),
-        extraContext: extraContext,
-        freshConversation: freshConversationEachTurn,
-      );
+      // A superseded turn's exchange is not the conversation's stopped one:
+      // the turn that took over settles its own stop.
+      if (!superseded()) {
+        client.finishVirtualStoppedTurn(
+          token,
+          messageJson: messageJson,
+          // Decision W takes a failed turn back even if it streamed text.
+          partialReply: failed || assistantText.isEmpty
+              ? null
+              : assistantTurnMessage(
+                  toolCallsOf,
+                  assistantText.toString(),
+                  assistantRaw.toString(),
+                ),
+          extraContext: extraContext,
+          freshConversation: freshConversationEachTurn,
+        );
+      }
       if (!superseded()) _inFlight = false;
       done.complete();
     }

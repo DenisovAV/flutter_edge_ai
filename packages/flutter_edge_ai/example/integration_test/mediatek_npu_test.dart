@@ -38,7 +38,7 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart'
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart'
     show FlutterNpuPlatform;
 // ignore: implementation_imports — the NeuroPilot libraries the probe lists
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 

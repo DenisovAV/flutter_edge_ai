@@ -4,6 +4,6 @@
 library;
 
 export 'src/llama_engine_provider.dart'
-    show LlamaEngineProvider, LlamaProjectorResolver;
+    show LlamaEngineProvider, LlamaGpuLayersResolver, LlamaProjectorResolver;
 
 export 'src/llama_embedding_backend.dart' show LlamaEmbeddingBackend;

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Offload only the GPU layers that fit free VRAM, so loads no longer crash the driver.
+- `gpuLayersResolver` on `LlamaEngineProvider` sets how many model layers a load offloads to the GPU (#846).
 
 ## 0.1.0
 

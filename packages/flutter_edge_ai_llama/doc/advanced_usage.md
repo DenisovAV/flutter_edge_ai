@@ -161,6 +161,22 @@ GGUF adapter filenames use `model__adapter.gguf`. Typed tool history was added
 in core 2.4.0 and the embedding SPI in 2.5.0; connector 0.1.0 requires core
 2.6.0 for response formats and the session SPI.
 
+## GPU layers
+
+Set how many layers llama.cpp offloads with `gpuLayersResolver` on `LlamaEngineProvider`:
+
+```dart
+final provider = LlamaEngineProvider(
+  gpuLayersResolver: (spec, config) async => 20,
+);
+```
+
+Returning `null` keeps every layer on the GPU. The resolver is not called for
+`PreferredBackend.cpu`. The value goes to llama.cpp unchanged, so the app owns
+sizing it against free VRAM and the context; the KV cache grows with `maxTokens`.
+Some Windows and Linux Vulkan drivers terminate the process instead of reporting
+out-of-memory when a load does not fit, which is what this override is for.
+
 ## Compatibility boundaries
 
 Declare `ModelFileType.gguf`; the connector selects by type rather than filename.

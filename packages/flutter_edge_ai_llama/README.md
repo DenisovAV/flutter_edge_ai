@@ -245,6 +245,7 @@ They shipped in core 2.3.2; typed tool history requires core 2.4.0; the embeddin
 | Reply ends early | Increase `maxOutputTokens`; the demo explicitly caps replies at 128 tokens; omit the cap for longer replies. |
 | Browser worker/model request fails | Prepare the assets, use COOP/COEP headers, and check model-host CORS. OPFS handles are unsupported; use cacheApi or network URLs. |
 | GPU request is rejected | Check that the packaged backend and device support GPU offload. CPU is the baseline; unknown offload is reported as unknown. |
+| The app exits without an error while loading a large GGUF on a Windows or Linux GPU | The model plus its KV cache at `maxTokens` exceed free VRAM and the driver crashes. Lower `maxTokens`, use `PreferredBackend.cpu`, or offload fewer layers with `gpuLayersResolver`. |
 
 ## More details
 

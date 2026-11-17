@@ -33,6 +33,7 @@ import '../runtime/constrained_decoding_hosts.dart';
 import '../ffi/send_options.dart';
 import '../runtime/errors.dart';
 import '../runtime/litert_lm_log_level.dart';
+import '../runtime/load_errors.dart' show LiteRtLmLibraryException;
 import '../runtime/npu_stacks.dart';
 import '../runtime/runtime_log.dart';
 import '../runtime/types.dart';
@@ -276,14 +277,35 @@ final class Engine {
   /// Throws [LiteRtLmBundleException] when the file is incomplete or cannot
   /// run as asked, [NpuDispatchUnavailableException] when the NPU cannot be
   /// reached (both before any engine exists), and
-  /// [LiteRtLmEngineCreateException] when LiteRT-LM refuses the engine.
+  /// [LiteRtLmEngineCreateException] when LiteRT-LM refuses the engine, and
+  /// [LiteRtLmLibraryException] when libLiteRtLm did not load or is not a
+  /// build this release drives. A bad argument is an [ArgumentError].
   /// Creations run one at a time in the process: what one touches is
   /// process-wide (the Qualcomm dispatch's environment, the cache files).
   static Future<Engine> create(EngineConfig config) {
     // Read when the caller asks, not when the create's turn comes: a caller
     // that sets the level and then creates gets its own level.
     final nativeLevel = liteRtLmNativeLogLevel;
-    return _oneCreateAtATime(() => _create(config, _host, nativeLevel, null));
+    return _oneCreateAtATime(
+      () => _create(config, _host, nativeLevel, null),
+    ).catchError(
+      (Object error, StackTrace stack) => Error.throwWithStackTrace(
+        LiteRtLmLibraryException(switch (error) {
+          StateError(:final message) => message,
+          UnsupportedError(:final message?) => message,
+          _ => '$error',
+        }),
+        stack,
+      ),
+      // What loading the library throws: the runtime's own lookup and checks
+      // speak Exception, StateError and UnsupportedError, which the Flutter
+      // adapter's backend fallback tells apart; here they are one type.
+      test: (error) =>
+          error is! LiteRtLmException &&
+          (error is StateError ||
+              error is UnsupportedError ||
+              (error is Exception && error is! FormatException)),
+    );
   }
 
   static Future<Engine> _create(

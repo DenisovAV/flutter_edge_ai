@@ -36,3 +36,13 @@ final class LiteRtLmEngineCreateException extends LiteRtLmException {
   @override
   String toString() => 'LiteRtLmEngineCreateException: $message';
 }
+
+/// libLiteRtLm, or a library it needs, did not load, or it is not a build
+/// this release drives (another C API, a library that is not this package's
+/// patched build). [message] says which and how to fix it.
+final class LiteRtLmLibraryException extends LiteRtLmException {
+  const LiteRtLmLibraryException(super.message);
+
+  @override
+  String toString() => 'LiteRtLmLibraryException: $message';
+}

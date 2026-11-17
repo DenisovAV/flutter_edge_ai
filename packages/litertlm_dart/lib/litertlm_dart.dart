@@ -71,7 +71,10 @@ export 'src/runtime/errors.dart'
         ScoringCancelledException;
 export 'src/runtime/litert_lm_log_level.dart' show LiteRtLmLogLevel;
 export 'src/runtime/load_errors.dart'
-    show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
+    show
+        LiteRtLmEngineCreateException,
+        LiteRtLmLibraryException,
+        NpuDispatchUnavailableException;
 export 'src/runtime/runtime_log.dart' show RuntimeLogSink;
 export 'src/runtime/types.dart'
     show

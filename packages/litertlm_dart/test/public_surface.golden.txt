@@ -32,6 +32,7 @@ LiteRtLmBundleException
 LiteRtLmBundleProblem
 LiteRtLmEngineCreateException
 LiteRtLmException
+LiteRtLmLibraryException
 LiteRtLmLog
 LiteRtLmLogLevel
 LiteRtLmNativeException

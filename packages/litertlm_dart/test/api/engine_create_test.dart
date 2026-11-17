@@ -41,6 +41,9 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
   int creating = 0;
   int mostAtOnce = 0;
 
+  /// Thrown by [initializeClient], as a library that does not load is.
+  Object? initializeError;
+
   @override
   String get abi => abiName;
 
@@ -86,6 +89,7 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     required NpuDispatch? npuDispatch,
     required LiteRtLmLogLevel? nativeLogLevel,
   }) async {
+    if (initializeError case final e?) throw e;
     nativeLevels.add(nativeLogLevel);
     mostAtOnce = max(mostAtOnce, ++creating);
     await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -181,6 +185,35 @@ void main() {
       speculativeDecoding: speculative,
     ),
   );
+
+  test('a libLiteRtLm that does not load, or is not a build this release '
+      'drives, is a LiteRtLmLibraryException; a bad argument stays an '
+      'ArgumentError', () async {
+    final generic = write('g.litertlm', _bundle());
+    for (final error in <Object>[
+      Exception('Failed to load libLiteRtLm.so with RTLD_GLOBAL'),
+      StateError('libLiteRtLm is not C API 1.x'),
+      UnsupportedError('LiteRT-LM did not load on macOS'),
+    ]) {
+      host.initializeError = error;
+      await expectLater(
+        create(generic),
+        throwsA(
+          isA<LiteRtLmLibraryException>().having(
+            (e) => e.message,
+            'message',
+            contains('$error'.split(': ').last),
+          ),
+        ),
+        reason: '$error',
+      );
+    }
+    host.initializeError = null;
+    await expectLater(
+      create(generic, backend: const Backend.cpu(threadCount: 0)),
+      throwsArgumentError,
+    );
+  });
 
   test(
     'the context floor applies to the CPU and the GPU, not the NPU',

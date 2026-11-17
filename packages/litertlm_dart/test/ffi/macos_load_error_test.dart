@@ -203,7 +203,7 @@ void main() {
       // `flutter clean` there loops, so the message names the package that
       // does.
       expect(message, contains('depends on litertlm_dart alone'));
-      expect(message, contains('add flutter_edge_ai_litertlm'));
+      expect(message, contains('adds flutter_edge_ai_litertlm'));
       expect(message, contains('flutter clean'));
       expect(message, contains('enable-swift-package-manager: false'));
       // Flutter's generated Podfile has a post_install already; a second one

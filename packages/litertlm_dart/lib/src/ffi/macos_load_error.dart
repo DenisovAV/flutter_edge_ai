@@ -76,11 +76,10 @@ String macOSLoadErrorMessage(String dyldText) {
   final String fix = switch (diagnoseMacOSLoadError(dyldText)) {
     MacOSLoadCause.missingCompanion =>
       "LiteRT-LM's companion libraries are not in the app. "
-          'flutter_edge_ai_litertlm embeds them; an app that depends on '
-          'litertlm_dart alone has nothing that does, so add '
-          'flutter_edge_ai_litertlm. With Swift Package Manager on '
-          "(Flutter's default), its Swift package embeds them: run "
-          '`flutter clean` and build again. With '
+          "With Swift Package Manager on (Flutter's default), "
+          "flutter_edge_ai_litertlm's Swift package embeds them, so an app "
+          'that depends on litertlm_dart alone adds flutter_edge_ai_litertlm; '
+          'with it, run `flutter clean` and build again. With '
           '`enable-swift-package-manager: false`, the post_install block in '
           'macos/Podfile copies them: replace the post_install block with the '
           'one from https://flutteredge.ai/docs/desktop#macos, keeping any '

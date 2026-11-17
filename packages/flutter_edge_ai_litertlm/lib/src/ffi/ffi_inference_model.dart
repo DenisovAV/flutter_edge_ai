@@ -46,6 +46,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     MultimodalOrder? multimodalOrder,
     this.maxConcurrentSessions,
     this.openSessionBacking = OpenSessionBacking.virtual,
+    this.freshConversationEachTurn = false,
     this.linearAttentionState = false,
     this.structuredOutput = const StructuredOutputSupport.none(
       'This LiteRT-LM model was not loaded through LiteRtLmEngine.',
@@ -94,6 +95,12 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   /// conversation where that backend ran several live conversations
   /// correctly, a virtual one (full-message replay) elsewhere.
   final OpenSessionBacking openSessionBacking;
+
+  /// Every turn, in [createSession] and [openSession] sessions alike, runs in
+  /// a fresh native conversation that replays the history as full messages:
+  /// where a conversation answers its second message empty
+  /// ([liteRtLmFreshConversationEachTurn], LiteRT-LM #4256 on MediaTek).
+  final bool freshConversationEachTurn;
 
   /// The model keeps linear attention state (a hybrid model such as LFM2.5,
   /// `readLiteRtLmHasLinearAttentionState`): no conversation of it is ever
@@ -395,6 +402,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         await open(),
         reopen: (messagesJson) => open(messagesJson: messagesJson),
         noRewindReason: _noRewindReason,
+        freshConversationEachTurn: freshConversationEachTurn,
       ).._multimodalOrder = multimodalOrder;
       edgeAiLog(
         '[FfiInferenceModel/perf] createConversation (FFI): ${sessionSw.elapsedMilliseconds - beforeConv}ms',
@@ -531,6 +539,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           first,
           reopen: (messagesJson) => open(messagesJson: messagesJson),
           noRewindReason: openSessionNoRewindReason,
+          freshConversationEachTurn: freshConversationEachTurn,
         ).._multimodalOrder = multimodalOrder;
       case OpenSessionBacking.virtual:
         // Where several live conversations were not verified on this backend,
@@ -548,6 +557,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           multimodalOrder: multimodalOrder,
           jsonSchema: jsonSchema,
           filterChannelContent: filterChannelContent,
+          freshConversationEachTurn: freshConversationEachTurn,
         );
     }
 
@@ -1216,8 +1226,17 @@ class RecoveringConversationHandle implements ConversationHandle {
     this._live, {
     required this.reopen,
     this.noRewindReason,
+    this.freshConversationEachTurn = false,
     this.windDownTimeout = _windDownTimeout,
   });
+
+  /// Each turn after the first runs in a fresh conversation that replays the
+  /// history ([FfiInferenceModel.freshConversationEachTurn]): the conversation
+  /// a turn was sent on is never sent a second message.
+  final bool freshConversationEachTurn;
+
+  /// A turn was sent on [_live] since it was opened.
+  bool _liveSent = false;
 
   /// Why this conversation is never rewound and is rebuilt from history instead
   /// (the NPU, a model with linear attention state), or null when a stopped
@@ -1290,6 +1309,7 @@ class RecoveringConversationHandle implements ConversationHandle {
   bool _closed = false;
 
   Future<void> _rebuild() async {
+    final afterStop = _stopped;
     // Deleted first: the old conversation's KV cache is freed before the new
     // one is allocated (and on LiteRT-LM 0.18, upstream #966, the engine held
     // one live conversation).
@@ -1297,6 +1317,7 @@ class RecoveringConversationHandle implements ConversationHandle {
     _live = await reopen(
       _history.isEmpty ? null : LiteRtLmFfiClient.buildHistoryJson(_history),
     );
+    _liveSent = false;
     // Only now: a reopen that throws leaves the old conversation closed and
     // this set, so the next turn tries again instead of using a dead handle.
     _stopped = false;
@@ -1305,9 +1326,21 @@ class RecoveringConversationHandle implements ConversationHandle {
       throw StateError('Conversation handle is closed');
     }
     edgeAiLog(
-      '[FfiInferenceModel] rebuilt the conversation after a stopped turn or '
-      'a full context (${_history.length} messages replayed)',
+      '[FfiInferenceModel] rebuilt the conversation '
+      '${afterStop ? 'after a stopped turn or a full context' : 'for a new turn'} '
+      '(${_history.length} messages replayed)',
     );
+  }
+
+  /// Opens the fresh conversation a turn of [freshConversationEachTurn] runs
+  /// in, replaying every turn so far.
+  Future<void> _freshen() async {
+    _recovering = true;
+    try {
+      await _rebuild();
+    } finally {
+      _recovering = false;
+    }
   }
 
   /// The recovery in progress. A turn that starts meanwhile waits for it, and
@@ -1419,28 +1452,37 @@ class RecoveringConversationHandle implements ConversationHandle {
         // treated as having damaged the conversation, which is rebuilt without
         // its exchange; a turn that is still generating normally is left
         // alone, and the native lock queues this one behind it.
-        await previous.timeout(
-          windDownTimeout,
-          onTimeout: () {
-            if (!_stopRequested) {
+        // Under [freshConversationEachTurn] this turn closes the conversation
+        // the previous one generates on, so it keeps waiting while that turn
+        // is healthy: it is never cut off, and its exchange is in the history
+        // the new conversation replays. A stop still gets the bound.
+        var ended = false;
+        while (!ended) {
+          ended = true;
+          await previous.timeout(
+            windDownTimeout,
+            onTimeout: () {
+              if (!_stopRequested) {
+                edgeAiLog(
+                  '[FfiInferenceModel] the previous turn is still generating '
+                  'after ${windDownTimeout.inSeconds}s; this one waits for it',
+                );
+                if (freshConversationEachTurn) ended = false;
+                return;
+              }
+              _stopped = true;
+              _stoppedReply = null;
+              _rebuildBecause =
+                  'the previous turn did not wind down within '
+                  '${windDownTimeout.inSeconds}s';
               edgeAiLog(
-                '[FfiInferenceModel] the previous turn is still generating '
-                'after ${windDownTimeout.inSeconds}s; this one waits for it',
+                '[FfiInferenceModel] a stopped turn did not wind down within '
+                '${windDownTimeout.inSeconds}s (is its stream paused?); '
+                'rebuilding without it',
               );
-              return;
-            }
-            _stopped = true;
-            _stoppedReply = null;
-            _rebuildBecause =
-                'the previous turn did not wind down within '
-                '${windDownTimeout.inSeconds}s';
-            edgeAiLog(
-              '[FfiInferenceModel] a stopped turn did not wind down within '
-              '${windDownTimeout.inSeconds}s (is its stream paused?); '
-              'rebuilding without it',
-            );
-          },
-        );
+            },
+          );
+        }
       }
       // A recovery cannot be cut short (native bounds it); one that started
       // while this turn waited is still using the conversation.
@@ -1452,8 +1494,8 @@ class RecoveringConversationHandle implements ConversationHandle {
       _inFlight = true;
       _stopRequested = false;
       _latestSent = false;
-      if (_stopped) {
-        final recovery = _recovery = _recover();
+      if (_stopped || (freshConversationEachTurn && _liveSent)) {
+        final recovery = _recovery = _stopped ? _recover() : _freshen();
         try {
           await recovery;
         } finally {
@@ -1466,6 +1508,7 @@ class RecoveringConversationHandle implements ConversationHandle {
       if (_stopEpoch != epoch) return;
       sent = true;
       _latestSent = true;
+      _liveSent = true;
       await for (final chunk in send(_live)) {
         final text = raw
             ? LiteRtLmFfiClient.extractTextFromResponse(chunk)
@@ -1669,8 +1712,9 @@ class RecoveringConversationHandle implements ConversationHandle {
 /// contexts) but inference is serialized (one generation at a time) — verified by the
 /// session_switch / messages_preface smoke tests.
 ///
-/// Same-session follow-up turns reuse the live conversation (no rebuild);
-/// only switching to a different session pays the teardown+replay cost.
+/// Same-session follow-up turns reuse the live conversation (no rebuild),
+/// except under [freshConversationEachTurn]; only switching to a different
+/// session pays the teardown+replay cost.
 class _VirtualConversationHandle implements ConversationHandle {
   _VirtualConversationHandle({
     required this.client,
@@ -1682,9 +1726,15 @@ class _VirtualConversationHandle implements ConversationHandle {
     required this.filterChannelContent,
     this.maxOutputTokens,
     this.jsonSchema,
+    this.freshConversationEachTurn = false,
   });
 
   final LiteRtLmFfiClient client;
+
+  /// Every turn, this session's follow-ups included, rebuilds the shared
+  /// conversation from the history
+  /// ([FfiInferenceModel.freshConversationEachTurn]).
+  final bool freshConversationEachTurn;
   final String? systemMessage;
   final String? toolsJson;
   final ResolvedSampling sampling;
@@ -1737,6 +1787,16 @@ class _VirtualConversationHandle implements ConversationHandle {
     if (_stopRequested) {
       // Bounded for the reason given in RecoveringConversationHandle._turn.
       await _turnDone?.timeout(_windDownTimeout, onTimeout: () {});
+    } else if (freshConversationEachTurn) {
+      // The rebuild replays [_history], so the turn before this one must be in
+      // it: wait while it is healthy, and as above once it is stopped.
+      for (var waiting = true; waiting;) {
+        waiting = false;
+        await _turnDone?.timeout(
+          _windDownTimeout,
+          onTimeout: () => waiting = !_stopRequested,
+        );
+      }
     }
     final done = Completer<void>();
     _turnDone = done.future;
@@ -1775,6 +1835,7 @@ class _VirtualConversationHandle implements ConversationHandle {
         maxOutputTokens: maxOutputTokens,
         jsonSchema: jsonSchema,
         filterChannelContent: filterChannelContent,
+        freshConversation: freshConversationEachTurn,
       )) {
         final chunkText = LiteRtLmFfiClient.extractTextFromResponse(rawChunk);
         assistantText.write(chunkText);
@@ -1801,6 +1862,7 @@ class _VirtualConversationHandle implements ConversationHandle {
             ? null
             : _assistantTurn(assistantText.toString(), assistantRaw.toString()),
         extraContext: extraContext,
+        freshConversation: freshConversationEachTurn,
       );
       _inFlight = false;
       done.complete();

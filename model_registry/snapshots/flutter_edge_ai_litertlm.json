@@ -163,7 +163,9 @@
       "web": []
     },
     "gemma-3-1b-it/npu-mt6989": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -172,7 +174,9 @@
       "web": []
     },
     "gemma-3-1b-it/npu-mt6991": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -181,7 +185,9 @@
       "web": []
     },
     "gemma-3-1b-it/npu-mt6993": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -252,7 +258,9 @@
       "web": []
     },
     "gemma-3-270m-it/npu-mt6991": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -261,7 +269,9 @@
       "web": []
     },
     "gemma-3-270m-it/npu-mt6993": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -308,7 +318,9 @@
       ]
     },
     "gemma-3n-e2b-it/npu-mt6993": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -798,7 +810,9 @@
       "web": []
     },
     "qwen3-0.6b/npu-mt6993": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -976,7 +990,9 @@
       ]
     },
     "embeddinggemma-2-740m/npu-mt6991": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -985,7 +1001,9 @@
       "web": []
     },
     "embeddinggemma-2-740m/npu-mt6993": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -1118,7 +1136,9 @@
       ]
     },
     "embeddinggemma-2-text-270m/npu-mt6991": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -1127,7 +1147,9 @@
       "web": []
     },
     "embeddinggemma-2-text-270m/npu-mt6993": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -1258,7 +1280,9 @@
       ]
     },
     "embeddinggemma-2-text-vision-440m/npu-mt6991": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
@@ -1267,7 +1291,9 @@
       "web": []
     },
     "embeddinggemma-2-text-vision-440m/npu-mt6993": {
-      "android_arm64": [],
+      "android_arm64": [
+        "npu"
+      ],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],

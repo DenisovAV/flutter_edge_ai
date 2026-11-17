@@ -6,8 +6,10 @@ libLiteRt.so on Linux and LiteRt.dll on Windows, by the platform in the label),
 every one a thinking token budget calls (THINKING_BUDGET_SYMBOLS), the
 symbol the loader checks to recognise this package's build
 (OWN_BUILD_SYMBOLS), the LLM functions the C API 1.0 client binds
-(LLM_SYMBOLS), and the StreamProxy entry it streams through
-(STREAM_PROXY_SYMBOLS, from libStreamProxy / StreamProxy.dll).
+(LLM_SYMBOLS), the StreamProxy entry it streams through
+(STREAM_PROXY_SYMBOLS, from libStreamProxy / StreamProxy.dll), and, from every
+NPU dispatch in the bundle, the versioned dispatch entry LiteRT loads it by
+(DISPATCH_SYMBOL).
 
 flutter_edge_ai_litertlm's `.litertlm` embedding pass binds the EmbeddingEngine,
 ModelInfo and error-reporter C API out of libLiteRtLm. Nothing else gates those
@@ -197,6 +199,17 @@ STREAM_PROXY_RETIRED = ["stream_proxy_create", "stream_proxy_create2"]
 
 MAIN_LIBRARY = ("libLiteRtLm.dylib", "libLiteRtLm.so", "LiteRtLm.dll")
 
+# An NPU dispatch is any library whose name holds this: what LiteRT's dispatch
+# scan matches (litert/runtime/dispatch/litert_dispatch.cc). From LiteRT
+# f59b79337 (the LiteRT pin of LiteRT-LM v0.19.0) the loader resolves only
+# DISPATCH_SYMBOL, with no fallback, so a dispatch that exports only the legacy
+# entry (a carried-forward build, or Google's AAR build of MediaTek's) is never
+# loaded. The MediaTek adapter (mediatek_dispatch_compat.c) exports the
+# versioned entry over Google's library, which ships under another name.
+DISPATCH_NAME = "LiteRtDispatch"
+DISPATCH_SYMBOL = "LiteRtDispatchQueryInterface"
+DISPATCH_RETIRED = "LiteRtDispatchGetApi"
+
 # The library LiteRtBindings opens where it is not the main library, by the
 # platform in the bundle's label (litertlm-<platform>): Google's prebuilt
 # LiteRT beside libLiteRtLm (_openLiteRt in lib/src/ffi/litert_bindings.dart).
@@ -350,6 +363,15 @@ def find_libraries(bundle, names):
     return found
 
 
+def find_libraries_containing(bundle, fragment):
+    found = []
+    for root, _, files in os.walk(bundle):
+        for name in files:
+            if fragment in name:
+                found.append(os.path.join(root, name))
+    return found
+
+
 def find_main_library(bundle):
     return find_libraries(bundle, MAIN_LIBRARY)
 
@@ -447,6 +469,25 @@ def main(argv):
             print(f"  [ok]   {label} — {os.path.basename(proxy)} exports "
                   f"{', '.join(STREAM_PROXY_SYMBOLS)} and none of "
                   f"{', '.join(STREAM_PROXY_RETIRED)}")
+    dispatches = sorted(
+        path for path in find_libraries_containing(bundle, DISPATCH_NAME)
+        if path.endswith((".so", ".dll")))
+    for dispatch in dispatches:
+        try:
+            dispatch_names = exports(dispatch)
+        except (FormatError, struct.error, ValueError, IndexError) as e:
+            print(f"  [FAIL] {label} — cannot read the exports of "
+                  f"{os.path.basename(dispatch)}: {e}")
+            return 1
+        if (DISPATCH_SYMBOL not in dispatch_names
+                or DISPATCH_RETIRED in dispatch_names):
+            failed = True
+            print(f"  [FAIL] {label} — {os.path.basename(dispatch)} is not a "
+                  f"versioned-ABI dispatch: it must export {DISPATCH_SYMBOL} "
+                  f"and not {DISPATCH_RETIRED}, which LiteRT no longer loads")
+        else:
+            print(f"  [ok]   {label} — {os.path.basename(dispatch)} exports "
+                  f"{DISPATCH_SYMBOL}")
     platform = bundle_platform(label)
     if platform is None:
         # Which library LiteRtBindings opens depends on the platform; a label

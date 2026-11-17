@@ -1,14 +1,21 @@
 // Opt-in MediaTek NPU dispatch for hook/build.dart.
 //
-// The MediaTek dispatch (libLiteRtDispatch_MediaTek.so) is LiteRT's Apache-2.0
-// code, but it compiles against MediaTek's NeuroPilot SDK, whose licence lets
-// it be redistributed only in object code "as incorporated in Your software
-// application", never on a standalone basis, and never under open-source
-// terms. So this package neither builds nor carries it. An app that sets
-// `mediatek_npu: true` gets Google's own build of it at build time, from
+// Google's MediaTek dispatch is LiteRT's Apache-2.0 code, but it compiles
+// against MediaTek's NeuroPilot SDK, whose licence lets it be redistributed
+// only in object code "as incorporated in Your software application", never
+// on a standalone basis, and never under open-source terms. So this package
+// neither builds nor carries it. An app that sets `mediatek_npu: true` gets
+// Google's own build of it at build time, from
 // `com.google.ai.edge.litert:litert-npu-runtime-mediatek` on Google Maven, and
 // it reaches users only inside that app. The NeuroPilot runtime itself is
 // never bundled: the dispatch opens it from the device.
+//
+// That build exports only the legacy `LiteRtDispatchGetApi`, and the LiteRT of
+// LiteRT-LM 0.19 loads a dispatch only through `LiteRtDispatchQueryInterface`.
+// So it is stored as `libmtk_litert_dispatch_legacy.so`, a name LiteRT's
+// dispatch scan never matches, and LiteRT loads our adapter
+// (`libLiteRtDispatch_MediaTek.so`, from the native archive), which opens it
+// from its own directory and answers with its tables.
 //
 // The AAR also carries LiteRT's MediaTek compiler plugin (on-device
 // compilation); it is left out — only bundles compiled ahead of time for a
@@ -42,8 +49,9 @@ const mediatekRuntimeSha256 =
 const mediatekDefaultMavenBase = 'https://dl.google.com/dl/android/maven2';
 
 /// Bumped whenever what this file writes into the cache changes for the same
-/// AAR, so an older cache is not reused.
-const mediatekCacheFormat = 1;
+/// AAR, so an older cache is not reused. 2: the dispatch is stored as
+/// [mediatekLegacyDispatchLib].
+const mediatekCacheFormat = 2;
 
 /// URL of the MediaTek dispatch AAR under the Maven repository [mavenBase].
 Uri mediatekRuntimeAarUrl(String mavenBase) {
@@ -62,9 +70,15 @@ String mediatekCacheEntryName() =>
     '$mediatekRuntimeVersion-${mediatekRuntimeSha256.substring(0, 8)}'
     '-p$mediatekCacheFormat';
 
-/// File names of the libraries a complete cache entry holds.
+/// Where Google's dispatch is in the AAR.
+String get mediatekAarDispatchEntry =>
+    'jni/arm64-v8a/${androidLibFileName(mediatekDispatchLib)}';
+
+/// File names of the libraries a complete cache entry holds: Google's
+/// dispatch, under [mediatekLegacyDispatchLib]. The adapter in front of it
+/// comes from the native archive.
 List<String> get mediatekLibFileNames => [
-  for (final n in mediatekNpuLibs) androidLibFileName(n),
+  androidLibFileName(mediatekLegacyDispatchLib),
 ];
 
 /// Makes the dispatch from the AAR ready to bundle: refused unless every
@@ -90,21 +104,16 @@ Directory promoteMediatekCache(Directory cacheRoot, File aar) =>
       mediatekLibFileNames,
       () {
         final entries = extractZipEntriesFromFile(aar, {
-          for (final f in mediatekLibFileNames) 'jni/arm64-v8a/$f',
+          mediatekAarDispatchEntry,
         });
+        final legacy = androidLibFileName(mediatekLegacyDispatchLib);
         return {
-          for (final f in mediatekLibFileNames)
-            f: prepareMediatekLibrary(f, entries['jni/arm64-v8a/$f']!),
+          legacy: prepareMediatekLibrary(
+            legacy,
+            entries[mediatekAarDispatchEntry]!,
+          ),
         };
       },
       () =>
           extractZipEntriesFromFile(aar, {'LICENSE', 'THIRD_PARTY_NOTICE.txt'}),
     );
-
-/// Why the build fails for an app that set `mediatek_npu: true`, or null when
-/// the MediaTek NPU is not refused ([mediatekNpuRefused]). The hook throws it
-/// before it fetches anything.
-String? mediatekNpuBuildRefusal(String packageName) => mediatekNpuRefused
-    ? '[$packageName] $mediatekNpuUserDefine is set, but '
-          '$mediatekNpuRefusedReason.'
-    : null;

@@ -2,7 +2,7 @@ name: litertlm_dart
 description: "LiteRT-LM from Dart, without Flutter: dart:ffi bindings, patched native builds fetched by a build hook, open sessions with rewind, NPU stacks and EmbeddingGemma 2."
 # The upstream LiteRT-LM version this is built from, plus a build number for
 # each of our native rebuilds of it: 0.19.1+1 is LiteRT-LM 0.19.1 on
-# native-v0.19.1-b. Breaking Dart API changes ride an upstream version change.
+# native-v0.19.1-c. Breaking Dart API changes ride an upstream version change.
 version: 0.19.1+1
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/litertlm_dart

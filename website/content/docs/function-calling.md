@@ -296,6 +296,9 @@ A history saved with `text` alone still replays: the calls are read back from
 it. One exception: on the web, a Gemma 4 call's text no longer marks its string
 arguments, so read back from text alone it has none — keep `toolCalls`.
 
+`MessageTranscriptCodec` saves both fields, and `toolCallId`, as JSON; see
+[Getting started → Saving a conversation](/docs/getting-started#saving-a-conversation).
+
 ## Platform support
 
 Function calling is supported on **Android, iOS, Web, and Desktop**. For Gemma 4,

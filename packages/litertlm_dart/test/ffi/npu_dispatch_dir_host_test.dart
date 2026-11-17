@@ -30,8 +30,9 @@ void main() {
   test('the Intel stack is checked in the prepared directory', () async {
     final host = npuHostWithDispatchDir(_Host(), dir.path);
     expect((await host.stack(NpuStack.intel)).reason, contains(dir.path));
-    File('${dir.path}${Platform.pathSeparator}$intelNpuDispatchLib')
-        .writeAsStringSync('');
+    File(
+      '${dir.path}${Platform.pathSeparator}$intelNpuDispatchLib',
+    ).writeAsStringSync('');
     expect((await host.stack(NpuStack.intel)).reason, isNull);
     expect(await host.prepareDispatchDir(NpuStack.intel), dir.path);
   });

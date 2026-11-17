@@ -9,6 +9,52 @@ import 'package:test/test.dart';
 
 void main() {
   group('Message', () {
+    test('tool-call arguments a reply writes as a non-JSON string, or as JSON '
+        'that is not an object, read as no arguments rather than failing the '
+        'turn; a flat {name, arguments} call is read too', () {
+      final message = messageFromChunk(
+        jsonEncode({
+          'role': 'assistant',
+          'tool_calls': [
+            {
+              'type': 'function',
+              'function': {'name': 'a', 'arguments': 'not json'},
+            },
+            {
+              'type': 'function',
+              'function': {'name': 'b', 'arguments': '[1, 2]'},
+            },
+            {
+              'type': 'function',
+              'function': {'name': 'c', 'arguments': '{"x": 1}'},
+            },
+            {
+              'name': 'd',
+              'arguments': {'y': 2},
+            },
+          ],
+        }),
+      );
+      expect([for (final c in message.toolCalls) c.name], ['a', 'b', 'c', 'd']);
+      expect(
+        [for (final c in message.toolCalls) c.arguments],
+        [
+          isEmpty,
+          isEmpty,
+          {'x': 1},
+          {'y': 2},
+        ],
+      );
+    });
+
+    test('a parsed chunk keeps the JSON native wrote, for the adapter', () {
+      const raw =
+          '{"role":"assistant","tool_calls":[{"id":"call_7",'
+          '"type":"function","function":{"name":"a","arguments":{}}}]}';
+      expect(messageRawJson(messageFromChunk(raw)), raw);
+      expect(messageRawJson(Message.user('x')), isNull);
+    });
+
     test('a user message is serialized in its parts order, media as blobs', () {
       final image = Uint8List.fromList([1, 2]);
       final audio = Uint8List.fromList([3]);
@@ -107,8 +153,8 @@ void main() {
       expect(messageFromChunk('{"role":"assistant","content":"s"}').text, 's');
     });
 
-    test('the calls a replay keeps: a reply it cannot read has none, and '
-        'does not throw', () {
+    test('the calls a replay keeps: arguments that are not JSON are none, '
+        'a reply it cannot read has no calls, and nothing throws', () {
       expect(
         nativeToolCalls(
           '{"role":"assistant","tool_calls":[{"function":{"name":"f",'
@@ -117,7 +163,7 @@ void main() {
           '{"role":"assistant","tool_calls":[{"function":{"name":"g",'
           '"arguments":{}}}]}',
         ).map((c) => c.name),
-        ['g'],
+        ['f', 'g'],
       );
     });
 

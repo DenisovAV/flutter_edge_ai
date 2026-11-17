@@ -228,6 +228,15 @@ String? toolsJson(List<Tool> tools) => tools.isEmpty
           },
       ]);
 
+/// The JSON native wrote for a message parsed from a reply chunk
+/// ([messageFromChunk]).
+final _rawJson = Expando<String>('rawJson');
+
+/// The JSON native wrote for [message], when it was parsed from a reply
+/// chunk: the Flutter adapter hands it to core's own parser, which reads what
+/// [Message] does not keep (a call's id).
+String? messageRawJson(Message message) => _rawJson[message];
+
 /// The message one streamed chunk of a reply carries. A chunk that is not a
 /// JSON object is text.
 Message messageFromChunk(String chunk) {
@@ -238,7 +247,9 @@ Message messageFromChunk(String chunk) {
     return Message.model(chunk);
   }
   if (json is! Map<String, Object?>) return Message.model(chunk);
-  return messageFromJson(json);
+  final message = messageFromJson(json);
+  _rawJson[message] = chunk;
+  return message;
 }
 
 /// A Conversation API JSON object as a [Message]. Parts of a type it does not
@@ -265,11 +276,16 @@ Message messageFromJson(Map<String, Object?> json) {
   final calls = <ToolCall>[];
   if (json['tool_calls'] case final List<Object?> list) {
     for (final call in list) {
-      if (call case {'function': final Map<String, Object?> function}) {
-        final name = function['name'];
-        if (name is! String) continue;
-        calls.add(ToolCall(name, _arguments(function['arguments'])));
-      }
+      // OpenAI's `{type: function, function: {name, arguments}}`, or a flat
+      // `{name, arguments}`.
+      final function = switch (call) {
+        {'function': final Map<String, Object?> function} => function,
+        final Map<String, Object?> flat when flat['name'] is String => flat,
+        _ => null,
+      };
+      final name = function?['name'];
+      if (name is! String) continue;
+      calls.add(ToolCall(name, _arguments(function!['arguments'])));
     }
   }
   final channels = <String, String>{};
@@ -286,11 +302,18 @@ Message messageFromJson(Map<String, Object?> json) {
   );
 }
 
-Map<String, Object?> _arguments(Object? arguments) => switch (arguments) {
-  final Map<String, Object?> map => map,
-  final String text when text.isNotEmpty => switch (jsonDecode(text)) {
-    final Map<String, Object?> map => map,
-    final other => {'value': other},
-  },
-  _ => const {},
-};
+/// A call's arguments: an object, or a string holding one. Anything else (a
+/// string that is not JSON, JSON that is not an object) is no arguments, as
+/// core's parser reads it, rather than a failed turn.
+Map<String, Object?> _arguments(Object? arguments) {
+  if (arguments is Map<String, Object?>) return arguments;
+  if (arguments is! String) return const {};
+  try {
+    return switch (jsonDecode(arguments)) {
+      final Map<String, Object?> map => map,
+      _ => const {},
+    };
+  } on FormatException {
+    return const {};
+  }
+}

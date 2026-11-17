@@ -211,7 +211,12 @@ export 'src/api/engine.dart'
         gpuActivationFor,
         liteRtLmNativeLogLevel;
 export 'src/api/message.dart'
-    show messageFromChunk, messageFromJson, messageJson, toolsJson;
+    show
+        messageFromChunk,
+        messageFromJson,
+        messageJson,
+        messageRawJson,
+        toolsJson;
 export 'src/bundle/litertlm_bundle_sampler.dart'
     show LlmModelFamily, llmModelFamilyFrom, readLlmModelFamily;
 export 'src/bundle/litertlm_generic_section.dart'

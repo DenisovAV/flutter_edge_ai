@@ -14,7 +14,10 @@ import 'ffi_test_support.dart';
 /// preserve. Mirrors the injectable-fake pattern from
 /// `backend_preference_test.dart` (PR #288).
 class _FakeConversationHandle implements ConversationHandle {
-  _FakeConversationHandle(this._scriptedChunks);
+  _FakeConversationHandle(this._scriptedChunks, {this.rawChunks});
+
+  /// When set, what chatRawMessage() yields verbatim, as native writes it.
+  final List<String>? rawChunks;
 
   /// Chunks this handle yields on each chat()/chatRaw() call.
   final List<String> _scriptedChunks;
@@ -76,6 +79,10 @@ class _FakeConversationHandle implements ConversationHandle {
     } else {
       sentMessages.add(messageJson);
     }
+    if (rawChunks case final raw?) {
+      yield* Stream.fromIterable(raw);
+      return;
+    }
     for (final c in _scriptedChunks) {
       yield '{"role":"assistant","content":[{"type":"text","text":"$c"}]}';
     }
@@ -121,6 +128,31 @@ void main() {
       expect(response, 'Hello world');
       // Non-Gemma4 path keeps the raw cache null.
       expect(session.lastRawResponse, isNull);
+    });
+
+    test('the raw response is what native wrote: a call id, a flat call and '
+        'arguments that are not JSON reach chat.dart as on main', () async {
+      const withId =
+          '{"role":"assistant","tool_calls":[{"id":"call_7","type":"function",'
+          '"function":{"name":"get_weather","arguments":"not json"}}]}';
+      const flat =
+          '{"role":"assistant","tool_calls":[{"name":"get_time",'
+          '"arguments":{"zone":"UTC"}}]}';
+      final handle = _FakeConversationHandle(
+        const [],
+        rawChunks: [withId, flat],
+      );
+      final session = ffiSessionForHandle(
+        handle: handle,
+        modelType: ModelType.gemma4,
+        fileType: ModelFileType.litertlm,
+        supportImage: false,
+        supportAudio: false,
+        onClose: () {},
+      );
+      await session.addQueryChunk(const Message(text: 'hi', isUser: true));
+      await session.getResponse();
+      expect(session.lastRawResponse, '$withId$flat');
     });
 
     test('captures raw response for Gemma 4 tool-call path', () async {

@@ -11,6 +11,8 @@ import 'package:flutter_edge_ai/engine.dart'
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_log_binding.dart';
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/litertlm_dart.dart'
+    show LiteRtLmLog, LiteRtLmLogLevel;
 
 /// What [body] printed through `print`.
 List<String> _printed(void Function() body) {
@@ -112,5 +114,16 @@ void main() {
     expect(isProductBuild, kReleaseMode);
     expect(isProfileBuild, kProfileMode);
     expect(isDebugBuild, kDebugMode);
+  });
+
+  test("the binding leaves the level and the sink an app set through "
+      "litertlm_dart's LiteRtLmLog", () {
+    void appSink(String message, {bool verbose = false}) {}
+    LiteRtLmLog.sink = appSink;
+    LiteRtLmLog.level = LiteRtLmLogLevel.silent;
+    edgeAiLogLevel = EdgeAiLogLevel.verbose;
+    bindRuntimeLogToCore();
+    expect(runtimeLogSink, same(appSink));
+    expect(currentRuntimeLogLevel(), RuntimeLogLevel.none);
   });
 }

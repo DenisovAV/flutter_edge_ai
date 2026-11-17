@@ -184,8 +184,10 @@ export 'src/runtime/runtime_log.dart'
         resetRuntimeLogSink,
         runtimeLog,
         runtimeLogLevel,
+        runtimeLogLevelSetByApp,
         runtimeLogLevelSource,
-        runtimeLogSink;
+        runtimeLogSink,
+        runtimeLogSinkSetByApp;
 export 'src/ffi/litert_bindings.dart' show liteRtLmHostLibraryCandidates;
 export 'src/api/embedding_engine.dart'
     show createEmbeddingEngineWith, embedderConfigFor;

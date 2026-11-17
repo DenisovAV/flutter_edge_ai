@@ -848,6 +848,7 @@ Future<Engine> createEngineWithBundle(
   EngineConfig config,
   EngineBundle bundle, {
   ToolCallReader toolCallsOf = nativeToolCalls,
+  LiteRtLmLogLevel? nativeLevel,
 }) {
   if (bundle.path != config.modelPath) {
     throw ArgumentError.value(
@@ -856,15 +857,11 @@ Future<Engine> createEngineWithBundle(
       'was read from another file than ${config.modelPath}',
     );
   }
-  final nativeLevel = liteRtLmNativeLogLevel;
+  // The caller's level for this engine, else the one LiteRtLmLog set.
+  final level = nativeLevel ?? liteRtLmNativeLogLevel;
   return Engine._oneCreateAtATime(
-    () => Engine._create(
-      config,
-      _host,
-      nativeLevel,
-      bundle,
-      toolCallsOf: toolCallsOf,
-    ),
+    () =>
+        Engine._create(config, _host, level, bundle, toolCallsOf: toolCallsOf),
   );
 }
 

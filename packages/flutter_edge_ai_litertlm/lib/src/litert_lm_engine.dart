@@ -151,9 +151,6 @@ class LiteRtLmEngine
     bindRuntimeLogToCore();
     final host = liteRtLmEngineHost;
     final cacheDir = await host.cacheDir();
-    // Set before every engine this one creates; null leaves the process's
-    // level as it is.
-    lm.LiteRtLmLog.nativeLevel = nativeLogLevel;
 
     // What the file says about itself decides where it can run: the text
     // backends to try, in order, and those the file rules out (a file the
@@ -238,6 +235,9 @@ class LiteRtLmEngine
           ),
           read,
           toolCallsOf: liteRtLmToolCallsOf,
+          // This engine's own level, set before each of its engines; null
+          // leaves the process's level as it is, whatever LiteRtLmLog says.
+          nativeLevel: nativeLogLevel,
         );
       },
       shutdownClient: (slot) => slot.engine?.close(),

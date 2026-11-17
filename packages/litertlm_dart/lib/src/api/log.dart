@@ -8,26 +8,45 @@ import 'engine.dart' show liteRtLmNativeLogLevel;
 /// litertlm_dart's log: its own lines (load decisions, timings, recoveries)
 /// and the level of LiteRT-LM's native log.
 abstract final class LiteRtLmLog {
-  /// How much of litertlm_dart's own log is written: [LiteRtLmLogLevel.silent]
-  /// nothing, [LiteRtLmLogLevel.verbose] also prompts, model output and the
-  /// native log's contents, any other level the rest. Applies to the isolates
-  /// the runtime spawns from then on.
-  static LiteRtLmLogLevel get level => switch (runtimeLogLevel) {
-    RuntimeLogLevel.none => LiteRtLmLogLevel.silent,
-    RuntimeLogLevel.info => LiteRtLmLogLevel.info,
-    RuntimeLogLevel.verbose => LiteRtLmLogLevel.verbose,
-  };
+  /// How much of litertlm_dart's own log is written. Its lines are
+  /// informational (load decisions, timings, recoveries), so
+  /// [LiteRtLmLogLevel.debug] and [LiteRtLmLogLevel.info] write them, a level
+  /// above info and [LiteRtLmLogLevel.silent] write none, and only
+  /// [LiteRtLmLogLevel.verbose] adds prompts, model output and the native
+  /// log's contents. Reads back what was set; unset, the level in force.
+  /// Applies to the isolates the runtime spawns from then on, and is not
+  /// replaced by flutter_edge_ai_litertlm.
+  static LiteRtLmLogLevel get level =>
+      _level ??
+      switch (currentRuntimeLogLevel()) {
+        RuntimeLogLevel.none => LiteRtLmLogLevel.silent,
+        RuntimeLogLevel.info => LiteRtLmLogLevel.info,
+        RuntimeLogLevel.verbose => LiteRtLmLogLevel.verbose,
+      };
 
-  static set level(LiteRtLmLogLevel level) => runtimeLogLevel = switch (level) {
-    LiteRtLmLogLevel.silent => RuntimeLogLevel.none,
-    LiteRtLmLogLevel.verbose ||
-    LiteRtLmLogLevel.debug => RuntimeLogLevel.verbose,
-    _ => RuntimeLogLevel.info,
-  };
+  static set level(LiteRtLmLogLevel level) {
+    _level = level;
+    runtimeLogLevelSetByApp = true;
+    runtimeLogLevelSource = null;
+    runtimeLogLevel = switch (level) {
+      LiteRtLmLogLevel.verbose => RuntimeLogLevel.verbose,
+      LiteRtLmLogLevel.debug || LiteRtLmLogLevel.info => RuntimeLogLevel.info,
+      LiteRtLmLogLevel.warning ||
+      LiteRtLmLogLevel.error ||
+      LiteRtLmLogLevel.fatal ||
+      LiteRtLmLogLevel.silent => RuntimeLogLevel.none,
+    };
+  }
 
-  /// Where litertlm_dart's lines go on this isolate; `print` by default.
+  static LiteRtLmLogLevel? _level;
+
+  /// Where litertlm_dart's lines go on this isolate; `print` by default. Not
+  /// replaced by flutter_edge_ai_litertlm once set.
   static RuntimeLogSink get sink => runtimeLogSink;
-  static set sink(RuntimeLogSink sink) => runtimeLogSink = sink;
+  static set sink(RuntimeLogSink sink) {
+    runtimeLogSinkSetByApp = true;
+    runtimeLogSink = sink;
+  }
 
   /// The minimum severity of LiteRT-LM's native log, set before every engine
   /// from then on (Kotlin's `Engine.setNativeMinLogSeverity`). Process-wide;

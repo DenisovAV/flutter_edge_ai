@@ -23,8 +23,9 @@ RuntimeLogLevel _coreLevel() => switch (edgeAiLogLevel) {
 };
 
 /// Points this isolate's runtime log at core's `edgeAiLog` and
-/// `edgeAiLogLevel`. Idempotent.
+/// `edgeAiLogLevel`, except what the app set itself through litertlm_dart's
+/// `LiteRtLmLog`. Idempotent.
 void bindRuntimeLogToCore() {
-  runtimeLogSink = _edgeAiLogSink;
-  runtimeLogLevelSource = _coreLevel;
+  if (!runtimeLogSinkSetByApp) runtimeLogSink = _edgeAiLogSink;
+  if (!runtimeLogLevelSetByApp) runtimeLogLevelSource = _coreLevel;
 }

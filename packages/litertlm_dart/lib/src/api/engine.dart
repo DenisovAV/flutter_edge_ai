@@ -33,7 +33,8 @@ import '../runtime/constrained_decoding_hosts.dart';
 import '../ffi/send_options.dart';
 import '../runtime/errors.dart';
 import '../runtime/litert_lm_log_level.dart';
-import '../runtime/load_errors.dart' show LiteRtLmLibraryException;
+import '../runtime/load_errors.dart'
+    show LibraryLoadFailure, LiteRtLmLibraryException;
 import '../runtime/npu_stacks.dart';
 import '../runtime/runtime_log.dart';
 import '../runtime/types.dart';
@@ -290,21 +291,14 @@ final class Engine {
       () => _create(config, _host, nativeLevel, null),
     ).catchError(
       (Object error, StackTrace stack) => Error.throwWithStackTrace(
-        LiteRtLmLibraryException(switch (error) {
-          StateError(:final message) => message,
-          UnsupportedError(:final message?) => message,
-          _ => '$error',
-        }),
+        LiteRtLmLibraryException((error as LibraryLoadFailure).loadMessage),
         stack,
       ),
-      // What loading the library throws: the runtime's own lookup and checks
-      // speak Exception, StateError and UnsupportedError, which the Flutter
-      // adapter's backend fallback tells apart; here they are one type.
-      test: (error) =>
-          error is! LiteRtLmException &&
-          (error is StateError ||
-              error is UnsupportedError ||
-              (error is Exception && error is! FormatException)),
+      // What the load path marked: libLiteRtLm or a library it needs did not
+      // load or is not a build this release drives. A setter LiteRT-LM
+      // refused, an isolate that did not spawn and a bad argument keep their
+      // own types.
+      test: (error) => error is LibraryLoadFailure,
     );
   }
 

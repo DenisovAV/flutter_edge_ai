@@ -2058,6 +2058,19 @@ class LiteRtLmFfiClient {
   static ({DynamicLibrary lib, DynamicLibrary proxyLib}) _openNativeLibraries({
     Pointer<Void>? Function(String path) preload = _preloadNothing,
   }) {
+    try {
+      return _openNativeLibrariesUnmarked(preload: preload);
+    } catch (error, stack) {
+      // What a failed load throws, marked so Engine.create reports it as a
+      // LiteRtLmLibraryException; its type is unchanged for the adapter.
+      Error.throwWithStackTrace(markLibraryLoadFailure(error), stack);
+    }
+  }
+
+  static ({DynamicLibrary lib, DynamicLibrary proxyLib})
+  _openNativeLibrariesUnmarked({
+    Pointer<Void>? Function(String path) preload = _preloadNothing,
+  }) {
     final DynamicLibrary lib;
     final DynamicLibrary proxyLib;
     if (Platform.isIOS) {
@@ -2277,24 +2290,31 @@ class LiteRtLmFfiClient {
     runtimeLog('[LiteRtLmFfi] Loading native libraries...');
     final (:lib, :proxyLib) = _openNativeLibraries();
 
-    _bindings = LiteRtLmBindings(lib);
-    _proxyLib = proxyLib;
-    _resolveChunkAccessors(proxyLib, lib);
-    _hasTurnRewind = lib.providesSymbol(
-      'litert_lm_conversation_rewind_cancelled_turn',
-    );
-    _hasTurnEndRecord = lib.providesSymbol(
-      'litert_lm_conversation_get_last_turn_end',
-    );
-    _proxyDestroy = proxyLib
-        .lookupFunction<
-          Void Function(Pointer<Void>),
-          void Function(Pointer<Void>)
-        >('stream_proxy_destroy_v1');
-    _proxyFreeString = proxyLib
-        .lookupFunction<_ProxyFreeStringNative, _ProxyFreeStringDart>(
-          'stream_proxy_free_string',
-        );
+    try {
+      _bindings = LiteRtLmBindings(lib);
+      _proxyLib = proxyLib;
+      _resolveChunkAccessors(proxyLib, lib);
+      _hasTurnRewind = lib.providesSymbol(
+        'litert_lm_conversation_rewind_cancelled_turn',
+      );
+      _hasTurnEndRecord = lib.providesSymbol(
+        'litert_lm_conversation_get_last_turn_end',
+      );
+      _proxyDestroy = proxyLib
+          .lookupFunction<
+            Void Function(Pointer<Void>),
+            void Function(Pointer<Void>)
+          >('stream_proxy_destroy_v1');
+      _proxyFreeString = proxyLib
+          .lookupFunction<_ProxyFreeStringNative, _ProxyFreeStringDart>(
+            'stream_proxy_free_string',
+          );
+    } catch (error, stack) {
+      // A StreamProxy without the C API 1.0 entry points is not a build this
+      // release drives.
+      _bindings = null;
+      Error.throwWithStackTrace(markLibraryLoadFailure(error), stack);
+    }
 
     // Flutter debug builds only: redirect native stderr to a file so we can
     // dump absl/glog output through the runtime log after engine_create

@@ -6,6 +6,7 @@
 // create at a time.
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' show max;
 import 'dart:typed_data';
 
@@ -186,33 +187,54 @@ void main() {
     ),
   );
 
-  test('a libLiteRtLm that does not load, or is not a build this release '
-      'drives, is a LiteRtLmLibraryException; a bad argument stays an '
-      'ArgumentError', () async {
-    final generic = write('g.litertlm', _bundle());
-    for (final error in <Object>[
-      Exception('Failed to load libLiteRtLm.so with RTLD_GLOBAL'),
-      StateError('libLiteRtLm is not C API 1.x'),
-      UnsupportedError('LiteRT-LM did not load on macOS'),
-    ]) {
-      host.initializeError = error;
-      await expectLater(
-        create(generic),
-        throwsA(
-          isA<LiteRtLmLibraryException>().having(
-            (e) => e.message,
-            'message',
-            contains('$error'.split(': ').last),
+  test(
+    'a libLiteRtLm the load path marks as not loaded, or not a build this '
+    'release drives, is a LiteRtLmLibraryException; a refused setter, an '
+    'isolate that did not spawn and a bad argument keep their types',
+    () async {
+      final generic = write('g.litertlm', _bundle());
+      for (final error in <Object>[
+        Exception('Failed to load libLiteRtLm.so with RTLD_GLOBAL'),
+        ArgumentError('Failed to load dynamic library LiteRtLm.framework'),
+        StateError('libLiteRtLm is not C API 1.x'),
+        UnsupportedError('LiteRT-LM did not load on macOS'),
+      ]) {
+        host.initializeError = markLibraryLoadFailure(error);
+        await expectLater(
+          create(generic),
+          throwsA(
+            isA<LiteRtLmLibraryException>().having(
+              (e) => e.message,
+              'message',
+              contains('$error'.split(': ').last),
+            ),
           ),
-        ),
-        reason: '$error',
+          reason: '$error',
+        );
+      }
+      host.initializeError = StateError('settings_set_num_threads failed');
+      await expectLater(create(generic), throwsStateError);
+      host.initializeError = IsolateSpawnException('out of memory');
+      await expectLater(create(generic), throwsA(isA<IsolateSpawnException>()));
+      host.initializeError = null;
+      await expectLater(
+        create(generic, backend: const Backend.cpu(threadCount: 0)),
+        throwsArgumentError,
       );
-    }
-    host.initializeError = null;
-    await expectLater(
-      create(generic, backend: const Backend.cpu(threadCount: 0)),
-      throwsArgumentError,
+    },
+  );
+
+  test('a load failure keeps its type for the adapter, marked', () {
+    expect(markLibraryLoadFailure(ArgumentError('x')), isA<ArgumentError>());
+    expect(markLibraryLoadFailure(StateError('x')), isA<StateError>());
+    expect(markLibraryLoadFailure(Exception('x')), isA<Exception>());
+    expect(
+      markLibraryLoadFailure(UnsupportedError('x')),
+      isA<UnsupportedError>(),
     );
+    for (final e in [ArgumentError('x'), StateError('x'), Exception('x')]) {
+      expect(markLibraryLoadFailure(e), isA<LibraryLoadFailure>());
+    }
   });
 
   test(

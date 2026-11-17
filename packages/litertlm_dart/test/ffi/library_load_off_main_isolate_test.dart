@@ -5,6 +5,8 @@ import 'dart:isolate';
 import 'package:litertlm_dart/src/ffi/litert_lm_client.dart';
 import 'package:litertlm_dart/src/ffi/macos_load_error.dart'
     show macOSLiteRtLmFramework;
+import 'package:litertlm_dart/src/runtime/load_errors.dart'
+    show LibraryLoadFailure;
 import 'package:test/test.dart';
 
 /// The process's first load of the libraries ran on the calling isolate, 13 ms
@@ -190,8 +192,13 @@ void main() {
 }
 
 /// Thrown by the test loader, to stop the warm-up at its first library.
-class _Preloaded implements Exception {
+/// What the stand-in loader throws to stop the load once it was asked: a
+/// load failure, which the load path passes on as it is.
+class _Preloaded implements Exception, LibraryLoadFailure {
   const _Preloaded(this.path);
 
   final String path;
+
+  @override
+  String get loadMessage => 'preloaded $path';
 }

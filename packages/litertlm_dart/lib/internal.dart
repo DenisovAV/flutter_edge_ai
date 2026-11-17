@@ -18,7 +18,11 @@ export 'src/runtime/types.dart'
 export 'src/runtime/errors.dart'
     show ConstraintUnsupportedException, ScoringCancelledException;
 export 'src/runtime/load_errors.dart'
-    show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
+    show
+        LibraryLoadFailure,
+        markLibraryLoadFailure,
+        LiteRtLmEngineCreateException,
+        NpuDispatchUnavailableException;
 export 'src/runtime/litert_lm_log_level.dart' show LiteRtLmLogLevel;
 export 'src/runtime/npu_stacks.dart'
     show

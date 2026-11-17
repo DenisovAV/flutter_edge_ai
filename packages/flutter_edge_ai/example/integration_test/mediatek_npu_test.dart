@@ -29,13 +29,16 @@ import 'dart:io';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 // ignore: implementation_imports — asks the MediaTek device rule and probe the engine asks
-import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart'
+import 'package:litertlm_dart/src/ffi/backend_preference.dart'
     show mediaTekDeviceRefusal, platformNpuProbes;
 // ignore: implementation_imports — reads whether this build bundled the MediaTek dispatch
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart'
+import 'package:litertlm_dart/src/ffi/npu_stack_manifest.dart'
     show checkNpuStackInManifest;
+// ignore: implementation_imports — the app's NativeAssetsManifest.json, as the engine reads it
+import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart'
+    show FlutterNpuPlatform;
 // ignore: implementation_imports — the NeuroPilot libraries the probe lists
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:litertlm_dart/src/runtime/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -102,7 +105,10 @@ void main() {
         print('[mtk] does not open: $lib (${'$e'.split('\n').first})');
       }
     }
-    final stack = await checkNpuStackInManifest(NpuStack.mediatek);
+    final stack = await checkNpuStackInManifest(
+      NpuStack.mediatek,
+      read: const FlutterNpuPlatform().readNativeAssetsManifest,
+    );
     print('[mtk] stack bundled=${stack.bundled} ${stack.reason ?? ''}');
     final refusal = mediaTekDeviceRefusal(_prop);
     final probe = platformNpuProbes.androidMediaTekRuntime();

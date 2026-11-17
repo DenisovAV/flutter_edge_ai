@@ -72,7 +72,7 @@ for r in "${runners[@]}"; do
   # The adapter says which file it could not open, and why (dlerror), since
   # LiteRT reports only that no dispatch was usable.
   if grep -q "cannot open .*/missing/libmtk_litert_dispatch_legacy.so: ." \
-      "$D/missing_$r.err"; then
+      "$D/missing_$r.err" && ! grep -q "unknown error" "$D/missing_$r.err"; then
     echo "PASS [$r] a missing legacy library is named with its dlerror"
   else
     echo "FAIL [$r] a missing legacy library was not logged:"

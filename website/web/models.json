@@ -224,8 +224,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }
@@ -248,8 +247,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }
@@ -494,7 +492,7 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-11-13_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
         "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -576,8 +574,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }
@@ -600,8 +597,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }
@@ -850,7 +846,7 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-11-13_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
         "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -934,8 +930,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }
@@ -958,8 +953,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }
@@ -3822,9 +3816,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "withheld",
-        "note": "MediaTek NPU is refused from flutter_edge_ai_litertlm 1.20.0 on LiteRT-LM 0.19 because the vendor dispatch does not export LiteRtDispatchQueryInterface and an MT6989 conversation returned an empty second message (decision K). Version 1.19.x ran this build.",
-        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/4256"
+        "status": "documented",
+        "source": "PR #697 (LiteRT-LM 0.18), run on a DDP Galaxy Tab S10+ (MT6989); on LiteRT-LM 0.19 through the dispatch adapter with the AAR 2.3.2 dispatch staged by hand, the same device on 2026-11-01 (doc/research/mediatek-dispatch-0.19.md)"
        }
       }
      }
@@ -3849,8 +3842,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }
@@ -3875,8 +3867,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }
@@ -4060,8 +4051,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }
@@ -4086,8 +4076,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }
@@ -4214,8 +4203,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }
@@ -4348,12 +4336,12 @@
      "cells": {
       "android_arm64": {
        "gpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-11-13_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
         "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-11-13_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
         "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -4568,7 +4556,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-11-13_android_arm64_pixel-11-ddp-cubs-37-tensor-g6-powervr-android-17.json",
         "note": "Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), Android 17, 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -4674,7 +4662,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-11-13_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
         "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -7633,8 +7621,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.20.1"
+        "status": "untested"
        }
       }
      }

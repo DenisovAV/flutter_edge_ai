@@ -29,6 +29,7 @@ import '../ffi/conversation_handles.dart';
 import '../ffi/litert_lm_client.dart';
 import '../ffi/npu_vendor_host.dart';
 import '../ffi/open_session_backing.dart';
+import '../runtime/constrained_decoding_hosts.dart';
 import '../ffi/send_options.dart';
 import '../runtime/errors.dart';
 import '../runtime/litert_lm_log_level.dart';
@@ -226,7 +227,12 @@ final class Engine {
     required this._backing,
     required this._linearAttentionState,
     this._toolCallsOf = nativeToolCalls,
+    this._constraintRefusal,
   });
+
+  /// Why a response format is refused on this engine's host and backend
+  /// ([liteRtLmConstrainedDecodingRefusal]), or null where it was qualified.
+  final String? _constraintRefusal;
 
   final LiteRtLmFfiClient _client;
   final ToolCallReader _toolCallsOf;
@@ -500,11 +506,14 @@ final class Engine {
 
     try {
       final linearAttentionState = await host.linearAttentionState(path);
+      final androidGpu = kind == BackendKind.gpu
+          ? host.androidGpuFamily()
+          : null;
       final backing = liteRtLmOpenSessionBacking(
         abi: abi,
         backend: kind,
         npuVendor: vendor,
-        androidGpu: kind == BackendKind.gpu ? host.androidGpuFamily() : null,
+        androidGpu: androidGpu,
       );
       runtimeLog(
         '[LiteRtLmEngine] open sessions: ${backing.name} conversations on '
@@ -529,6 +538,12 @@ final class Engine {
         backing: backing,
         linearAttentionState: linearAttentionState,
         toolCallsOf: toolCallsOf,
+        constraintRefusal: liteRtLmConstrainedDecodingRefusal(
+          abi: abi,
+          backend: kind,
+          androidGpu: androidGpu,
+          npuVendor: kind == BackendKind.npu ? vendor : null,
+        ),
       );
     } catch (_) {
       // The engine exists: it is deleted before the failure reaches the
@@ -624,6 +639,10 @@ final class Engine {
     if (_closed) throw StateError('The engine is closed.');
     final c = config ?? ConversationConfig();
     final format = c.responseFormat;
+    final refusal = _constraintRefusal;
+    if (format != null && refusal != null) {
+      throw ConstraintUnsupportedException(refusal);
+    }
     final constraint = switch (format) {
       JsonResponseFormat(:final schemaJson) => Constraint.jsonSchema(
         schemaJson,
@@ -882,6 +901,7 @@ Engine engineForTest(
   OpenSessionBacking backing = OpenSessionBacking.virtual,
   bool? linearAttentionState = false,
   NpuStack? npuVendor,
+  String? constraintRefusal,
 }) => Engine._(
   client: client,
   backend: backend,
@@ -893,6 +913,7 @@ Engine engineForTest(
   bundleInfo: null,
   backing: backing,
   linearAttentionState: linearAttentionState,
+  constraintRefusal: constraintRefusal,
 );
 
 /// The client under [engine].

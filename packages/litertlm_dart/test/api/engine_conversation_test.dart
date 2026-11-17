@@ -180,6 +180,61 @@ void main() {
     }
   });
 
+  test('a response format is refused where constrained decoding was not '
+      'qualified, before any conversation exists', () async {
+    final client = _Client();
+    final engine = engineForTest(
+      client,
+      constraintRefusal: 'refused on linux_arm64 CPU',
+    );
+    await expectLater(
+      engine.createConversation(
+        ConversationConfig(responseFormat: ResponseFormat.regex('[0-9]+')),
+      ),
+      throwsA(
+        isA<ConstraintUnsupportedException>().having(
+          (e) => e.message,
+          'message',
+          'refused on linux_arm64 CPU',
+        ),
+      ),
+    );
+    expect(client.creates, isEmpty);
+    await engine.createConversation();
+  });
+
+  test('the qualified rows: the CPU and GPU of macOS, iOS, Linux x64, '
+      'Windows x64 and Android (Adreno, Mali, PowerVR); never an NPU', () {
+    String? refusal(String abi, BackendKind backend, {AndroidGpuFamily? gpu}) =>
+        liteRtLmConstrainedDecodingRefusal(
+          abi: abi,
+          backend: backend,
+          androidGpu: gpu,
+        );
+    expect(refusal('macos_arm64', BackendKind.gpu), isNull);
+    expect(refusal('linux_x64', BackendKind.cpu), isNull);
+    expect(
+      refusal('linux_arm64', BackendKind.cpu),
+      contains('linux_arm64 CPU'),
+    );
+    expect(
+      refusal('android_arm64', BackendKind.gpu, gpu: AndroidGpuFamily.adreno),
+      isNull,
+    );
+    for (final vendor in NpuStack.values) {
+      for (final abi in vendor.abis) {
+        expect(
+          liteRtLmConstrainedDecodingRefusal(
+            abi: abi,
+            backend: BackendKind.npu,
+            npuVendor: vendor,
+          ),
+          contains('NPU'),
+        );
+      }
+    }
+  });
+
   test('option scoring is refused on the NPU, before anything native', () {
     final engine = engineForTest(_Client(), backend: const Backend.npu());
     expect(

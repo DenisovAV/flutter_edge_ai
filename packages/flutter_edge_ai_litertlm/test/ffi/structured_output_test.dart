@@ -97,85 +97,85 @@ void main() {
   });
 
   test('only the device-run table advertises the whole dialect', () {
-    const expected = <LiteRtLmStructuredOutputRow>{
+    const expected = <LiteRtLmConstrainedDecodingRow>{
       (
         abi: 'macos_arm64',
-        backend: PreferredBackend.cpu,
+        backend: BackendKind.cpu,
         androidGpu: null,
         npuVendor: null,
       ),
       (
         abi: 'macos_arm64',
-        backend: PreferredBackend.gpu,
+        backend: BackendKind.gpu,
         androidGpu: null,
         npuVendor: null,
       ),
       (
         abi: 'ios_arm64',
-        backend: PreferredBackend.cpu,
+        backend: BackendKind.cpu,
         androidGpu: null,
         npuVendor: null,
       ),
       (
         abi: 'ios_arm64',
-        backend: PreferredBackend.gpu,
+        backend: BackendKind.gpu,
         androidGpu: null,
         npuVendor: null,
       ),
       (
         abi: 'linux_x64',
-        backend: PreferredBackend.cpu,
+        backend: BackendKind.cpu,
         androidGpu: null,
         npuVendor: null,
       ),
       (
         abi: 'linux_x64',
-        backend: PreferredBackend.gpu,
+        backend: BackendKind.gpu,
         androidGpu: null,
         npuVendor: null,
       ),
       (
         abi: 'windows_x64',
-        backend: PreferredBackend.cpu,
+        backend: BackendKind.cpu,
         androidGpu: null,
         npuVendor: null,
       ),
       (
         abi: 'windows_x64',
-        backend: PreferredBackend.gpu,
+        backend: BackendKind.gpu,
         androidGpu: null,
         npuVendor: null,
       ),
       (
         abi: 'android_arm64',
-        backend: PreferredBackend.cpu,
+        backend: BackendKind.cpu,
         androidGpu: null,
         npuVendor: null,
       ),
       (
         abi: 'android_arm64',
-        backend: PreferredBackend.gpu,
+        backend: BackendKind.gpu,
         androidGpu: AndroidGpuFamily.adreno,
         npuVendor: null,
       ),
       (
         abi: 'android_arm64',
-        backend: PreferredBackend.gpu,
+        backend: BackendKind.gpu,
         androidGpu: AndroidGpuFamily.mali,
         npuVendor: null,
       ),
       (
         abi: 'android_arm64',
-        backend: PreferredBackend.gpu,
+        backend: BackendKind.gpu,
         androidGpu: AndroidGpuFamily.powerVr,
         npuVendor: null,
       ),
     };
-    expect(liteRtLmStructuredOutputRows, expected);
-    for (final row in liteRtLmStructuredOutputCandidateRows) {
+    expect(liteRtLmConstrainedDecodingRows, expected);
+    for (final row in liteRtLmConstrainedDecodingCandidateRows) {
       final support = liteRtLmStructuredOutputSupport(
         abi: row.abi,
-        backend: row.backend,
+        backend: row.backend.toCore,
         androidGpu: row.androidGpu,
         npuVendor: row.npuVendor,
       );

@@ -149,6 +149,13 @@ export 'src/ffi/npu_vendor_host.dart'
         prepareAndroidNpuDispatchDir,
         prepareNpuDispatchDir,
         sha256OfFileRange;
+export 'src/runtime/constrained_decoding_hosts.dart'
+    show
+        LiteRtLmConstrainedDecodingRow,
+        liteRtLmConstrainedDecodingCandidateRows,
+        liteRtLmConstrainedDecodingRefusal,
+        liteRtLmConstrainedDecodingRow,
+        liteRtLmConstrainedDecodingRows;
 export 'src/ffi/open_session_backing.dart'
     show
         AndroidGpuFamily,

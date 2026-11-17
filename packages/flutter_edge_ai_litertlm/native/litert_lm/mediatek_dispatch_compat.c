@@ -113,7 +113,8 @@ static GraphV1 g_graph;
 // Why the legacy dispatch did not load, where the app's logs are: LiteRT
 // itself reports only that no dispatch was usable, and the outcome is kept for
 // the life of the process (pthread_once).
-static void LogFailure(const char* format, ...) {
+__attribute__((format(printf, 1, 2))) static void LogFailure(
+    const char* format, ...) {
   char message[PATH_MAX + 256];
   va_list args;
   va_start(args, format);

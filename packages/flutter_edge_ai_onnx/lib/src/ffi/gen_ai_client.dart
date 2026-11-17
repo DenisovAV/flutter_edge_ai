@@ -957,9 +957,11 @@ bool genAiArchiveHasGuidance(ffi.Abi abi) => const {
 /// whose archive has guidance stays refused, naming the missing run, until it
 /// is here (design 2.6.0 §5.1: a backend is enabled after its run).
 /// - macOS arm64: Mac mini, Phi-3.5-mini cpu-int4, 2026-11-04, 4/4.
-/// Still to run: Linux x64 (CI or the T4 VM), Windows x64 (`intel-ptl`),
-/// Windows ARM64 (the GitHub-hosted Windows 11 ARM64 runner).
-const _verifiedGuidanceAbis = {ffi.Abi.macosArm64};
+/// - Windows x64: `intel-ptl` (Core Ultra X7 358H), Phi-3.5-mini cpu-int4-awq,
+///   ORT-GenAI 0.20.0 + ONNX Runtime 1.32.0, 2026-11-17, 8/8.
+/// Still to run: Linux x64 (CI or the T4 VM), Windows ARM64 (the
+/// GitHub-hosted Windows 11 ARM64 runner).
+const _verifiedGuidanceAbis = {ffi.Abi.macosArm64, ffi.Abi.windowsX64};
 
 /// Replaces [_verifiedGuidanceAbis] in tests: the fake-worker tests drive the
 /// guided path on any host, and the host smoke is the run that verifies one.

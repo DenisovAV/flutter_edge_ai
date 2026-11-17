@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -9,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:litertlm_dart/src/hook/download.dart';
 import 'package:litertlm_dart/src/hook/legacy_user_defines.dart';
 import 'package:litertlm_dart/src/hook/mediatek_runtime.dart';
+import 'package:litertlm_dart/src/hook/podfile_mirror.dart';
 import 'package:litertlm_dart/src/hook/qairt_linux.dart';
 import 'package:litertlm_dart/src/hook/qnn_runtime.dart';
 import 'package:litertlm_dart/src/hook/unsupported_target.dart';
@@ -936,11 +936,13 @@ Future<void> _processBundle({
     // and the companions from the flat cache directory of the package this
     // hook used to live in, so they are put there too.
     final legacyDir = Directory('${_cacheBasePath('flutter_gemma')}/$dirName');
-    final mirrored = _mirrorForPodfileStager(
-      bundle,
-      os,
-      prebuiltDir,
-      legacyDir,
+    final mirrored = mirrorForPodfileStager(
+      companionFiles: [
+        for (final name in bundle.companions) _dylibFileName(os, name),
+      ],
+      legacyMainFile: _dylibFileName(os, bundle.mainLibName),
+      prebuiltDir: prebuiltDir,
+      legacyDir: legacyDir,
     );
     final staged = _shipCompanionStager(input.packageRoot, legacyDir);
     if (staged != null) {
@@ -1449,45 +1451,6 @@ bool _sameBytes(File a, File b) {
     if (x[i] != y[i]) return false;
   }
   return true;
-}
-
-/// Copies [bundle]'s companions for [os] from [prebuiltDir] into [legacyDir],
-/// the `flutter_gemma/native/<platform>` directory the Podfile stager reads,
-/// when they differ, and records the version there the way the hooks of
-/// flutter_edge_ai_litertlm up to 1.20.x did, so one of them building on this
-/// machine sees a version not its own and fetches its own files back. Its
-/// libLiteRtLm there is removed, which is what makes that hook run again.
-/// Returns the copies, for the hook's dependencies.
-List<Uri> _mirrorForPodfileStager(
-  _NativeBundle bundle,
-  OS os,
-  Uri prebuiltDir,
-  Directory legacyDir,
-) {
-  legacyDir.createSync(recursive: true);
-  final copies = <Uri>[];
-  for (final name in bundle.companions) {
-    final fileName = _dylibFileName(os, name);
-    final src = File.fromUri(prebuiltDir.resolve(fileName));
-    if (!src.existsSync()) continue;
-    final dst = File('${legacyDir.path}/$fileName');
-    if (!dst.existsSync() || !_sameBytes(src, dst)) src.copySync(dst.path);
-    copies.add(dst.uri);
-  }
-  // An older hook does not watch the companions, but it does watch its own
-  // libLiteRtLm here: removing it makes that hook run again and fetch its
-  // own release's files, companions included, before its app's stager reads
-  // them.
-  final legacyMain = File(
-    '${legacyDir.path}/${_dylibFileName(os, bundle.mainLibName)}',
-  );
-  if (legacyMain.existsSync()) legacyMain.deleteSync();
-  File(
-    '${legacyDir.parent.path}/.flutter_gemma_native_version',
-  ).writeAsStringSync(
-    jsonEncode({'version': bundle.version, 'owner': 'flutter_gemma_litertlm'}),
-  );
-  return copies;
 }
 
 /// Name of the companion-staging script, in `tool/` here and copied into the

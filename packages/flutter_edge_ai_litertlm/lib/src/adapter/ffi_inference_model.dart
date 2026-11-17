@@ -1030,6 +1030,10 @@ class FfiInferenceModelSession extends InferenceModelSession
     StreamSubscription<String>? body;
     late final Completer<void> done;
     var listened = false;
+    // This turn's consumer let it go while it waited.
+    final abandoned = Completer<void>();
+    // When the turn before this one lets go of the conversation.
+    Future<void>? previousLetGo;
     void finish() {
       _liveTurnStops.remove(stop);
       if (!done.isCompleted) done.complete();
@@ -1049,12 +1053,12 @@ class FfiInferenceModelSession extends InferenceModelSession
           _assertNotClosed();
           message = _takeTurnMessage();
           if (previous != null && !previous.stop.asked) {
-            await Future.any([
+            previousLetGo = Future.any([
               previous.done,
               previous.stop.signal,
-              stop.signal,
               _closedSignal.future,
             ]);
+            await Future.any([previousLetGo!, stop.signal, abandoned.future]);
           }
           // Let go by its consumer while it waited: onCancel finished it.
           if (!out.hasListener) return;
@@ -1099,9 +1103,16 @@ class FfiInferenceModelSession extends InferenceModelSession
         if (!listened) return null;
         final sub = body;
         if (sub == null) {
-          // Cancelled while it waited: a stop of a turn never sent.
-          stop.ask();
-          finish();
+          // Cancelled while it waited: it is never sent, and the turn after
+          // it still waits for the one before it, which holds the
+          // conversation, so the queue moves on only when that one lets go.
+          abandoned.complete();
+          final letGo = previousLetGo;
+          if (letGo == null) {
+            finish();
+          } else {
+            unawaited(letGo.then((_) => finish()));
+          }
           return null;
         }
         return sub.cancel().whenComplete(finish);

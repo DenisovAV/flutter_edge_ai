@@ -283,6 +283,36 @@ void main() {
       await subA.cancel();
     });
 
+    test('a turn asked for after a queued one was cancelled still waits for '
+        'the turn that holds the conversation', () async {
+      final session = await model(fresh: false).openSession();
+      await session.addQueryChunk(const Message(text: 'a', isUser: true));
+      final a = session.getResponseAsync().join();
+      await pumpEventQueue();
+      await session.addQueryChunk(const Message(text: 'b', isUser: true));
+      final b = session.getResponseAsync().listen((_) {});
+      await pumpEventQueue();
+      await b.cancel();
+      await session.addQueryChunk(const Message(text: 'c', isUser: true));
+      final c = session.getResponseAsync().join();
+      await pumpEventQueue();
+      expect(sends, hasLength(1), reason: 'c waits for a');
+      sends.single
+        ..chunk(
+          '{"role":"assistant","content":[{"type":"text","text":"ok a"}]}',
+        )
+        ..finished();
+      expect(await a, 'ok a');
+      await pumpEventQueue();
+      expect(sends, hasLength(2), reason: 'b was let go and is never sent');
+      sends.last
+        ..chunk(
+          '{"role":"assistant","content":[{"type":"text","text":"ok c"}]}',
+        )
+        ..finished();
+      expect(await c, 'ok c');
+    });
+
     test('a stop drops a turn still waiting for the one before it', () async {
       final session = await model(fresh: false).openSession();
       await session.addQueryChunk(const Message(text: 'one', isUser: true));

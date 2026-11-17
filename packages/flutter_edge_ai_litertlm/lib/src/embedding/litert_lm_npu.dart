@@ -30,6 +30,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import '../bundle/litertlm_bundle_info.dart' show npuVendorOf;
 import '../ffi/litert_lm_client.dart' show NpuDispatchUnavailableException;
 import '../ffi/npu_vendor_host.dart';
+import '../flutter_npu_platform.dart';
 import '../native_hosts.dart';
 import '../npu_stacks.dart';
 import 'litert_lm_embedding_common.dart';
@@ -52,7 +53,7 @@ typedef LiteRtLmEmbeddingPlacement = ({
 /// `LiteRtEmbeddingBackend.describe()` passes none. Replaced only by tests,
 /// which describe on a host with no NPU.
 @visibleForTesting
-LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
+LiteRtLmNpuHost liteRtLmNpuHost = flutterNpuHost;
 
 /// Where each build has run, per platform and backend: the model registry's
 /// page, generated from its recorded runs. A list in an error message goes

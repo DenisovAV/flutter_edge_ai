@@ -105,6 +105,7 @@ import '../ffi/litert_lm_status.dart' show lastErrorFrom, liteRtLmStatusName;
 import '../ffi/npu_vendor_host.dart' show npuStagesWeightBanks;
 import '../ffi/sigprof_mask.dart';
 import '../npu_stacks.dart' show NpuStack;
+import '../runtime/runtime_log.dart';
 import 'embedding_parts.dart';
 import 'litert_lm_embedding_common.dart';
 import 'litertlm_container_io.dart';
@@ -526,7 +527,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     // audio is known only when it was declared (the container is read for it
     // then and only then). Core keeps the model at what was declared.
     final vision = _hasVision(info);
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmEmbeddingPass] loaded $_file: dim=${info.dimension}, '
       'maxInputTokens=$maxInputTokens, '
       'backend=${_onNpu ? 'npu (${_config.npuTarget}, dispatch '
@@ -1170,7 +1171,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       entries = Directory(_config.cacheBase).listSync()
         ..sort((a, b) => a.path.compareTo(b.path));
     } on FileSystemException catch (e) {
-      edgeAiLog(
+      runtimeLog(
         '[LiteRtLmEmbeddingPass] could not list ${_config.cacheBase}: $e',
       );
       return;
@@ -1185,7 +1186,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         if (now.difference(_lastTouched(entry)) < _siblingGrace) continue;
         entry.deleteSync(recursive: true);
       } on FileSystemException catch (e) {
-        edgeAiLog(
+        runtimeLog(
           '[LiteRtLmEmbeddingPass] could not delete the stale cache '
           '${entry.path}: $e',
         );
@@ -1391,19 +1392,19 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     return check.kinds;
   }
 
-  /// Logs [cacheDir]'s files and their sizes (debug, `edgeAiLog`): when ML
+  /// Logs [cacheDir]'s files and their sizes (debug, `runtimeLog`): when ML
   /// Drift writes each GPU cache — at create, at the first run, or only at
   /// engine delete — is not documented, and a device run reads it here.
   void _logCacheListing(String cacheDir, String when) {
     try {
       final files = Directory(cacheDir).listSync().whereType<File>().toList()
         ..sort((a, b) => a.path.compareTo(b.path));
-      edgeAiLog(
+      runtimeLog(
         '[LiteRtLmEmbeddingPass] $cacheDir $when: '
         '${files.isEmpty ? 'empty' : files.map((f) => '${_fileName(f.path)} ${_sizeOf(f)} B').join(', ')}',
       );
     } on FileSystemException catch (e) {
-      edgeAiLog('[LiteRtLmEmbeddingPass] could not list $cacheDir $when: $e');
+      runtimeLog('[LiteRtLmEmbeddingPass] could not list $cacheDir $when: $e');
     }
   }
 

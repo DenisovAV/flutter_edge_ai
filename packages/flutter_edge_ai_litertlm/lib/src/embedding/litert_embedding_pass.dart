@@ -33,6 +33,8 @@ import 'package:flutter_edge_ai/engine.dart';
 // stub, so the bindings would appear undefined during analysis.
 import 'package:flutter_edge_ai_litertlm/litert_bindings.dart';
 
+import '../runtime/runtime_log.dart';
+
 /// What `LiteRtEmbeddingBackend.describe` hands core for a `.tflite` embedder.
 ///
 /// Crosses to core's worker isolate: two paths and a top-level tokenizer
@@ -266,7 +268,7 @@ final class _NativeLiteRtEmbeddingGraph implements LiteRtEmbeddingGraph {
         outLayouts.free();
       }
 
-      edgeAiLog(
+      runtimeLog(
         '[LiteRtEmbeddingPass] loaded: seqLen=$seqLen, dim=$dim, '
         'backend=$backend',
       );

@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show DebugPrintCallback, debugPrint;
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_cache_dir.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
@@ -17,6 +18,7 @@ import 'package:flutter_edge_ai_litertlm/src/native_hosts.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
+import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuStack;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -201,6 +203,19 @@ void main() {
       },
     );
 
+    test('the cache base is under the injected cache directory', () async {
+      liteRtEmbeddingCacheDirectory = () async => '/injected';
+      addTearDown(
+        () => liteRtEmbeddingCacheDirectory = applicationCacheDirectoryPath,
+      );
+      final descriptor = await backend.describe(
+        _bundle(),
+        _config('$bundles/eg2.litertlm'),
+      );
+      final config = descriptor.config as LiteRtLmEmbeddingConfig;
+      expect(config.cacheBase, '/injected/flutter_edge_ai/emb');
+    });
+
     test('never asks the tokenizer registry', () async {
       await backend.describe(_bundle(), _config('$bundles/eg2.litertlm'));
       expect(tokenizers.asked, 0);
@@ -309,7 +324,7 @@ void main() {
       'is declared; a bundle without one names none, and vision never',
       () async {
         liteRtLmNpuHost = _QualcommAndroid();
-        addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+        addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
         for (final (model, audio, tower) in [
           ('eg2_npu_audio.litertlm', false, true),
           ('eg2_npu_audio.litertlm', true, true),
@@ -346,7 +361,7 @@ void main() {
     test('an NPU load without declared audio is said; a CPU load, an NPU '
         'load with declared audio and the flag off say nothing', () async {
       liteRtLmNpuHost = _QualcommAndroid();
-      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
 
       await strict.describe(_bundle(), _config('$bundles/eg2.litertlm'));
       await describeNpu(
@@ -386,7 +401,7 @@ void main() {
       // Pinned: on a Windows or Linux x64 runner gpu goes to the GPU (the
       // GPU group below).
       liteRtLmNpuHost = _QualcommAndroid();
-      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
       for (final requested in [
         null,
         PreferredBackend.cpu,
@@ -481,7 +496,7 @@ void main() {
     test('a per-SoC bundle with npu where the NPU can run it hands the pass '
         'its target and dispatch directory, and declares npu', () async {
       liteRtLmNpuHost = _QualcommAndroid();
-      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
       final descriptor = await backend.describe(
         _bundle(model: 'eg2_npu.litertlm'),
         _config(
@@ -505,7 +520,7 @@ void main() {
     test('an Intel per-SoC bundle with npu on Windows x64 hands the pass its '
         'target and the directory beside the executable', () async {
       liteRtLmNpuHost = _IntelWindows();
-      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
       final descriptor = await backend.describe(
         _bundle(model: 'eg2_ptl.litertlm'),
         _config(
@@ -527,7 +542,7 @@ void main() {
         'before the Qualcomm stack is prepared', () async {
       final host = _QualcommAndroid();
       liteRtLmNpuHost = host;
-      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
       await expectLater(
         backend.describe(
           _bundle(model: 'eg2_ptl.litertlm'),
@@ -733,7 +748,7 @@ void main() {
     () {
       void hostIs(LiteRtLmNpuHost host) {
         liteRtLmNpuHost = host;
-        addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+        addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
       }
 
       // eg2_text.litertlm is the 270m's shape: text encoder and embedder only.

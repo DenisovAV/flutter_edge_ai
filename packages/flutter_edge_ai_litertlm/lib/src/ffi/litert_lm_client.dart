@@ -26,6 +26,8 @@ import 'litert_lm_status.dart';
 import 'macos_load_error.dart';
 import 'native_turns.dart';
 import 'stream_start_failure.dart';
+import '../runtime/build_mode.dart';
+import '../runtime/runtime_log.dart';
 import 'engine_create_failure.dart';
 import 'npu_vendor_host.dart';
 import 'option_scoring_ffi.dart';
@@ -158,13 +160,13 @@ int? kernelBatchSizeFor(
 }) {
   if (!isAndroid || backend != 'gpu') return null;
   if (isAdreno()) {
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi] Android GPU (Adreno): hint_kernel_batch_size=2 '
       '(#364 smooth UI)',
     );
     return 2;
   }
-  edgeAiLog(
+  runtimeLog(
     '[LiteRtLmFfi] Android GPU (not Adreno: no /dev/kgsl-3d0): '
     "hint_kernel_batch_size not set, the engine's default (#763)",
   );
@@ -996,9 +998,9 @@ Pointer<Void>? _preloadWithSystemLoader(String path) {
   } on ArgumentError catch (e) {
     // The loader returned no library. The `DynamicLibrary.open` that follows
     // loads it instead, and reports a failure in its own words.
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi] the system loader did not load $path: ${e.message}',
-      level: EdgeAiLogLevel.verbose,
+      verbose: true,
     );
     return null;
   }
@@ -1192,9 +1194,9 @@ EngineCreateResult _createEngine(EngineCreateRequest r) {
   // the preloads and, on Android, the strict default scope this path needs
   // (#447).
   final lib = openLiteRtLmLibrary();
-  edgeAiLog(
+  runtimeLog(
     '[LiteRtLmFfi/perf]   isolate: DynamicLibrary.open: ${openSw.elapsedMilliseconds}ms',
-    level: EdgeAiLogLevel.verbose,
+    verbose: true,
   );
   return createEngineWith(r, LiteRtLmBindings(lib));
 }
@@ -1255,7 +1257,7 @@ EngineCreateResult createEngineWith(
     final settings = settingsCode == liteRtLmStatusOk
         ? settingsOut.value
         : nullptr.cast<LiteRtLmEngineSettings>();
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi/perf]   isolate: settings_create: ${isolateSw.elapsedMilliseconds - settingsCreateStart}ms',
     );
     if (settings == nullptr) {
@@ -1387,9 +1389,9 @@ EngineCreateResult createEngineWith(
           ? blockingSigprof(createEngine)
           : createEngine();
       final ptr = code == liteRtLmStatusOk ? engineOut.value.address : 0;
-      edgeAiLog(
+      runtimeLog(
         '[LiteRtLmFfi/perf]   isolate: native litert_lm_engine_create: ${isolateSw.elapsedMilliseconds - createStart}ms',
-        level: EdgeAiLogLevel.verbose,
+        verbose: true,
       );
       if (ptr == 0) {
         return (
@@ -1832,7 +1834,7 @@ class LiteRtLmFfiClient {
   final Mutex _nativeMutex = Mutex();
 
   /// Reads back the native log file (set by stream_proxy_redirect_stderr) and
-  /// pipes its contents through debugPrint in 800-char chunks. Surfaces
+  /// pipes its contents through the runtime log in 800-char chunks. Surfaces
   /// absl/glog output (model load timing, accelerator init, sampler dlopen,
   /// KV-cache prefill, etc.) that's redirected to a file by
   /// [stream_proxy_redirect_stderr] and wouldn't otherwise reach the Flutter
@@ -1869,16 +1871,16 @@ class LiteRtLmFfiClient {
     try {
       final read = _readNativeLogSinceOffset();
       if (read == null) {
-        edgeAiLog('[LiteRtLmFfi/native] log file missing: $p');
+        runtimeLog('[LiteRtLmFfi/native] log file missing: $p');
         return;
       }
       final (content, end) = read;
       _nativeLogOffset = end;
       if (content.isEmpty) {
-        edgeAiLog('[LiteRtLmFfi/native] (no new native log output)');
+        runtimeLog('[LiteRtLmFfi/native] (no new native log output)');
         return;
       }
-      edgeAiLog(
+      runtimeLog(
         '[LiteRtLmFfi/native] === BEGIN native log ($p, ${content.length} bytes) ===',
       );
       const chunkSize = 800;
@@ -1886,11 +1888,11 @@ class LiteRtLmFfiClient {
         final end = (i + chunkSize < content.length)
             ? i + chunkSize
             : content.length;
-        edgeAiLog(content.substring(i, end), level: EdgeAiLogLevel.verbose);
+        runtimeLog(content.substring(i, end), verbose: true);
       }
-      edgeAiLog('[LiteRtLmFfi/native] === END native log ===');
+      runtimeLog('[LiteRtLmFfi/native] === END native log ===');
     } catch (e) {
-      edgeAiLog('[LiteRtLmFfi/native] failed to read $p: $e');
+      runtimeLog('[LiteRtLmFfi/native] failed to read $p: $e');
     }
   }
 
@@ -2176,7 +2178,7 @@ class LiteRtLmFfiClient {
       _openNativeLibraries(preload: preload);
     });
     _librariesWarm = true;
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi/perf] libraries loaded on a spawned isolate: '
       '${sw.elapsedMilliseconds}ms',
     );
@@ -2190,7 +2192,7 @@ class LiteRtLmFfiClient {
     if (_bindings != null) return;
 
     final loadSw = Stopwatch()..start();
-    edgeAiLog('[LiteRtLmFfi] Loading native libraries...');
+    runtimeLog('[LiteRtLmFfi] Loading native libraries...');
     final (:lib, :proxyLib) = _openNativeLibraries();
 
     _bindings = LiteRtLmBindings(lib);
@@ -2213,7 +2215,7 @@ class LiteRtLmFfiClient {
         );
 
     // DEBUG-only: redirect native stderr to a file so we can dump absl/glog
-    // output through debugPrint after engine_create failure. Skipped in
+    // output through the runtime log after engine_create failure. Skipped in
     // release builds — production users see crashes via os_log/Crashlytics
     // streams (or systemd journal on Linux); redirecting stderr would
     // silently swallow those.
@@ -2221,7 +2223,7 @@ class LiteRtLmFfiClient {
     // Linux: flutter test does not surface child-process stderr, so without
     // this Linux integration tests get the same opaque 'Failed to create
     // engine' as iOS without any native diagnostics.
-    if (kDebugMode &&
+    if (isDebugBuild &&
         (Platform.isIOS || Platform.isLinux || Platform.isMacOS) &&
         !_stderrRedirectTried) {
       _stderrRedirectTried = true;
@@ -2241,7 +2243,7 @@ class LiteRtLmFfiClient {
         calloc.free(pathPtr);
       }
       if (r.restoreError != null) {
-        edgeAiLog(
+        runtimeLog(
           '[LiteRtLmFfi] WARNING: stdout was not restored after the native '
           'log redirect (${r.restoreError}); print output now goes to '
           '$_nativeLogPath',
@@ -2251,7 +2253,7 @@ class LiteRtLmFfiClient {
       if (rc != 0) {
         // Log capture is best-effort but its failure makes _dumpNativeLog
         // useless. Surface it instead of silently continuing.
-        edgeAiLog(
+        runtimeLog(
           rc == null
               ? '[LiteRtLmFfi] WARNING: stdout could not be saved, so native '
                     'stderr was not redirected — native log dumps will be empty'
@@ -2260,17 +2262,17 @@ class LiteRtLmFfiClient {
         );
         _nativeLogPath = null;
       } else {
-        edgeAiLog('[LiteRtLmFfi] stderr redirected to $_nativeLogPath');
+        runtimeLog('[LiteRtLmFfi] stderr redirected to $_nativeLogPath');
       }
       _sharedNativeLogPath = _nativeLogPath;
     } else {
       _nativeLogPath = _sharedNativeLogPath;
     }
 
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi/perf] _ensureBindings total: ${loadSw.elapsedMilliseconds}ms',
     );
-    edgeAiLog('[LiteRtLmFfi] Libraries loaded');
+    runtimeLog('[LiteRtLmFfi] Libraries loaded');
   }
 
   /// The level the last client in this isolate set, only to say when another
@@ -2283,7 +2285,7 @@ class LiteRtLmFfiClient {
   static void _noteNativeLogLevel(LiteRtLmLogLevel level) {
     final previous = _nativeLogLevel;
     if (previous != null && previous != level) {
-      edgeAiLog(
+      runtimeLog(
         '[LiteRtLmFfi] nativeLogLevel ${level.name} replaces ${previous.name} '
         'for every LiteRT-LM engine in the process',
       );
@@ -2340,14 +2342,14 @@ class LiteRtLmFfiClient {
       _nativeLogOffset = File(logPath).lengthSync();
     }
     // The warm-up above logs its own time.
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi/perf] _ensureBindings: ${bindingsSw.elapsedMilliseconds}ms',
     );
     // Log the resolved per-encoder backends: vision/audio follow the bundle
     // (the engine's load plan), independent of the text backend, so this makes
     // the choice visible when diagnosing "why isn't vision using my GPU".
     if (enableVision || enableAudio) {
-      edgeAiLog(
+      runtimeLog(
         '[LiteRtLmFfi] encoders: '
         '${enableVision ? "vision=$visionBackend " : ""}'
         '${enableAudio ? "audio=$audioBackend " : ""}'
@@ -2364,13 +2366,13 @@ class LiteRtLmFfiClient {
     // reader throws, before the engine is created.
     final readSw = Stopwatch()..start();
     final samplerRead = await tryReadBundleSampler(modelPath);
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi/perf] bundle sampler read: ${readSw.elapsedMilliseconds}ms',
-      level: EdgeAiLogLevel.verbose,
+      verbose: true,
     );
 
     if (activationDataType != null) {
-      edgeAiLog(
+      runtimeLog(
         '[LiteRtLmFfi] activation_data_type=$activationDataType '
         '(${_activationName(activationDataType)}, backend=$backend; only the '
         'GPU executor reads it)',
@@ -2382,11 +2384,11 @@ class LiteRtLmFfiClient {
     // are known to be wrong (Intel's public Gemma 4 26B for Panther Lake).
     final useHwMasking = backend == 'npu' ? npuDispatch!.useHwMasking : null;
     if (useHwMasking != null) {
-      edgeAiLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=$useHwMasking');
+      runtimeLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=$useHwMasking');
     }
 
     if (npuDispatchDir != null) {
-      edgeAiLog(
+      runtimeLog(
         '[LiteRtLmFfi] NPU ${Platform.operatingSystem}: '
         'dispatch_lib_dir=$npuDispatchDir',
       );
@@ -2417,10 +2419,10 @@ class LiteRtLmFfiClient {
     // The engine settings and the engine are both made on a spawned isolate:
     // a frame started 98 ms late around the settings create on the calling
     // isolate of an S25 Ultra, and the engine create takes seconds.
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi] Creating engine from $modelPath (backend=$backend, maxTokens=$maxTokens) ...',
     );
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi/perf] === START litert_lm_engine_create (native — settings + model load + accelerator init + KV cache prefill) ===',
     );
     final sw = Stopwatch()..start();
@@ -2467,17 +2469,17 @@ class LiteRtLmFfiClient {
       final claim = IntelWeightBankClaim.newSince(before, after);
       _intelBanks = claim;
       if (claim.banks.isNotEmpty) {
-        edgeAiLog(
+        runtimeLog(
           '[LiteRtLmFfi] Intel NPU weight bank(s) of this engine: '
           '${claim.banks.join(', ')}',
         );
       }
     }
     sw.stop();
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi/perf] === END litert_lm_engine_create: ${sw.elapsedMilliseconds}ms (includes isolate spawn ~50-200ms and the settings) ===',
     );
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi] litert_lm_engine_create took ${sw.elapsedMilliseconds}ms',
     );
 
@@ -2529,10 +2531,10 @@ class LiteRtLmFfiClient {
     // edgeAiLog is silent there.
     // ignore: avoid_print
     if (channelWarning != null) print(channelWarning);
-    edgeAiLog(
+    runtimeLog(
       '[LiteRtLmFfi/perf] initialize() total: ${initSw.elapsedMilliseconds}ms',
     );
-    edgeAiLog('[LiteRtLmFfi] Engine initialized successfully');
+    runtimeLog('[LiteRtLmFfi] Engine initialized successfully');
     _modelPath = modelPath;
     _maxTokens = maxTokens;
     _linearAttentionState = null;
@@ -2556,12 +2558,12 @@ class LiteRtLmFfiClient {
     final error = read.error;
     if (error == null) {
       final sampler = read.sampler;
-      edgeAiLog(
+      runtimeLog(
         '[LiteRtLmFfi] bundle sampler: ${sampler.isEmpty ? 'none' : sampler}',
       );
       return;
     }
-    edgeAiLog('[LiteRtLmFfi] bundle sampler read failed: $error');
+    runtimeLog('[LiteRtLmFfi] bundle sampler read failed: $error');
     // ignore: avoid_print
     print(
       '[flutter_edge_ai_litertlm] WARNING: could not read the sampler this '
@@ -2580,7 +2582,7 @@ class LiteRtLmFfiClient {
     final note = _samplerLatch.onGeneration(entry.$1, explicit: entry.$2);
     if (note == null) return;
     if (!note.warn) {
-      edgeAiLog('[LiteRtLmFfi] ${note.message}', level: EdgeAiLogLevel.verbose);
+      runtimeLog('[LiteRtLmFfi] ${note.message}', verbose: true);
       return;
     }
     // A release build is where a wrong sampler gets reported, and edgeAiLog
@@ -2648,7 +2650,7 @@ class LiteRtLmFfiClient {
           filterChannelContent: filterChannelContent,
         ),
       );
-      edgeAiLog('[LiteRtLmFfi] Conversation created');
+      runtimeLog('[LiteRtLmFfi] Conversation created');
       final handle = LiteRtLmConversationHandle._(
         this,
         conv,
@@ -3035,9 +3037,9 @@ class LiteRtLmFfiClient {
       try {
         return await linearAttentionStateReader(path);
       } on LiteRtLmBundleException catch (e) {
-        edgeAiLog('[LiteRtLmFfi] linear attention state of $path unread: $e');
+        runtimeLog('[LiteRtLmFfi] linear attention state of $path unread: $e');
       } on FileSystemException catch (e) {
-        edgeAiLog('[LiteRtLmFfi] linear attention state of $path unread: $e');
+        runtimeLog('[LiteRtLmFfi] linear attention state of $path unread: $e');
       }
       return null;
     }();
@@ -3340,7 +3342,7 @@ class LiteRtLmFfiClient {
                 (rewind == StoppedTurnRewind.notCancelled &&
                     exchange != null)) {
               _virtualConvStopped = false;
-              edgeAiLog(
+              runtimeLog(
                 '[FfiInferenceModel] rewound the conversation after a '
                 'stopped turn or a full context',
               );
@@ -3467,7 +3469,7 @@ class LiteRtLmFfiClient {
             _virtualActiveToken = conversationToken;
           });
           if (rebuildingStoppedConversation) {
-            edgeAiLog(
+            runtimeLog(
               '[FfiInferenceModel] rebuilt the conversation after a stopped '
               'turn or a full context (${history.length} messages replayed)',
             );
@@ -4104,7 +4106,7 @@ class LiteRtLmFfiClient {
       // It refuses only a NULL conversation, which the check above rules out.
       final code = b.litert_lm_conversation_cancel_process(conv);
       if (log) {
-        edgeAiLog(
+        runtimeLog(
           code == liteRtLmStatusOk
               ? '[LiteRtLmFfi] Generation cancelled'
               : '[LiteRtLmFfi] '
@@ -4246,7 +4248,7 @@ class LiteRtLmFfiClient {
         path,
       ));
     } on Object catch (e) {
-      edgeAiLog('[LiteRtLmFfi] prefill signatures of $path unread: $e');
+      runtimeLog('[LiteRtLmFfi] prefill signatures of $path unread: $e');
       return null;
     }
     if (lengths.isEmpty) return null;
@@ -4455,7 +4457,7 @@ class LiteRtLmFfiClient {
     _lastTurnEnds.remove(conv);
     if (_bindings != null) {
       _bindings!.litert_lm_conversation_delete(conv);
-      edgeAiLog('[LiteRtLmFfi] Conversation closed');
+      runtimeLog('[LiteRtLmFfi] Conversation closed');
     }
   }
 
@@ -4526,7 +4528,7 @@ class LiteRtLmFfiClient {
     if (_engine != null && _engine != nullptr && _bindings != null) {
       _bindings!.litert_lm_engine_delete(_engine!);
       _engine = null;
-      edgeAiLog('[LiteRtLmFfi] Engine deleted');
+      runtimeLog('[LiteRtLmFfi] Engine deleted');
     }
     // After the delete, which removes the banks the dispatch wrote.
     _intelBanks?.release();
@@ -4636,7 +4638,7 @@ class LiteRtLmFfiClient {
         // lookup wording only, and let a one-off OOM retry next turn.
         final missing = e.toString().contains('Failed to lookup symbol');
         if (missing) _tokenizerMissing = true;
-        edgeAiLog(
+        runtimeLog(
           '[LiteRtLmFfi] tokenCount unavailable${missing ? ' (symbol missing '
                     'from this native build — sizeInTokens will estimate from '
                     'here on)' : ''}: $e',
@@ -4972,7 +4974,7 @@ class LiteRtLmFfiClient {
         initTimeMs: initTime > 0 ? initTime * 1000 : null,
       );
     } on LiteRtLmCallException catch (e) {
-      edgeAiLog('[LiteRtLmFfiClient] Error getting metrics: $e');
+      runtimeLog('[LiteRtLmFfiClient] Error getting metrics: $e');
       return SessionMetrics();
     } finally {
       b.litert_lm_benchmark_info_delete(info);

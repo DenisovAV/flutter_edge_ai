@@ -735,15 +735,27 @@ final class Engine {
   }
 
   /// The exact log-probability of each of [targets] as a continuation of
-  /// [prompt], scored in one session with a rewind between targets. Not on
-  /// the NPU (its executor rolls back one token). [cancel] stops it between
-  /// targets with [ScoringCancelledException].
+  /// [prompt], scored in one session with a rewind between targets. [cancel]
+  /// stops it between targets with [ScoringCancelledException].
+  ///
+  /// On an engine whose text model runs on the NPU it is an
+  /// [UnsupportedError]: the NPU executor rolls back one token, not a
+  /// target. Whether a rewind on this LiteRT-LM build scores a target as a
+  /// fresh session would (LiteRT-LM #3561) is for the caller to check before
+  /// trusting the scores; flutter_edge_ai_litertlm runs that check once per
+  /// model.
   Future<ScoringRun> scoreTargets(
     String prompt,
     List<String> targets, {
     CancelSignal? cancel,
   }) {
     if (_closed) throw StateError('The engine is closed.');
+    if (backend is NpuBackend) {
+      throw UnsupportedError(
+        'Option scoring does not run on the NPU: its executor rolls back one '
+        'token, not a target. Load the generic bundle on the CPU or the GPU.',
+      );
+    }
     return _client.scoreTargets(prompt, targets, cancelSignal: cancel);
   }
 

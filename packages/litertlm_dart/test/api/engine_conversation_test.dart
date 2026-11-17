@@ -180,6 +180,20 @@ void main() {
     }
   });
 
+  test('option scoring is refused on the NPU, before anything native', () {
+    final engine = engineForTest(_Client(), backend: const Backend.npu());
+    expect(
+      () => engine.scoreTargets('p', ['a']),
+      throwsA(
+        isA<UnsupportedError>().having(
+          (e) => e.message,
+          'message',
+          contains('does not run on the NPU'),
+        ),
+      ),
+    );
+  });
+
   test('a closed engine opens no conversation and tokenizes nothing', () async {
     final engine = engineForTest(_Client());
     await engine.close();

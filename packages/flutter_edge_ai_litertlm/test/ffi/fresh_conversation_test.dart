@@ -1,3 +1,4 @@
+import 'dart:async';
 // On the MediaTek NPU a native conversation answers its second message empty
 // (LiteRT-LM #4256), so every turn there runs in a fresh conversation that
 // replays the history (liteRtLmFreshConversationEachTurn). These hold the
@@ -222,6 +223,39 @@ void main() {
       expect(await second.timeout(const Duration(seconds: 10)), 'ok two');
       await first.cancel();
     });
+
+    test(
+      'closing the session releases a turn waiting behind a paused one',
+      () async {
+        final session = await model(fresh: false).openSession();
+        await session.addQueryChunk(const Message(text: 'one', isUser: true));
+        final first = session.getResponseAsync().listen((_) {});
+        await pumpEventQueue();
+        sends.single.chunk(
+          '{"role":"assistant","content":[{"type":"text","text":"o"}]}',
+        );
+        await pumpEventQueue();
+        first.pause();
+        await pumpEventQueue();
+        sends.single.chunk(
+          '{"role":"assistant","content":[{"type":"text","text":"n"}]}',
+        );
+        await session.addQueryChunk(const Message(text: 'two', isUser: true));
+        final second = session.getResponseAsync().toList().then<Object?>(
+          (_) => null,
+          onError: (Object e) => e,
+        );
+        await pumpEventQueue();
+        await session.close();
+        sends.single.cancelled();
+        expect(
+          await second.timeout(const Duration(seconds: 10)),
+          isA<StateError>(),
+        );
+        expect(sends, hasLength(1), reason: 'the waiting turn is not sent');
+        await first.cancel();
+      },
+    );
 
     test('a stop drops a turn still waiting for the one before it', () async {
       final session = await model(fresh: false).openSession();

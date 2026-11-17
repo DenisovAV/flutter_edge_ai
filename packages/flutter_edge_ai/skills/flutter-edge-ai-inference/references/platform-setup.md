@@ -88,7 +88,8 @@ dispatch (about 330 KB) behind our adapter from the native release
 (`native-v0.19.1-c`), which gives it the entry point the LiteRT of LiteRT-LM
 0.19 loads; the NeuroPilot runtime it drives is part of the phone. A bundle
 compiled for a MediaTek SoC (Google publishes Gemma 3 1B, Gemma 3 270M, Qwen3
-0.6B and EmbeddingGemma 2 ones; no Gemma 4) runs on a phone with that SoC and
+0.6B and EmbeddingGemma 2 ones; no Gemma 4; the Qwen3 0.6B one fails on its
+tokenizer before the NPU, #659) runs on a phone with that SoC and
 Android 12 or later whose vendor exposes NeuroPilot to apps; any other device
 is refused before any engine, a bundle for another SoC when the engine is
 created, and it never moves to the GPU or the CPU. On MT6989 a conversation

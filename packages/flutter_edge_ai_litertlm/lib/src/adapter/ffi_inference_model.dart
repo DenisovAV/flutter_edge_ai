@@ -801,6 +801,10 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// every one of them, the one streaming and those waiting for it.
   final _liveTurnStops = <_TurnStop>{};
 
+  /// Completes at [close]: a turn waiting for the one before it stops
+  /// waiting, since a paused turn might never end on its own.
+  final _closedSignal = Completer<void>();
+
   /// The runtime's turn errors as core's: a message that did not fit is
   /// [ContextLimitException], which says what happened and keeps native's
   /// token counts; the rest as [mapRuntimeError] maps them.
@@ -965,7 +969,17 @@ class FfiInferenceModelSession extends InferenceModelSession
     _liveTurnStops.add(stop);
     try {
       if (previous != null && !previous.stop.asked) {
-        await Future.any([previous.done, previous.stop.signal, stop.signal]);
+        await Future.any([
+          previous.done,
+          previous.stop.signal,
+          stop.signal,
+          _closedSignal.future,
+        ]);
+      }
+      if (_isClosed) {
+        throw LiteRtLmSessionClosedError(
+          'The session was closed before this turn was sent.',
+        );
       }
       // Stopped while it waited: nothing reached the model.
       if (stop.asked) return;
@@ -1142,6 +1156,7 @@ class FfiInferenceModelSession extends InferenceModelSession
     // #308.
     if (_isClosed) return;
     _isClosed = true;
+    _closedSignal.complete();
     _queryBuffer.clear();
     _pendingImages.clear();
     _pendingAudio = null;

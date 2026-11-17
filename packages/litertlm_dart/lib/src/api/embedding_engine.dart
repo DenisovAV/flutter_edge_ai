@@ -24,8 +24,7 @@ import '../runtime/native_hosts.dart'
         liteRtLmEmbeddingGpuAbis,
         liteRtLmEmbeddingGpuMeasured,
         liteRtLmEmbeddingGpuRefusedAbis;
-import '../runtime/npu_stacks.dart'
-    show NpuStack, mediatekNpuRefused, mediatekNpuRefusedReason;
+import '../runtime/npu_stacks.dart' show NpuStack;
 import '../bundle/litertlm_bundle_info.dart' show LiteRtLmBundleException;
 import 'dart:io' show FileSystemException;
 import '../runtime/types.dart' show BackendKind;
@@ -232,11 +231,6 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
         refuse(
           '$file is compiled for the $target NPU, which no dispatch on $abi '
           'runs.',
-        );
-      }
-      if (vendor == NpuStack.mediatek && mediatekNpuRefused) {
-        refuse(
-          '$file is compiled for the $target NPU: $mediatekNpuRefusedReason.',
         );
       }
       npuTarget = target;

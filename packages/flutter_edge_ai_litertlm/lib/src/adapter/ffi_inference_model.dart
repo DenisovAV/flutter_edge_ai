@@ -949,25 +949,49 @@ class FfiInferenceModelSession extends InferenceModelSession
     return message;
   }
 
+  /// The end of the last turn sent: a turn asked for while it still streams
+  /// waits for it, as core's sessions always have, since a conversation takes
+  /// one message at a time.
+  Future<void>? _lastTurnDone;
+
+  /// Counts [stopGeneration] calls: a turn still waiting for the one before
+  /// it when a stop comes is not sent.
+  int _stopEpoch = 0;
+
   /// One turn's reply, with core's errors.
-  Stream<lm.Message> _turn(lm.Message message) => conversation
-      .sendMessageStream(
-        message,
-        thinkingConfig: lm.ThinkingConfig(
-          enableThinking: enableThinking,
-          thinkingTokenBudget: thinkingTokenBudget,
-        ),
-      )
-      .handleError((Object error, StackTrace stack) {
-        if (error is lm.ConstraintUnsupportedException) {
-          // Settle the failed turn before close changes reportedEngineTurn's
-          // end to `closed`. CreateConstraint has already pushed a ghost user
-          // message, so refuse another send immediately and delete the
-          // conversation on the next event-loop turn.
-          _closeAfterFormatRefusal();
-        }
-        Error.throwWithStackTrace(_coreTurnError(error), stack);
-      });
+  Stream<lm.Message> _turn(lm.Message message) async* {
+    final previous = _lastTurnDone;
+    final done = Completer<void>();
+    _lastTurnDone = done.future;
+    final epoch = _stopEpoch;
+    try {
+      if (previous != null) {
+        await previous;
+        if (_stopEpoch != epoch) return;
+      }
+      yield* conversation
+          .sendMessageStream(
+            message,
+            thinkingConfig: lm.ThinkingConfig(
+              enableThinking: enableThinking,
+              thinkingTokenBudget: thinkingTokenBudget,
+            ),
+          )
+          .handleError((Object error, StackTrace stack) {
+            if (error is lm.ConstraintUnsupportedException) {
+              // Settle the failed turn before close changes
+              // reportedEngineTurn's end to `closed`. CreateConstraint has
+              // already pushed a ghost user message, so refuse another send
+              // immediately and delete the conversation on the next
+              // event-loop turn.
+              _closeAfterFormatRefusal();
+            }
+            Error.throwWithStackTrace(_coreTurnError(error), stack);
+          });
+    } finally {
+      done.complete();
+    }
+  }
 
   @override
   Future<String> getResponse() async {
@@ -1074,6 +1098,7 @@ class FfiInferenceModelSession extends InferenceModelSession
   @override
   Future<void> stopGeneration() async {
     _stopAsked = true;
+    _stopEpoch++;
     conversation.cancel();
   }
 

@@ -11,6 +11,7 @@ import 'package:litertlm_dart/internal_io.dart'
     show
         ConversationHandle,
         LiteRtLmFfiClient,
+        NpuStack,
         OpenSessionBacking,
         conversationForTest,
         engineForTest;
@@ -30,6 +31,7 @@ FfiInferenceModel ffiModelForClient({
   int? maxConcurrentSessions,
   OpenSessionBacking openSessionBacking = OpenSessionBacking.virtual,
   bool? linearAttentionState = false,
+  NpuStack? npuVendor,
   int? thinkingTokenBudget,
   StructuredOutputSupport structuredOutput = const StructuredOutputSupport.none(
     'This LiteRT-LM model was not loaded through LiteRtLmEngine.',
@@ -46,6 +48,7 @@ FfiInferenceModel ffiModelForClient({
     maxNumTokens: maxTokens,
     backing: openSessionBacking,
     linearAttentionState: linearAttentionState,
+    npuVendor: npuVendor,
   ),
   maxTokens: maxTokens,
   modelType: modelType,

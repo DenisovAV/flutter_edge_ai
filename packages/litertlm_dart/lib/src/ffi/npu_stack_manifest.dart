@@ -117,8 +117,7 @@ Future<NpuStackCheck> checkNpuStackInManifest(
 String npuNotBundledReason(NpuStack vendor) => switch (vendor) {
   NpuStack.qualcomm => qualcommNpuNotEnabledReason,
   NpuStack.googleTensor => googleTensorNpuNotEnabledReason,
-  NpuStack.mediatek =>
-    mediatekNpuRefused ? mediatekNpuRefusedReason : mediatekNpuNotEnabledReason,
+  NpuStack.mediatek => mediatekNpuNotEnabledReason,
   NpuStack.intel =>
     'this build carries none of the Intel NPU stack; use a '
         'litertlm_dart whose native release bundles it and rebuild',

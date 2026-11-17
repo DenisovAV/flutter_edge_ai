@@ -443,7 +443,7 @@ void main() {
         () => plan(info: samsung),
         refused(
           LiteRtLmBundleProblem.unsupportedNpu,
-          'Qualcomm, Google Tensor and Intel',
+          'Qualcomm, Google Tensor, MediaTek and Intel',
         ),
       );
       expect(
@@ -711,7 +711,7 @@ void main() {
         refused(
           LiteRtLmBundleProblem.unsupportedNpu,
           "model.litertlm's audio encoder is compiled for the Samsung E9955 "
-          'NPU. litertlm_dart runs Qualcomm, Google Tensor and Intel '
+          'NPU. litertlm_dart runs Qualcomm, Google Tensor, MediaTek and Intel '
           'NPU bundles only; load it without its audio encoder (audioBackend: null; in flutter_edge_ai, without supportAudio), or install',
         ),
       );

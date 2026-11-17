@@ -147,8 +147,8 @@ const googleTensorSystemRuntime = 'libedgetpu_litert.so';
 const googleTensorNpuLibs = [googleTensorDispatchLib];
 
 /// The user_define that bundles the MediaTek NPU dispatch into an Android
-/// app. Opt-in, as for Qualcomm: the dispatch is fetched at build time from
-/// Google's `com.google.ai.edge.litert:litert-npu-runtime-mediatek` AAR, and
+/// app. Opt-in, as for Qualcomm: Google's dispatch is fetched at build time
+/// from its `com.google.ai.edge.litert:litert-npu-runtime-mediatek` AAR, and
 /// it drives MediaTek's NeuroPilot runtime on the device, which is under
 /// MediaTek's licence.
 const mediatekNpuUserDefine = 'mediatek_npu';
@@ -162,14 +162,26 @@ const mediatekNpuMavenUrlUserDefine = 'mediatek_npu_maven_url';
 /// mirrors that need credentials.
 const mediatekNpuAarUserDefine = 'mediatek_npu_aar';
 
-/// Google's MediaTek dispatch, from the AAR (Apache 2.0). Not in this
-/// package's native tarball: the hook fetches it for [mediatekNpuUserDefine].
+/// The MediaTek dispatch LiteRT loads: our adapter
+/// (`native/litert_lm/mediatek_dispatch_compat.c`, in the native tarball since
+/// native-v0.19.1-c). LiteRT `f59b79337`, in the LiteRT pin of LiteRT-LM
+/// 0.19, loads a dispatch only through `LiteRtDispatchQueryInterface`, which
+/// Google's AAR build (2.3.0, 2.3.2) does not export; the adapter exports it
+/// and answers with the tables of [mediatekLegacyDispatchLib].
 const mediatekDispatchLib = 'LiteRtDispatch_MediaTek';
 
-/// The complete app-bundled MediaTek stack: the dispatch only. The AAR's
-/// compiler plugin is left out: only bundles compiled ahead of time for a
-/// MediaTek SoC run here, never an on-device compile.
-const mediatekNpuLibs = [mediatekDispatchLib];
+/// Google's MediaTek dispatch, from the AAR (Apache 2.0, built against
+/// MediaTek's NeuroPilot SDK), which the hook fetches for
+/// [mediatekNpuUserDefine] and stores under this name, which LiteRT's
+/// dispatch scan (any file name holding `libLiteRtDispatch`) never matches:
+/// LiteRT loads [mediatekDispatchLib], which opens this one from its own
+/// directory.
+const mediatekLegacyDispatchLib = 'mtk_litert_dispatch_legacy';
+
+/// The complete app-bundled MediaTek stack: the adapter and Google's dispatch
+/// behind it. The AAR's compiler plugin is left out: only bundles compiled
+/// ahead of time for a MediaTek SoC run here, never an on-device compile.
+const mediatekNpuLibs = [mediatekDispatchLib, mediatekLegacyDispatchLib];
 
 /// The NeuroPilot adapters the MediaTek dispatch opens from the device, in the
 /// order it tries them (`neuron_adapter_api.cc` at the LiteRT pin: the mgvi
@@ -318,35 +330,6 @@ const intelNpuLibs = [
   'tbbmalloc_proxy',
 ];
 
-/// The MediaTek NPU is refused in this release, at build time
-/// ([mediatekNpuUserDefine] fails the hook) and at load (a build never carries
-/// the stack): LiteRT `dcb657e8`, the 0.19 pin, loads a dispatch only through
-/// `LiteRtDispatchQueryInterface`, which Google's `litert-npu-runtime-mediatek`
-/// AAR (2.3.0, 2.3.2) does not export, and on MT6989 even one live
-/// conversation answers its second message empty (LiteRT-LM #4256).
-const mediatekNpuRefused = true;
-
-/// The vendors whose NPU this release runs, in [NpuStack] order: every one
-/// but MediaTek while [mediatekNpuRefused]. Messages that tell an app where
-/// the NPU runs name these, so none sends it to a load that is refused.
-Iterable<NpuStack> get offeredNpuStacks => NpuStack.values.where(
-  (vendor) => !(vendor == NpuStack.mediatek && mediatekNpuRefused),
-);
-
-/// Why the MediaTek NPU is refused ([mediatekNpuRefused]).
-const mediatekNpuRefusedReason =
-    'the MediaTek NPU is not supported by this litertlm_dart '
-    'release. Its LiteRT loads an NPU dispatch only through '
-    "LiteRtDispatchQueryInterface, which Google's litert-npu-runtime-mediatek "
-    'dispatch does not export, and on the one MediaTek NPU measured (MT6989) a '
-    "conversation's second message comes back empty (LiteRT-LM #4256). "
-    'flutter_edge_ai_litertlm 1.19.x runs the MediaTek NPU; otherwise load '
-    'the generic bundle on the CPU or the GPU (Backend.cpu() or '
-    'Backend.gpu(); in flutter_edge_ai, PreferredBackend.cpu or .gpu), and '
-    'remove `$mediatekNpuUserDefine: true` from the hooks.user_defines of the '
-    "app's pubspec.yaml (under litertlm_dart:, or flutter_edge_ai_litertlm: "
-    'in an app written for 1.20 and older)';
-
 /// Our Intel OpenVINO dispatch (built from the LiteRT pin), `LiteRtDispatch.dll`.
 const intelDispatchLib = 'LiteRtDispatch';
 
@@ -370,14 +353,17 @@ String npuDispatchLib(NpuStack vendor) => switch (vendor) {
   NpuStack.intel => intelDispatchLib,
 };
 
-/// Whether [vendor]'s dispatch ships in this package's native tarball (built
-/// from the LiteRT pin), rather than being fetched by the build hook from the
-/// vendor's own publication (MediaTek: Google's AAR, whose build needs
-/// MediaTek's NeuroPilot SDK, which may not be redistributed on its own).
+/// Whether [vendor]'s dispatch ([npuDispatchLib]) ships in this package's
+/// native tarball, rather than being fetched by the build hook from the
+/// vendor's own publication. Every one does today: Qualcomm's, Tensor's and
+/// Intel's are built from the LiteRT pin, and MediaTek's is our adapter over
+/// Google's AAR build ([mediatekLegacyDispatchLib]), which the hook fetches
+/// because building it needs MediaTek's NeuroPilot SDK, which may not be
+/// redistributed on its own.
 bool npuDispatchInNativeTarball(NpuStack vendor) => switch (vendor) {
   NpuStack.qualcomm => true,
   NpuStack.googleTensor => true,
-  NpuStack.mediatek => false,
+  NpuStack.mediatek => true,
   NpuStack.intel => true,
 };
 

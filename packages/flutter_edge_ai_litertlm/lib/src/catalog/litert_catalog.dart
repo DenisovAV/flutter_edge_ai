@@ -311,9 +311,6 @@ final class LiteRtEmbedderVariant extends EmbedderVariant {
 Set<PreferredBackend>? _npuRuns(LiteRtLmNpuTarget? target, String abi) {
   if (target == null) return null;
   final stack = NpuStack.forStamp(target.vendor);
-  // MediaTek is refused in this release ([mediatekNpuRefused]): its bundles
-  // run nowhere.
-  if (stack == NpuStack.mediatek && mediatekNpuRefused) return const {};
   return stack != null && stack.abis.contains(abi)
       ? const {PreferredBackend.npu}
       : const {};

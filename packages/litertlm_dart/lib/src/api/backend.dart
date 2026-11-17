@@ -9,8 +9,8 @@ import '../runtime/types.dart' show BackendKind;
 /// The executor a model, or one of its encoders, runs on.
 ///
 /// The NPU is one backend: which vendor's NPU (Qualcomm, Google Tensor,
-/// Intel; a MediaTek bundle is refused in this release) is read from the
-/// bundle's own `LiteRtStamp`, so there is no per-vendor backend.
+/// MediaTek, Intel) is read from the bundle's own `LiteRtStamp`, so there is
+/// no per-vendor backend.
 @immutable
 sealed class Backend {
   const Backend._();

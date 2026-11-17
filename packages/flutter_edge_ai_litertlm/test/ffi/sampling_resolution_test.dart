@@ -42,6 +42,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     Constraint? constraint,
     ConversationExtras extras = ConversationExtras.none,
     required bool filterChannelContent,
+    bool freshConversation = false,
   }) {
     this.sampling = sampling;
     this.samplingExplicit = samplingExplicit;
@@ -64,6 +65,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     SendOptions options = SendOptions.none,
     ConversationExtras extras = ConversationExtras.none,
     required bool filterChannelContent,
+    bool freshConversation = false,
   }) {
     this.sampling = sampling;
     this.samplingExplicit = samplingExplicit;

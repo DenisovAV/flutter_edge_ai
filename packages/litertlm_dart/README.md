@@ -68,7 +68,7 @@ same names. In code that imports both, import this package with a prefix:
   the GPU is taken where it was measured and refused elsewhere — nothing moves
   to another backend on its own.
 - **Backends**: `Backend.cpu(threadCount:)`, `.gpu()`, `.npu()`. The NPU
-  vendor (Qualcomm, Google Tensor, Intel) is read from the bundle;
+  vendor (Qualcomm, Google Tensor, MediaTek, Intel) is read from the bundle;
   `Backend.npu(dispatchDir:)` names a directory holding that vendor's
   dispatch libraries, and only that vendor's (null: beside the executable,
   where the build puts them on Linux and Windows; on Android see below);
@@ -91,15 +91,14 @@ Not yet: LoRA, `tool_choice` and the other LiteRT-LM 0.20 additions.
   arm64, iOS, macOS arm64, Linux x64/arm64 and Windows x64, and registers it
   as code assets. Patches over upstream include rewinding a stopped turn,
   NPU fixes and the thinking-budget fix (`native/litert_lm/patch_c_api.sh`).
-- **NPU stacks.** Qualcomm (Android, Linux arm64), Google Tensor (Android),
-  Intel (Windows x64), with the vendor runtimes fetched on request; MediaTek
-  is refused in this release (see Build options).
+- **NPU stacks.** Qualcomm (Android, Linux arm64), Google Tensor and MediaTek
+  (Android), Intel (Windows x64), with the vendor runtimes fetched on request.
 
 ## Versions
 
 The version is the upstream LiteRT-LM version this package is built from,
 plus a build number for our native rebuilds of it: `0.19.1+1` is LiteRT-LM
-0.19.1 on `native-v0.19.1-b`. Within one upstream version the Dart API stays
+0.19.1 on `native-v0.19.1-c`. Within one upstream version the Dart API stays
 compatible; a breaking change of the Dart API comes only with an upstream
 version change, so the API of one upstream version is fixed once published.
 
@@ -163,11 +162,12 @@ hooks:
     litertlm_dart:
       qualcomm_npu: true       # bundle Qualcomm's QNN runtime (Android, Linux arm64)
       google_tensor_npu: true  # Google Tensor G5/G6
+      mediatek_npu: true       # MediaTek Dimensity
 ```
 
-The MediaTek NPU is refused in this release (`mediatek_npu: true` fails the
-build): its LiteRT cannot load Google's MediaTek dispatch, and on MT6989 a
-conversation's second message comes back empty (LiteRT-LM #4256).
+On the MediaTek NPU every turn runs in a fresh native conversation that
+replays the history: there a conversation answers its second message empty
+(MT6989, LiteRT-LM #4256).
 
 The key apps set before this package existed, `flutter_edge_ai_litertlm:`, is
 still read, with a warning, until the next upstream LiteRT-LM version.

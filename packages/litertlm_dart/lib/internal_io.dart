@@ -154,6 +154,8 @@ export 'src/ffi/open_session_backing.dart'
         AndroidGpuFamily,
         OpenSessionBacking,
         androidGpuFamilyFrom,
+        liteRtLmFreshConversationEachTurn,
+        liteRtLmFreshConversationNpus,
         liteRtLmOpenSessionBacking;
 
 export 'src/ffi/windows_std_handles.dart'

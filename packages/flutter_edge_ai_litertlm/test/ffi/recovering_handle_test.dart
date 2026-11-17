@@ -408,6 +408,174 @@ void main() {
     expect(reopened.single.closed, isTrue);
   });
 
+  group('fresh conversation each turn (MediaTek NPU, LiteRT-LM #4256)', () {
+    setUp(() {
+      handle = RecoveringConversationHandle(
+        first,
+        reopen: (messagesJson) async {
+          await reopenGate?.future;
+          final c = _Conversation(
+            'fresh ${reopened.length}',
+            seed: messagesJson,
+          );
+          reopened.add(c);
+          return c;
+        },
+        noRewindReason: 'the NPU executor rolls back one token at most',
+        toolCallsOf: nativeToolCalls,
+        freshConversationEachTurn: true,
+      );
+    });
+
+    String textOf(Object? m) =>
+        ((m! as Map<String, dynamic>)['content'] as List).single['text']
+            as String;
+
+    test('no conversation is sent a second message: each turn after the '
+        'first runs on a new one that replays every turn before it', () async {
+      expect(await handle.chat('one').join(), 'Hello there.');
+      expect(await handle.chat('two').join(), 'Hello there.');
+      expect(await handle.chat('three').join(), 'Hello there.');
+
+      expect(first.sent, ['one']);
+      expect(first.closed, isTrue);
+      expect(
+        [for (final c in reopened) c.sent],
+        [
+          ['two'],
+          ['three'],
+        ],
+      );
+      expect(reopened.first.closed, isTrue);
+      expect(reopened.last.closed, isFalse);
+
+      final seed = jsonDecode(reopened.last.seed!) as List<dynamic>;
+      expect(
+        [for (final m in seed) m['role']],
+        ['user', 'assistant', 'user', 'assistant'],
+      );
+      expect(
+        [for (final m in seed) textOf(m)],
+        ['one', 'Hello there.', 'two', 'Hello there.'],
+      );
+    });
+
+    test(
+      'the first turn runs on the conversation the session opened with',
+      () async {
+        await handle.chat('one').join();
+        expect(first.sent, ['one']);
+        expect(reopened, isEmpty);
+      },
+    );
+
+    test('a stopped turn is replayed with its partial reply, and the turn '
+        'after it still gets a conversation of its own', () async {
+      await stopMidTurn('one', first);
+      await handle.chat('two').join();
+      await handle.chat('three').join();
+      expect(first.rewinds, isEmpty);
+      expect(
+        [for (final c in reopened) c.sent],
+        [
+          ['two'],
+          ['three'],
+        ],
+      );
+      final seed = jsonDecode(reopened.first.seed!) as List<dynamic>;
+      expect([for (final m in seed) textOf(m)], ['one', 'Hello']);
+    });
+
+    test('a turn stopped before it reached the model leaves the conversation '
+        'unused, so the next one runs on it', () async {
+      await handle.chat('one').join();
+      final gate = Completer<void>();
+      reopenGate = gate;
+      final second = handle.chat('two').join();
+      await pumpEventQueue();
+      handle.cancelGeneration();
+      gate.complete();
+      expect(await second, isEmpty);
+      await handle.chat('three').join();
+      expect(
+        [for (final c in reopened) c.sent],
+        [
+          ['three'],
+        ],
+      );
+    });
+
+    RecoveringConversationHandle freshWithBound() =>
+        RecoveringConversationHandle(
+          first,
+          reopen: (messagesJson) async {
+            final c = _Conversation('fresh', seed: messagesJson);
+            reopened.add(c);
+            return c;
+          },
+          noRewindReason: 'the NPU executor rolls back one token at most',
+          toolCallsOf: nativeToolCalls,
+          freshConversationEachTurn: true,
+          windDownTimeout: const Duration(milliseconds: 50),
+        );
+
+    test('a turn queued behind a healthy, long one waits for it past the '
+        'bound: the long one is not cut off, and the next conversation '
+        'replays it', () async {
+      handle = freshWithBound();
+      final gate = first.hold = Completer<void>();
+      final a = handle.chat('one').join();
+      await pumpEventQueue();
+      final b = handle.chat('two').join();
+      // Several bounds long: the first turn is still generating.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(first.closed, isFalse, reason: 'the healthy turn is not cut off');
+      expect(reopened, isEmpty);
+      gate.complete();
+      expect(await a, 'Hello there.');
+      expect(await b, 'Hello there.');
+      expect(first.sent, ['one']);
+      expect(reopened.single.sent, ['two']);
+      final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+      expect([for (final m in seed) textOf(m)], ['one', 'Hello there.']);
+    });
+
+    test(
+      'a long turn stopped while the next one waits still gets the bound',
+      () async {
+        handle = freshWithBound();
+        first.hold = Completer<void>();
+        // A consumer that pauses the first stream and never resumes it.
+        final sub = handle.chat('one').listen((_) {})..pause();
+        await pumpEventQueue();
+        final b = handle.chat('two').join();
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        handle.cancelGeneration();
+        await b.timeout(const Duration(seconds: 2));
+        expect(
+          reopened,
+          isNotEmpty,
+          reason: 'rebuilt without the stopped turn',
+        );
+        await sub.cancel();
+      },
+    );
+
+    test(
+      'off, as on every other backend, turns share one conversation',
+      () async {
+        final shared = RecoveringConversationHandle(
+          _Conversation('shared'),
+          reopen: (_) async => throw StateError('no rebuild expected'),
+          toolCallsOf: nativeToolCalls,
+        );
+        expect(shared.freshConversationEachTurn, isFalse);
+        await shared.chat('one').join();
+        await shared.chat('two').join();
+      },
+    );
+  });
+
   group('rewind', () {
     // Debug logging goes through print in tests too; only the warnings meant
     // for release builds carry the package name.

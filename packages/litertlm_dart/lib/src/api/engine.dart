@@ -249,6 +249,14 @@ final class Engine {
 
   final NpuStack? _npuVendor;
 
+  /// Every turn runs in a fresh native conversation that replays the history
+  /// where a conversation answers its second message empty (the MediaTek NPU,
+  /// LiteRT-LM #4256; [liteRtLmFreshConversationEachTurn]).
+  bool get _freshConversationEachTurn => liteRtLmFreshConversationEachTurn(
+    backend: backendKindOf(backend),
+    npuVendor: _npuVendor,
+  );
+
   /// What the file says about itself; null for a file the reader does not
   /// understand (a `.task`, a newer container), which loads by the rules that
   /// need no file.
@@ -663,6 +671,7 @@ final class Engine {
           reopen: open,
           toolCallsOf: _toolCallsOf,
           noRewindReason: _noRewindReason,
+          freshConversationEachTurn: _freshConversationEachTurn,
         );
       case false:
         handle = VirtualConversationHandle(
@@ -678,6 +687,7 @@ final class Engine {
           constraint: constraint,
           extras: extras,
           initialHistory: initial,
+          freshConversationEachTurn: _freshConversationEachTurn,
         );
     }
     return newConversation(

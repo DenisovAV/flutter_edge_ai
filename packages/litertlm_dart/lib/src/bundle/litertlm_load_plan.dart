@@ -569,7 +569,7 @@ void _checkNpuVendor(
     LiteRtLmBundleProblem.unsupportedNpu,
     vendor == null
         ? '$what is compiled for the $target NPU. litertlm_dart '
-              'runs ${npuSentenceList(offeredNpuStacks.map((v) => v.label))} '
+              'runs ${npuSentenceList(NpuStack.values.map((v) => v.label))} '
               'NPU bundles only; $instead the generic bundle of this model to '
               'run it on the GPU or the CPU.'
         : '$what is compiled for the $target NPU, which runs on '

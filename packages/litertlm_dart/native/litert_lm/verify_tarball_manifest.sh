@@ -267,13 +267,12 @@ FORBIDDEN=(
   # arm64: from the QAIRT SDK zip, since native-v0.18.0-c).
   "android_arm64:libQnn*"
   "linux_arm64:libQnn*"
-  # Built against MediaTek's NeuroPilot SDK, whose licence allows it only
-  # inside an application: apps fetch Google's build through `mediatek_npu`.
-  # Our adapter for LiteRT-LM v0.19.0's versioned dispatch ABI
-  # (mediatek_dispatch_compat.c) has the same name and does not ship either:
-  # the MediaTek NPU is refused in core 2.6.0 (design decision K, 2026-11-03);
-  # build_android.sh builds it only with BUILD_MEDIATEK_ADAPTER=1.
-  "android_arm64:libLiteRtDispatch_MediaTek.so"
+  # Google's MediaTek dispatch is built against MediaTek's NeuroPilot SDK,
+  # whose licence allows it only inside an application: apps fetch it through
+  # `mediatek_npu`, and the hook stores it under this name beside our adapter
+  # (libLiteRtDispatch_MediaTek.so, REQUIRED below). Its compiler plugin is
+  # never bundled.
+  "android_arm64:libmtk_litert_dispatch_legacy.so"
   "android_arm64:libLiteRtCompilerPlugin_MediaTek*"
   # Linked into libLiteRtLm.so since native-v0.19.0-a (section 19): a separate
   # copy would be a second OpenCL accelerator in the process.
@@ -298,6 +297,10 @@ REQUIRED=(
   # this open-source bridge, which late-binds the Pixel system runtime.
   "android_arm64:libLiteRtDispatch_GoogleTensor.so"
   "android_arm64:libLiteRtDispatch_Qualcomm.so"
+  # native-v0.19.1-c: our adapter (mediatek_dispatch_compat.c), the
+  # versioned dispatch ABI over Google's legacy MediaTek dispatch.
+  # check_embedding_exports.py holds every dispatch to that ABI.
+  "android_arm64:libLiteRtDispatch_MediaTek.so"
   # native-v0.18.0-c: Qualcomm NPU on Linux arm64 — our dispatch and the
   # libcdsprpc.so shim the QNN Stubs need (build_qualcomm_dispatch.sh).
   "linux_arm64:libLiteRtDispatch_Qualcomm.so"

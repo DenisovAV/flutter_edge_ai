@@ -1,5 +1,5 @@
 ## 1.20.2
-- MediaTek NPU runs again on LiteRT-LM 0.19 (#NNN).
+- MediaTek NPU runs again on LiteRT-LM 0.19 (#848).
 
 ## 1.20.1
 - Fix tool calls and thinking on NPU failing with a multi-token rollback error.

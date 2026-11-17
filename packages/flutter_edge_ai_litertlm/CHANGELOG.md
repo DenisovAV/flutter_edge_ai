@@ -1,3 +1,6 @@
+## 1.20.2
+- MediaTek NPU runs again on LiteRT-LM 0.19 (#848).
+
 ## 1.20.1
 - Fix tool calls and thinking on NPU failing with a multi-token rollback error.
 - Fix a Windows crash on thinking turns with tools (native-v0.19.1-b, LiteRT-LM v0.19.1).

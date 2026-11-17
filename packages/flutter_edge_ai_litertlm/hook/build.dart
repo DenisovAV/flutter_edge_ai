@@ -223,7 +223,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 final _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.19.1-b',
+  version: '0.19.1-c',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -234,6 +234,13 @@ final _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.19.1-c changes the Android archive and nothing else: it adds
+  // libLiteRtDispatch_MediaTek.so, our adapter (mediatek_dispatch_compat.c)
+  // that gives Google's legacy MediaTek dispatch the versioned dispatch ABI
+  // LiteRT dcb657e8 loads; the hook bundles it, beside Google's build from
+  // the AAR, only behind mediatek_npu. The other five Android files and the
+  // six other archives are byte-identical to 0.19.1-b.
+  //
   // 0.19.1-b changes the Windows archive and nothing else: patch_c_api.sh
   // section 27 backports LiteRT-LM 3db1cfd0ab, which aliases multi-signature
   // NPU KV caches on OpenVINO custom tensor buffers (Intel's GlobalGraph-v3
@@ -374,7 +381,7 @@ final _litertlmBundle = _NativeBundle(
     'litertlm-ios_sim_arm64.tar.gz':
         'cc2c2de4195692ce89c73451924ac6617bfe7557afddb3fdd81df9022795b5a2',
     'litertlm-android_arm64.tar.gz':
-        '1a3dbe72bfce3cde6a39f90b4173ad9ccdcf14e42fb69092b1b968d7aecef7b4',
+        'b96972aa2fcab97572cdcf7b76e6f4d36412886220b133c85d54a7bc99d61169',
   },
   companions: [
     'GemmaModelConstraintProvider',
@@ -1121,10 +1128,15 @@ Future<void> _processBundle({
         );
       case NpuStack.googleTensor:
         throw StateError('NpuStack.googleTensor has no stack for $targetAbi');
-      // Not from the native bundle: Google's AAR, fetched (see
-      // mediatek_runtime.dart for why).
+      // Our adapter from the native bundle, Google's dispatch from its AAR
+      // (see mediatek_runtime.dart for why).
       case NpuStack.mediatek when os == OS.android:
-        await _registerMediatekNpu(input: input, output: output, stage: stage);
+        await _registerMediatekNpu(
+          input: input,
+          output: output,
+          prebuiltDir: prebuiltDir,
+          stage: stage,
+        );
       case NpuStack.mediatek:
         throw StateError('NpuStack.mediatek has no stack for $targetAbi');
       // In every Windows x64 build, through windowsExtraLibs above.
@@ -1209,29 +1221,49 @@ void _registerBundledNpuStack({
 // Opt-in MediaTek NPU dispatch (Android)
 // ============================================================================
 
-/// Registers the MediaTek dispatch, for an app that set `mediatek_npu`
-/// (checked by the caller's vendor loop, from the table): Google's build of
-/// it, from the `litert-npu-runtime-mediatek` AAR via the cache.
+/// Registers the MediaTek stack, for an app that set `mediatek_npu` (checked
+/// by the caller's vendor loop, from the table): our adapter from the native
+/// archive, which LiteRT loads, and Google's dispatch behind it, from the
+/// `litert-npu-runtime-mediatek` AAR via the cache.
 Future<void> _registerMediatekNpu({
   required BuildInput input,
   required BuildOutputBuilder output,
+  required Uri prebuiltDir,
   required Uri Function(Uri) stage,
 }) async {
-  final refusal = mediatekNpuBuildRefusal(_packageName);
-  if (refusal != null) throw StateError(refusal);
-  if (npuDispatchInNativeTarball(NpuStack.mediatek)) {
+  final adapter = prebuiltDir.resolve(
+    _dylibFileName(OS.android, mediatekDispatchLib),
+  );
+  if (!File.fromUri(adapter).existsSync()) {
     throw StateError(
-      'MediaTek: its dispatch is in the native bundle, not fetched',
+      '[$_packageName] $mediatekNpuUserDefine: '
+      '${_dylibFileName(OS.android, mediatekDispatchLib)} is not in this '
+      "release's Android native bundle; MediaTek needs a $_packageName "
+      'release whose native bundle carries it. Remove $mediatekNpuUserDefine '
+      'until then.',
     );
   }
   final dir = await _ensureMediatekRuntime(input, output);
-  for (final name in mediatekNpuLibs) {
+  final files = {
+    mediatekDispatchLib: adapter,
+    mediatekLegacyDispatchLib: dir.uri.resolve(
+      _dylibFileName(OS.android, mediatekLegacyDispatchLib),
+    ),
+  };
+  if (files.length != mediatekNpuLibs.length ||
+      !mediatekNpuLibs.every(files.containsKey)) {
+    throw StateError(
+      'MediaTek: the hook registers ${files.keys}, the stack is '
+      '$mediatekNpuLibs',
+    );
+  }
+  for (final MapEntry(key: name, value: file) in files.entries) {
     output.assets.code.add(
       CodeAsset(
         package: _packageName,
         name: 'src/native/$name',
         linkMode: DynamicLoadingBundled(),
-        file: stage(dir.uri.resolve(_dylibFileName(OS.android, name))),
+        file: stage(file),
       ),
     );
   }

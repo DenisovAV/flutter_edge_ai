@@ -582,7 +582,11 @@ final class SqliteVectorStore extends VectorStoreRepository {
         'VectorStoreSpec(enableTextSearch: true) to create one.',
       );
     }
-    return index.search(text: text, topK: topK, filter: filter);
+    try {
+      return index.search(text: text, topK: topK, filter: filter);
+    } on SqliteException catch (e) {
+      throw VectorStoreException('Text search failed', e);
+    }
   }
 
   @override

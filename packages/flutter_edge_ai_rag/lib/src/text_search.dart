@@ -41,8 +41,9 @@ final class TextSearchResult {
 /// [rrfScore] is the fused score results are ordered by. The vector fields
 /// ([vectorSimilarity], [vectorRank]) and the text fields ([relevanceScore],
 /// [textRank]) report each leg separately; ranks start at 1. A null leg field
-/// means the document was outside that leg's candidate window, not that it
-/// does not match there.
+/// means the document was not among that leg's candidates: for the vector
+/// leg, beyond its candidate window; for the text leg, without any query term
+/// or beyond the window.
 final class HybridSearchResult {
   const HybridSearchResult({
     required this.id,
@@ -106,7 +107,18 @@ final class HybridSearchResult {
 /// Implemented only by this package; more methods may be added later.
 abstract final class HybridFusion {
   const HybridFusion._();
+
+  /// Throws [ArgumentError] when this fusion's parameters are invalid.
+  void _validate();
+
+  /// The fused score of a document at [vectorRank] and [textRank] (1-based;
+  /// null when that leg did not return it).
+  double _score(int? vectorRank, int? textRank);
 }
+
+/// Package-internal: throws [ArgumentError] when [fusion]'s parameters are
+/// invalid.
+void validateHybridFusion(HybridFusion fusion) => fusion._validate();
 
 /// Reciprocal Rank Fusion: a document scores `1 / (k + rank)` in each leg
 /// that returned it, summed over the legs. Ranks start at 1.
@@ -117,6 +129,18 @@ final class RrfFusion extends HybridFusion {
   const RrfFusion({this.k = 60}) : super._();
 
   final int k;
+
+  @override
+  void _validate() {
+    if (k <= 0) {
+      throw ArgumentError.value(k, 'fusion.k', 'must be greater than 0');
+    }
+  }
+
+  @override
+  double _score(int? vectorRank, int? textRank) =>
+      (vectorRank == null ? 0.0 : 1 / (k + vectorRank)) +
+      (textRank == null ? 0.0 : 1 / (k + textRank));
 
   @override
   bool operator ==(Object other) =>
@@ -132,8 +156,9 @@ final class RrfFusion extends HybridFusion {
 /// Package-internal: fuses [vector] and [text], each already in its leg's
 /// rank order, and returns the first [topK].
 ///
-/// Each id appears once. Content and metadata come from the vector leg when
-/// both legs returned the id. Order: fused score descending, then id
+/// Each id appears once; a leg that returns an id twice keeps its first
+/// (best) rank, and a rank is the position in the leg's list. Content and
+/// metadata come from the vector leg when both legs returned the id. Order: fused score descending, then id
 /// ascending, so equal scores are deterministic.
 List<HybridSearchResult> fuseHybridResults({
   required List<RetrievalResult> vector,
@@ -141,10 +166,6 @@ List<HybridSearchResult> fuseHybridResults({
   required HybridFusion fusion,
   required int topK,
 }) {
-  // RrfFusion is the only HybridFusion; HybridFusion has no outside
-  // subtypes, so this cast fails only for a method added here and not
-  // handled.
-  final rrf = fusion as RrfFusion;
   final entries = <String, _Fused>{};
   var rank = 0;
   for (final hit in vector) {
@@ -173,9 +194,7 @@ List<HybridSearchResult> fuseHybridResults({
         id: entry.id,
         content: entry.content,
         metadata: entry.metadata,
-        rrfScore:
-            (entry.vectorRank == null ? 0.0 : 1 / (rrf.k + entry.vectorRank!)) +
-            (entry.textRank == null ? 0.0 : 1 / (rrf.k + entry.textRank!)),
+        rrfScore: fusion._score(entry.vectorRank, entry.textRank),
         vectorSimilarity: entry.vectorSimilarity,
         vectorRank: entry.vectorRank,
         relevanceScore: entry.relevanceScore,

@@ -430,6 +430,37 @@ void main() {
     }, skip: skip);
   });
 
+  test('a failed COMMIT leaves no transaction open', () async {
+    final path = _tempDb('fts_commit_busy');
+    final index = await _open(path);
+    await _add(index, 'first', 'one');
+
+    // Another connection holding a read transaction makes COMMIT fail with
+    // SQLITE_BUSY (rollback journal, no busy timeout).
+    final reader = sqlite3.open(path);
+    addTearDown(reader.close);
+    reader.execute('BEGIN');
+    reader.select('SELECT COUNT(*) FROM rag_text_documents');
+    await expectLater(_add(index, 'busy', 'two'), throwsA(anything));
+    reader.execute('COMMIT');
+
+    // The next write must run in its own transaction and be committed.
+    await _add(index, 'later', 'three');
+    final check = sqlite3.open(path);
+    addTearDown(check.close);
+    expect(
+      check
+          .select('SELECT id FROM rag_text_documents ORDER BY id')
+          .map((r) => r['id'])
+          .toList(),
+      ['first', 'later'],
+    );
+    expect(
+      check.select('SELECT COUNT(*) AS c FROM vec_documents').first['c'],
+      2,
+    );
+  }, skip: skip);
+
   group('lifecycle', () {
     test('a location without a text index refuses searchText', () async {
       final index = await _open(_tempDb('fts_none'), enableTextSearch: false);

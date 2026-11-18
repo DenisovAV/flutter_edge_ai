@@ -214,7 +214,9 @@ abstract base class VectorStoreRepository {
   Future<void> removeDocument({required String id});
 
   /// Conditions on fields not declared in [filterSchema] have no effect at
-  /// this level; `RagIndex` refuses them before calling this.
+  /// this level; `RagIndex` refuses them before calling this. [threshold] may
+  /// be negative: hybrid search passes `-double.maxFinite` to keep every
+  /// candidate.
   Future<List<RetrievalResult>> searchSimilar({
     required List<double> queryEmbedding,
     required int topK,
@@ -240,7 +242,8 @@ abstract base class VectorStoreRepository {
   ///
   /// [text] is plain user text, never an engine query syntax. A [text] with no
   /// searchable term returns an empty list. [filter] applies as in
-  /// [searchSimilar].
+  /// [searchSimilar]. Each id appears at most once, with the same content and
+  /// metadata [searchSimilar] returns for it.
   ///
   /// Throws [StateError] when this location has no text index, and
   /// [UnsupportedError] when [supportsTextSearch] is false (the default).

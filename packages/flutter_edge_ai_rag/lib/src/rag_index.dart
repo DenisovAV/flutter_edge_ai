@@ -222,9 +222,11 @@ final class RagIndex {
   /// Each leg ranks `max(4 × topK, 20)` candidates. The vector leg keeps
   /// every candidate, whatever its similarity (there is no threshold: filter
   /// on [HybridSearchResult.vectorSimilarity] yourself). Both legs run with
-  /// [filter] and see the same documents: no `add` or `remove` of this index
-  /// runs between them. Results are ordered by [HybridSearchResult.rrfScore]
-  /// descending, then by id.
+  /// [filter] and see the same documents: they run exclusively, after every
+  /// operation of this index already in flight (an `add` still embedding
+  /// included), and operations started later wait for them. Results are
+  /// ordered by [HybridSearchResult.rrfScore] descending, then by id. A
+  /// [text] with no searchable term leaves only the vector leg's ranking.
   ///
   /// Fails like [searchText], and with [StateError] on an `openVectors` index,
   /// which has no embedder: use [searchHybridVector] there.
@@ -295,7 +297,9 @@ final class RagIndex {
     final vector = await _store.searchSimilar(
       queryEmbedding: embedding,
       topK: candidates,
-      threshold: -1.0,
+      // Every candidate, whatever its similarity: -1.0 itself could drop an
+      // antipodal vector whose float distance is a hair above 2.
+      threshold: -double.maxFinite,
       filter: filter,
     );
     final textHits = await _store.searchText(
@@ -394,6 +398,12 @@ final class RagIndex {
   }
 
   void _requireTextSearch(String operation) {
+    if (documents != EmbeddingModality.text) {
+      throw StateError(
+        'This RagIndex holds ${documents.name} documents; text search is for '
+        'text indexes only, so $operation() cannot run.',
+      );
+    }
     if (!_store.supportsTextSearch) {
       throw StateError(
         'The vector store behind this RagIndex (${_store.runtimeType}) has no '
@@ -409,14 +419,8 @@ final class RagIndex {
     }
   }
 
-  static void _validateFusion(HybridFusion fusion) {
-    switch (fusion) {
-      case RrfFusion(:final k):
-        if (k <= 0) {
-          throw ArgumentError.value(k, 'fusion.k', 'must be greater than 0');
-        }
-    }
-  }
+  static void _validateFusion(HybridFusion fusion) =>
+      validateHybridFusion(fusion);
 
   void _validateFilter(Filter? filter) {
     if (filter == null) return;

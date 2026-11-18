@@ -117,24 +117,34 @@ final class SqliteTextIndex {
     return index;
   }
 
-  /// Runs [body] in `BEGIN IMMEDIATE … COMMIT`, rolling back on any error.
-  /// Inside an open transaction, runs [body] as part of it.
+  /// Runs [body] in `BEGIN IMMEDIATE … COMMIT`, rolling back when [body] or
+  /// the `COMMIT` fails, so the connection never stays inside a transaction.
+  ///
+  /// Throws [StateError] when the connection is already inside a
+  /// transaction: running [body] as part of one nobody here owns could report
+  /// writes as done that are later rolled back.
   static T runInTransaction<T>(CommonDatabase db, T Function() body) {
-    if (!db.autocommit) return body();
+    if (!db.autocommit) {
+      throw StateError(
+        'The SQLite connection is already inside a transaction; refusing to '
+        'write into one this store does not own.',
+      );
+    }
     db.execute('BEGIN IMMEDIATE');
-    final T result;
     try {
-      result = body();
+      final result = body();
+      db.execute('COMMIT');
+      return result;
     } catch (_) {
-      try {
-        db.execute('ROLLBACK');
-      } catch (rollbackError) {
-        sqliteLog('[SqliteTextIndex] ROLLBACK failed: $rollbackError');
+      if (!db.autocommit) {
+        try {
+          db.execute('ROLLBACK');
+        } catch (rollbackError) {
+          sqliteLog('[SqliteTextIndex] ROLLBACK failed: $rollbackError');
+        }
       }
       rethrow;
     }
-    db.execute('COMMIT');
-    return result;
   }
 
   /// Writes [id] into the index, replacing any previous row for it.

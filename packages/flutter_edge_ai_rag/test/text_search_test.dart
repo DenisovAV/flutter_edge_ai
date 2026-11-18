@@ -87,6 +87,17 @@ void main() {
       expect([for (final r in fused) r.id], ['a', 'b']);
       expect(fused.first.vectorRank, 1);
       expect(fused.first.textRank, 1);
+      expect(fused[1].vectorRank, 3, reason: 'a rank is the list position');
+    });
+
+    test('a topK above the union returns the union', () {
+      final fused = fuseHybridResults(
+        vector: [_v('a', 0.9)],
+        text: [_t('b', 1)],
+        fusion: const RrfFusion(),
+        topK: 50,
+      );
+      expect(fused, hasLength(2));
     });
 
     test('result types compare by value', () {
@@ -228,7 +239,7 @@ void main() {
       );
 
       expect(embedder.queries.single.text, 'query');
-      expect(store.vectorCalls.single, (24, -1.0, filter));
+      expect(store.vectorCalls.single, (24, -double.maxFinite, filter));
       expect(store.textCalls.single, ('query', 24, filter));
       expect([for (final h in hits) h.id], ['b', 'a']);
       expect(hits.first.vectorSimilarity, -0.2);
@@ -246,6 +257,56 @@ void main() {
       await expectLater(
         index.searchHybridVector(text: 'q', embedding: const [1]),
         throwsArgumentError,
+      );
+    });
+
+    test('is refused on an image index', () async {
+      final store = _TextStore();
+      final index = await _rag(store).openVectors(
+        spec: VectorStoreSpec(
+          providerId: 'fake',
+          location: 'loc',
+          documents: EmbeddingModality.image,
+        ),
+        profile: _profile,
+      );
+      addTearDown(index.dispose);
+      await expectLater(
+        index.searchText(text: 'q'),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('text indexes only'),
+          ),
+        ),
+      );
+      await expectLater(
+        index.searchHybridVector(text: 'q', embedding: const [1, 0]),
+        throwsA(isA<StateError>()),
+      );
+      expect(store.events, isNot(contains('vector')));
+    });
+
+    test('a failing leg releases the gate', () async {
+      final store = _TextStore(textError: StateError('no text index'));
+      final index = await _open(store);
+      await expectLater(
+        index.searchHybridVector(text: 'q', embedding: const [1, 0]),
+        throwsA(isA<StateError>()),
+      );
+      await index.addVector(id: 'after', content: 'c', embedding: const [1, 0]);
+      expect(store.events.last, 'add:after');
+    });
+
+    test('a disposed index refuses every new method', () async {
+      final index = await _open(_TextStore());
+      await index.dispose();
+      await expectLater(index.searchText(text: 'q'), throwsStateError);
+      await expectLater(index.searchHybrid(text: 'q'), throwsStateError);
+      await expectLater(
+        index.searchHybridVector(text: 'q', embedding: const [1, 0]),
+        throwsStateError,
       );
     });
 
@@ -338,7 +399,10 @@ final class _TextStore extends VectorStoreRepository {
     this.vector = const [],
     this.text = const [],
     this.blockVector = false,
+    this.textError,
   });
+
+  final Object? textError;
 
   final bool supportsText;
   final List<RetrievalResult> vector;
@@ -415,6 +479,7 @@ final class _TextStore extends VectorStoreRepository {
   }) async {
     events.add('text');
     textCalls.add((text, topK, filter));
+    if (textError case final error?) throw error;
     return this.text;
   }
 

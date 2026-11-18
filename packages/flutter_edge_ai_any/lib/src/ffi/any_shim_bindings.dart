@@ -23,10 +23,10 @@ const int anyShimAbiVersion = 1;
 
 // ---------------------------------------------------------------- misc
 
-@Native<Uint32 Function()>(isLeaf: true)
+@Native<Uint32 Function()>()
 external int any_shim_abi_version();
 
-@Native<Void Function(Pointer<Void>)>(isLeaf: true)
+@Native<Void Function(Pointer<Void>)>()
 external void any_shim_free(Pointer<Void> ptr);
 
 @Native<Status Function(OutStr, OutStr)>()

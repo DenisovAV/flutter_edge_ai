@@ -60,7 +60,7 @@ func TestExportsMatchHeader(t *testing.T) {
 	}
 	files, _ := os.ReadDir(".")
 	var g []string
-	re := regexp.MustCompile(`(?m)^//export (any_shim_[a-z0-9_]+)$`)
+	re := regexp.MustCompile(`(?m)^//export (any_shim_[a-z0-9_]+)\r?$`) // CRLF on a Windows checkout
 	for _, f := range files {
 		if f.IsDir() || !regexp.MustCompile(`^[a-z_]+\.go$`).MatchString(f.Name()) {
 			continue

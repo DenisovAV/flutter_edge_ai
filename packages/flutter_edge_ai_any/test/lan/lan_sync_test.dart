@@ -43,6 +43,12 @@ void main() {
       AnyShim.checkAbi();
       const n = 6;
       final dir = Directory.systemTemp.createTempSync('any_shim_lan').path;
+      var passed = false;
+      // Registered first, so it runs last (tear-downs run in reverse):
+      // after the devices are gone. A failed run keeps its logs.
+      addTearDown(() {
+        if (passed) Directory(dir).deleteSync(recursive: true);
+      });
       File('$dir/account.json').writeAsStringSync(
         jsonEncode({
           'note': 'TEST account, dead nodeconf, LAN only',
@@ -56,14 +62,26 @@ void main() {
       );
       final aLog = File('$dir/a.log').openWrite();
       final bLog = File('$dir/b.log').openWrite();
+      final processes = <Process>[];
+      final drains = <Future<void>>[];
+      // Runs on success and failure alike: no device outlives the test
+      // (A would otherwise wait for its stop file forever, LAN ports open),
+      // and both logs are fully written before they are closed.
       addTearDown(() async {
+        File('$dir/stop').writeAsStringSync('');
+        for (final p in processes) {
+          p.kill();
+          await p.exitCode;
+        }
+        await Future.wait(drains).timeout(const Duration(seconds: 10));
         await aLog.close();
         await bLog.close();
       });
 
       final a = await _device('a', dir, n);
+      processes.add(a);
       final aOut = _lines(a.stdout, aLog);
-      a.stderr.listen(aLog.add);
+      drains.add(a.stderr.forEach(aLog.add));
       // B starts once A has written its space, so the two `dart run`s do
       // not run the build hook at the same time.
       final end = DateTime.now().add(const Duration(minutes: 2));
@@ -74,14 +92,16 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
       final b = await _device('b', dir, n);
+      processes.add(b);
       final bOut = _lines(b.stdout, bLog);
-      b.stderr.listen(bLog.add);
+      drains.add(b.stderr.forEach(bLog.add));
 
       final bCode = await b.exitCode;
       File('$dir/stop').writeAsStringSync('');
       final aCode = await a.exitCode.timeout(const Duration(seconds: 30));
       final bEvents = await bOut;
       final aEvents = await aOut;
+      drains.addAll([aOut, bOut]);
       printOnFailure('logs: $dir');
 
       expect(bCode, 0, reason: 'B failed; see $dir/b.log');
@@ -104,7 +124,7 @@ void main() {
       for (final e in [...aEvents, ...bEvents]) {
         print(jsonEncode(e));
       }
-      Directory(dir).deleteSync(recursive: true);
+      passed = true;
     },
   );
 }

@@ -409,8 +409,21 @@ void main(List<String> args) async {
     final iOSSdk = os == OS.iOS ? codeConfig.iOS.targetSdk : null;
     final dirName = _prebuiltDirName(os, arch, iOSSdk: iOSSdk);
     if (dirName == null) {
-      return; // unsupported target — runtime fails with a clear dlopen error
+      // E.g. armeabi-v7a, which Flutter builds for Android by default.
+      stderr.writeln(
+        'flutter_edge_ai_any: no libany_shim for ${os.name} ${arch.name}; '
+        'this app will fail at the first any-sync call on such a device.',
+      );
+      return;
     }
+
+    // Watch the local prebuilt directory on every path, the empty one too:
+    // a hook output with no dependency is never rebuilt, so a library built
+    // with build.sh after a run that found none would be ignored until
+    // `flutter clean`.
+    output.dependencies.add(
+      _watchableAncestor(_localPrebuiltDir(dirName, input.packageRoot)).uri,
+    );
 
     _invalidateCacheIfStale();
 
@@ -463,18 +476,8 @@ void main(List<String> args) async {
     // The FILE, not its directory: a directory dependency is hashed as the
     // sorted list of child NAMES only, so it cannot see a library change.
     output.dependencies.add(srcUri);
-    // …and the branch that did NOT win, because otherwise this only notices a
-    // rewrite of the file already in use — not a change in WHICH file wins.
-    // If the cache resolved and the maintainer then runs build.sh, no
-    // recorded hash moves, the hook is skipped, and the fresh local library is
-    // ignored until `flutter clean`. That is this hook's own bug class on the
-    // other branch of the same `if`.
-    //
-    // A directory that does not exist hashes to a sentinel and flips the moment
-    // it is created, so naming it while absent costs nothing.
-    output.dependencies.add(
-      _watchableAncestor(_localPrebuiltDir(dirName, input.packageRoot)).uri,
-    );
+    // A change in WHICH file wins is seen through the local prebuilt
+    // directory, a dependency since before the lookup.
   });
 }
 

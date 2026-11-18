@@ -9,9 +9,11 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/anyproto/any-sync/app/logger"
 	"gopkg.in/yaml.v3"
@@ -64,10 +66,14 @@ type account struct {
 	ops    sync.RWMutex
 	closed atomic.Bool
 
-	mu       sync.Mutex
-	docTypes map[string]*docTypeCache // spaceId ->
+	mu       sync.Mutex // watches, watchSeq
 	watches  map[int64]func()
 	watchSeq int64
+
+	// docMu serialises document-type lookups, which go to the SDK; kept
+	// apart from mu so watch registration never waits behind them.
+	docMu    sync.Mutex
+	docTypes map[string]*docTypeCache // spaceId ->
 }
 
 var loggerOnce sync.Once
@@ -77,6 +83,12 @@ func decodeStrict(s string, v any) error {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		return invalid("options: %v", err)
+	}
+	if dec.More() {
+		return invalid("options: trailing data after the JSON object")
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return invalid("options: trailing data after the JSON object")
 	}
 	return nil
 }
@@ -226,10 +238,20 @@ func nonNil(s []string) []string {
 }
 
 func (a *account) space(id string) (space.Space, error) {
+	return a.spaceCtx(a.ctx, id)
+}
+
+func (a *account) spaceCtx(ctx context.Context, id string) (space.Space, error) {
 	if id == "" {
 		return nil, invalid("space id is empty")
 	}
-	return a.sdk.Spaces().Get(a.ctx, id)
+	return a.sdk.Spaces().Get(ctx, id)
+}
+
+// cleanupCtx is for undoing a half-done write: it outlives a close that
+// cancelled the call, but not by much.
+func cleanupCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 10*time.Second)
 }
 
 func spaceStatusJSON(st space.SpaceSyncStatus) map[string]any {
@@ -240,11 +262,19 @@ func spaceStatusJSON(st space.SpaceSyncStatus) map[string]any {
 	}
 }
 
-func (a *account) spaceList(syncFirst bool) ([]map[string]any, error) {
+// spaceList returns {"spaces":[...],"syncError":null|string}. A failed
+// sync is reported, not an error: the local list is still the answer. A
+// nil syncError means the SDK reported no error, not that a peer answered
+// (the SDK's own sync swallows per-peer failures).
+func (a *account) spaceList(syncFirst bool) (map[string]any, error) {
+	var syncErr any
 	if syncFirst {
-		// Best effort by contract: with no peer reachable this fails,
-		// and the local list is still the answer.
-		_ = a.sdk.Spaces().SyncSpaceList(a.ctx)
+		if err := a.sdk.Spaces().SyncSpaceList(a.ctx); err != nil {
+			if a.ctx.Err() != nil {
+				return nil, err
+			}
+			syncErr = err.Error()
+		}
 	}
 	list, err := a.sdk.Spaces().List(a.ctx)
 	if err != nil {
@@ -254,7 +284,30 @@ func (a *account) spaceList(syncFirst bool) ([]map[string]any, error) {
 	for _, i := range list {
 		out = append(out, map[string]any{"id": i.Id, "name": i.Name, "status": i.Status.String()})
 	}
-	return out, nil
+	return map[string]any{"spaces": out, "syncError": syncErr}, nil
+}
+
+// spaceStatus refuses an id the account does not know: the SDK answers
+// "unknown" for any string, so a typo would read as "not synced yet".
+func (a *account) spaceStatus(id string) (map[string]any, error) {
+	if id == "" {
+		return nil, invalid("space id is empty")
+	}
+	st := a.sdk.Spaces().Status(id)
+	if st.State == space.SyncStateUnknown {
+		list, err := a.sdk.Spaces().List(a.ctx)
+		if err != nil {
+			return nil, err
+		}
+		known := false
+		for _, i := range list {
+			known = known || i.Id == id
+		}
+		if !known {
+			return nil, withCode(codeNotFound, "space %s is not known to this account", id)
+		}
+	}
+	return spaceStatusJSON(st), nil
 }
 
 // ---------------------------------------------------------------- exports
@@ -346,11 +399,11 @@ func any_shim_space_list(h C.uint64_t, syncFirst C.int32_t, outJSON, outErr **C.
 func any_shim_space_status(h C.uint64_t, spaceID *C.char, outJSON, outErr **C.char) C.any_shim_status {
 	return guard(outErr, func() error {
 		return withAccount(h, func(a *account) error {
-			id := goStr(spaceID)
-			if id == "" {
-				return invalid("space id is empty")
+			st, err := a.spaceStatus(goStr(spaceID))
+			if err != nil {
+				return err
 			}
-			return putJSON(outJSON, spaceStatusJSON(a.sdk.Spaces().Status(id)))
+			return putJSON(outJSON, st)
 		})
 	})
 }

@@ -67,9 +67,13 @@ func (a *account) fileRead(spaceId, fileId, outPath string, timeout time.Duratio
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	sp, err := a.space(spaceId)
+	sp, err := a.spaceCtx(ctx, spaceId)
 	if err != nil {
-		return 0, err
+		return 0, timeoutOr(ctx, err)
+	}
+	info, err := sp.Files().Get(ctx, fileId)
+	if err != nil {
+		return 0, timeoutOr(ctx, err)
 	}
 	r, err := sp.Files().Open(ctx, fileId, space.VariantOriginal)
 	if err != nil {
@@ -90,6 +94,11 @@ func (a *account) fileRead(spaceId, fileId, outPath string, timeout time.Duratio
 	n, err := io.Copy(tmp, readerWithContext{ctx, r})
 	if err != nil {
 		return 0, timeoutOr(ctx, fmt.Errorf("read file %s: %w", fileId, err))
+	}
+	if n != info.Size {
+		// A reader that ends early must not be renamed into place as
+		// the file.
+		return 0, fmt.Errorf("read file %s: got %d bytes, the file has %d", fileId, n, info.Size)
 	}
 	if err := tmp.Close(); err != nil {
 		return 0, err

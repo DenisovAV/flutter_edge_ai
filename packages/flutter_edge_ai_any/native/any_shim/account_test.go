@@ -282,3 +282,36 @@ func TestLookupWrongKind(t *testing.T) {
 		t.Fatalf("never issued: %v", err)
 	}
 }
+
+func TestOptionsRejectTrailingData(t *testing.T) {
+	var o openOpts
+	for _, s := range []string{`{"dataDir":"x"} garbage`, `{"dataDir":"x"}{"dataDir":"y"}`} {
+		if err := decodeStrict(s, &o); codeOf(err) != codeInvalidArgument {
+			t.Errorf("%s: %v", s, err)
+		}
+	}
+	if err := decodeStrict(`{"dataDir":"x"}  `, &o); err != nil {
+		t.Errorf("trailing whitespace: %v", err)
+	}
+}
+
+func TestSpaceStatusAndListOffline(t *testing.T) {
+	a := openOffline(t)
+	sp, err := a.sdk.Spaces().Create(a.ctx, space.CreateRequest{Name: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.spaceStatus(sp.Id()); err != nil {
+		t.Fatalf("known space: %v", err)
+	}
+	if _, err := a.spaceStatus("bafyreinosuchspace.abc"); codeOf(err) != codeNotFound {
+		t.Fatalf("unknown space: code %d (%v)", codeOf(err), err)
+	}
+	l, err := a.spaceList(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := l["syncError"]; !ok || len(l["spaces"].([]map[string]any)) == 0 {
+		t.Fatalf("list: %v", l)
+	}
+}

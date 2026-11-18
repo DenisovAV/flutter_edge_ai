@@ -24,8 +24,9 @@
  *   - JSON out is always a complete document (object or array).
  *
  * Handles are opaque, non-zero uint64 values from a process-wide registry.
- * A handle that was never issued, or was closed, is ANY_SHIM_ERR_CLOSED; it
- * is never dereferenced. Every function is safe to call from any thread.
+ * A handle that was never issued, or was closed, is ANY_SHIM_ERR_CLOSED; an
+ * account handle passed where an index is expected (or the reverse) is
+ * ANY_SHIM_ERR_INVALID_ARGUMENT. A handle is never dereferenced. Every function is safe to call from any thread.
  *
  * Network: an account needs a nodeconf YAML; there is no default network.
  * The production any-sync network is refused (ANY_SHIM_ERR_REFUSED) until
@@ -123,13 +124,17 @@ any_shim_status any_shim_set_local_discovery(uint64_t account,
 any_shim_status any_shim_space_create(uint64_t account, char *name,
                                       char **out_json, char **out_error);
 
-/* [{"id","name","status"}]. sync != 0 first asks reachable peers for the
- * account's space list (best effort). */
+/* {"spaces":[{"id","name","status"}],"syncError":null|string}.
+ * sync != 0 first asks reachable peers for the account's space list; a
+ * failure is reported in syncError and the local list is still returned.
+ * A null syncError means the SDK reported no error, not that a peer
+ * answered (the SDK does not surface per-peer failures). */
 any_shim_status any_shim_space_list(uint64_t account, int32_t sync,
                                     char **out_json, char **out_error);
 
 /* {"spaceId","state","p2p","localPeers","networkPeers","globalPeers",
- *  "total"} */
+ *  "synced","total"}. ANY_SHIM_ERR_NOT_FOUND for an id the account does
+ * not know (the SDK itself answers "unknown" for any string). */
 any_shim_status any_shim_space_status(uint64_t account, char *space_id,
                                       char **out_json, char **out_error);
 
@@ -152,7 +157,9 @@ any_shim_status any_shim_space_sync_heads(uint64_t account,
  *           replacing the previous body
  *   source  string, optional
  *   meta    JSON object, optional, stored as its JSON text
- * out_json: {"id","created"} */
+ * out_json: {"id","created"}. A new object whose later writes fail is
+ * deleted again before the error is returned. ANY_SHIM_ERR_NOT_FOUND while
+ * the space's document type exists but has not finished syncing here. */
 any_shim_status any_shim_object_put(uint64_t account, char *space_id,
                                     char *doc_json, char **out_json,
                                     char **out_error);
@@ -200,7 +207,8 @@ any_shim_status any_shim_file_status(uint64_t account, char *space_id,
 
 /* Copies the file's original bytes to out_path (written to a sibling temp
  * file, then renamed), fetching from a peer if needed. timeout_ms <= 0 =
- * no deadline; otherwise ANY_SHIM_ERR_TIMEOUT when it passes. */
+ * no deadline; otherwise ANY_SHIM_ERR_TIMEOUT when it passes. A read
+ * shorter than the file's recorded size is an error, never a file. */
 any_shim_status any_shim_file_read(uint64_t account, char *space_id,
                                    char *file_id, char *out_path,
                                    int32_t timeout_ms, int64_t *out_bytes,
@@ -211,16 +219,18 @@ any_shim_status any_shim_file_read(uint64_t account, char *space_id,
 /* The durable feed: changes with applySeq > since, oldest first.
  * {"generation","maxApplySeq",
  *  "changes":[{"objectId","applySeq","deleted"}]}
- * A different generation than the one the consumer stored means its cursor
- * is void: reindex from 0. limit <= 0 = the SDK's default. */
+ * The consumer's cursor is void, and it reindexes from 0, when the
+ * generation differs from the one it stored, or when its cursor is above
+ * maxApplySeq (the SDK's data was restored from an older copy). limit <= 0 = the SDK's default. */
 any_shim_status any_shim_changes_since(uint64_t account, char *space_id,
                                        uint64_t since, int32_t limit,
                                        char **out_json, char **out_error);
 
 /* Subscribes to a space's change feed; events go to the account's queue
- * (any_shim_events_poll). Best effort: when the queue is full an
- * {"kind":"overflow"} event is queued once and later events are dropped
- * until it is read; the consumer replays from its cursor. */
+ * (any_shim_events_poll). Best effort: an event that finds the queue full
+ * is dropped, and one {"kind":"overflow"} marker per lost stretch says so;
+ * events queued after the marker may still arrive. The consumer replays
+ * from its cursor. */
 any_shim_status any_shim_watch_changes(uint64_t account, char *space_id,
                                        int64_t *out_watch, char **out_error);
 
@@ -239,7 +249,10 @@ any_shim_status any_shim_unwatch(uint64_t account, int64_t watch,
  *   {"kind":"change","watch","spaceId","objectId","applySeq","deleted"}
  *   {"kind":"syncStatus","watch","spaceId","state","p2p","localPeers",
  *    "networkPeers","globalPeers","total"}
- *   {"kind":"overflow","dropped"}
+ *   {"kind":"overflow","dropped"}: events were dropped, from any watch.
+ *    Replay changes from the stored cursor (any_shim_changes_since) and
+ *    re-read sync status (any_shim_space_status); dropped status events
+ *    have no cursor of their own.
  * Returns ANY_SHIM_ERR_CLOSED once the account is closed, also to a call
  * blocked at that moment. Meant for one dedicated poller thread. */
 any_shim_status any_shim_events_poll(uint64_t account, int32_t max_events,
@@ -260,7 +273,9 @@ any_shim_status any_shim_events_poll(uint64_t account, int32_t max_events,
  *   filterFields  [string]: meta.<field> gets a range index
  *   passphrase    string, optional: page-level AES-256-GCM of the file;
  *                 a database created with one needs it on every open
- * A database opened earlier with another dim/metric/mode is refused. */
+ * A database opened earlier with other options (dim, metric, mode, hnsw,
+ * filterFields) is ANY_SHIM_ERR_INVALID_ARGUMENT: any-store keeps an index
+ * as it was built. */
 any_shim_status any_shim_index_open(char *opts_json, uint64_t *out_index,
                                     char **out_error);
 
@@ -281,13 +296,16 @@ any_shim_status any_shim_index_count(uint64_t index, int64_t *out_count,
 
 /* k nearest documents, optionally under a Mongo-style filter on the
  * stored fields (e.g. {"meta.cat":"food"}).
- * {"results":[{"id","name","text","meta","distance"}],"ef","attempts"}
+ * {"results":[{"id","name","text","meta","distance"}],"ef","attempts",
+ *  "complete"}
  * In "hnsw" mode a filtered query that returns fewer than k while the
  * collection holds more is re-run with a doubled ef, up to the collection
  * size; "ef" (0 = any-store's default) and "attempts" report what the last
  * run used. That happens when any-store filters the ANN candidates (a
  * filter field without a range index); a filter on a filterFields key is
- * evaluated exactly by any-store itself. */
+ * evaluated exactly by any-store itself. "complete" is false when the
+ * retries reached any-store's ef ceiling short of the collection size with
+ * fewer than k results: there may be more matches than returned. */
 any_shim_status any_shim_index_knn(uint64_t index, float *query,
                                    int32_t dim, int32_t k,
                                    char *filter_json, char **out_json,

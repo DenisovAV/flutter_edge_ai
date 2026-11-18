@@ -151,7 +151,9 @@ void runB(String dir, int n) {
   final t0 = _sw.elapsedMilliseconds;
   final learned = waitUntil(
     const Duration(seconds: 150),
-    () => b.listSpaces(sync: true).any((s) => s['id'] == space),
+    () => (b.listSpaces(sync: true)['spaces']! as List).any(
+      (s) => (s as Map)['id'] == space,
+    ),
     every: const Duration(milliseconds: 250),
   );
   log('b_learned_space', {'ok': learned, 'ms': _sw.elapsedMilliseconds - t0});

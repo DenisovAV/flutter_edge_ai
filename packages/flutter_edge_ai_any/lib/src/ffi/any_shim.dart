@@ -75,7 +75,12 @@ class AnyShimAbiException implements Exception {
 String? _take(Pointer<Utf8> p) {
   if (p == nullptr) return null;
   try {
-    return p.toDartString();
+    // allowMalformed: a Go error can carry raw bytes of a path, and a
+    // FormatException here would hide the AnyShimException it belongs to.
+    return utf8.decode(
+      p.cast<Uint8>().asTypedList(p.length),
+      allowMalformed: true,
+    );
   } finally {
     b.any_shim_free(p.cast());
   }
@@ -122,8 +127,32 @@ Object? _json(
 int _check(String op, int Function(Arena arena, b.OutStr err) call) =>
     _call(op, call, (_) => 0);
 
-Pointer<Utf8> _s(Arena arena, String? s) =>
-    s == null ? nullptr : s.toNativeUtf8(allocator: arena);
+Pointer<Utf8> _s(Arena arena, String? s) {
+  if (s == null) return nullptr;
+  // C reads up to the first NUL: 'a\u0000b' would arrive as 'a'.
+  if (s.contains('\u0000')) {
+    throw ArgumentError.value(s, 'string', 'contains a NUL character');
+  }
+  return s.toNativeUtf8(allocator: arena);
+}
+
+const _int32Max = 0x7fffffff;
+
+/// An int32 argument, refused instead of wrapping in the C call.
+int _i32(int v, String name) {
+  if (v < 0 || v > _int32Max) {
+    throw RangeError.range(v, 0, _int32Max, name);
+  }
+  return v;
+}
+
+/// A timeout in whole milliseconds, rounded up so that a short positive
+/// one never becomes 0 ("no deadline" / "return at once").
+int _ms(Duration d, String name) {
+  if (d.isNegative) throw ArgumentError.value(d, name, 'is negative');
+  final ms = (d.inMicroseconds + 999) ~/ 1000;
+  return _i32(ms, name);
+}
 
 Map<String, Object?> _map(Object? v) => (v as Map).cast<String, Object?>();
 List<Map<String, Object?>> _list(Object? v) =>
@@ -133,6 +162,30 @@ Pointer<Float> _floats(Arena arena, Float32List v) {
   final p = arena<Float>(v.isEmpty ? 1 : v.length);
   p.asTypedList(v.length).setAll(0, v);
   return p;
+}
+
+var _abiChecked = false;
+
+/// Checks the ABI once per isolate before the first account or index.
+void _ensureAbi() {
+  if (_abiChecked) return;
+  AnyShim.checkAbi();
+  _abiChecked = true;
+}
+
+/// A change-feed cursor: an applySeq, never negative (a negative int
+/// would reach C as a huge uint64).
+int _cursor(int since) {
+  if (since < 0) throw RangeError.range(since, 0, null, 'since');
+  return since;
+}
+
+/// A file-read deadline: positive (0 would mean "no deadline").
+int _readTimeout(Duration d) {
+  if (d <= Duration.zero) {
+    throw ArgumentError.value(d, 'timeout', 'must be positive; null = none');
+  }
+  return _ms(d, 'timeout');
 }
 
 /// Process-wide calls.
@@ -184,6 +237,7 @@ final class AnyShimAccount {
 
   /// Opens an account; [options] as any_shim_account_open documents.
   static AnyShimAccount open(Map<String, Object?> options) {
+    _ensureAbi();
     late Pointer<Uint64> out;
     return _call('any_shim_account_open', (arena, err) {
       out = arena<Uint64>();
@@ -219,7 +273,9 @@ final class AnyShimAccount {
           )['id']!
           as String;
 
-  List<Map<String, Object?>> listSpaces({bool sync = false}) => _list(
+  /// `{spaces: [{id, name, status}], syncError}`; with [sync], syncError
+  /// is the failed sync's message (the local list is still returned).
+  Map<String, Object?> listSpaces({bool sync = false}) => _map(
     _json(
       'any_shim_space_list',
       (_, out, err) => b.any_shim_space_list(handle, sync ? 1 : 0, out, err),
@@ -290,7 +346,7 @@ final class AnyShimAccount {
         handle,
         _s(arena, spaceId),
         _s(arena, filter == null ? null : jsonEncode(filter)),
-        limit,
+        _i32(limit, 'limit'),
         out,
         err,
       ),
@@ -360,7 +416,7 @@ final class AnyShimAccount {
         _s(arena, spaceId),
         _s(arena, fileId),
         _s(arena, outPath),
-        timeout?.inMilliseconds ?? 0,
+        timeout == null ? 0 : _readTimeout(timeout),
         n,
         err,
       );
@@ -378,8 +434,8 @@ final class AnyShimAccount {
       (arena, out, err) => b.any_shim_changes_since(
         handle,
         _s(arena, spaceId),
-        since,
-        limit,
+        _cursor(since),
+        _i32(limit, 'limit'),
         out,
         err,
       ),
@@ -418,8 +474,8 @@ final class AnyShimAccount {
       'any_shim_events_poll',
       (_, out, err) => b.any_shim_events_poll(
         handle,
-        maxEvents,
-        timeout.inMilliseconds,
+        _i32(maxEvents, 'maxEvents'),
+        _ms(timeout, 'timeout'),
         out,
         err,
       ),
@@ -438,6 +494,7 @@ final class AnyShimIndex {
 
   /// Opens or creates an index; [options] as any_shim_index_open documents.
   static AnyShimIndex open(Map<String, Object?> options) {
+    _ensureAbi();
     late Pointer<Uint64> out;
     return _call('any_shim_index_open', (arena, err) {
       out = arena<Uint64>();
@@ -491,7 +548,7 @@ final class AnyShimIndex {
         handle,
         _floats(arena, query),
         query.length,
-        k,
+        _i32(k, 'k'),
         _s(arena, filter == null ? null : jsonEncode(filter)),
         out,
         err,
@@ -510,7 +567,7 @@ final class AnyShimIndex {
       (arena, out, err) => b.any_shim_index_text(
         handle,
         _s(arena, query),
-        k,
+        _i32(k, 'k'),
         _s(arena, filter == null ? null : jsonEncode(filter)),
         out,
         err,

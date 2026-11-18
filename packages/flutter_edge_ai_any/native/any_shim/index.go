@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -54,11 +55,20 @@ type indexOpts struct {
 	Passphrase   string    `json:"passphrase"`
 }
 
-// indexConfig is what must not change across opens of one database.
+// indexConfig is what must not change across opens of one database:
+// any-store keeps an existing index as it was built, so a reopen with
+// other parameters would silently not get them.
 type indexConfig struct {
-	Dim    int    `json:"dim"`
-	Metric string `json:"metric"`
-	Mode   string `json:"mode"`
+	Dim          int       `json:"dim"`
+	Metric       string    `json:"metric"`
+	Mode         string    `json:"mode"`
+	HNSW         *hnswOpts `json:"hnsw,omitempty"`
+	FilterFields []string  `json:"filterFields"`
+}
+
+func (c indexConfig) String() string {
+	b, _ := json.Marshal(c)
+	return string(b)
 }
 
 type localIndex struct {
@@ -153,22 +163,22 @@ func openIndex(optsJSON string) (_ *localIndex, err error) {
 	if err != nil {
 		return nil, err
 	}
-	want := indexConfig{Dim: o.Dim, Metric: o.Metric, Mode: o.Mode}
-	if prev, ok, err := stateGet(state, configKey); err != nil {
+	sort.Strings(fields)
+	if fields == nil {
+		fields = []string{}
+	}
+	want := indexConfig{Dim: o.Dim, Metric: o.Metric, Mode: o.Mode, HNSW: o.HNSW, FilterFields: fields}
+	prev, havePrev, err := stateGet(state, configKey)
+	if err != nil {
 		return nil, err
-	} else if ok {
+	}
+	if havePrev {
 		var have indexConfig
 		if err := json.Unmarshal([]byte(prev), &have); err != nil {
 			return nil, fmt.Errorf("index config: %w", err)
 		}
-		if have != want {
-			return nil, invalid("%s was created with dim %d, metric %s, mode %s; asked for dim %d, metric %s, mode %s",
-				o.Path, have.Dim, have.Metric, have.Mode, want.Dim, want.Metric, want.Mode)
-		}
-	} else {
-		b, _ := json.Marshal(want)
-		if err := stateSet(state, configKey, string(b)); err != nil {
-			return nil, err
+		if have.String() != want.String() {
+			return nil, invalid("%s was created with %s; asked for %s", o.Path, have, want)
 		}
 	}
 	docs, err := db.Collection(bg, docsCollection)
@@ -184,6 +194,13 @@ func openIndex(optsJSON string) (_ *localIndex, err error) {
 	}
 	if err := docs.EnsureIndex(bg, infos...); err != nil {
 		return nil, err
+	}
+	// Recorded only once the indexes exist, so a failed first open does not
+	// pin options the file never got.
+	if !havePrev {
+		if err := stateSet(state, configKey, want.String()); err != nil {
+			return nil, err
+		}
 	}
 	return &localIndex{db: db, docs: docs, state: state, cfg: want}, nil
 }
@@ -206,14 +223,25 @@ func (x *localIndex) close() error {
 	return errors.Join(x.docs.Close(), x.state.Close(), x.db.Close())
 }
 
+// maxSquaredNorm keeps every distance finite in float32: an l2 distance
+// is at most (|a|+|b|)^2 = 4 * maxSquaredNorm, a dot product at most
+// maxSquaredNorm. Beyond it a result's distance could be Inf, which fails
+// the JSON of every query that returns the document.
+const maxSquaredNorm = math.MaxFloat32 / 8
+
 func checkVector(v []float32, dim int) error {
 	if len(v) != dim {
 		return invalid("vector has %d dimensions, the index %d", len(v), dim)
 	}
+	var sq float64
 	for i, f := range v {
 		if math.IsNaN(float64(f)) || math.IsInf(float64(f), 0) {
 			return invalid("vector[%d] is not finite", i)
 		}
+		sq += float64(f) * float64(f)
+	}
+	if sq > maxSquaredNorm {
+		return invalid("vector norm is too large for finite distances")
 	}
 	return nil
 }
@@ -312,32 +340,41 @@ func (x *localIndex) knn(q []float32, k int, filter string) (map[string]any, err
 		}
 		return collect(it, "distance", func() float64 { return float64(it.Distance()) })
 	}
-	ef, attempts := 0, 1
-	res, err := run(ef)
+	usedEf, attempts := 0, 1
+	res, err := run(0)
 	if err != nil {
 		return nil, err
 	}
+	complete := true
 	if x.cfg.Mode == "hnsw" && pf != nil && len(res) < k {
+		// Short only matters when more documents match than came back;
+		// a filtered count answers that (exactly, and cheaply when the
+		// filter's fields are indexed).
+		matching, err := x.docs.Find(pf).Count(bg)
+		if err != nil {
+			return nil, err
+		}
 		total, err := x.docs.Count(bg)
 		if err != nil {
 			return nil, err
 		}
+		want := min(k, matching)
 		ceiling := min(total, query.KnnMaxEf)
-		ef = max(4*k, 64)
-		for len(res) < k && len(res) < total {
-			ef = min(ef, ceiling)
-			ef = max(ef, k)
+		next := max(4*k, 64)
+		for len(res) < want {
+			usedEf = max(min(next, ceiling), k)
 			attempts++
-			if res, err = run(ef); err != nil {
+			if res, err = run(usedEf); err != nil {
 				return nil, err
 			}
-			if ef >= ceiling {
+			if usedEf >= ceiling {
 				break
 			}
-			ef *= 2
+			next = usedEf * 2
 		}
+		complete = len(res) >= want
 	}
-	return map[string]any{"results": res, "ef": ef, "attempts": attempts}, nil
+	return map[string]any{"results": res, "ef": usedEf, "attempts": attempts, "complete": complete}, nil
 }
 
 func (x *localIndex) text(q string, k int, filter string) (map[string]any, error) {
@@ -350,8 +387,8 @@ func (x *localIndex) text(q string, k int, filter string) (map[string]any, error
 	m := map[string]any{"$text": map[string]any{"$search": q}}
 	if f := strings.TrimSpace(filter); f != "" && f != "{}" {
 		var extra map[string]any
-		if err := json.Unmarshal([]byte(f), &extra); err != nil {
-			return nil, invalid("filter: %v", err)
+		if err := json.Unmarshal([]byte(f), &extra); err != nil || extra == nil {
+			return nil, invalid("filter must be a JSON object: %s", f)
 		}
 		for key, v := range extra {
 			if key == "$text" {
@@ -379,7 +416,11 @@ func stateGet(c anystore.Collection, key string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	return string(d.Value().GetStringBytes("v")), true, nil
+	v := d.Value().Get("v")
+	if v == nil || v.Type() != anyenc.TypeString {
+		return "", false, fmt.Errorf("state %q is not a string value", key)
+	}
+	return string(v.GetStringBytes()), true, nil
 }
 
 func stateSet(c anystore.Collection, key, val string) error {

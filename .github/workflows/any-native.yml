@@ -9,7 +9,7 @@ name: any native (libany_shim)
 on:
   pull_request:
     paths:
-      - 'packages/flutter_edge_ai_any/native/**'
+      - 'packages/flutter_edge_ai_any/**'
       - '.github/workflows/any-native.yml'
   workflow_dispatch:
 
@@ -65,7 +65,11 @@ jobs:
       - name: NDK r29
         if: matrix.target == 'android_arm64'
         run: |
-          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.14206865" > /dev/null
+          # `yes` dies of SIGPIPE when sdkmanager stops reading; under
+          # pipefail that would fail the step, so its status is dropped and
+          # the NDK itself is checked instead.
+          (yes || true) | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.14206865" > /dev/null
+          test -f "$ANDROID_SDK_ROOT/ndk/29.0.14206865/source.properties"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/29.0.14206865" >> "$GITHUB_ENV"
 
       - name: Go tests
@@ -74,6 +78,29 @@ jobs:
 
       - name: Build ${{ matrix.target }}
         run: ./build.sh ${{ matrix.target }} "$RUNNER_TEMP/out"
+
+      # The Dart suites against the library just built, through the hook's
+      # local-prebuilt path: the only place the bindings meet a real
+      # library in CI until a release is pinned (test.yml skips them).
+      - name: Setup Flutter
+        if: matrix.test
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Dart tests against this build
+        if: matrix.test
+        run: |
+          mkdir -p prebuilt/${{ matrix.target }}
+          cp "$RUNNER_TEMP/out/${{ matrix.target }}/"*any_shim.* prebuilt/${{ matrix.target }}/
+          cd ../../../.. && flutter pub get
+          cd packages/flutter_edge_ai_any && dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/dart_test.log"
+          # A run that skipped the native suites examined nothing.
+          if grep -q "libany_shim is not built" "$RUNNER_TEMP/dart_test.log"; then
+            echo "::error::the native suites skipped: the hook did not register the build"
+            exit 1
+          fi
 
       - name: Package the release archive
         run: python release.py pack "$RUNNER_TEMP/out" "$RUNNER_TEMP/release" ${{ matrix.target }}

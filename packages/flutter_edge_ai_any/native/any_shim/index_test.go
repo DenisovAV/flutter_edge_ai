@@ -174,6 +174,18 @@ func TestIndexOptionsAndReopen(t *testing.T) {
 	if v, ok, err := stateGet(x.state, "cursor"); err != nil || !ok || v != "42" {
 		t.Fatalf("state after reopen = %q %v %v", v, ok, err)
 	}
+	x.close()
+	if _, err := openIndex(fmt.Sprintf(`{"path":%q,"dim":4,"passphrase":"correct horse","filterFields":["cat"]}`, path)); codeOf(err) != codeInvalidArgument {
+		t.Fatalf("reopen with other filter fields: %v, want invalid argument", err)
+	}
+	x, err = openIndex(fmt.Sprintf(`{"path":%q,"dim":4,"passphrase":"correct horse"}`, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer x.close()
+	if v, ok, err := stateGet(x.state, "cursor"); err != nil || !ok || v != "42" {
+		t.Fatalf("state after reopen = %q %v %v", v, ok, err)
+	}
 }
 
 // In hnsw mode a filter on a field without a range index is applied to
@@ -210,6 +222,9 @@ func TestIndexHnswFilteredKnnReturnsK(t *testing.T) {
 	}
 	if got := ids(r); len(got) != k {
 		t.Fatalf("filtered hnsw knn returned %d (%v), want %d; ef %v after %v attempts", len(got), got, k, r["ef"], r["attempts"])
+	}
+	if r["complete"] != true {
+		t.Fatalf("complete = %v", r["complete"])
 	}
 	if r["attempts"].(int) < 2 {
 		t.Fatalf("the first run already returned k: the test no longer exercises the retry")
@@ -267,5 +282,32 @@ func TestIndexResultsDoNotAliasIteratorBuffer(t *testing.T) {
 				t.Fatalf("%s meta has key %q: %v", res.Id, k, res.Meta)
 			}
 		}
+	}
+}
+
+// A filter that matches fewer documents than k is answered in one run:
+// the filtered count says nothing more is out there.
+func TestIndexHnswNoRetryWhenFilterMatchesFewer(t *testing.T) {
+	x := mustOpenIndex(t, map[string]any{"path": filepath.Join(t.TempDir(), "i.db"), "dim": 4, "mode": "hnsw", "filterFields": []string{"c"}})
+	for i := 0; i < 50; i++ {
+		c := "a"
+		if i < 2 {
+			c = "b"
+		}
+		doc, _ := json.Marshal(map[string]any{"id": fmt.Sprint(i), "meta": map[string]any{"c": c}})
+		if err := x.upsert(string(doc), unit(4, i, 0.2)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := x.knn(unit(4, 0, 0.2), 10, `{"meta.c":"b"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids(r)) != 2 || r["attempts"] != 1 || r["ef"] != 0 || r["complete"] != true {
+		t.Fatalf("got %v", r)
+	}
+	big := []float32{3e19, 0, 0, 0}
+	if err := x.upsert(`{"id":"big"}`, big); codeOf(err) != codeInvalidArgument {
+		t.Fatalf("huge vector: %v", err)
 	}
 }

@@ -55,7 +55,7 @@ library fails them instead.
 ## Known limits
 
 - The first open of a space on a second device can wait ~60 s for the SDK's
-  periodic re-handshake (4 of 9 LAN test runs here).
+  periodic re-handshake (about half of the LAN test runs here).
 - Objects written with a `seed` (an id derived from a caller key, the same on
   every device) can never be deleted: any-sync refuses to delete a derived
   object.

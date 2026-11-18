@@ -42,9 +42,9 @@ type docTypeCache struct {
 }
 
 func (a *account) loadDocTypes(sp space.Space, create bool) (*docTypeCache, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if c, ok := a.docTypes[sp.Id()]; ok && !create {
+	a.docMu.Lock()
+	defer a.docMu.Unlock()
+	if c, ok := a.docTypes[sp.Id()]; ok && (!create || len(c.types) > 0) {
 		return c, nil
 	}
 	list, err := sp.Types().List(a.ctx)
@@ -53,6 +53,7 @@ func (a *account) loadDocTypes(sp space.Space, create bool) (*docTypeCache, erro
 	}
 	c := &docTypeCache{types: map[string]docTypeProps{}}
 	var ids []string
+	pending := 0
 	for _, t := range list {
 		if t.XKey != docTypeXKey {
 			continue
@@ -72,6 +73,7 @@ func (a *account) loadDocTypes(sp space.Space, create bool) (*docTypeCache, erro
 		}
 		if p.meta == "" || p.source == "" {
 			// Its property definitions have not synced here yet.
+			pending++
 			continue
 		}
 		c.types[t.Id] = p
@@ -80,6 +82,11 @@ func (a *account) loadDocTypes(sp space.Space, create bool) (*docTypeCache, erro
 	if len(ids) == 0 {
 		if !create {
 			return c, nil
+		}
+		if pending > 0 {
+			// Creating one now would add a second document type to
+			// the space; wait for the existing one to finish syncing.
+			return nil, withCode(codeNotFound, "the space's document type has not finished syncing here; retry")
 		}
 		id, p, err := createDocType(a, sp)
 		if err != nil {
@@ -94,8 +101,7 @@ func (a *account) loadDocTypes(sp space.Space, create bool) (*docTypeCache, erro
 	return c, nil
 }
 
-func createDocType(a *account, sp space.Space) (string, docTypeProps, error) {
-	var p docTypeProps
+func createDocType(a *account, sp space.Space) (_ string, p docTypeProps, err error) {
 	id, err := sp.Types().Create(a.ctx, space.TypeCreateParams{
 		Name: docTypeName, XKey: docTypeXKey,
 		Description: "A document flutter_edge_ai indexes on each device",
@@ -103,6 +109,17 @@ func createDocType(a *account, sp space.Space) (string, docTypeProps, error) {
 	if err != nil {
 		return "", p, fmt.Errorf("create document type: %w", err)
 	}
+	// A type left without its properties would read as "not synced yet"
+	// forever and block every later put; remove it instead.
+	defer func() {
+		if err != nil {
+			ctx, cancel := cleanupCtx()
+			defer cancel()
+			if derr := sp.Types().Delete(ctx, id); derr != nil {
+				err = fmt.Errorf("%w (and the half-created document type %s could not be deleted: %v)", err, id, derr)
+			}
+		}
+	}()
 	if p.meta, err = sp.Types().AddProperty(a.ctx, id, space.PropertyDraft{Name: "Metadata", XKey: metaPropXKey, Kind: space.PropertyKindString}); err != nil {
 		return "", p, fmt.Errorf("document type: %w", err)
 	}
@@ -126,9 +143,9 @@ func (a *account) propsFor(sp space.Space, typeId string) (docTypeProps, bool, e
 	if p, ok := c.types[typeId]; ok {
 		return p, true, nil
 	}
-	a.mu.Lock()
+	a.docMu.Lock()
 	delete(a.docTypes, sp.Id())
-	a.mu.Unlock()
+	a.docMu.Unlock()
 	if c, err = a.loadDocTypes(sp, false); err != nil {
 		return docTypeProps{}, false, err
 	}
@@ -160,7 +177,7 @@ func metaText(raw json.RawMessage) (string, error) {
 	return buf.String(), nil
 }
 
-func (a *account) objectPut(spaceId string, d docIn) (map[string]any, error) {
+func (a *account) objectPut(spaceId string, d docIn) (_ map[string]any, err error) {
 	if d.Id != "" && d.Seed != "" {
 		return nil, invalid("give id or seed, not both")
 	}
@@ -188,6 +205,17 @@ func (a *account) objectPut(spaceId string, d docIn) (map[string]any, error) {
 			return nil, fmt.Errorf("create: %w", err)
 		}
 		created = true
+		// A created object is deletable: one that fails half-written is
+		// removed rather than left nameless in the synced space.
+		defer func() {
+			if err != nil {
+				ctx, cancel := cleanupCtx()
+				defer cancel()
+				if derr := sp.Objects().Delete(ctx, objId); derr != nil {
+					err = fmt.Errorf("%w (and the half-written object %s could not be deleted: %v)", err, objId, derr)
+				}
+			}
+		}()
 	default:
 		if d.Seed != "" {
 			id, err := sp.Objects().Derive(a.ctx, space.DeriveObjectOpts{Seed: []byte(d.Seed), Type: c.primary})
@@ -201,6 +229,10 @@ func (a *account) objectPut(spaceId string, d docIn) (map[string]any, error) {
 			return nil, err
 		}
 		typeId := string(row.GetStringBytes("any", "type"))
+		if typeId == "" {
+			// The tree is here, its row not yet (still syncing).
+			return nil, withCode(codeNotFound, "object %s has not finished syncing here; retry", objId)
+		}
 		p, ok, err := a.propsFor(sp, typeId)
 		if err != nil {
 			return nil, err
@@ -316,8 +348,8 @@ func (a *account) objectQuery(spaceId, filter string, limit int) ([]any, error) 
 	q := sp.QueryObjects()
 	if f := strings.TrimSpace(filter); f != "" && f != "{}" {
 		var m map[string]any
-		if err := json.Unmarshal([]byte(f), &m); err != nil {
-			return nil, invalid("filter: %v", err)
+		if err := json.Unmarshal([]byte(f), &m); err != nil || m == nil {
+			return nil, invalid("filter must be a JSON object: %s", f)
 		}
 		q = q.Filter(m)
 	}

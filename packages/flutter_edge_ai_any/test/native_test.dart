@@ -26,13 +26,25 @@ void main() {
   setUp(() => tmp = Directory.systemTemp.createTempSync('any_shim_test'));
   tearDown(() => tmp.deleteSync(recursive: true));
 
-  AnyShimAccount openAccount() => AnyShimAccount.open({
-    'dataDir': '${tmp.path}/sdk',
-    'mnemonic': AnyShim.newMnemonic(),
-    'deviceKeyHex': AnyShim.newDeviceKey(),
-    'nodeConfYaml': deadNodeConf(),
-    'p2p': {'enabled': false},
-  });
+  // Closed before tmp is deleted, also when a test fails midway (the SDK
+  // holds its files open); a test that closes it itself is fine.
+  AnyShimAccount openAccount() {
+    final a = AnyShimAccount.open({
+      'dataDir': '${tmp.path}/sdk',
+      'mnemonic': AnyShim.newMnemonic(),
+      'deviceKeyHex': AnyShim.newDeviceKey(),
+      'nodeConfYaml': deadNodeConf(),
+      'p2p': {'enabled': false},
+    });
+    addTearDown(() {
+      try {
+        a.close();
+      } on AnyShimException catch (e) {
+        if (e.status != AnyShimStatus.closed) rethrow;
+      }
+    });
+    return a;
+  }
 
   group('process-wide', skip: skip, () {
     test('version names the pinned SDK', () {
@@ -65,6 +77,25 @@ void main() {
       );
     });
 
+    test('arguments C cannot carry are refused in Dart', () {
+      final a = openAccount();
+      final space = a.createSpace('args');
+      expect(() => a.createSpace('a\u0000b'), throwsArgumentError);
+      expect(
+        () => a.queryObjects(space, limit: 1 << 40),
+        throwsA(isA<RangeError>()),
+      );
+      expect(
+        () => a.readFile(space, 'f', '${tmp.path}/x', timeout: Duration.zero),
+        throwsArgumentError,
+      );
+      expect(
+        () => a.pollEvents(timeout: const Duration(microseconds: -1)),
+        throwsArgumentError,
+      );
+      expect(() => a.changesSince(space, -1), throwsA(isA<RangeError>()));
+    });
+
     test('a stale handle is closed, not a crash', () {
       expect(
         () => AnyShimAccount.fromHandle(1 << 50).info(),
@@ -84,7 +115,16 @@ void main() {
       expect((info['p2p'] as Map)['enabled'], false);
 
       final space = a.createSpace('notes');
-      expect(a.listSpaces().map((s) => s['id']), contains(space));
+      final list = a.listSpaces();
+      expect(list['syncError'], isNull);
+      expect(
+        (list['spaces']! as List).map((s) => (s as Map)['id']),
+        contains(space),
+      );
+      expect(
+        () => a.spaceStatus('bafyreinosuchspace.abc'),
+        throwsStatus(AnyShimStatus.notFound),
+      );
 
       final put = a.putObject(space, {
         'seed': 'doc-1',
@@ -179,22 +219,31 @@ void main() {
         a.unwatch(watch);
         expect(() => a.unwatch(watch), throwsStatus(AnyShimStatus.notFound));
 
+        // The poller says when it is about to block; close comes well
+        // after, and the poller reports how long it was blocked, so a poll
+        // that only started after close (and returned at once) fails.
         final handle = a.handle;
+        final started = ReceivePort();
+        final port = started.sendPort;
         final poller = Isolate.run(() {
+          final acc = AnyShimAccount.fromHandle(handle);
+          acc.info();
+          port.send(null);
+          final sw = Stopwatch()..start();
           try {
-            AnyShimAccount.fromHandle(
-              handle,
-            ).pollEvents(timeout: const Duration(seconds: 30));
-            return 'returned';
+            acc.pollEvents(timeout: const Duration(seconds: 30));
+            return ('returned', sw.elapsedMilliseconds);
           } on AnyShimException catch (e) {
-            return e.status.name;
+            return (e.status.name, sw.elapsedMilliseconds);
           }
         });
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-        final sw = Stopwatch()..start();
+        await started.first;
+        await Future<void>.delayed(const Duration(milliseconds: 400));
         a.close();
-        expect(await poller, 'closed');
-        expect(sw.elapsed, lessThan(const Duration(seconds: 5)));
+        final (status, blockedMs) = await poller;
+        expect(status, 'closed');
+        expect(blockedMs, greaterThanOrEqualTo(300));
+        expect(blockedMs, lessThan(5000));
       },
     );
   });

@@ -12,16 +12,19 @@
       `shasum -a 256 -c` reads) and manifest.json (per target: archive,
       archive size and sha256, library name, size and sha256).
 
-  release.py verify <release_dir> <version> [--hook <hook/build.dart>]
+  release.py verify <release_dir> <version> [--hook <hook/build.dart>] [--partial]
       Every archive matches checksums_any_shim.txt and manifest.json, holds
       exactly its library under the expected name, and that library passes
       check_exports.py for its target. With --hook, the hook's _bundleVersion
       is <version> and its _checksums map equals the checksums file (an empty
       map is allowed only before the release: it is reported, not failed).
+      All seven targets are required, in manifest and verify alike, unless
+      --partial (a local check of the targets one machine can build).
 
 The published tag must never change: a rebuild goes out under a new
 version with a letter suffix (0.1.0-a), never by re-uploading assets.
 """
+import argparse
 import gzip
 import hashlib
 import io
@@ -83,8 +86,11 @@ def read_archive(path, target):
         return tar.extractfile(members[0]).read()
 
 
-def manifest(release_dir, version):
+def manifest(release_dir, version, partial=False):
     entries, lines = {}, []
+    missing = [t for t in sorted(TARGETS) if not os.path.exists(os.path.join(release_dir, archive_name(t)))]
+    if missing and not partial:
+        raise SystemExit(f"FAIL archives missing for {missing} (--partial for a local check)")
     for target in sorted(TARGETS):
         path = os.path.join(release_dir, archive_name(target))
         if not os.path.exists(path):
@@ -120,7 +126,7 @@ def hook_pins(hook_path):
     return version, pins
 
 
-def verify(release_dir, version, hook=None):
+def verify(release_dir, version, hook=None, partial=False):
     problems = []
     sums = {}
     for line in open(os.path.join(release_dir, CHECKSUMS)):
@@ -131,6 +137,8 @@ def verify(release_dir, version, hook=None):
         problems.append(f"manifest says {man['tag']}, expected native-any-v{version}")
     if set(sums) != {e["archive"] for e in man["targets"].values()}:
         problems.append("checksums and manifest list different archives")
+    if set(man["targets"]) != set(TARGETS) and not partial:
+        problems.append(f"manifest lacks {sorted(set(TARGETS) - set(man['targets']))}")
     for target, entry in sorted(man["targets"].items()):
         path = os.path.join(release_dir, entry["archive"])
         blob = open(path, "rb").read()
@@ -154,7 +162,9 @@ def verify(release_dir, version, hook=None):
         hv, pins = hook_pins(hook)
         if hv != version:
             problems.append(f"hook pins version {hv}, release is {version}")
-        if not pins:
+        if not pins and "_checksums = {}" not in open(hook).read():
+            problems.append(f"{hook} has checksum entries this script cannot read")
+        elif not pins:
             print(f"note: {hook} pins no checksums yet (expected before the upload)")
         elif pins != sums:
             problems.append(f"hook checksums differ from {CHECKSUMS}: hook {pins}, release {sums}")
@@ -166,17 +176,29 @@ def verify(release_dir, version, hook=None):
 
 
 def main(argv):
-    if len(argv) >= 5 and argv[1] == "pack":
-        pack(argv[2], argv[3], argv[4:])
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("pack")
+    p.add_argument("out_dir")
+    p.add_argument("release_dir")
+    p.add_argument("targets", nargs="+", choices=sorted(TARGETS))
+    m = sub.add_parser("manifest")
+    m.add_argument("release_dir")
+    m.add_argument("version")
+    m.add_argument("--partial", action="store_true")
+    v = sub.add_parser("verify")
+    v.add_argument("release_dir")
+    v.add_argument("version")
+    v.add_argument("--hook")
+    v.add_argument("--partial", action="store_true")
+    a = ap.parse_args(argv[1:])
+    if a.cmd == "pack":
+        pack(a.out_dir, a.release_dir, a.targets)
         return 0
-    if len(argv) == 4 and argv[1] == "manifest":
-        manifest(argv[2], argv[3])
+    if a.cmd == "manifest":
+        manifest(a.release_dir, a.version, a.partial)
         return 0
-    if len(argv) in (4, 6) and argv[1] == "verify":
-        hook = argv[5] if len(argv) == 6 and argv[4] == "--hook" else None
-        return verify(argv[2], argv[3], hook)
-    print(__doc__, file=sys.stderr)
-    return 2
+    return verify(a.release_dir, a.version, a.hook, a.partial)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,11 @@ by abi_test.go), and its container fits the target:
   linux_arm64          ELF aarch64
   windows_x86_64       PE x86-64
 
+Imports: Android and Linux libraries may need only the system libraries
+listed in ANDROID_NEEDED / LINUX_NEEDED, and Linux at most GLIBC_MAX;
+Windows must not import a MinGW runtime DLL; Apple only /usr/lib and
+/System/Library.
+
 Reads the bytes itself (ELF .dynsym, Mach-O LC_SYMTAB, PE export directory;
 the parsers are copied from flutter_edge_ai_litertlm's
 check_embedding_exports.py), so it needs no platform toolchain and checks
@@ -203,6 +208,125 @@ def exports(path):
     raise FormatError("neither ELF, Mach-O nor PE")
 
 
+def elf_sections(data):
+    shoff = struct.unpack_from("<Q", data, 0x28)[0]
+    shentsize, shnum = struct.unpack_from("<HH", data, 0x3A)
+    out = []
+    for i in range(shnum):
+        base = shoff + i * shentsize
+        sh_type = struct.unpack_from("<I", data, base + 4)[0]
+        sh_offset, sh_size = struct.unpack_from("<QQ", data, base + 0x18)
+        sh_link, sh_info = struct.unpack_from("<II", data, base + 0x28)
+        out.append((sh_type, sh_offset, sh_size, sh_link, sh_info))
+    return out
+
+
+def elf_imports(data):
+    """(DT_NEEDED names, symbol version names such as GLIBC_2.17)."""
+    secs = elf_sections(data)
+    needed, versions = [], set()
+    for sh_type, off, size, link, info in secs:
+        strtab = secs[link][1]
+        if sh_type == 6:  # SHT_DYNAMIC
+            for i in range(size // 16):
+                tag, val = struct.unpack_from("<qQ", data, off + i * 16)
+                if tag == 1:  # DT_NEEDED
+                    needed.append(_cstr(data, strtab + val))
+        elif sh_type == 0x6FFFFFFE:  # SHT_GNU_verneed
+            vn = off
+            for _ in range(info):
+                _, cnt, _, aux, nxt = struct.unpack_from("<HHIII", data, vn)
+                va = vn + aux
+                for _ in range(cnt):
+                    _, _, _, name, vnext = struct.unpack_from("<IHHII", data, va)
+                    versions.add(_cstr(data, strtab + name))
+                    va += vnext
+                vn += nxt
+    return needed, versions
+
+
+def pe_imports(data):
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    coff = pe + 4
+    nsections, = struct.unpack_from("<H", data, coff + 2)
+    opt_size, = struct.unpack_from("<H", data, coff + 16)
+    opt = coff + 20
+    dirs = opt + (112 if struct.unpack_from("<H", data, opt)[0] == 0x20B else 96)
+    imp_rva, _ = struct.unpack_from("<II", data, dirs + 8)
+    sections = []
+    for i in range(nsections):
+        e = opt + opt_size + i * 40
+        vsize, vaddr, rawsize, rawptr = struct.unpack_from("<IIII", data, e + 8)
+        sections.append((vaddr, max(vsize, rawsize), rawptr))
+
+    def at(rva):
+        for vaddr, size, rawptr in sections:
+            if vaddr <= rva < vaddr + size:
+                return rawptr + rva - vaddr
+        raise FormatError(f"RVA {rva:#x} is in no section")
+
+    names = []
+    if imp_rva:
+        d = at(imp_rva)
+        while True:
+            name_rva = struct.unpack_from("<I", data, d + 12)[0]
+            if name_rva == 0:
+                break
+            names.append(_cstr(data, at(name_rva)))
+            d += 20
+    return names
+
+
+def macho_dylibs(data):
+    ncmds = struct.unpack_from("<I", data, 16)[0]
+    off, out = 32, []
+    for _ in range(ncmds):
+        cmd, size = struct.unpack_from("<II", data, off)
+        if cmd in (0xC, 0x80000018, 0x8000001F):  # LOAD_DYLIB, WEAK, REEXPORT
+            out.append(_cstr(data, off + struct.unpack_from("<I", data, off + 8)[0]))
+        off += size
+    return out
+
+
+# What a library may load besides itself. Anything else is a file the app
+# does not ship (a MinGW runtime DLL, a newer glibc), found on a user's
+# machine as a load failure, not here.
+ANDROID_NEEDED = {"libc.so", "libdl.so", "libm.so", "liblog.so"}
+LINUX_NEEDED = {"libc.so.6", "libpthread.so.0", "libdl.so.2", "libm.so.6", "libresolv.so.2"}
+# Oldest glibc a Linux build may require (Ubuntu 22.04 ships 2.35).
+GLIBC_MAX = (2, 34)
+WINDOWS_FORBIDDEN = {"libwinpthread-1.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll"}
+
+
+def check_imports(data, target):
+    problems = []
+    if target.startswith(("android_", "linux_")):
+        needed, versions = elf_imports(data)
+        allowed = ANDROID_NEEDED if target.startswith("android_") else LINUX_NEEDED
+        extra = sorted(set(needed) - allowed)
+        if extra:
+            problems.append(f"needs {extra}, allowed {sorted(allowed)}")
+        glibc = sorted(tuple(int(x) for x in v[6:].split(".")) for v in versions if v.startswith("GLIBC_2"))
+        if glibc:
+            print(f"     {target}: needs {needed}, glibc up to {'.'.join(map(str, glibc[-1]))}")
+            if glibc[-1] > GLIBC_MAX:
+                problems.append(f"needs glibc {'.'.join(map(str, glibc[-1]))} > {'.'.join(map(str, GLIBC_MAX))}")
+        else:
+            print(f"     {target}: needs {needed}")
+    elif target.startswith("windows_"):
+        dlls = pe_imports(data)
+        print(f"     {target}: imports {dlls}")
+        bad = sorted(d for d in dlls if d.lower() in WINDOWS_FORBIDDEN)
+        if bad:
+            problems.append(f"imports MinGW runtime DLLs {bad}: link them statically")
+    else:
+        libs = macho_dylibs(data)
+        bad = [l for l in libs if not l.startswith(("/usr/lib/", "/System/Library/"))]
+        if bad:
+            problems.append(f"loads {bad}, outside the system")
+    return problems
+
+
 def elf_machine(data):
     return struct.unpack_from("<H", data, 0x12)[0]
 
@@ -316,6 +440,8 @@ def main(argv):
     data = open(path, "rb").read()
     try:
         problems = check_container(data, target)
+        if not problems:
+            problems = check_imports(data, target)
         got = {n for n in exports(path) if n.startswith("any_shim_")}
     except (FormatError, struct.error, ValueError) as e:
         print(f"FAIL {target}: {path}: {e}")

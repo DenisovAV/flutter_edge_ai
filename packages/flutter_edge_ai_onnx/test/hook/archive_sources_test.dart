@@ -114,6 +114,20 @@ void main() {
         switch (request.uri.path) {
           case '/a.tgz':
             request.response.add(good);
+          case '/cut.tgz':
+            final socket = await request.response.detachSocket(
+              writeHeaders: false,
+            );
+            socket.add(
+              utf8.encode(
+                'HTTP/1.1 200 OK\r\n'
+                'Content-Length: ${good.length * 10}\r\n\r\n',
+              ),
+            );
+            socket.add(good);
+            await socket.flush();
+            socket.destroy();
+            return;
           case '/moved.tgz':
             request.response
               ..statusCode = HttpStatus.found
@@ -150,6 +164,16 @@ void main() {
       );
       expect(dest.existsSync(), isFalse);
       expect(log.single, contains('HTTP 404'));
+    });
+
+    test('a body cut short is an unavailable source, no file left', () async {
+      final log = <String>[];
+      expect(
+        await httpArchiveFetch(base.resolve('/cut.tgz'), dest, log.add),
+        isFalse,
+      );
+      expect(dest.existsSync(), isFalse);
+      expect(log.single, contains('interrupted'));
     });
 
     test('a refused connection is an unavailable source', () async {

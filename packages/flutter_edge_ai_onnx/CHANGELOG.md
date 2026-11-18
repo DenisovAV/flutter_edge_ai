@@ -1,4 +1,5 @@
 ## Unreleased
+- Download ONNX Runtime and ORT-GenAI from this repository's mirror while Microsoft's releases are gone.
 - `OnnxHuggingFaceResolver` declares the `inference` role.
 
 ## 0.9.2

@@ -100,6 +100,15 @@ final class FlutterEdgeAiRag {
     VectorStoreRepository? store;
     try {
       store = await provider.createStore(spec);
+      // Before initialize, so a store without text search creates nothing on
+      // disk for a spec it cannot serve.
+      if (spec.enableTextSearch && !store.supportsTextSearch) {
+        throw VectorStoreException(
+          'Vector-store provider "${provider.id}" has no text search, so '
+          '"${spec.location}" cannot be opened with enableTextSearch. Use a '
+          'provider that supports it, or open without enableTextSearch.',
+        );
+      }
       store.configure(spec.filterSchema);
       await store.initialize(spec.location);
       final stored = await store.readBinding();

@@ -1,3 +1,6 @@
+## Unreleased
+- LiteRT bindings come from `litertlm_dart`.
+
 ## 0.6.1
 - Whisper/Parakeet log-mel: FFT replaces the direct DFT, ~35x faster; Moonshine unchanged (#784).
 

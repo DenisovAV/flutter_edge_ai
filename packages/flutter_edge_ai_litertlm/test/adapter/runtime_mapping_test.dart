@@ -9,8 +9,7 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/errors.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
+import 'package:litertlm_dart/common.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

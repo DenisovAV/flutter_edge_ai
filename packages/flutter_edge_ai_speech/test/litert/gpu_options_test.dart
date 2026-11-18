@@ -7,7 +7,7 @@ import 'dart:convert';
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter_edge_ai_litertlm/litert_bindings.dart'
+import 'package:litertlm_dart/litert_bindings.dart'
     show
         LiteRtCompiledModel,
         LiteRtOpaqueOptions,

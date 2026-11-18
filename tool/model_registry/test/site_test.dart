@@ -187,7 +187,7 @@ const _docClaim = '''
   );
   if (hook)
     write(
-      'packages/flutter_edge_ai_litertlm/hook/build.dart',
+      'packages/litertlm_dart/hook/build.dart',
       "  checksums: {\n"
           "    'litertlm-macos_arm64.tar.gz':\n        '$_macNative',\n"
           "    'litertlm-android_arm64.tar.gz':\n        '${'b' * 64}',\n"

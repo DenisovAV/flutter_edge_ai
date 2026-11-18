@@ -1,6 +1,8 @@
 ## Unreleased
 - `LitertlmManifestResolver` declares the `inference` role and returns `family`.
 - Native: a message sends `images` when non-empty, else `imageBytes`; no duplicate photo.
+
+## 1.20.2
 - MediaTek NPU runs again on LiteRT-LM 0.19 (#848).
 
 ## 1.20.1

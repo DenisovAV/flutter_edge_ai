@@ -63,7 +63,7 @@
 // create/run call against a mismatched shape returns a non-OK LiteRT
 // status, which the `.check()` extension turns into a thrown
 // [StateError] — rather than silently misbehaving.
-import 'package:flutter_edge_ai_litertlm/litert_bindings.dart';
+import 'package:litertlm_dart/litert_bindings.dart';
 
 /// Frozen graph layout for the Qwen3-TTS talker (see file header). Every
 /// field is `static const` — nothing here is discovered at runtime;

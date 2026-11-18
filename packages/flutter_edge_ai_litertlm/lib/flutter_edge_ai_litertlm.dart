@@ -23,21 +23,20 @@ export 'src/adapter/bundle_info.dart'
 export 'src/adapter/bundle_reader_stub.dart'
     if (dart.library.ffi) 'src/adapter/bundle_reader.dart'
     show readLiteRtLmBundleInfo;
-export 'src/bundle/litertlm_bundle_info.dart'
-    show LiteRtLmBundleException, LiteRtLmBundleProblem;
+export 'package:litertlm_dart/common.dart'
+    show LiteRtLmBundleException, LiteRtLmBundleProblem, LiteRtLmLogLevel;
 export 'src/litert_lm_load_errors.dart';
 
 // The models this package runs, generated from the project's model registry:
 // `LiteRtLmModels.gemma4E2bIt.npuSm8750`, `LiteRtEmbedders…`. Plain Dart on
 // every platform; `backendsHere` answers for the runtime it runs in.
 export 'src/catalog/litert_catalog.dart' hide debugLiteRtCatalogHost;
-export 'src/runtime/litert_lm_log_level.dart';
 
 // LiteRt interpreter FFI (arbitrary `.tflite` models) — used by
 // flutter_edge_ai_speech. `dart.library.ffi`-only;
 // the web stub exports no symbols (web leaves use their own JS arm).
-export 'src/ffi/litert_bindings_stub.dart'
-    if (dart.library.ffi) 'src/ffi/litert_bindings.dart';
+export 'src/litert_bindings_stub.dart'
+    if (dart.library.ffi) 'package:litertlm_dart/litert_bindings.dart';
 
 // LiteRT embedding backend (`LiteRtEmbeddingBackend`). Both arms only describe
 // a pass — the LiteRT C API pass on native, the LiteRT.js one on web — and core

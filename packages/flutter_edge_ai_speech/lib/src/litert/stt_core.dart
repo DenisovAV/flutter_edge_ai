@@ -46,7 +46,7 @@ import 'package:flutter_edge_ai/engine.dart';
 // is native-only — never reached on web — so it always needs the real FFI
 // bindings. See the equivalent comment in `litert_embedding_core.dart` for
 // why this import (not the `if (dart.library.ffi)` barrel) is correct here.
-import 'package:flutter_edge_ai_litertlm/litert_bindings.dart';
+import 'package:litertlm_dart/litert_bindings.dart';
 
 import '../model/stt_model_profile.dart';
 import '../tokenizer/stt_special_tokens.dart'

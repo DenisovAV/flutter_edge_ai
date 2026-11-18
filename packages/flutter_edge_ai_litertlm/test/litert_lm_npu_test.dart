@@ -9,15 +9,10 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_common.dart'
     show liteRtLmWebNpuRefusal;
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
-import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_npu_target.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
-    show NpuDispatchUnavailableException;
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
-import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
+import 'package:litertlm_dart/common.dart';
 
 const _file = 'embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm';
 const _sm8850 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8850');

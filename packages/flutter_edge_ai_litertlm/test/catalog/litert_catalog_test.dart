@@ -11,7 +11,7 @@ import 'dart:io';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
-import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_load_plan.dart'
+import 'package:litertlm_dart/litertlm_dart.dart'
     show textBackendsAllowedForTesting;
 import 'package:flutter_edge_ai_litertlm/src/catalog/litert_catalog.dart'
     show debugLiteRtCatalogHost;

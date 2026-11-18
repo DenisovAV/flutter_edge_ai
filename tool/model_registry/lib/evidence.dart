@@ -36,7 +36,7 @@ const _towerChecks = {'vision', 'audio'};
 const evidenceSchemaVersion = 2;
 
 /// The LiteRT-LM archive each native host loads, as named in
-/// packages/flutter_edge_ai_litertlm/hook/build.dart. The speech package
+/// packages/litertlm_dart/hook/build.dart. The speech package
 /// loads the same libraries.
 const _archives = {
   'android_arm64': 'litertlm-android_arm64.tar.gz',
@@ -58,13 +58,7 @@ String? nativeKey(String repoRoot, String host, Map<String, String> versions) {
   final archive = _archives[host];
   if (archive == null) return null;
   final hook = File(
-    p.join(
-      repoRoot,
-      'packages',
-      'flutter_edge_ai_litertlm',
-      'hook',
-      'build.dart',
-    ),
+    p.join(repoRoot, 'packages', 'litertlm_dart', 'hook', 'build.dart'),
   );
   if (!hook.existsSync()) return null;
   final m = RegExp(

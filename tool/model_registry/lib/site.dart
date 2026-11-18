@@ -253,13 +253,7 @@ final class SiteInputs {
       }
     }
     final hook = File(
-      p.join(
-        repoRoot,
-        'packages',
-        'flutter_edge_ai_litertlm',
-        'hook',
-        'build.dart',
-      ),
+      p.join(repoRoot, 'packages', 'litertlm_dart', 'hook', 'build.dart'),
     );
     if (!hook.existsSync() &&
         Directory(p.join(repoRoot, 'packages')).existsSync()) {

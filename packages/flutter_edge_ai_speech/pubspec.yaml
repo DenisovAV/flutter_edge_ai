@@ -32,12 +32,16 @@ dependencies:
   # `getActiveStt(language:)` sets it.)
   # 2.6.0 supplies the catalog and registry contracts used by this release.
   flutter_edge_ai: ^2.6.0
-  # 1.20.0 supplies the LiteRT-LM 0.19 / C API 1.0 bindings and native bundle.
-  # (1.13.0 was the first litertlm that compiles against core 2.3.0 — an older
-  # one paired with it fails to compile inside litertlm. (1.7.0 was the older
-  # floor: before it litertlm's LiteRtRankedTensorTypeView still used the MSVC
-  # LiteRtLayout on Windows, and STT/TTS failed there with status 3.)
-  flutter_edge_ai_litertlm: ^1.20.0
+  # The LiteRT C API bindings (litert_bindings.dart) and the native bundle
+  # that carries libLiteRt / libLiteRtLm. Not published yet: it resolves in
+  # this workspace, and the 2.7.0 release PR publishes it first.
+  litertlm_dart: '>=0.19.1+1 <0.19.2'
+  # LiteRtLmNpuTarget, the core NpuTarget the speech catalog names. The
+  # published 1.20.x carry a build hook of their own, which would bundle
+  # libLiteRtLm a second time next to litertlm_dart's; this workspace's
+  # flutter_edge_ai_litertlm builds on litertlm_dart, and the 2.7.0 release
+  # PR raises this to the first release that does.
+  flutter_edge_ai_litertlm: ^1.20.2
   ffi: ^2.1.0
   meta: ^1.9.0
 

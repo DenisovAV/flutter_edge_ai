@@ -4,9 +4,9 @@
 
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 
-import 'runtime/load_errors.dart';
+import 'package:litertlm_dart/common.dart';
 
-export 'runtime/load_errors.dart'
+export 'package:litertlm_dart/common.dart'
     show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
 
 /// Failure details for a single backend initialization attempt.

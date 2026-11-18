@@ -32,7 +32,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/litert_bindings.dart';
+import 'package:litertlm_dart/litert_bindings.dart';
 
 import '../model/tts_model_profile.dart';
 import '../tts/neural_g2p_decode.dart';

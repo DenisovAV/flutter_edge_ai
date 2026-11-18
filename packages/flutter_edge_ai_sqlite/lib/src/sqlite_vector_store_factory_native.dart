@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
+import 'sqlite_text_tokenizer.dart';
+
 import 'sqlite_vector_store.dart';
 
 bool get isSupported =>
@@ -11,4 +13,10 @@ bool get isSupported =>
     Platform.isWindows ||
     Platform.isLinux;
 
-VectorStoreRepository createStore() => SqliteVectorStore();
+VectorStoreRepository createStore({
+  required bool enableTextSearch,
+  SqliteTextTokenizer? textTokenizer,
+}) => SqliteVectorStore(
+  enableTextSearch: enableTextSearch,
+  textTokenizer: textTokenizer,
+);

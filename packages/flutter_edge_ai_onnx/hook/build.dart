@@ -56,6 +56,9 @@ import 'package:hooks/hooks.dart';
 
 const _packageName = 'flutter_edge_ai_onnx';
 
+/// See [_OrtBundle.version].
+const _cacheRevision = 1;
+
 /// One archive to fetch, verify, and extract: a GitHub Release tarball for
 /// one (library, platform) pair.
 class _Archive {
@@ -374,11 +377,14 @@ class _OrtBundle {
   final _Archive? ort;
   final _Archive genai;
 
-  /// Cache-invalidation key, derived from every archive's pin: a changed pin
-  /// (a new version, or an archive rebuilt from NuGet) refetches, and adding
-  /// a source URL for the same bytes does not.
+  /// Cache key and cache subdirectory name, derived from every archive's
+  /// pin: a changed pin (a new version, or an archive rebuilt from NuGet)
+  /// gets a new directory, and adding a source URL for the same bytes does
+  /// not. Bump [_cacheRevision] when the hook changes what it does to the
+  /// files after the download (thinning, renaming) with the same pins.
   String get version =>
-      archives.map((archive) => archive.sha256.substring(0, 16)).join('_');
+      'r$_cacheRevision-'
+      '${archives.map((archive) => archive.sha256.substring(0, 16)).join('_')}';
 
   List<_Archive> get archives => [?ort, genai];
 }
@@ -401,8 +407,16 @@ Directory _cacheBaseDir() {
   return Directory('$home/.cache/flutter_gemma/native/onnx_genai');
 }
 
+/// The bundle's cache: one directory per set of pins under
+/// `<cache>/<dirName>/`, so builds of different package versions on the same
+/// machine never evict each other's verified libraries. (Up to onnx 0.9.2 the
+/// libraries sat in `<dirName>/` itself with a `.version` marker; this hook
+/// leaves that directory alone for those builds.)
+Directory _bundleCacheDir(_OrtBundle bundle) =>
+    Directory('${_cacheBaseDir().path}/${bundle.dirName}/${bundle.version}');
+
 File _markerFile(_OrtBundle bundle) =>
-    File('${_cacheBaseDir().path}/${bundle.dirName}/.version');
+    File('${_bundleCacheDir(bundle).path}/.version');
 
 String? _readMarkerVersion(_OrtBundle bundle) {
   final m = _markerFile(bundle);
@@ -440,37 +454,11 @@ Directory? _localPrebuiltDir(Uri packageRoot, _OrtBundle bundle) {
 // Download + verify + extract
 // ============================================================================
 
-/// One source of [fetchPinnedArchive]: an HTTP GET written to [dest].
-Future<bool> _httpFetch(Uri url, File dest, void Function(String) log) async {
-  final client = HttpClient();
-  try {
-    final request = await client.getUrl(url);
-    // GitHub release assets 302-redirect to an S3-style signed URL; a plain
-    // HttpClient request follows redirects by default, but be explicit since
-    // a silent non-follow would produce a 3-byte HTML body that "downloads"
-    // successfully and then fails the sha256 check with a confusing mismatch
-    // instead of a clear HTTP-status error.
-    request.followRedirects = true;
-    final response = await request.close();
-    if (response.statusCode != 200) {
-      log('download failed (HTTP ${response.statusCode}) for $url');
-      await response.drain<void>();
-      return false;
-    }
-    final sink = dest.openWrite();
-    await response.pipe(sink);
-    return true;
-  } catch (e) {
-    log('download failed for $url: $e');
-    if (dest.existsSync()) dest.deleteSync();
-    return false;
-  } finally {
-    client.close();
-  }
-}
-
 Future<bool> _downloadVerifyExtract(_Archive archive, Directory destDir) async {
-  final cacheRoot = destDir.parent; // .../onnx_genai/<dirName>/
+  // The archive and its temporary extract live in the bundle's own cache
+  // directory: two builds (iOS device and simulator fetch the same archive)
+  // never share an archive path.
+  final cacheRoot = destDir;
   if (!cacheRoot.existsSync()) cacheRoot.createSync(recursive: true);
   final archiveFile = File('${cacheRoot.path}/${archive.archiveFileName}');
 
@@ -479,7 +467,7 @@ Future<bool> _downloadVerifyExtract(_Archive archive, Directory destDir) async {
       sources: [for (final url in archive.urls) Uri.parse(url)],
       sha256Hex: archive.sha256,
       dest: archiveFile,
-      fetch: _httpFetch,
+      fetch: httpArchiveFetch,
       log: (message) => stderr.writeln('flutter_edge_ai_onnx: $message'),
     );
     if (!fetched.ok) {
@@ -646,7 +634,7 @@ void main(List<String> args) async {
       );
     }
 
-    final cacheDir = Directory('${_cacheBaseDir().path}/${bundle.dirName}');
+    final cacheDir = _bundleCacheDir(bundle);
     final localDir = _localPrebuiltDir(input.packageRoot, bundle);
     final storedVersion = _readMarkerVersion(bundle);
     final useCache = localDir == null && storedVersion == bundle.version;

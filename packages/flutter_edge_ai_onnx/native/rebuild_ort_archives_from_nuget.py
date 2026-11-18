@@ -7,8 +7,10 @@ Each output archive holds Microsoft's signed library, unmodified, at the path
 the original GitHub release archive used (so flutter_edge_ai_onnx's hook
 extracts it with the same `extractedLibPath`), plus the package's LICENSE,
 ThirdPartyNotices.txt and a SOURCE.txt naming the nupkg and its sha256.
-The archive bytes are deterministic: fixed member order, mtime, uid/gid and
-modes, and a gzip header without a timestamp.
+The archive bytes are deterministic for a given zlib: fixed member order,
+mtime, uid/gid and modes, and a gzip header without a timestamp. The `.zip`
+outputs depend on the zlib version, so pin the published bytes, not a rebuild.
+A target whose nupkg is not in NUPKG_DIR is skipped.
 
   rebuild_ort_archives_from_nuget.py NUPKG_DIR OUT_DIR
 """
@@ -108,6 +110,9 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     for name, pkg, version, rid, lib, path in TARGETS:
         nupkg = os.path.join(nupkg_dir, f'{pkg.lower()}.{version}.nupkg')
+        if not os.path.exists(nupkg):
+            print(f'skipped {name}: no {os.path.basename(nupkg)}', file=sys.stderr)
+            continue
         entries = members(nupkg, pkg, version, rid, lib, path)
         out = os.path.join(out_dir, name)
         (write_zip if name.endswith('.zip') else write_tgz)(out, entries)

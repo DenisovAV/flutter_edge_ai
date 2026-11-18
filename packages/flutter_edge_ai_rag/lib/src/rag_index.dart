@@ -6,6 +6,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
 
 import 'embedding.dart';
 import 'filter.dart';
+import 'text_search.dart';
 import 'vector_store.dart';
 
 /// Package-internal construction seam used by `FlutterEdgeAiRag.open` and
@@ -187,6 +188,136 @@ final class RagIndex {
     );
   });
 
+  /// Ranks this index's documents for [text] by the store's text relevance,
+  /// higher first (see [TextSearchResult.relevanceScore]).
+  ///
+  /// [text] is plain user text, never a query syntax; a [text] with no
+  /// searchable term returns an empty list. Every [filter] field must be
+  /// declared in the spec's `filterSchema` ([ArgumentError] otherwise). No
+  /// embedder is needed, so this also works on an `openVectors` index.
+  ///
+  /// Fails with [StateError] when the location has no text index (open it
+  /// once with `VectorStoreSpec.enableTextSearch`) or its store has no text
+  /// search.
+  Future<List<TextSearchResult>> searchText({
+    required String text,
+    int topK = 5,
+    Filter? filter,
+  }) => Future.sync(() {
+    _ensureUsable();
+    _validateText(text);
+    _validateSearch(topK: topK, threshold: 0);
+    _validateFilter(filter);
+    _requireTextSearch('searchText');
+    return _accept(
+      () => _gate.runShared(
+        () => _store.searchText(text: text, topK: topK, filter: filter),
+      ),
+    );
+  });
+
+  /// Hybrid search: embeds [text] with the embedder's query role, runs a
+  /// vector search and a text search, and fuses the two with [fusion].
+  ///
+  /// Each leg ranks `max(4 × topK, 20)` candidates. The vector leg keeps
+  /// every candidate, whatever its similarity (there is no threshold: filter
+  /// on [HybridSearchResult.vectorSimilarity] yourself). Both legs run with
+  /// [filter] and see the same documents: once the query is embedded, the
+  /// two legs run as one exclusive step, so no `add`, `remove` or `clear` of
+  /// this index lands between them. That step waits for the operations
+  /// holding the index at that moment (an `add` still embedding included),
+  /// and operations queued after it wait for it. An operation that starts
+  /// while the query is still embedding may run before the legs. Results are
+  /// ordered by [HybridSearchResult.rrfScore] descending, then by id. A
+  /// [text] with no searchable term leaves only the vector leg's ranking.
+  ///
+  /// Fails like [searchText], and with [StateError] on an `openVectors` index,
+  /// which has no embedder: use [searchHybridVector] there.
+  Future<List<HybridSearchResult>> searchHybrid({
+    required String text,
+    int topK = 5,
+    Filter? filter,
+    HybridFusion fusion = const RrfFusion(),
+  }) => Future.sync(() {
+    _ensureUsable();
+    _validateText(text);
+    _validateSearch(topK: topK, threshold: 0);
+    _validateFusion(fusion);
+    _validateFilter(filter);
+    final embedder = _requireEmbedder('searchHybrid');
+    _requireTextSearch('searchHybrid');
+    return _accept(() async {
+      final embedding = await _gate.runShared(
+        () => embedder.embedQuery(
+          EmbeddingInput(text: text),
+          documentModality: documents,
+        ),
+      );
+      _validateEmbedding(
+        embedding,
+        expectedDimension: embeddingProfile.dimension,
+      );
+      return _hybrid(text, embedding, topK, filter, fusion);
+    });
+  });
+
+  /// [searchHybrid] with a precomputed query vector, for indexes opened with
+  /// `openVectors`. [embedding] must be in this index's embedding space and
+  /// of its dimension; [text] drives the text leg.
+  Future<List<HybridSearchResult>> searchHybridVector({
+    required String text,
+    required List<double> embedding,
+    int topK = 5,
+    Filter? filter,
+    HybridFusion fusion = const RrfFusion(),
+  }) => Future.sync(() {
+    _ensureUsable();
+    _validateText(text);
+    _validateSearch(topK: topK, threshold: 0);
+    _validateFusion(fusion);
+    _validateFilter(filter);
+    final embeddingSnapshot = List<double>.unmodifiable(embedding);
+    _validateEmbedding(
+      embeddingSnapshot,
+      expectedDimension: embeddingProfile.dimension,
+    );
+    _requireTextSearch('searchHybridVector');
+    return _accept(
+      () => _hybrid(text, embeddingSnapshot, topK, filter, fusion),
+    );
+  });
+
+  /// Both legs under the exclusive gate, so no write of this index lands
+  /// between them.
+  Future<List<HybridSearchResult>> _hybrid(
+    String text,
+    List<double> embedding,
+    int topK,
+    Filter? filter,
+    HybridFusion fusion,
+  ) => _gate.runExclusive(() async {
+    final candidates = hybridCandidateCount(topK);
+    final vector = await _store.searchSimilar(
+      queryEmbedding: embedding,
+      topK: candidates,
+      // Every candidate, whatever its similarity: -1.0 itself could drop an
+      // antipodal vector whose float distance is a hair above 2.
+      threshold: -double.maxFinite,
+      filter: filter,
+    );
+    final textHits = await _store.searchText(
+      text: text,
+      topK: candidates,
+      filter: filter,
+    );
+    return fuseHybridResults(
+      vector: vector,
+      text: textHits,
+      fusion: fusion,
+      topK: topK,
+    );
+  });
+
   Future<void> remove({required String id}) => Future.sync(() {
     _ensureUsable();
     _validateId(id);
@@ -268,6 +399,31 @@ final class RagIndex {
         return content;
     }
   }
+
+  void _requireTextSearch(String operation) {
+    if (documents != EmbeddingModality.text) {
+      throw StateError(
+        'This RagIndex holds ${documents.name} documents; text search is for '
+        'text indexes only, so $operation() cannot run.',
+      );
+    }
+    if (!_store.supportsTextSearch) {
+      throw StateError(
+        'The vector store behind this RagIndex (${_store.runtimeType}) has no '
+        'text search, so $operation() cannot run. Use a provider that '
+        'supports it and open the location with enableTextSearch.',
+      );
+    }
+  }
+
+  static void _validateText(String text) {
+    if (text.trim().isEmpty) {
+      throw ArgumentError.value(text, 'text', 'must not be blank');
+    }
+  }
+
+  static void _validateFusion(HybridFusion fusion) =>
+      validateHybridFusion(fusion);
 
   void _validateFilter(Filter? filter) {
     if (filter == null) return;
@@ -351,6 +507,9 @@ final class RagIndex {
     }
   }
 }
+
+/// Package-internal: how many candidates each leg of a hybrid search ranks.
+int hybridCandidateCount(int topK) => topK * 4 < 20 ? 20 : topK * 4;
 
 class _OperationGate {
   final Queue<_GateWaiter> _waiters = Queue<_GateWaiter>();

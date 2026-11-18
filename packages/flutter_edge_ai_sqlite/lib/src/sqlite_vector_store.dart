@@ -11,6 +11,8 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:flutter_edge_ai_sqlite/src/filter_to_vec0.dart';
 import 'package:flutter_edge_ai_sqlite/src/sqlite_log.dart';
 import 'package:flutter_edge_ai_sqlite/src/sqlite_profile_storage.dart';
+import 'package:flutter_edge_ai_sqlite/src/sqlite_text_index.dart';
+import 'package:flutter_edge_ai_sqlite/src/sqlite_text_tokenizer.dart';
 
 /// On-device RAG vector store backed by sqlite3 (dart:ffi) + the `sqlite-vec`
 /// (`vec0`) virtual table. Native platforms only; web uses
@@ -22,8 +24,24 @@ import 'package:flutter_edge_ai_sqlite/src/sqlite_profile_storage.dart';
 /// `+content`/`+metadata` columns and one typed column per declared
 /// [FilterField], so `searchSimilar` returns the document and its metadata in a
 /// single query and pushes [Filter] predicates down to the engine.
+///
+/// Text search (`VectorStoreSpec.enableTextSearch`, which the provider passes
+/// here as [enableTextSearch]) adds an FTS5 index beside vec0 — see
+/// `SqliteTextIndex` — written in the same transaction as every vec0 write.
 final class SqliteVectorStore extends VectorStoreRepository {
-  SqliteVectorStore({@visibleForTesting this.durabilityFenceForTesting});
+  SqliteVectorStore({
+    this.enableTextSearch = false,
+    this.textTokenizer,
+    @visibleForTesting this.durabilityFenceForTesting,
+  });
+
+  /// Create this location's text index on [initialize] if it is missing. An
+  /// existing text index is opened and kept in step either way.
+  final bool enableTextSearch;
+
+  /// The tokenizer a new text index is created with; null uses the stored one,
+  /// or [SqliteTextTokenizer.unicode61] for a new index.
+  final SqliteTextTokenizer? textTokenizer;
 
   /// Test seam for suspending the post-COMMIT bind await deterministically.
   @visibleForTesting
@@ -32,6 +50,7 @@ final class SqliteVectorStore extends VectorStoreRepository {
   Database? _db;
   int? _detectedDimension;
   VectorStoreBinding? _binding;
+  SqliteTextIndex? _text;
   bool _isInitialized = false;
   Future<void> _lifecycleTail = Future<void>.value();
   int _pendingLifecycleActions = 0;
@@ -157,6 +176,12 @@ final class SqliteVectorStore extends VectorStoreRepository {
       _detectDimensionFromExistingTable();
       _binding = readSqliteBinding(_db!);
       _validateProfileDimension();
+      _text = SqliteTextIndex.open(
+        _db!,
+        enable: enableTextSearch,
+        schema: _filterSchema,
+        requestedTokenizer: textTokenizer,
+      );
       // Last, and only once everything above succeeded. Setting it before
       // `_detectDimensionFromExistingTable()` — which throws on a schema this
       // release does not expect — meant a caller who did
@@ -178,6 +203,7 @@ final class SqliteVectorStore extends VectorStoreRepository {
       _isInitialized = false;
       _detectedDimension = null;
       _binding = null;
+      _text = null;
       final failed = _db;
       _db = null;
       try {
@@ -392,13 +418,17 @@ final class SqliteVectorStore extends VectorStoreRepository {
 
     // vec0 does NOT honor `INSERT OR REPLACE`/UPSERT conflict resolution on its
     // declared primary key — a duplicate id raises a UNIQUE violation instead
-    // of replacing. Emulate upsert with delete-then-insert.
-    _db!.execute('DELETE FROM $_tableName WHERE id = ?', [id]);
-    _db!.execute(
-      'INSERT INTO $_tableName (${columnNames.join(', ')}) '
-      'VALUES (${placeholders.join(', ')})',
-      binds,
-    );
+    // of replacing. Emulate upsert with delete-then-insert, in one transaction
+    // with the text index so a failure leaves neither half written.
+    SqliteTextIndex.runInTransaction(_db!, () {
+      _db!.execute('DELETE FROM $_tableName WHERE id = ?', [id]);
+      _db!.execute(
+        'INSERT INTO $_tableName (${columnNames.join(', ')}) '
+        'VALUES (${placeholders.join(', ')})',
+        binds,
+      );
+      _text?.upsert(id: id, content: content, metadata: metadata);
+    });
   }
 
   @override
@@ -407,7 +437,10 @@ final class SqliteVectorStore extends VectorStoreRepository {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
     if (_detectedDimension == null) return; // table not created yet → no-op
-    _db!.execute('DELETE FROM $_tableName WHERE id = ?', [id]);
+    SqliteTextIndex.runInTransaction(_db!, () {
+      _db!.execute('DELETE FROM $_tableName WHERE id = ?', [id]);
+      _text?.delete(id);
+    });
   }
 
   @override
@@ -531,6 +564,32 @@ final class SqliteVectorStore extends VectorStoreRepository {
   }
 
   @override
+  bool get supportsTextSearch => true;
+
+  @override
+  Future<List<TextSearchResult>> searchText({
+    required String text,
+    required int topK,
+    Filter? filter,
+  }) async {
+    if (!isInitialized) {
+      throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+    final index = _text;
+    if (index == null) {
+      throw StateError(
+        'This SQLite location has no text index. Open it once with '
+        'VectorStoreSpec(enableTextSearch: true) to create one.',
+      );
+    }
+    try {
+      return index.search(text: text, topK: topK, filter: filter);
+    } on SqliteException catch (e) {
+      throw VectorStoreException('Text search failed', e);
+    }
+  }
+
+  @override
   Future<VectorStoreStats> getStats() async {
     if (!isInitialized) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
@@ -552,11 +611,14 @@ final class SqliteVectorStore extends VectorStoreRepository {
     if (!isInitialized) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
-    if (_detectedDimension != null) {
-      // Drop only the document table. The separately persisted embedding
-      // profile deliberately survives clear().
-      _db!.execute('DROP TABLE IF EXISTS $_tableName');
-    }
+    SqliteTextIndex.runInTransaction(_db!, () {
+      if (_detectedDimension != null) {
+        // Drop only the document table. The separately persisted embedding
+        // profile deliberately survives clear().
+        _db!.execute('DROP TABLE IF EXISTS $_tableName');
+      }
+      _text?.clear();
+    });
     _detectedDimension = null;
   }
 
@@ -591,6 +653,7 @@ final class SqliteVectorStore extends VectorStoreRepository {
       _isInitialized = false;
       _detectedDimension = null;
       _binding = null;
+      _text = null;
     }
   }
 

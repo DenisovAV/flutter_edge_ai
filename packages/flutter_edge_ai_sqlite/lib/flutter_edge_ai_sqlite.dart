@@ -14,6 +14,7 @@
 /// ```
 library;
 
+export 'src/sqlite_text_tokenizer.dart';
 export 'src/sqlite_vector_store_provider.dart';
 
 export 'src/sqlite_vector_store_stub.dart'

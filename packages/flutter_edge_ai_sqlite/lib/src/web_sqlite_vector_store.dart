@@ -6,6 +6,8 @@ import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/src/filter_to_vec0.dart';
 import 'package:flutter_edge_ai_sqlite/src/sqlite_log.dart';
 import 'package:flutter_edge_ai_sqlite/src/sqlite_profile_storage.dart';
+import 'package:flutter_edge_ai_sqlite/src/sqlite_text_index.dart';
+import 'package:flutter_edge_ai_sqlite/src/sqlite_text_tokenizer.dart';
 import 'package:flutter_edge_ai_sqlite/src/web_store_location_lease.dart';
 import 'package:sqlite3/wasm.dart';
 
@@ -29,11 +31,25 @@ import 'package:sqlite3/wasm.dart';
 /// The vec0 table is created **lazily** on the first [addDocument] (so the
 /// embedding dimension can be learned), or recovered from an existing table on
 /// [initialize].
+///
+/// Text search (`VectorStoreSpec.enableTextSearch`, passed here as
+/// [enableTextSearch]) adds an FTS5 index beside vec0, written in the same
+/// transaction as every vec0 write, exactly as on native.
 final class WebSqliteVectorStore extends VectorStoreRepository {
   WebSqliteVectorStore({
+    this.enableTextSearch = false,
+    this.textTokenizer,
     @visibleForTesting this.forceBrowserLocksUnavailableForTesting = false,
     @visibleForTesting this.durabilityFenceForTesting,
   });
+
+  /// Create this location's text index on [initialize] if it is missing. An
+  /// existing text index is opened and kept in step either way.
+  final bool enableTextSearch;
+
+  /// The tokenizer a new text index is created with; null uses the stored one,
+  /// or [SqliteTextTokenizer.unicode61] for a new index.
+  final SqliteTextTokenizer? textTokenizer;
 
   /// Test seam for the fail-closed browser capability branch.
   @visibleForTesting
@@ -58,6 +74,7 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
   CommonDatabase? _db;
   int? _detectedDimension;
   VectorStoreBinding? _binding;
+  SqliteTextIndex? _text;
   bool _isInitialized = false;
   WebStoreLocationLease? _locationLease;
 
@@ -140,6 +157,12 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
       _detectExistingTable();
       _binding = readSqliteBinding(_db!);
       _validateProfileDimension();
+      _text = SqliteTextIndex.open(
+        _db!,
+        enable: enableTextSearch,
+        schema: _filterSchema,
+        requestedTokenizer: textTokenizer,
+      );
 
       _isInitialized = true;
     } catch (e) {
@@ -152,6 +175,7 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
       _isInitialized = false;
       _detectedDimension = null;
       _binding = null;
+      _text = null;
       await _closeResources();
       if (e is VectorStoreException) rethrow;
       throw VectorStoreException('Failed to initialize SQLite WASM (vec0)', e);
@@ -462,13 +486,16 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
       // vec0 does NOT honor `INSERT OR REPLACE`/UPSERT conflict resolution on
       // its declared TEXT primary key — a duplicate id raises a UNIQUE
       // violation instead of replacing. Emulate upsert with delete-then-insert
-      // (matches the native store).
-      _db!.execute('DELETE FROM $_tableName WHERE id = ?', [id]);
-      _db!.execute(
-        'INSERT INTO $_tableName (${columns.join(', ')}) '
-        'VALUES ($placeholders)',
-        binds,
-      );
+      // (matches the native store), in one transaction with the text index.
+      SqliteTextIndex.runInTransaction(_db!, () {
+        _db!.execute('DELETE FROM $_tableName WHERE id = ?', [id]);
+        _db!.execute(
+          'INSERT INTO $_tableName (${columns.join(', ')}) '
+          'VALUES ($placeholders)',
+          binds,
+        );
+        _text?.upsert(id: id, content: content, metadata: metadata);
+      });
     } catch (e) {
       throw VectorStoreException('Failed to add document', e);
     }
@@ -483,7 +510,10 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
       // No-op when the table doesn't exist yet (nothing was ever added) or the
       // id is absent — DELETE simply matches zero rows.
       if (_detectedDimension == null) return;
-      _db!.execute('DELETE FROM $_tableName WHERE id = ?', [id]);
+      SqliteTextIndex.runInTransaction(_db!, () {
+        _db!.execute('DELETE FROM $_tableName WHERE id = ?', [id]);
+        _text?.delete(id);
+      });
     } catch (e) {
       throw VectorStoreException('Failed to remove document', e);
     }
@@ -587,6 +617,32 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
   }
 
   @override
+  bool get supportsTextSearch => true;
+
+  @override
+  Future<List<TextSearchResult>> searchText({
+    required String text,
+    required int topK,
+    Filter? filter,
+  }) async {
+    if (!isInitialized || _db == null) {
+      throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+    final index = _text;
+    if (index == null) {
+      throw StateError(
+        'This SQLite location has no text index. Open it once with '
+        'VectorStoreSpec(enableTextSearch: true) to create one.',
+      );
+    }
+    try {
+      return index.search(text: text, topK: topK, filter: filter);
+    } catch (e) {
+      throw VectorStoreException('Text search failed', e);
+    }
+  }
+
+  @override
   Future<VectorStoreStats> getStats() async {
     if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
@@ -617,9 +673,12 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
     try {
       // Drop only the document table. The separately persisted embedding
       // profile deliberately survives clear().
-      if (_detectedDimension != null) {
-        _db!.execute('DROP TABLE IF EXISTS $_tableName');
-      }
+      SqliteTextIndex.runInTransaction(_db!, () {
+        if (_detectedDimension != null) {
+          _db!.execute('DROP TABLE IF EXISTS $_tableName');
+        }
+        _text?.clear();
+      });
       _detectedDimension = null;
     } catch (e) {
       throw VectorStoreException('Failed to clear vector store', e);
@@ -741,6 +800,7 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
     _isInitialized = false;
     _detectedDimension = null;
     _binding = null;
+    _text = null;
     try {
       db?.close();
       // The strong drain on web. `IndexedDbFileSystem.close()` queues a close

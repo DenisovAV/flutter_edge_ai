@@ -357,6 +357,7 @@ flutter analyze packages/ && dart format . && tool/test_all.sh
 | `lib/src/flutter_edge_ai_rag.dart` | `FlutterEdgeAiRag` provider registry; `open(embedder:)` resolves the profile and binds `(profile, spec.documents)` at open, `openVectors(profile:)` for vector-only indexes |
 | `lib/src/rag_index.dart` | Owned `RagIndex` lifecycle, `add`/`search` over `EmbeddingInput`, vector operations, filter-field validation and concurrency gate |
 | `lib/src/embedding.dart` | `EmbeddingProfile`, the `RagEmbedder` role API, and `FlutterEdgeAiActiveEmbedder` (re-resolves the core model per operation, retries once on `EmbedderClosedException`, `forActiveModel` ids) |
+| `lib/src/text_search.dart` | Text and hybrid search (1.2.0): `TextSearchResult`, `HybridSearchResult`, `HybridFusion`/`RrfFusion`, and the one fusion (`fuseHybridResults`); a store implements only the text leg (`VectorStoreRepository.supportsTextSearch` + `searchText`, read before `initialize`), `RagIndex.searchHybrid*` embeds outside the gate and runs both legs under the exclusive gate |
 | `lib/src/{vector_store,vector_store_provider,filter}.dart` | Store/provider contracts (`VectorStoreBinding`: v1 record always written, image/audio under a U+001F-qualified id plus a v2 record), `VectorStoreSpec.documents`, backend-neutral filter DSL |
 | `../../tool/rag_store_compat/` | Store compatibility harness: hosted rag 1.0.0 + sqlite/qdrant 2.0.1 must refuse the train's image/audio stores (`run_downgrade_harness.sh`); generator of the committed `test/fixtures/v2_0_1/` stores |
 
@@ -374,6 +375,7 @@ flutter analyze packages/ && dart format . && tool/test_all.sh
 |------|---------|
 | `lib/src/{sqlite_vector_store,web_sqlite_vector_store}.dart` | `SqliteVectorStore` (native, `package:sqlite3` FFI) / `WebSqliteVectorStore` (web, `package:sqlite3/wasm.dart`) — both on `vec0` |
 | `lib/src/filter_to_vec0.dart` | `Filter` DSL → vec0 declared-column SQL `WHERE` + binds (one dialect, both arms) |
+| `lib/src/sqlite_text_index.dart`, `sqlite_text_tokenizer.dart` | Text search (2.2.0), shared by both arms: `rag_text_documents` (typed filter columns, `_rag_rowid`) + external-content FTS5 `rag_text_fts`; written in the vec0 write's transaction; on every open reconciled with vec0 by an id/content/metadata anti-join (writes by releases without it; 151 ms at 50k docs on an M-series Mac); tokenizer fixed at creation |
 | `hook/build.dart` | Native Assets hook — fetches the per-platform `vec0` loadable extension |
 | `web/rag/sqlite3.wasm` | custom `sqlite3.wasm` with `sqlite-vec`/`vec0` statically linked (app copies to its web root) |
 

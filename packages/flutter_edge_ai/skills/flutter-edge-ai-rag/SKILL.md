@@ -769,13 +769,19 @@ an effective limit, not that input is unlimited.
 ## Text and hybrid search (`flutter_edge_ai_rag` 1.2.0, `flutter_edge_ai_sqlite` 2.2.0)
 
 ```dart
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+
+final rag = FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider()],
+);
 final index = await rag.open(
   spec: VectorStoreSpec(
-    providerId: 'sqlite',
-    location: location,
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: 'notes.db', // as in "Index and search": a full path on native
     enableTextSearch: true, // text documents only
   ),
-  embedder: embedder,
+  embedder: FlutterEdgeAiActiveEmbedder.forActiveModel(namespace: 'knowledge'),
 );
 final byWords = await index.searchText(text: 'invoice 2024-117');
 final hybrid = await index.searchHybrid(text: 'unpaid invoice'); // RRF, k 60

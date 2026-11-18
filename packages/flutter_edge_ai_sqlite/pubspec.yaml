@@ -34,8 +34,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # ^1.1.0: the store implements `readBinding`/`bind(VectorStoreBinding)`,
-  # which rag 1.1.0 adds; with rag 1.0 it would resolve and fail to compile.
+  # Not yet the floor this source needs: it builds against the unreleased
+  # flutter_edge_ai_rag 1.2.0 in this workspace (`searchText`,
+  # `supportsTextSearch`, `VectorStoreSpec.enableTextSearch`,
+  # `TextSearchResult`), and the 2.7.0 release PR raises this to ^1.2.0 with
+  # the version bump. ^1.1.0 itself: the store implements
+  # `readBinding`/`bind(VectorStoreBinding)`, which rag 1.1.0 adds.
   flutter_edge_ai_rag: ^1.1.0
   sqlite3: ^3.6.0
   # Web Locks provide one exclusive lifetime lease per persistent database

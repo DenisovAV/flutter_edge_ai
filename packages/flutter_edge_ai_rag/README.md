@@ -156,6 +156,51 @@ final vectors = await rag.openVectors(
 
 `addVector` and `searchVector` also work on an index opened with an embedder.
 
+## Text and hybrid search
+
+A text index ranks documents by the words they contain, which finds names,
+codes and rare terms an embedding can miss. Open a text location with
+`enableTextSearch: true` (the provider must support it: `flutter_edge_ai_sqlite`
+does, `flutter_edge_ai_qdrant` does not, and the open fails rather than
+dropping to vector-only search):
+
+```dart
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: 'sqlite',
+    location: await ragLocation('notes.db'),
+    enableTextSearch: true,
+  ),
+  embedder: embedder,
+);
+
+// Text only: ranked by the store's text relevance (higher is better).
+final byWords = await index.searchText(text: 'invoice 2024-117');
+
+// Hybrid: a vector search and a text search, fused with Reciprocal Rank Fusion.
+final hits = await index.searchHybrid(text: 'unpaid invoice from March');
+for (final hit in hits) {
+  print('${hit.id} rrf=${hit.rrfScore} '
+      'vector=#${hit.vectorRank} text=#${hit.textRank}');
+}
+```
+
+- `text` is plain user text, never a query syntax.
+- `relevanceScore` has no fixed scale and is comparable only within one call;
+  it is not a cosine similarity. Text and hybrid search take no `threshold`:
+  filter on `vectorSimilarity` or `relevanceScore` yourself.
+- `searchHybrid` ranks `max(4 × topK, 20)` candidates per leg, keeps every
+  vector candidate whatever its similarity, and orders by `rrfScore`
+  (`RrfFusion(k: 60)` by default), then by id. A null `vectorRank` or
+  `textRank` means "outside that leg's candidates", not "no match".
+- `filter` applies to both legs. Both legs see the same documents: no `add` or
+  `remove` of the index runs between them.
+- `searchText` and `searchHybridVector` (with a precomputed vector) also work
+  on an `openVectors` index.
+- Text documents only. The flag is a property of the location: once its text
+  index exists, every later open keeps it up to date, with or without the
+  flag.
+
 ## A custom embedder
 
 An independent text pipeline supplies its own borrowed embedder. It maps the
@@ -310,3 +355,12 @@ The binding is stored so that every version, old and new, reads it safely:
 "Corrupt" and "newer version" are `VectorStoreException`s. The
 `VectorStoreBinding` dartdoc carries the same table and the one accepted limit
 of the encoding.
+
+Text search is optional. A store that implements it overrides
+`supportsTextSearch` (true for the store type; it is read before
+`initialize`, so a store without it creates nothing for a spec it cannot
+serve) and `searchText`. It reads `VectorStoreSpec.enableTextSearch` in
+`createStore`, creates the location's text index when the flag is set, and
+keeps an existing text index in step with every write either way. Hybrid
+search and fusion live in `RagIndex`, so the store implements only the text
+leg.

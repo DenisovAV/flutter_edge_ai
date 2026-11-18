@@ -1,14 +1,21 @@
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
+import 'sqlite_text_tokenizer.dart';
+
 /// Web stub for VectorStoreRepository
 ///
 /// This stub is used on non-web platforms where dart:js_interop is not available.
 /// The actual web implementation is in web_sqlite_vector_store.dart.
 final class WebSqliteVectorStore extends VectorStoreRepository {
   WebSqliteVectorStore({
+    this.enableTextSearch = false,
+    this.textTokenizer,
     bool forceBrowserLocksUnavailableForTesting = false,
     Future<void> Function()? durabilityFenceForTesting,
   });
+
+  final bool enableTextSearch;
+  final SqliteTextTokenizer? textTokenizer;
 
   @override
   bool get isInitialized => false;

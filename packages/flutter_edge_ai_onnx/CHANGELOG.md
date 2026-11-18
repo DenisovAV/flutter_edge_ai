@@ -1,3 +1,6 @@
+## 0.9.3
+- Download ONNX Runtime and ORT-GenAI from this repository's mirror while Microsoft's releases are gone.
+
 ## 0.9.2
 - Require `flutter_edge_ai` >=2.6.0 <2.7.0.
 

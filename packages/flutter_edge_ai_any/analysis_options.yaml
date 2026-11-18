@@ -1,0 +1,12 @@
+include: package:lints/recommended.yaml
+
+linter:
+  rules:
+    prefer_single_quotes: true
+
+analyzer:
+  exclude:
+    - native/**
+  errors:
+    # Another package's lib/src is private to it (tool/check_core_surface.sh).
+    implementation_imports: error

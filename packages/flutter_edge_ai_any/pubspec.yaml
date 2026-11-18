@@ -1,0 +1,37 @@
+name: flutter_edge_ai_any
+description: "Native layer for an any-sync store in flutter_edge_ai: an in-process Go shim over any-sync-sdk and an any-store local index, with Dart FFI bindings. No public API yet."
+version: 0.1.0-dev
+homepage: https://flutteredge.ai
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_any
+# Not published: the network, the public API and the RAG provider are not
+# decided yet (see README.md). Remove only together with that decision.
+publish_to: none
+
+# Native platforms only. The web has neither the transports (QUIC, TCP,
+# mDNS) nor a wasm build of any-sync's tree storage.
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+  windows:
+
+resolution: workspace
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+
+# Pure Dart on purpose: lib/ imports no Flutter, so the same bindings serve
+# a Flutter app and a plain Dart process (the two-device LAN test runs two).
+dependencies:
+  ffi: ^2.1.0
+  # Native Assets hook: downloads the prebuilt libany_shim for the target
+  # from the native-any-v* GitHub Release, checks its SHA256 and registers
+  # it as the CodeAsset the @Native bindings resolve.
+  hooks: ^2.0.0
+  code_assets: ">=1.2.0 <3.0.0"
+  crypto: ^3.0.6
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^6.0.0

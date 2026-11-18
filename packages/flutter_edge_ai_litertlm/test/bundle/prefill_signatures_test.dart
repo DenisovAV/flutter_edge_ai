@@ -16,9 +16,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_reader.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart'
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_npu_target.dart'
     show readLiteRtLmLinearAttentionState, readLiteRtLmPrefillLengths;
-import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_sampler.dart'
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_sampler.dart'
     show executorMetadataHasLinearAttention;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -254,7 +254,7 @@ void main() {
     'in context groups',
     () async {
       final npu = _env('GEMMA4_E2B_NPU_LITERTLM')!;
-      final info = await readLiteRtLmBundleInfo(npu);
+      final info = await readBundleInfo(npu);
       expect(info.textModel?.npuTarget, isNotNull, reason: 'an NPU bundle');
       expect(await readLiteRtLmPrefillSignatureLengths(npu), isEmpty);
     },

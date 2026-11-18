@@ -6,8 +6,8 @@ import 'dart:ffi' show Abi;
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtLmNpuTarget;
 import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart'
-    show npuVendorOf;
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+    show NpuStamp, npuVendorOf;
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -52,21 +52,19 @@ void main() {
 
     test('npuVendorOf reads a target the same way', () {
       expect(
-        npuVendorOf(const LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850')),
+        npuVendorOf(const NpuStamp(vendor: 'Qualcomm', soc: 'SM8850')),
         NpuStack.qualcomm,
       );
       expect(
-        npuVendorOf(
-          const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
-        ),
+        npuVendorOf(const NpuStamp(vendor: 'Google', soc: 'Tensor_G5')),
         NpuStack.googleTensor,
       );
       expect(
-        npuVendorOf(const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6991')),
+        npuVendorOf(const NpuStamp(vendor: 'MediaTek', soc: 'mt6991')),
         NpuStack.mediatek,
       );
       expect(
-        npuVendorOf(const LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955')),
+        npuVendorOf(const NpuStamp(vendor: 'Samsung', soc: 'E9955')),
         isNull,
       );
     });

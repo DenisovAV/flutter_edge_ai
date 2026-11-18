@@ -19,7 +19,7 @@ import 'package:crypto/crypto.dart';
 
 import 'package:flutter_edge_ai_litertlm/src/hook/download.dart';
 import 'package:flutter_edge_ai_litertlm/src/hook/qnn_runtime.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 
 /// The QAIRT SDK build the Linux libraries come from.
 ///

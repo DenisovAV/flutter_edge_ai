@@ -9,20 +9,21 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_common.dart'
     show liteRtLmWebNpuRefusal;
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_npu_target.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show NpuDispatchUnavailableException;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
 
 const _file = 'embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm';
-const _sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
+const _sm8850 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8850');
 
 /// What Google's `…_Intel_PTL.litertlm` bundles are stamped with.
-const _ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
+const _ptl = NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL');
 
 Matcher _refusal(Object message) => throwsA(
   isA<EmbeddingLoadException>()
@@ -36,7 +37,7 @@ void main() {
   setUp(() => host = _FakeHost());
 
   Future<LiteRtLmEmbeddingPlacement> place({
-    LiteRtLmNpuTarget? target = _sm8850,
+    NpuStamp? target = _sm8850,
     PreferredBackend? requested = PreferredBackend.npu,
   }) => placeLiteRtLmEmbedder(
     file: _file,
@@ -236,9 +237,9 @@ void main() {
           ..operatingSystem = os
           ..abi = abi;
         for (final target in const [
-          LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955'),
+          NpuStamp(vendor: 'Samsung', soc: 'E9955'),
           // Only LiteRT's OpenVINO stamp is an Intel bundle this runs.
-          LiteRtLmNpuTarget(vendor: 'Intel', soc: 'PTL'),
+          NpuStamp(vendor: 'Intel', soc: 'PTL'),
         ]) {
           await expectLater(
             place(target: target),
@@ -258,7 +259,7 @@ void main() {
     });
 
     test('a Google Tensor bundle selects only the Google dispatch', () async {
-      const tensor = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5');
+      const tensor = NpuStamp(vendor: 'Google', soc: 'Tensor_G5');
       final placement = await place(target: tensor);
       expect(placement.backend, PreferredBackend.npu);
       expect(placement.target, tensor);
@@ -267,7 +268,7 @@ void main() {
     });
 
     test('a MediaTek bundle selects only the MediaTek dispatch', () async {
-      const mediatek = LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6991');
+      const mediatek = NpuStamp(vendor: 'MediaTek', soc: 'mt6991');
       final placement = await place(target: mediatek);
       expect(placement.backend, PreferredBackend.npu);
       expect(placement.target, mediatek);

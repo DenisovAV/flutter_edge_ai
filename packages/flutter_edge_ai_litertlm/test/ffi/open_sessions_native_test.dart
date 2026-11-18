@@ -21,7 +21,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show sendOffMainIsolate;
 import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';

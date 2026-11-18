@@ -13,11 +13,10 @@
 
 import 'package:flutter_edge_ai/engine.dart';
 
-/// The default vision budget: 140 tokens per image (profile ids `-vis140`).
-const liteRtLmDefaultVisionTokensPerImage = 140;
+import '../embedder/embedder_constants.dart';
 
-/// Every vision budget `LiteRtEmbeddingBackend` accepts.
-const liteRtLmVisionTokenBudgets = [140, 70];
+export '../embedder/embedder_constants.dart'
+    show liteRtLmDefaultVisionTokensPerImage, liteRtLmVisionTokenBudgets;
 
 /// Throws [EmbeddingLoadException] (as [engine]) unless [visionTokensPerImage]
 /// is one of [liteRtLmVisionTokenBudgets].

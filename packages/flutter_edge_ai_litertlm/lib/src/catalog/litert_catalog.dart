@@ -7,9 +7,9 @@
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
-import '../bundle/litertlm_bundle_info.dart' show LiteRtLmNpuTarget;
+import '../adapter/bundle_info.dart' show LiteRtLmNpuTarget;
 import '../native_hosts.dart';
-import '../npu_stacks.dart' show NpuStack;
+import '../runtime/npu_stacks.dart' show NpuStack;
 import 'catalog_host_web.dart'
     if (dart.library.ffi) 'catalog_host_io.dart'
     as host;

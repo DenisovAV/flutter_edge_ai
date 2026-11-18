@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/engine.dart';
+import '../runtime/types.dart';
 
 /// LiteRT-LM builds an engine's sampler at its first generation and keeps it
 /// for every later conversation (google-ai-edge/LiteRT-LM#2080), so a later
@@ -14,7 +14,7 @@ import 'package:flutter_edge_ai/engine.dart';
 /// (`InitializeSampler` returns early). So a later session's larger `topK`
 /// meets no native error: it is not applied, and this latch says so.
 final class EngineSamplerLatch {
-  ResolvedSampling? _fixed;
+  Sampler? _fixed;
   bool _fixedExplicit = false;
   bool _warned = false;
 
@@ -25,7 +25,7 @@ final class EngineSamplerLatch {
   /// log, when both are defaults (a Qwen session with thinking on after one
   /// with it off).
   ({String message, bool warn})? onGeneration(
-    ResolvedSampling sampling, {
+    Sampler sampling, {
     required bool explicit,
   }) {
     final fixed = _fixed;

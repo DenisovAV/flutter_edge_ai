@@ -12,6 +12,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_cache_dir.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_pass.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedder/litert_lm_embedder.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
 import 'package:flutter_edge_ai_litertlm/src/native_hosts.dart';
@@ -19,10 +20,14 @@ import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart'
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuStack;
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart'
+    show NpuStack;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedder/embedder_types.dart';
 
 EmbeddingModelSpec _tflite({String model = 'gemma.tflite'}) =>
     EmbeddingModelSpec(
@@ -230,7 +235,7 @@ void main() {
           _config('$bundles/eg2.litertlm', supportImage: true),
         );
         final config = descriptor.config as LiteRtLmEmbeddingConfig;
-        expect(config.declaredMedia, {EmbeddingModality.image});
+        expect(config.declaredMedia, {EmbedderModality.image});
         expect(config.visionTokensPerImage, 140);
         expect(descriptor.activeBackend, PreferredBackend.cpu);
         expect(tokenizers.asked, 0);
@@ -415,7 +420,7 @@ void main() {
         final config = descriptor.config as LiteRtLmEmbeddingConfig;
         expect(config.npuTarget, isNull);
         expect(config.npuDispatchDir, isNull);
-        expect(config.backend, PreferredBackend.cpu);
+        expect(config.backend, Backend.cpu);
       }
     });
 
@@ -509,11 +514,11 @@ void main() {
       final config = descriptor.config as LiteRtLmEmbeddingConfig;
       expect(
         config.npuTarget,
-        const LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850'),
+        const NpuStamp(vendor: 'Qualcomm', soc: 'SM8850'),
       );
       expect(config.npuDispatchDir, '/data/app/npu');
-      expect(config.backend, PreferredBackend.npu);
-      expect(config.declaredMedia, {EmbeddingModality.image});
+      expect(config.backend, Backend.npu);
+      expect(config.declaredMedia, {EmbedderModality.image});
       expect(config.cacheBase, '/cache/flutter_edge_ai/emb');
     });
 
@@ -532,10 +537,10 @@ void main() {
       final config = descriptor.config as LiteRtLmEmbeddingConfig;
       expect(
         config.npuTarget,
-        const LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL'),
+        const NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL'),
       );
       expect(config.npuDispatchDir, r'C:\Apps\demo');
-      expect(config.backend, PreferredBackend.npu);
+      expect(config.backend, Backend.npu);
     });
 
     test('an Intel per-SoC bundle with npu on Qualcomm Android is refused '
@@ -635,8 +640,8 @@ void main() {
         );
         final config = descriptor.config as LiteRtLmEmbeddingConfig;
         expect(config.declaredMedia, {
-          EmbeddingModality.audio,
-          if (image) EmbeddingModality.image,
+          EmbedderModality.audio,
+          if (image) EmbedderModality.image,
         });
         expect(descriptor.activeBackend, PreferredBackend.cpu);
       }
@@ -665,10 +670,10 @@ void main() {
 
     test('on the real bundles\' headers the audio check reads the 740m as '
         'having an audio encoder and the 270m and the 440m as not', () {
-      requireLiteRtLmAudioEncoder(_header740m);
+      requireLiteRtLmAudioEncoderForCore(_header740m);
       for (final header in [_header270m, _header440m]) {
         expect(
-          () => requireLiteRtLmAudioEncoder(header),
+          () => requireLiteRtLmAudioEncoderForCore(header),
           throwsA(
             isA<EmbeddingLoadException>().having(
               (e) => e.message,
@@ -946,7 +951,7 @@ void main() {
           throwsA(isA<EmbeddingLoadException>()),
         );
         expect(
-          () => readLiteRtLmMediaTowers('$bundles/garbage.litertlm'),
+          () => readLiteRtLmMediaTowersForCore('$bundles/garbage.litertlm'),
           throwsA(
             isA<EmbeddingLoadException>().having(
               (e) => e.message,

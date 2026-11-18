@@ -6,7 +6,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import '../litertlm_flatbuffer.dart' show litertlmHeaderEnd;
+import '../bundle/litertlm_flatbuffer.dart' show litertlmHeaderEnd;
 import 'litertlm_container.dart';
 
 export 'litertlm_container.dart';

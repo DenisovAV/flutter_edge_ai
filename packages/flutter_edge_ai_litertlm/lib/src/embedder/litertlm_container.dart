@@ -24,7 +24,7 @@
 
 import 'dart:typed_data';
 
-import '../litertlm_flatbuffer.dart';
+import '../bundle/litertlm_flatbuffer.dart';
 
 /// `AnySectionDataType.TFLiteModel`.
 const _tfliteModel = 3;

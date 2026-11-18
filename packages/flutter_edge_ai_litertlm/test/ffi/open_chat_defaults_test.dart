@@ -1,12 +1,13 @@
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
 
 /// No native layer: openSession on the FFI engine makes no native call.
 class _Client extends LiteRtLmFfiClient {
   @override
-  SamplingParams get bundleSampler => const SamplingParams();
+  BundleSampler get bundleSampler => const BundleSampler();
 }
 
 FfiInferenceModel _model() => FfiInferenceModel(

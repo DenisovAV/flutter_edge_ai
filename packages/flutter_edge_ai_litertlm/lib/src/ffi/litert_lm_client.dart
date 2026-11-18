@@ -1,14 +1,13 @@
 import 'dart:async';
 
-import 'package:flutter_edge_ai/engine.dart';
-
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter/foundation.dart';
+import 'package:meta/meta.dart' show immutable, visibleForTesting;
 import 'package:mutex/mutex.dart';
 
 import '../bundle/litertlm_bundle_info.dart' show LiteRtLmBundleException;
@@ -27,22 +26,25 @@ import 'macos_load_error.dart';
 import 'native_turns.dart';
 import 'stream_start_failure.dart';
 import '../runtime/build_mode.dart';
+import '../runtime/errors.dart';
+import '../runtime/response_text.dart';
 import '../runtime/runtime_log.dart';
+import '../runtime/types.dart';
 import 'engine_create_failure.dart';
 import 'npu_vendor_host.dart';
 import 'option_scoring_ffi.dart';
-import '../litertlm_bundle_activation.dart' show GpuActivationReason;
-import '../litertlm_bundle_sampler.dart';
+import '../bundle/litertlm_bundle_activation.dart' show GpuActivationReason;
+import '../bundle/litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'intel_weight_banks.dart';
 import 'sigprof_mask.dart';
 import 'stderr_redirect.dart';
 import 'windows_std_handles.dart';
-import '../thinking_context.dart';
-import '../litert_lm_load_errors.dart';
-import '../litert_lm_log_level.dart';
+import 'thinking_context.dart';
+import '../runtime/load_errors.dart';
+import '../runtime/litert_lm_log_level.dart';
 
-export '../litert_lm_load_errors.dart'
+export '../runtime/load_errors.dart'
     show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
 
 const _llGuidanceConstraintFailure = 'Failed to create LLGuidance constraint';
@@ -51,7 +53,7 @@ const _llGuidanceConstraintFailure = 'Failed to create LLGuidance constraint';
 /// was refused. CreateConstraint runs only when this send carries a schema;
 /// every other INTERNAL remains the native inference failure it is.
 @visibleForTesting
-ResponseFormatUnsupportedException? liteRtLmConstraintFailure(
+ConstraintUnsupportedException? liteRtLmConstraintFailure(
   String? jsonSchema,
   String? nativeError,
 ) =>
@@ -59,7 +61,7 @@ ResponseFormatUnsupportedException? liteRtLmConstraintFailure(
         nativeError != null &&
         (nativeError.startsWith(_llGuidanceConstraintFailure) ||
             nativeError.startsWith('INTERNAL: $_llGuidanceConstraintFailure'))
-    ? ResponseFormatUnsupportedException(
+    ? ConstraintUnsupportedException(
         'LiteRT-LM LLGuidance rejected this JSON schema: $nativeError',
       )
     : null;
@@ -474,7 +476,7 @@ abstract class ConversationHandle {
     Map<String, Object?>? partialReply,
   );
 
-  SessionMetrics getSessionMetrics();
+  TurnMetrics getSessionMetrics();
 
   /// How native's last send on this conversation ended (§23's record, read
   /// when the send ended), or null before one has ended here.
@@ -523,7 +525,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   }) : this._(
          client,
          conversation,
-         MultimodalOrder.imagesAudioText,
+         MediaOrder.imagesAudioText,
          jsonSchema,
          false,
        );
@@ -532,7 +534,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   Pointer<LiteRtLmConversation>? _conversation;
 
   /// Where [chat] and [chatRaw] put a message's media around its text.
-  final MultimodalOrder _multimodalOrder;
+  final MediaOrder _multimodalOrder;
   final String? _jsonSchema;
   final bool _releaseOnClose;
 
@@ -681,8 +683,8 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   }
 
   @override
-  SessionMetrics getSessionMetrics() {
-    if (_conversation == null) return SessionMetrics();
+  TurnMetrics getSessionMetrics() {
+    if (_conversation == null) return const TurnMetrics();
     return _client._getMetricsOn(_conversation!);
   }
 
@@ -740,9 +742,9 @@ _createConversationOffMainIsolate({
   required int engineAddr,
   required int configAddr,
 }) {
-  final isolateLogLevel = edgeAiLogLevel;
+  final isolateLogLevel = currentRuntimeLogLevel();
   return Isolate.run(() {
-    edgeAiLogLevel = isolateLogLevel;
+    runtimeLogLevel = isolateLogLevel;
     // Plain open (litert_lm_library.dart), safe only because this runs inside
     // `initialize()`, after `_ensureBindings()` opened the library with the
     // preloads the LLM path needs and, on Android, the strict default scope
@@ -782,9 +784,9 @@ _rewindCancelledTurnOffMainIsolate({
   required String? exchangeJson,
   String? extraContext,
 }) {
-  final isolateLogLevel = edgeAiLogLevel;
+  final isolateLogLevel = currentRuntimeLogLevel();
   return Isolate.run(() {
-    edgeAiLogLevel = isolateLogLevel;
+    runtimeLogLevel = isolateLogLevel;
     // Plain open, as above: only called on a client with a loaded engine.
     final b = LiteRtLmBindings(openLiteRtLmLibrary());
     // NULL: the stopped send is taken out, nothing is put back.
@@ -930,9 +932,9 @@ _sendMessageStreamOffMainIsolate({
   int testBeforeEntryMicros = 0,
   int testPrefillMicros = 0,
 }) {
-  final isolateLogLevel = edgeAiLogLevel;
+  final isolateLogLevel = currentRuntimeLogLevel();
   return sendOffMainIsolate(() {
-    edgeAiLogLevel = isolateLogLevel;
+    runtimeLogLevel = isolateLogLevel;
     if (testBeforeEntryMicros > 0) {
       sleep(Duration(microseconds: testBeforeEntryMicros));
     }
@@ -1123,9 +1125,9 @@ class EngineCreateRequest {
 
   final int maxTokens;
 
-  /// The caller's `edgeAiLogLevel`: a spawned isolate starts with its own
+  /// The caller's [currentRuntimeLogLevel]: a spawned isolate starts with its own
   /// copy at the default level.
-  final EdgeAiLogLevel logLevel;
+  final RuntimeLogLevel logLevel;
 
   /// Null builds the engine without a vision encoder.
   final String? visionBackend;
@@ -1188,7 +1190,7 @@ createEngineOffMainIsolate = (request) =>
 /// Opens the library on the isolate this runs on, then makes the engine
 /// settings and the engine there ([createEngineWith]).
 EngineCreateResult _createEngine(EngineCreateRequest r) {
-  edgeAiLogLevel = r.logLevel;
+  runtimeLogLevel = r.logLevel;
   final openSw = Stopwatch()..start();
   // Plain open (litert_lm_library.dart): `initialize` already loaded it with
   // the preloads and, on Android, the strict default scope this path needs
@@ -1436,7 +1438,7 @@ class LiteRtLmFfiClient {
   /// The sampler the loaded `.litertlm` bundle ships, read once per engine.
   /// Empty when the bundle has none, when the read failed
   /// ([bundleSamplerError]), or when no engine is loaded.
-  SamplingParams get bundleSampler => _bundleSamplerRead.sampler;
+  BundleSampler get bundleSampler => _bundleSamplerRead.sampler;
 
   /// Why the bundle's sampler could not be read, or null. When set, a session
   /// that sets no sampling gets its family's defaults, not the bundle's.
@@ -1544,7 +1546,7 @@ class LiteRtLmFfiClient {
 
   /// Test seam for virtual sessions' per-turn benchmark snapshot.
   @visibleForTesting
-  SessionMetrics Function(Pointer<LiteRtLmConversation> conv)? metricsForTest;
+  TurnMetrics Function(Pointer<LiteRtLmConversation> conv)? metricsForTest;
 
   /// Test seam: whether a send on [conv] has started (`_sentConvs`).
   @visibleForTesting
@@ -1666,7 +1668,7 @@ class LiteRtLmFfiClient {
 
   /// The sampler each live conversation was created with, so the first
   /// generation can record it (see [_noteGeneration]).
-  final Map<Pointer<LiteRtLmConversation>, (ResolvedSampling, bool)>
+  final Map<Pointer<LiteRtLmConversation>, (Sampler, bool)>
   _conversationSampling = {};
   // Holding a reference prevents the proxy DynamicLibrary from being GC'd
   // while function pointers obtained via lookupFunction are still in use.
@@ -2168,13 +2170,13 @@ class LiteRtLmFfiClient {
   /// again.
   static Future<void> _warmNativeLibraries() async {
     if (_librariesWarm) return;
-    final isolateLogLevel = edgeAiLogLevel;
+    final isolateLogLevel = currentRuntimeLogLevel();
     // Top-level variables are per isolate: the warm-up isolate would see the
     // default loader, not one a test set here.
     final preload = preloadNativeLibrary;
     final sw = Stopwatch()..start();
     await offMainIsolate(() {
-      edgeAiLogLevel = isolateLogLevel;
+      runtimeLogLevel = isolateLogLevel;
       _openNativeLibraries(preload: preload);
     });
     _librariesWarm = true;
@@ -2433,7 +2435,7 @@ class LiteRtLmFfiClient {
         maxTokens: maxTokens,
         // The spawned isolate honors the caller's level instead of leaking
         // perf logs at the default.
-        logLevel: edgeAiLogLevel,
+        logLevel: currentRuntimeLogLevel(),
         // Vision + audio encoders run on visionBackend/audioBackend, NOT the
         // text backend: what the engine's load plan chose from the bundle (the
         // section's backend_constraint, else the NPU it is compiled for, else
@@ -2528,7 +2530,7 @@ class LiteRtLmFfiClient {
       modelPath,
     );
     // A release build is where an uncapped turn gets reported, and
-    // edgeAiLog is silent there.
+    // runtimeLog is silent there.
     // ignore: avoid_print
     if (channelWarning != null) print(channelWarning);
     runtimeLog(
@@ -2551,7 +2553,7 @@ class LiteRtLmFfiClient {
   /// Keeps the bundle-sampler [read] for the engine just created and says what
   /// it gave. A failed read is not thrown: the engine works, and sessions
   /// still get the family defaults. It is printed, because a release build is
-  /// where a wrong sampler gets reported and edgeAiLog is silent there.
+  /// where a wrong sampler gets reported and runtimeLog is silent there.
   @visibleForTesting
   void acceptBundleSamplerRead(BundleSamplerRead read) {
     _bundleSamplerRead = read;
@@ -2585,7 +2587,7 @@ class LiteRtLmFfiClient {
       runtimeLog('[LiteRtLmFfi] ${note.message}', verbose: true);
       return;
     }
-    // A release build is where a wrong sampler gets reported, and edgeAiLog
+    // A release build is where a wrong sampler gets reported, and runtimeLog
     // is silent there.
     // ignore: avoid_print
     print(
@@ -2619,10 +2621,10 @@ class LiteRtLmFfiClient {
     String? systemMessage,
     String? toolsJson,
     String? messagesJson,
-    required ResolvedSampling sampling,
+    required Sampler sampling,
     required bool samplingExplicit,
     int? maxOutputTokens,
-    required MultimodalOrder multimodalOrder,
+    required MediaOrder multimodalOrder,
     String? jsonSchema,
     required bool filterChannelContent,
   }) {
@@ -2673,7 +2675,7 @@ class LiteRtLmFfiClient {
     String? systemMessage,
     String? toolsJson,
     String? messagesJson,
-    required ResolvedSampling sampling,
+    required Sampler sampling,
     required bool samplingExplicit,
     int? maxOutputTokens,
     String? jsonSchema,
@@ -2779,7 +2781,7 @@ class LiteRtLmFfiClient {
         // Only when they set one themselves: the defaults are not greedy, and
         // warning on every NPU session would train people to ignore it.
         // Printed once per engine: a release build is where it gets reported, and
-        // edgeAiLog is silent there.
+        // runtimeLog is silent there.
         if (_backend == 'npu' && samplingExplicit && !_warnedNpuSampling) {
           _warnedNpuSampling = true;
           // ignore: avoid_print
@@ -3052,7 +3054,7 @@ class LiteRtLmFfiClient {
   Future<void> createConversation({
     String? systemMessage,
     String? toolsJson,
-    required ResolvedSampling sampling,
+    required Sampler sampling,
   }) async {
     _legacyHandle?.close();
     final handle = await createConversationHandle(
@@ -3060,7 +3062,7 @@ class LiteRtLmFfiClient {
       toolsJson: toolsJson,
       sampling: sampling,
       samplingExplicit: true,
-      multimodalOrder: MultimodalOrder.imagesAudioText,
+      multimodalOrder: MediaOrder.imagesAudioText,
       // This raw path has no model layer, so the client reads the loaded
       // bundle itself.
       filterChannelContent: liteRtLmFiltersChannelContent(
@@ -3088,12 +3090,12 @@ class LiteRtLmFfiClient {
     String text, {
     List<Uint8List>? imagesBytes,
     Uint8List? audioBytes,
-    MultimodalOrder order = MultimodalOrder.imagesAudioText,
+    MediaOrder order = MediaOrder.imagesAudioText,
   }) {
     final before = <Map<String, dynamic>>[];
     final after = <Map<String, dynamic>>[];
-    List<Map<String, dynamic>> side(MediaPosition position) =>
-        position == MediaPosition.beforeText ? before : after;
+    List<Map<String, dynamic>> side(MediaSide position) =>
+        position == MediaSide.beforeText ? before : after;
     for (final imageBytes in imagesBytes ?? const <Uint8List>[]) {
       side(
         order.images,
@@ -3126,12 +3128,12 @@ class LiteRtLmFfiClient {
   static String buildHistoryJson(List<Map<String, Object?>> messages) =>
       jsonEncode(messages);
 
-  /// Extract text from a LiteRT-LM JSON response chunk. Delegates to
-  /// [SdkTextExtractor] — single source of truth shared with the web
-  /// `@litert-lm/core` path so both engines map identical chunks to text
-  /// the same way.
+  /// Extract text from a LiteRT-LM JSON response chunk
+  /// ([extractResponseText], held equal to core's `SdkTextExtractor`, which
+  /// the web `@litert-lm/core` path uses, so both engines map identical
+  /// chunks to text the same way).
   static String extractTextFromResponse(String jsonStr) =>
-      SdkTextExtractor.extractTextFromResponse(jsonStr);
+      extractResponseText(jsonStr);
 
   /// Legacy: streaming chat on the implicit [_legacyHandle] conversation.
   Stream<String> chat(
@@ -3273,7 +3275,7 @@ class LiteRtLmFfiClient {
     required List<Map<String, Object?>> history,
     String? systemMessage,
     String? toolsJson,
-    required ResolvedSampling sampling,
+    required Sampler sampling,
     required bool samplingExplicit,
     String? extraContext,
     required bool thinking,
@@ -4367,8 +4369,8 @@ class LiteRtLmFfiClient {
   int? virtualLastTurnCode(Object token) => _virtualTurnEnds[token]?.code;
 
   /// Last completed native benchmark snapshot for [token].
-  SessionMetrics virtualSessionMetrics(Object token) =>
-      _virtualMetrics[token] ?? SessionMetrics();
+  TurnMetrics virtualSessionMetrics(Object token) =>
+      _virtualMetrics[token] ?? const TurnMetrics();
 
   /// The end of each virtual session's last turn, snapshot when native ended
   /// it ([watchVirtualTurnEnd]): the shared conversation's own record goes
@@ -4377,7 +4379,7 @@ class LiteRtLmFfiClient {
   final Expando<({NativeLastTurnEnd end, int code})> _virtualTurnEnds =
       Expando();
 
-  final Expando<SessionMetrics> _virtualMetrics = Expando();
+  final Expando<TurnMetrics> _virtualMetrics = Expando();
 
   /// When native ends the virtual turn [ended] of the session holding
   /// [token] on [conv], keeps how it ended for that session, and marks the
@@ -4779,18 +4781,16 @@ class LiteRtLmFfiClient {
   /// isolate, under [_nativeMutex], so it runs between turns of any
   /// conversation on this engine; [shutdown] waits for it.
   ///
-  /// [cancelToken], [stops] and [shutdown] stop the run before its prefill or
-  /// between targets: a cancel fails it with `DeciderCancelledException`, a
+  /// [cancelSignal], [stops] and [shutdown] stop the run before its prefill or
+  /// between targets: a cancel fails it with `ScoringCancelledException`, a
   /// stop of [stops] (its scorer closed) and a shutdown with [StateError]. A
   /// cancel while the run still waits for [_nativeMutex] — behind a chat turn,
   /// which holds it until the turn ends — fails it at once; the run then
   /// never starts.
-  // The decider SPI is @experimental.
-  // ignore: experimental_member_use
-  Future<OptionScoringRun> scoreTargets(
+  Future<ScoringRun> scoreTargets(
     String prompt,
     List<String> targets, {
-    CancelToken? cancelToken,
+    CancelSignal? cancelSignal,
     ScoringStops? stops,
   }) {
     final run = _guardCreate(
@@ -4799,9 +4799,8 @@ class LiteRtLmFfiClient {
         if (_isShuttingDown || engine == null || engine == nullptr) {
           throw StateError('The LiteRT-LM engine is not loaded.');
         }
-        if (cancelToken?.isCancelled ?? false) {
-          // ignore: experimental_member_use
-          throw const DeciderCancelledException('The decision was cancelled.');
+        if (cancelSignal?.isCancelled ?? false) {
+          throw const ScoringCancelledException('The decision was cancelled.');
         }
         if (stops?.isStopped ?? false) {
           throw ScoringStoppedError('The option scorer is closed.');
@@ -4812,9 +4811,9 @@ class LiteRtLmFfiClient {
         _scoringStops.add(stop);
         stops?.track(stop);
         var running = true;
-        if (cancelToken != null) {
+        if (cancelSignal != null) {
           unawaited(
-            cancelToken.whenCancelled.then((_) {
+            cancelSignal.whenCancelled.then((_) {
               if (running) stop.value = 1;
             }),
           );
@@ -4826,9 +4825,8 @@ class LiteRtLmFfiClient {
             targets: targets,
             stopFlagAddr: stop.address,
           );
-          // ignore: experimental_member_use
-        } on DeciderCancelledException {
-          if (cancelToken?.isCancelled ?? false) rethrow;
+        } on ScoringCancelledException {
+          if (cancelSignal?.isCancelled ?? false) rethrow;
           if (_isShuttingDown) {
             throw ScoringStoppedError(
               'The model was closed while it scored options.',
@@ -4848,17 +4846,15 @@ class LiteRtLmFfiClient {
         }
       }),
     );
-    if (cancelToken == null) return run;
+    if (cancelSignal == null) return run;
     // Answer a cancel now even while the run waits for the mutex; the run
     // itself then fails at its first check, and nobody reads that.
-    // ignore: experimental_member_use
-    final cancelled = Completer<OptionScoringRun>();
+    final cancelled = Completer<ScoringRun>();
     unawaited(
-      cancelToken.whenCancelled.then((_) {
+      cancelSignal.whenCancelled.then((_) {
         if (!cancelled.isCompleted) {
           cancelled.completeError(
-            // ignore: experimental_member_use
-            const DeciderCancelledException('The decision was cancelled.'),
+            const ScoringCancelledException('The decision was cancelled.'),
           );
         }
       }),
@@ -4871,8 +4867,7 @@ class LiteRtLmFfiClient {
         onError: (Object e, StackTrace st) {
           if (!cancelled.isCompleted) {
             cancelled.completeError(e, st);
-            // ignore: experimental_member_use
-          } else if (e is! DeciderCancelledException &&
+          } else if (e is! ScoringCancelledException &&
               e is! ScoringStoppedError) {
             // The caller already has its cancel; a run that then failed for
             // a reason of its own is still said, release builds included.
@@ -4889,12 +4884,12 @@ class LiteRtLmFfiClient {
   }
 
   /// Get session metrics from the given conversation including token usage.
-  /// Returns empty SessionMetrics if benchmark unavailable.
-  SessionMetrics _getMetricsOn(Pointer<LiteRtLmConversation> conv) {
+  /// Returns empty TurnMetrics if benchmark unavailable.
+  TurnMetrics _getMetricsOn(Pointer<LiteRtLmConversation> conv) {
     final testMetrics = metricsForTest;
     if (testMetrics != null) return testMetrics(conv);
     final b = _bindings;
-    if (b == null) return SessionMetrics();
+    if (b == null) return const TurnMetrics();
 
     final out = calloc<Pointer<LiteRtLmBenchmarkInfo>>();
     final Pointer<LiteRtLmBenchmarkInfo> info;
@@ -4904,7 +4899,7 @@ class LiteRtLmFfiClient {
     } finally {
       calloc.free(out);
     }
-    if (info == nullptr) return SessionMetrics();
+    if (info == nullptr) return const TurnMetrics();
 
     try {
       int size(String call, int Function(Pointer<Size>) get) =>
@@ -4963,7 +4958,7 @@ class LiteRtLmFfiClient {
         if (last > 0) tokensPerSecond = last;
       }
 
-      return SessionMetrics(
+      return TurnMetrics(
         inputTokens: inputTokens,
         outputTokens: outputTokens,
         totalTokens: inputTokens + outputTokens,
@@ -4975,16 +4970,16 @@ class LiteRtLmFfiClient {
       );
     } on LiteRtLmCallException catch (e) {
       runtimeLog('[LiteRtLmFfiClient] Error getting metrics: $e');
-      return SessionMetrics();
+      return const TurnMetrics();
     } finally {
       b.litert_lm_benchmark_info_delete(info);
     }
   }
 
   /// Legacy: metrics for the implicit [_legacyHandle] conversation.
-  SessionMetrics getSessionMetrics() {
+  TurnMetrics getSessionMetrics() {
     final h = _legacyHandle;
-    if (h == null) return SessionMetrics();
+    if (h == null) return const TurnMetrics();
     return h.getSessionMetrics();
   }
 

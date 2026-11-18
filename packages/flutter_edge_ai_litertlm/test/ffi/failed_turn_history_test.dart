@@ -9,6 +9,7 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
 
 void main() {
   group('virtual turn ends', () {
@@ -87,7 +88,7 @@ void main() {
               sampling: SamplingParams.resolve(
                 const SamplingParams(),
                 modelType: ModelType.gemmaIt,
-              ),
+              ).toRuntime,
               samplingExplicit: false,
               thinking: false,
               filterChannelContent: true,
@@ -142,7 +143,7 @@ void main() {
       final sampling = SamplingParams.resolve(
         const SamplingParams(),
         modelType: ModelType.gemmaIt,
-      );
+      ).toRuntime;
       Stream<String> turn(Object token) => client.startVirtualTurn(
         conversationToken: token,
         messageJson: '{}',

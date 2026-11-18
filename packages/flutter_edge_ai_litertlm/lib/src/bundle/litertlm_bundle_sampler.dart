@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/engine.dart';
+import '../runtime/types.dart';
 
 import 'litertlm_flatbuffer.dart';
 
@@ -23,13 +23,13 @@ export 'litertlm_flatbuffer.dart' show litertlmHeaderEnd;
 /// byte 32 to the header end a `LiteRTLMMetaData` flatbuffer listing the
 /// sections; the `LlmMetadataProto` section is a serialized
 /// `litert.lm.proto.LlmMetadata`.
-Future<SamplingParams> readBundleSampler(String modelPath) async =>
+Future<BundleSampler> readBundleSampler(String modelPath) async =>
     (await readBundleMetadata(modelPath)).sampler;
 
 /// What [readBundleSampler] reads, plus whether the bundle's `LlmMetadata`
 /// declares an output channel ([llmMetadataDeclaresChannel]). A bundle with
 /// no `LlmMetadata` section ships neither.
-Future<({SamplingParams sampler, bool declaresChannel})> readBundleMetadata(
+Future<({BundleSampler sampler, bool declaresChannel})> readBundleMetadata(
   String modelPath,
 ) async {
   final file = await File(modelPath).open();
@@ -38,7 +38,7 @@ Future<({SamplingParams sampler, bool declaresChannel})> readBundleMetadata(
     final header = await _readExactly(file, 32, headerEnd - 32);
     final section = llmMetadataRange(header);
     if (section == null) {
-      return (sampler: const SamplingParams(), declaresChannel: false);
+      return (sampler: const BundleSampler(), declaresChannel: false);
     }
     final (begin, end) = section;
     final metadata = await _readExactly(file, begin, end - begin);
@@ -78,15 +78,15 @@ final class BundleSamplerRead {
   const BundleSamplerRead(this.sampler, {this.declaresChannel}) : error = null;
 
   const BundleSamplerRead.failed(String this.error)
-    : sampler = const SamplingParams(),
+    : sampler = const BundleSampler(),
       declaresChannel = null;
 
   const BundleSamplerRead.notRead()
-    : sampler = const SamplingParams(),
+    : sampler = const BundleSampler(),
       error = null,
       declaresChannel = null;
 
-  final SamplingParams sampler;
+  final BundleSampler sampler;
 
   /// Whether the bundle declares an output channel, which LiteRT-LM's
   /// thinking budget caps; null when the bundle was not read, or the read
@@ -152,14 +152,14 @@ bool executorMetadataHasLinearAttention(Uint8List executorMetadata) {
 }
 
 /// The sampler in a serialized `LlmMetadata`; empty when it has none.
-SamplingParams samplerFromLlmMetadata(Uint8List llmMetadata) {
+BundleSampler samplerFromLlmMetadata(Uint8List llmMetadata) {
   try {
     Uint8List? samplerParams;
     for (final f in _ProtoReader(llmMetadata).fields()) {
       // LlmMetadata.sampler_params = 4.
       if (f.number == 4 && f.bytes != null) samplerParams = f.bytes;
     }
-    if (samplerParams == null) return const SamplingParams();
+    if (samplerParams == null) return const BundleSampler();
     var type = 0, k = 0;
     var p = 0.0, temperature = 0.0;
     int? seed;
@@ -209,7 +209,7 @@ const _typeTopK = 1;
 const _typeTopP = 2;
 const _typeGreedy = 3;
 
-/// The bundle's `SamplerParameters` as [SamplingParams].
+/// The bundle's `SamplerParameters` as [BundleSampler].
 ///
 /// The engine is always sent a TOP_P sampler, because LiteRT-LM's CPU sampler
 /// rejects the other types, so the other types are written as TOP_P: a greedy
@@ -217,21 +217,21 @@ const _typeGreedy = 3;
 /// nucleus cut is added to it. A zero field is unset: proto3 does not store
 /// one. Throws a [FormatException] for a type this reader does not know and an
 /// [ArgumentError] for a value no engine can sample with.
-SamplingParams bundleSamplerFrom({
+BundleSampler bundleSamplerFrom({
   required int type,
   required double temperature,
   required int topK,
   required double topP,
   int? seed,
 }) {
-  final SamplingParams sampler;
+  final BundleSampler sampler;
   switch (type) {
     case _typeUnspecified:
-      return const SamplingParams();
+      return const BundleSampler();
     case _typeGreedy:
-      sampler = SamplingParams(topK: 1, randomSeed: seed);
+      sampler = BundleSampler(topK: 1, randomSeed: seed);
     case _typeTopK || _typeTopP:
-      sampler = SamplingParams(
+      sampler = BundleSampler(
         temperature: temperature > 0 ? temperature : null,
         topK: topK > 0 ? topK : null,
         topP: type == _typeTopK ? 1.0 : (topP > 0 ? topP : null),

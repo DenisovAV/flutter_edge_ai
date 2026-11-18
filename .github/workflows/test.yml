@@ -64,6 +64,12 @@ jobs:
       - name: Core public surface
         run: tool/check_core_surface.sh
 
+      # Phase 0 of the litertlm_dart carve-out: flutter_edge_ai_litertlm's
+      # runtime side (lib/src/{ffi,bundle,runtime,hook,embedder}) imports neither
+      # Flutter nor core, nor a file outside it.
+      - name: LiteRT-LM runtime side is Flutter-free
+        run: tool/check_litertlm_runtime_imports.sh -q --check
+
       # The web compilers do not reject a native import that leaks into the web
       # graph (dart2js lists dart:io and dart:isolate, dart2wasm accepts all
       # three); it compiles and fails at runtime. This walks the import graph

@@ -1,44 +1,18 @@
-import 'dart:async';
 import 'dart:ffi' show Abi;
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart';
-import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-/// Runs [body] and returns everything it `print`ed, with `gemmaLog` muted — so
-/// a line that shows up here reached `print` itself, the one channel a release
-/// build keeps.
-Future<List<String>> _printedWithGemmaLogMuted(
-  Future<void> Function() body,
-) async {
-  final printed = <String>[];
-  final level = edgeAiLogLevel;
-  edgeAiLogLevel = EdgeAiLogLevel.none;
-  try {
-    await runZoned(
-      body,
-      zoneSpecification: ZoneSpecification(
-        print: (_, _, _, line) => printed.add(line),
-      ),
-    );
-  } finally {
-    edgeAiLogLevel = level;
-  }
-  return printed;
-}
 
 void main() {
   group('ffiBackendFallbackOrder', () {
     test('tries NPU, then GPU, then CPU where an NPU dispatch stack ships', () {
-      expect(
-        ffiBackendFallbackOrder(PreferredBackend.npu, npuAvailable: true),
-        const [
-          PreferredBackend.npu,
-          PreferredBackend.gpu,
-          PreferredBackend.cpu,
-        ],
-      );
+      expect(ffiBackendFallbackOrder(Backend.npu, npuAvailable: true), const [
+        Backend.npu,
+        Backend.gpu,
+        Backend.cpu,
+      ]);
     });
 
     test('does not offer NPU where no dispatch stack ships', () {
@@ -48,8 +22,8 @@ void main() {
       // a Mac report `activeBackend == npu`. Measured on macOS with Gemma 4
       // E2B before this gate existed.
       expect(
-        ffiBackendFallbackOrder(PreferredBackend.npu, npuAvailable: false),
-        const [PreferredBackend.gpu, PreferredBackend.cpu],
+        ffiBackendFallbackOrder(Backend.npu, npuAvailable: false),
+        const [Backend.gpu, Backend.cpu],
         reason:
             'a backend we cannot run must not be reported as the one we ran',
       );
@@ -286,250 +260,32 @@ void main() {
 
   group('ffiBackendFallbackOrder (continued)', () {
     test('tries GPU, then CPU for a GPU preference', () {
-      expect(
-        ffiBackendFallbackOrder(PreferredBackend.gpu, npuAvailable: false),
-        const [PreferredBackend.gpu, PreferredBackend.cpu],
-      );
+      expect(ffiBackendFallbackOrder(Backend.gpu, npuAvailable: false), const [
+        Backend.gpu,
+        Backend.cpu,
+      ]);
     });
 
     test('tries GPU, then CPU when no preference is provided', () {
       expect(ffiBackendFallbackOrder(null, npuAvailable: false), const [
-        PreferredBackend.gpu,
-        PreferredBackend.cpu,
+        Backend.gpu,
+        Backend.cpu,
       ]);
     });
 
     test('tries only CPU for a CPU preference', () {
-      expect(
-        ffiBackendFallbackOrder(PreferredBackend.cpu, npuAvailable: false),
-        const [PreferredBackend.cpu],
-      );
+      expect(ffiBackendFallbackOrder(Backend.cpu, npuAvailable: false), const [
+        Backend.cpu,
+      ]);
     });
   });
 
   group('ffiBackendWireName', () {
     test('serializes backend preferences for LiteRT-LM', () {
-      expect(ffiBackendWireName(PreferredBackend.npu), 'npu');
-      expect(ffiBackendWireName(PreferredBackend.gpu), 'gpu');
-      expect(ffiBackendWireName(PreferredBackend.cpu), 'cpu');
+      expect(ffiBackendWireName(Backend.npu), 'npu');
+      expect(ffiBackendWireName(Backend.gpu), 'gpu');
+      expect(ffiBackendWireName(Backend.cpu), 'cpu');
     });
-  });
-
-  group('initializeFfiRuntime', () {
-    test(
-      'returns the first successfully initialized fallback backend',
-      () async {
-        final clients = <_FakeClient>[];
-
-        final runtime = await initializeFfiRuntime<_FakeClient>(
-          preferredBackend: PreferredBackend.gpu,
-          backends: ffiBackendFallbackOrder(
-            PreferredBackend.gpu,
-            npuAvailable: false,
-          ),
-          logTag: '[Test]',
-          createClient: () {
-            final client = _FakeClient();
-            clients.add(client);
-            return client;
-          },
-          initializeClient: (client, backend) async {
-            client.backend = backend;
-            if (backend == PreferredBackend.gpu) {
-              throw Exception('gpu unavailable');
-            }
-          },
-          shutdownClient: (client) => client.shutdown(),
-        );
-
-        expect(runtime.activeBackend, PreferredBackend.cpu);
-        expect(runtime.client, same(clients[1]));
-        expect(clients[0].isShutdown, isTrue);
-        expect(clients[1].isShutdown, isFalse);
-      },
-    );
-
-    test('throws an inspectable exception with all backend attempts', () async {
-      final clients = <_FakeClient>[];
-
-      await expectLater(
-        initializeFfiRuntime<_FakeClient>(
-          preferredBackend: PreferredBackend.npu,
-          // Pinned rather than host-dependent: this case is about all THREE
-          // attempts being reported, which needs npu to be on offer.
-          backends: ffiBackendFallbackOrder(
-            PreferredBackend.npu,
-            npuAvailable: true,
-          ),
-          logTag: '[Test]',
-          createClient: () {
-            final client = _FakeClient();
-            clients.add(client);
-            return client;
-          },
-          initializeClient: (client, backend) async {
-            client.backend = backend;
-            throw Exception('${ffiBackendWireName(backend)} failed');
-          },
-          shutdownClient: (client) => client.shutdown(),
-        ),
-        throwsA(
-          isA<BackendInitException>()
-              .having(
-                (exception) =>
-                    exception.attempts.map((attempt) => attempt.backend),
-                'attempted backends',
-                [
-                  PreferredBackend.npu,
-                  PreferredBackend.gpu,
-                  PreferredBackend.cpu,
-                ],
-              )
-              .having(
-                (exception) => exception.lastAttempt.backend,
-                'last attempt',
-                PreferredBackend.cpu,
-              ),
-        ),
-      );
-
-      expect(clients, hasLength(3));
-      expect(clients.every((client) => client.isShutdown), isTrue);
-    });
-
-    test(
-      'an npu request that cannot be honoured is printed, not only logged',
-      () async {
-        final printed = await _printedWithGemmaLogMuted(() async {
-          await initializeFfiRuntime<_FakeClient>(
-            preferredBackend: PreferredBackend.npu,
-            backends: ffiBackendFallbackOrder(
-              PreferredBackend.npu,
-              npuAvailable: false,
-            ),
-            logTag: '[Test]',
-            createClient: _FakeClient.new,
-            initializeClient: (_, _) async {},
-            shutdownClient: (client) => client.shutdown(),
-          );
-        });
-        expect(printed, hasLength(1));
-        expect(printed.single, contains('npu was requested'));
-        expect(printed.single, contains('gpu -> cpu'));
-      },
-    );
-
-    test('a requested backend the model file rules out is printed with the '
-        "file's reason, not the host's", () async {
-      // Gemma 3n declares cpu,gpu for its text model: asked for the NPU, the
-      // load plan leaves it out because of the file, on a device that may
-      // well have one.
-      const declared =
-          'model.litertlm declares that its text model runs on cpu, gpu '
-          '(backend_constraint)';
-      final printed = await _printedWithGemmaLogMuted(() async {
-        await initializeFfiRuntime<_FakeClient>(
-          preferredBackend: PreferredBackend.npu,
-          logTag: '[Test]',
-          createClient: _FakeClient.new,
-          initializeClient: (_, _) async {},
-          shutdownClient: (client) => client.shutdown(),
-          backends: const [PreferredBackend.gpu, PreferredBackend.cpu],
-          droppedBecause: const {PreferredBackend.npu: declared},
-        );
-      });
-      expect(printed, [
-        '[flutter_edge_ai] WARNING: [Test] npu was requested, but $declared — '
-            'trying gpu -> cpu instead. InferenceModel.activeBackend names '
-            'what actually ran.',
-      ]);
-    });
-
-    test('a requested GPU the model file rules out is printed, not dropped '
-        'silently', () async {
-      final printed = await _printedWithGemmaLogMuted(() async {
-        await initializeFfiRuntime<_FakeClient>(
-          preferredBackend: PreferredBackend.gpu,
-          logTag: '[Test]',
-          createClient: _FakeClient.new,
-          initializeClient: (_, _) async {},
-          shutdownClient: (client) => client.shutdown(),
-          backends: const [PreferredBackend.cpu],
-          droppedBecause: const {
-            PreferredBackend.gpu:
-                'model.litertlm declares that its text model runs on cpu '
-                '(backend_constraint)',
-          },
-        );
-      });
-      expect(printed, hasLength(1));
-      expect(
-        printed.single,
-        contains(
-          'gpu was requested, but model.litertlm declares that its text model '
-          'runs on cpu (backend_constraint) — trying cpu instead',
-        ),
-      );
-    });
-
-    test('a failed backend is printed, and the last one does not promise a '
-        'next', () async {
-      final printed = await _printedWithGemmaLogMuted(() async {
-        await expectLater(
-          initializeFfiRuntime<_FakeClient>(
-            preferredBackend: PreferredBackend.gpu,
-            backends: ffiBackendFallbackOrder(
-              PreferredBackend.gpu,
-              npuAvailable: false,
-            ),
-            logTag: '[Test]',
-            createClient: _FakeClient.new,
-            initializeClient: (_, backend) async =>
-                throw Exception('${ffiBackendWireName(backend)} failed'),
-            shutdownClient: (client) => client.shutdown(),
-          ),
-          throwsA(isA<BackendInitException>()),
-        );
-      });
-      expect(printed, hasLength(2));
-      expect(printed.first, contains('gpu backend failed, trying the next'));
-      expect(
-        printed.last,
-        contains('cpu backend failed, no candidates are left'),
-      );
-    });
-
-    test('requires at least one failed backend attempt', () {
-      expect(
-        () => BackendInitException(attempts: const []),
-        throwsArgumentError,
-      );
-    });
-
-    test(
-      'does not catch programming errors as backend fallback failures',
-      () async {
-        final error = AssertionError('bug');
-        late _FakeClient client;
-
-        await expectLater(
-          initializeFfiRuntime<_FakeClient>(
-            preferredBackend: PreferredBackend.cpu,
-            backends: ffiBackendFallbackOrder(
-              PreferredBackend.cpu,
-              npuAvailable: false,
-            ),
-            logTag: '[Test]',
-            createClient: () => client = _FakeClient(),
-            initializeClient: (_, __) async => throw error,
-            shutdownClient: (client) => client.shutdown(),
-          ),
-          throwsA(same(error)),
-        );
-
-        expect(client.isShutdown, isFalse);
-      },
-    );
   });
 
   group('encoderBackendWireName (vision + audio encoders)', () {
@@ -544,14 +300,14 @@ void main() {
     });
 
     test('passes an explicit override through unchanged', () {
-      expect(encoderBackendWireName(PreferredBackend.gpu), 'gpu');
-      expect(encoderBackendWireName(PreferredBackend.npu), 'npu');
-      expect(encoderBackendWireName(PreferredBackend.cpu), 'cpu');
+      expect(encoderBackendWireName(Backend.gpu), 'gpu');
+      expect(encoderBackendWireName(Backend.npu), 'npu');
+      expect(encoderBackendWireName(Backend.cpu), 'cpu');
     });
   });
 
   group('activationDataTypeWireValue', () {
-    // The numbers are LiteRT-LM's ActivationDataType order in
+    // The numbers are LiteRT-LM's ActivationType order in
     // executor_settings_base.h, which the C setter casts the int to. A wrong
     // number is silent: F16 for F32 builds an engine that still writes the
     // wrong digits the setting was meant to fix.
@@ -560,8 +316,8 @@ void main() {
     });
 
     test('matches the C API numbering', () {
-      expect(activationDataTypeWireValue(ActivationDataType.float32), 0);
-      expect(activationDataTypeWireValue(ActivationDataType.float16), 1);
+      expect(activationDataTypeWireValue(ActivationType.float32), 0);
+      expect(activationDataTypeWireValue(ActivationType.float16), 1);
     });
 
     test('offers only the two float types', () {
@@ -569,21 +325,12 @@ void main() {
       // ours: at the pinned version they are not half precision the way F16 is,
       // and an unsupported type fails engine init, which reads as a quiet fall
       // back to CPU. Adding one back means adding a number here too.
-      expect(ActivationDataType.values, [
-        ActivationDataType.float32,
-        ActivationDataType.float16,
+      expect(ActivationType.values, [
+        ActivationType.float32,
+        ActivationType.float16,
       ]);
     });
   });
-}
-
-class _FakeClient {
-  PreferredBackend? backend;
-  bool isShutdown = false;
-
-  void shutdown() {
-    isShutdown = true;
-  }
 }
 
 /// Probes that answer [error] (null: they pass) and record what was asked.

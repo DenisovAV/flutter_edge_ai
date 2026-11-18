@@ -28,10 +28,10 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import '../bundle/litertlm_bundle_info.dart' show LiteRtLmNpuTarget;
-import '../litertlm_bundle_sampler.dart' show litertlmHeaderEnd;
+import 'litertlm_bundle_info.dart' show NpuStamp;
+import 'litertlm_bundle_sampler.dart' show litertlmHeaderEnd;
 
-export '../bundle/litertlm_bundle_info.dart' show LiteRtLmNpuTarget;
+export 'litertlm_bundle_info.dart' show NpuStamp;
 
 /// The NPU [modelPath] was compiled for, or null for a bundle with no
 /// compiled section (the generic CPU bundles).
@@ -41,13 +41,13 @@ export '../bundle/litertlm_bundle_info.dart' show LiteRtLmNpuTarget;
 /// [FormatException]. Throws [FileSystemException] when the file cannot be
 /// read and [FormatException] when it is not a `.litertlm` container or its
 /// structure is out of range.
-Future<LiteRtLmNpuTarget?> readLiteRtLmNpuTarget(String modelPath) async {
+Future<NpuStamp?> readLiteRtLmNpuTarget(String modelPath) async {
   final file = await File(modelPath).open();
   try {
     final reader = _FileReader(file, await file.length());
     final headerEnd = litertlmHeaderEnd(await reader.bytes(0, 32));
     final header = await reader.bytes(32, headerEnd - 32);
-    LiteRtLmNpuTarget? found;
+    NpuStamp? found;
     for (final (begin, end) in tfliteModelSections(header)) {
       final target = await _stampOf(reader, begin, end);
       if (target == null) continue;
@@ -74,7 +74,7 @@ Future<LiteRtLmNpuTarget?> readLiteRtLmNpuTarget(String modelPath) async {
 /// section that is not compiled for an NPU. A section that ends past the end
 /// of the file is left out. Throws [FormatException] for a stamp this reader
 /// cannot read and [RangeError] for a structure out of range.
-Future<Map<(int, int), LiteRtLmNpuTarget?>> readLiteRtLmSectionStamps(
+Future<Map<(int, int), NpuStamp?>> readLiteRtLmSectionStamps(
   RandomAccessFile file,
   int length,
   Iterable<(int, int)> sections,
@@ -108,7 +108,7 @@ List<(int, int)> tfliteModelSections(Uint8List header) {
 /// The SoC fields of a `LiteRtStamp` buffer: two NUL-padded fields of
 /// [_stampFieldBytes] each. Null when the buffer is not a stamp (wrong size)
 /// or names no SoC.
-LiteRtLmNpuTarget? parseLiteRtStamp(Uint8List stamp) {
+NpuStamp? parseLiteRtStamp(Uint8List stamp) {
   if (stamp.length != 2 * _stampFieldBytes) return null;
   String field(int start) {
     final bytes = stamp.sublist(start, start + _stampFieldBytes);
@@ -119,7 +119,7 @@ LiteRtLmNpuTarget? parseLiteRtStamp(Uint8List stamp) {
   final vendor = field(0);
   final soc = field(_stampFieldBytes);
   if (vendor.isEmpty || soc.isEmpty) return null;
-  return LiteRtLmNpuTarget(vendor: vendor, soc: soc);
+  return NpuStamp(vendor: vendor, soc: soc);
 }
 
 /// `AnySectionDataType.TFLiteModel` in `litertlm_header_schema.fbs`.
@@ -137,11 +137,7 @@ const _stampKey = 'LiteRtStamp';
 const _maxMetadataEntries = 4096;
 
 /// The stamp of the TFLite model in `[begin, end)`, or null when it has none.
-Future<LiteRtLmNpuTarget?> _stampOf(
-  _FileReader file,
-  int begin,
-  int end,
-) async {
+Future<NpuStamp?> _stampOf(_FileReader file, int begin, int end) async {
   if (end <= begin || end > file.length) {
     throw RangeError('TFLiteModel section $begin..$end');
   }

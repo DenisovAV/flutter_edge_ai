@@ -1,7 +1,7 @@
 import 'package:flutter_edge_ai/engine.dart';
 
-import '../npu_stacks.dart';
-import 'open_session_backing.dart';
+import '../runtime/npu_stacks.dart';
+import '../ffi/open_session_backing.dart';
 
 /// One native LiteRT-LM host/backend row whose constrained decoding needs its
 /// own discriminating run before it can be advertised.

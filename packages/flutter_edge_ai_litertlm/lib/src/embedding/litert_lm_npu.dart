@@ -32,9 +32,9 @@ import '../ffi/litert_lm_client.dart' show NpuDispatchUnavailableException;
 import '../ffi/npu_vendor_host.dart';
 import '../flutter_npu_platform.dart';
 import '../native_hosts.dart';
-import '../npu_stacks.dart';
+import '../runtime/npu_stacks.dart';
 import 'litert_lm_embedding_common.dart';
-import 'litertlm_npu_target.dart';
+import '../bundle/litertlm_npu_target.dart';
 
 export '../native_hosts.dart'
     show liteRtLmEmbeddingGpuAbis, liteRtLmEmbeddingGpuRefusedAbis;
@@ -45,7 +45,7 @@ export '../native_hosts.dart'
 /// vendor's dispatch from.
 typedef LiteRtLmEmbeddingPlacement = ({
   PreferredBackend backend,
-  LiteRtLmNpuTarget? target,
+  NpuStamp? target,
   String? dispatchDir,
 });
 
@@ -100,7 +100,7 @@ bool liteRtLmEmbeddingGpuRefusedHost() =>
 /// where is [liteRtLmRegistryUrl].
 Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
   required String file,
-  required LiteRtLmNpuTarget? target,
+  required NpuStamp? target,
   required PreferredBackend? requested,
   LiteRtLmNpuHost? host,
 }) async {
@@ -197,10 +197,7 @@ String _bundleNames(NpuStack vendor) => switch (vendor) {
 };
 
 /// A per-SoC bundle asked to run anywhere but the NPU.
-String liteRtLmNpuBundleWithoutNpuRefusal(
-  String file,
-  LiteRtLmNpuTarget target,
-) =>
+String liteRtLmNpuBundleWithoutNpuRefusal(String file, NpuStamp target) =>
     '$file is compiled for the $target NPU and runs only there: load it with '
     'getActiveEmbedder(preferredBackend: PreferredBackend.npu) on a '
     '${target.soc} device, or install the generic EmbeddingGemma 2 bundle to '

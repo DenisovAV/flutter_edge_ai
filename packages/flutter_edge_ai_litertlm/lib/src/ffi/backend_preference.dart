@@ -1,16 +1,10 @@
-import 'dart:async';
-import 'dart:developer' as developer;
 import 'dart:ffi';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter_edge_ai/engine.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
+import '../runtime/types.dart';
 
-import '../litert_lm_load_errors.dart';
-import '../npu_stacks.dart';
-
-export '../litert_lm_load_errors.dart'
-    show BackendInitAttemptFailure, BackendInitException;
+import '../runtime/npu_stacks.dart';
 
 /// Why this device cannot run [vendor]'s NPU stack on [operatingSystem], or
 /// null when it can — the vendor's device probe, through [probes], worded for
@@ -358,7 +352,7 @@ String? _androidProperty(String key) {
 }
 
 /// Where [vendor]'s NPU runs, for the notice that the NPU was not tried.
-String _whereNpuRuns(NpuStack vendor) => switch (vendor) {
+String whereNpuRuns(NpuStack vendor) => switch (vendor) {
   NpuStack.qualcomm =>
     'Qualcomm Android and Qualcomm Linux arm64 (in apps built with '
         'hooks.user_defines.flutter_edge_ai_litertlm.$qualcommNpuUserDefine: '
@@ -373,26 +367,25 @@ String _whereNpuRuns(NpuStack vendor) => switch (vendor) {
 
 /// The backends to try, in order, for a [preferredBackend] request, the NPU
 /// only when [npuAvailable].
-List<PreferredBackend> ffiBackendFallbackOrder(
-  PreferredBackend? preferredBackend, {
+List<Backend> ffiBackendFallbackOrder(
+  Backend? preferredBackend, {
   required bool npuAvailable,
 }) => switch (preferredBackend) {
-  PreferredBackend.npu => [
+  Backend.npu => [
     // Offered only where a dispatch stack exists. Dropping it here is what
     // makes the reported `activeBackend` true on the other four platforms.
-    if (npuAvailable) PreferredBackend.npu,
-    PreferredBackend.gpu,
-    PreferredBackend.cpu,
+    if (npuAvailable) Backend.npu,
+    Backend.gpu,
+    Backend.cpu,
   ],
-  PreferredBackend.gpu ||
-  null => const [PreferredBackend.gpu, PreferredBackend.cpu],
-  PreferredBackend.cpu => const [PreferredBackend.cpu],
+  Backend.gpu || null => const [Backend.gpu, Backend.cpu],
+  Backend.cpu => const [Backend.cpu],
 };
 
-String ffiBackendWireName(PreferredBackend backend) => switch (backend) {
-  PreferredBackend.npu => 'npu',
-  PreferredBackend.gpu => 'gpu',
-  PreferredBackend.cpu => 'cpu',
+String ffiBackendWireName(Backend backend) => switch (backend) {
+  Backend.npu => 'npu',
+  Backend.gpu => 'gpu',
+  Backend.cpu => 'cpu',
 };
 
 /// Wire name for an ENCODER backend (vision / audio), defaulting to `cpu` when
@@ -406,121 +399,16 @@ String ffiBackendWireName(PreferredBackend backend) => switch (backend) {
 /// prepare — it hard-fails at `conversation_create` with no backend fallback
 /// (LiteRT-LM#2461, open upstream) — and the published Gemma 4 and Gemma 3n
 /// AUDIO encoders declare `backend_constraint` cpu.
-String encoderBackendWireName(PreferredBackend? encoderBackend) =>
+String encoderBackendWireName(Backend? encoderBackend) =>
     encoderBackend == null ? 'cpu' : ffiBackendWireName(encoderBackend);
 
-/// The C API's number for [type] (`ActivationDataType` in LiteRT-LM's
+/// The C API's number for [type] (`ActivationType` in LiteRT-LM's
 /// `executor_settings_base.h`: 0 F32, 1 F16, and 2 I16 / 3 I8 which the Dart
 /// enum does not offer), or null to leave the engine setting untouched.
 /// Spelled out rather than taken from `index`, so reordering the Dart enum
 /// cannot silently change what native receives.
-int? activationDataTypeWireValue(ActivationDataType? type) => switch (type) {
+int? activationDataTypeWireValue(ActivationType? type) => switch (type) {
   null => null,
-  ActivationDataType.float32 => 0,
-  ActivationDataType.float16 => 1,
+  ActivationType.float32 => 0,
+  ActivationType.float16 => 1,
 };
-
-Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
-  required PreferredBackend? preferredBackend,
-  required String logTag,
-  required T Function() createClient,
-  required Future<void> Function(T client, PreferredBackend backend)
-  initializeClient,
-  // FutureOr: LiteRtLmFfiClient.shutdown() is async (it waits for in-flight
-  // conversation creates before engine_delete); test fakes tear down
-  // synchronously. Awaiting covers both, so a failed backend is fully released
-  // before the next one allocates an engine.
-  required FutureOr<void> Function(T client) shutdownClient,
-  // Why npu is off when it is not tried: the build's stack or the device's
-  // probe (`chooseNpuVendor`); null words it from the host ([npuNoVendorReason]).
-  String? npuUnavailableBecause,
-  // The backends to try, in order: what the caller decided (the LLM engine
-  // does, from the bundle: `planLiteRtLmLoad`), or [ffiBackendFallbackOrder].
-  required List<PreferredBackend> backends,
-  // Why the caller left a backend of the request out of [backends] — the
-  // model file rules it out (`LiteRtLmLoadPlan.dropped`). The notice below
-  // says that instead of a reason about the host.
-  Map<PreferredBackend, String> droppedBecause = const {},
-}) async {
-  final attempts = <BackendInitAttemptFailure>[];
-  if (backends.isEmpty) {
-    throw StateError('No FFI backend candidates are available.');
-  }
-
-  // Said out loud rather than dropped: the request cannot be honoured here, and
-  // a caller who reads `activeBackend` will see gpu or cpu with no explanation
-  // of why the thing they asked for is absent.
-  //
-  // `print`, the one channel that reaches both a release build and a
-  // `flutter run` terminal: `gemmaLog` returns early in release, and
-  // flutter_tools never subscribes to the VM-service `Logging` stream that
-  // `developer.log` writes to. An explicit request overridden is an abnormal
-  // state, so this costs nothing in the normal case — the same reasoning as
-  // `_warn` in litert_default_scope.dart.
-  final fileReason = preferredBackend == null
-      ? null
-      : droppedBecause[preferredBackend];
-  if (fileReason != null && !backends.contains(preferredBackend)) {
-    // ignore: avoid_print
-    print(
-      '[flutter_edge_ai] WARNING: $logTag '
-      '${ffiBackendWireName(preferredBackend!)} was requested, but '
-      '$fileReason — trying ${backends.map(ffiBackendWireName).join(" -> ")} '
-      'instead. InferenceModel.activeBackend names what actually ran.',
-    );
-  } else if (preferredBackend == PreferredBackend.npu &&
-      !backends.contains(PreferredBackend.npu)) {
-    final reason =
-        npuUnavailableBecause ?? npuNoVendorReason('${Abi.current()}');
-    // ignore: avoid_print
-    print(
-      '[flutter_edge_ai] WARNING: $logTag npu was requested, but $reason — '
-      'trying ${backends.map(ffiBackendWireName).join(" -> ")} instead. NPU '
-      'runs on ${npuSentenceList(NpuStack.values.map(_whereNpuRuns))}. '
-      'InferenceModel.activeBackend names what actually ran.',
-    );
-  }
-
-  for (final backend in backends) {
-    final client = createClient();
-    try {
-      await initializeClient(client, backend);
-      return (client: client, activeBackend: backend);
-    } on Exception catch (error, stackTrace) {
-      attempts.add(
-        BackendInitAttemptFailure(
-          backend: backend,
-          error: error,
-          stackTrace: stackTrace,
-        ),
-      );
-      await shutdownClient(client);
-      // Both, for two readers. `developer.log` carries the structured error and
-      // stack trace to DevTools, which is where they are useful. `print` is the
-      // line a person sees — in a `flutter run` terminal and in a release
-      // build's logcat — for the same reason as the npu notice above.
-      developer.log(
-        '$logTag ${ffiBackendWireName(backend)} backend failed: $error',
-        name: 'flutter_edge_ai',
-        level: 900,
-        error: error,
-        stackTrace: stackTrace,
-      );
-      final next = backend == backends.last
-          ? 'no candidates are left'
-          : 'trying the next candidate';
-      // ignore: avoid_print
-      print(
-        '[flutter_edge_ai] WARNING: $logTag ${ffiBackendWireName(backend)} '
-        'backend failed, $next: $error',
-      );
-    }
-  }
-
-  if (attempts.isEmpty) {
-    throw StateError('No FFI backend candidates were attempted.');
-  }
-
-  final exception = BackendInitException(attempts: attempts);
-  Error.throwWithStackTrace(exception, exception.lastAttempt.stackTrace);
-}

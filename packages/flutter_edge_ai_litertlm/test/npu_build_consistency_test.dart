@@ -8,7 +8,7 @@
 import 'dart:io';
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// `[array]=( … )` (REQUIRED or FORBIDDEN) of verify_tarball_manifest.sh, as

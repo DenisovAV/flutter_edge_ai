@@ -15,9 +15,9 @@ import 'ffi/npu_stack_manifest.dart';
 import 'ffi/npu_vendor_host.dart';
 import 'ffi/open_session_backing.dart';
 import 'flutter_npu_platform.dart';
-import 'litert_lm_log_level.dart';
-import 'litertlm_bundle_activation.dart' show GpuActivationReason;
-import 'npu_stacks.dart';
+import 'runtime/litert_lm_log_level.dart';
+import 'bundle/litertlm_bundle_activation.dart' show GpuActivationReason;
+import 'runtime/npu_stacks.dart';
 
 /// The app's support directory (path_provider): the default
 /// [LiteRtLmEngineHost.cacheDir].

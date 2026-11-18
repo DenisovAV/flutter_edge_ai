@@ -18,23 +18,20 @@ export 'src/litert_lm_engine_web.dart'
 // backends and the NPU each compiled section targets — read natively before
 // any engine exists (`readLiteRtLmBundleInfo`), and why a native load failed.
 // The types are plain Dart on every platform; the reader throws on the web.
-export 'src/bundle/litertlm_bundle_info.dart'
-    show
-        LiteRtLmBundleException,
-        LiteRtLmBundleInfo,
-        LiteRtLmBundleProblem,
-        LiteRtLmNpuTarget,
-        LiteRtLmSection;
-export 'src/bundle/litertlm_bundle_reader_stub.dart'
-    if (dart.library.ffi) 'src/bundle/litertlm_bundle_reader.dart'
+export 'src/adapter/bundle_info.dart'
+    show LiteRtLmBundleInfo, LiteRtLmNpuTarget, LiteRtLmSection;
+export 'src/adapter/bundle_reader_stub.dart'
+    if (dart.library.ffi) 'src/adapter/bundle_reader.dart'
     show readLiteRtLmBundleInfo;
+export 'src/bundle/litertlm_bundle_info.dart'
+    show LiteRtLmBundleException, LiteRtLmBundleProblem;
 export 'src/litert_lm_load_errors.dart';
 
 // The models this package runs, generated from the project's model registry:
 // `LiteRtLmModels.gemma4E2bIt.npuSm8750`, `LiteRtEmbedders…`. Plain Dart on
 // every platform; `backendsHere` answers for the runtime it runs in.
 export 'src/catalog/litert_catalog.dart' hide debugLiteRtCatalogHost;
-export 'src/litert_lm_log_level.dart';
+export 'src/runtime/litert_lm_log_level.dart';
 
 // LiteRt interpreter FFI (arbitrary `.tflite` models) — used by
 // flutter_edge_ai_speech. `dart.library.ffi`-only;

@@ -1,4 +1,4 @@
-// The native reader of `LiteRtLmBundleInfo`: the container header, then the
+// The native reader of `BundleInfo`: the container header, then the
 // `LiteRtStamp` of each `TFLiteModel` section — a few hundred bytes each, never
 // the sections themselves, so a multi-gigabyte bundle is read in milliseconds.
 
@@ -6,13 +6,12 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import '../embedding/litertlm_npu_target.dart'
+import 'litertlm_npu_target.dart'
     show
         readLiteRtLmLinearAttentionState,
         readLiteRtLmPrefillLengths,
         readLiteRtLmSectionStamps;
-import '../litertlm_bundle_sampler.dart'
-    show executorMetadataHasLinearAttention;
+import 'litertlm_bundle_sampler.dart' show executorMetadataHasLinearAttention;
 import 'litertlm_bundle_info.dart';
 
 /// Larger than any header seen (a few KB); a bigger value is a corrupt file,
@@ -29,7 +28,7 @@ const _maxExecutorMetadataBytes = 1 << 20;
 /// compiled section, never the weights.
 ///
 /// A file shorter than its sections (a download that stopped early) is read
-/// as far as it goes: [LiteRtLmBundleInfo.isComplete] is false, and the
+/// as far as it goes: [BundleInfo.isComplete] is false, and the
 /// sections past its end carry no NPU target.
 ///
 /// Throws [FileSystemException] when the file cannot be opened, and
@@ -38,7 +37,7 @@ const _maxExecutorMetadataBytes = 1 << 20;
 /// package does not read ([LiteRtLmBundleProblem.unsupportedVersion]), ends
 /// inside its own header ([LiteRtLmBundleProblem.incomplete]), or has a header
 /// or compiler stamp out of range ([LiteRtLmBundleProblem.malformed]).
-Future<LiteRtLmBundleInfo> readLiteRtLmBundleInfo(String path) async {
+Future<BundleInfo> readBundleInfo(String path) async {
   final file = await File(path).open();
   try {
     final length = await file.length();
@@ -71,7 +70,7 @@ Future<LiteRtLmBundleInfo> readLiteRtLmBundleInfo(String path) async {
       fileLength: length,
       path: path,
     ).sections.where((s) => s.dataType == 'TFLiteModel');
-    final Map<(int, int), LiteRtLmNpuTarget?> stamps;
+    final Map<(int, int), NpuStamp?> stamps;
     try {
       stamps = await readLiteRtLmSectionStamps(file, length, [
         for (final section in ranges) (section.begin, section.end),
@@ -84,7 +83,7 @@ Future<LiteRtLmBundleInfo> readLiteRtLmBundleInfo(String path) async {
         path: path,
       );
     }
-    final targets = stamps.values.whereType<LiteRtLmNpuTarget>().toSet();
+    final targets = stamps.values.whereType<NpuStamp>().toSet();
     if (targets.length > 1) {
       throw LiteRtLmBundleException(
         LiteRtLmBundleProblem.malformed,
@@ -114,11 +113,11 @@ Future<LiteRtLmBundleInfo> readLiteRtLmBundleInfo(String path) async {
 /// section, its main section is compiled for an NPU (that executor prefills
 /// in its own context groups), or it has no prefill signature.
 ///
-/// Throws as [readLiteRtLmBundleInfo] for a file that is not a `.litertlm`
+/// Throws as [readBundleInfo] for a file that is not a `.litertlm`
 /// container, and [LiteRtLmBundleException] ([LiteRtLmBundleProblem.malformed])
 /// for a main model it cannot walk.
 Future<List<int>> readLiteRtLmPrefillSignatureLengths(String path) async {
-  final info = await readLiteRtLmBundleInfo(path);
+  final info = await readBundleInfo(path);
   final main = info.textModel;
   // A main model compiled for an NPU runs LiteRT-LM's NPU executor, which
   // prefills in its own context groups, not by these signatures.
@@ -152,11 +151,11 @@ Future<List<int>> readLiteRtLmPrefillSignatureLengths(String path) async {
 /// design §6.4b); it is rebuilt from text instead. False when the bundle has
 /// no main section.
 ///
-/// Throws as [readLiteRtLmBundleInfo] for a file that is not a `.litertlm`
+/// Throws as [readBundleInfo] for a file that is not a `.litertlm`
 /// container, and [LiteRtLmBundleException] ([LiteRtLmBundleProblem.malformed])
 /// for a main model it cannot walk.
 Future<bool> readLiteRtLmHasLinearAttentionState(String path) async {
-  final info = await readLiteRtLmBundleInfo(path);
+  final info = await readBundleInfo(path);
   final main = info.textModel;
   final file = await File(path).open();
   try {

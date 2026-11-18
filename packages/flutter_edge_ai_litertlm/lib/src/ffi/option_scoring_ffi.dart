@@ -13,9 +13,6 @@
 // and rewound. LiteRT-LM 0.18.0 needed the prompt's last token prefilled again
 // after the checkpoint (#3561, mode `once`); 0.19.0 scores right after the
 // prefill, which `option_scoring_self_check.dart` checks.
-//
-// The decider SPI (OptionScoringRun) is @experimental.
-// ignore_for_file: experimental_member_use
 
 import 'dart:convert';
 import 'dart:ffi';
@@ -23,7 +20,9 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter_edge_ai/engine.dart';
+import '../runtime/errors.dart';
+import '../runtime/runtime_log.dart';
+import '../runtime/types.dart';
 
 import 'litert_lm_bindings.dart';
 import 'litert_lm_client.dart' show LiteRtLmLastErrorRead;
@@ -39,9 +38,9 @@ Future<String> renderUserMessageOffMainIsolate({
   required int engineAddr,
   required String content,
 }) {
-  final isolateLogLevel = edgeAiLogLevel;
+  final isolateLogLevel = currentRuntimeLogLevel();
   return Isolate.run(() {
-    edgeAiLogLevel = isolateLogLevel;
+    runtimeLogLevel = isolateLogLevel;
     final n = _Native(LiteRtLmBindings(openLiteRtLmLibrary()));
     n.b.litert_lm_clear_last_error();
     final sessionConfig = n.greedySessionConfig(applyPromptTemplate: null);
@@ -109,21 +108,21 @@ Future<String> renderUserMessageOffMainIsolate({
 ///
 /// [stopFlagAddr] is the address of an `Int32` the caller sets to non-zero to
 /// stop the run: it is read before the prefill and before each target, and a
-/// set flag fails the run with `DeciderCancelledException` — the native call
+/// set flag fails the run with `ScoringCancelledException` — the native call
 /// in progress is not interrupted.
-Future<OptionScoringRun> scoreTargetsOffMainIsolate({
+Future<ScoringRun> scoreTargetsOffMainIsolate({
   required int engineAddr,
   required String prompt,
   required List<String> targets,
   required int stopFlagAddr,
 }) {
-  final isolateLogLevel = edgeAiLogLevel;
+  final isolateLogLevel = currentRuntimeLogLevel();
   return Isolate.run(() {
-    edgeAiLogLevel = isolateLogLevel;
+    runtimeLogLevel = isolateLogLevel;
     final stop = Pointer<Int32>.fromAddress(stopFlagAddr);
     void stopIfAsked() {
       if (stop.value != 0) {
-        throw const DeciderCancelledException('The scoring was stopped.');
+        throw const ScoringCancelledException('The scoring was stopped.');
       }
     }
 
@@ -167,7 +166,7 @@ Future<OptionScoringRun> scoreTargetsOffMainIsolate({
           );
         }
       }
-      return OptionScoringRun(
+      return ScoringRun(
         tokenScores: scores,
         prefillTime: prefillWatch.elapsed,
         scoreTime: scoreWatch.elapsed,

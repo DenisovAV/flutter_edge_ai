@@ -1,5 +1,5 @@
 import 'package:flutter_edge_ai_litertlm/src/ffi/engine_create_failure.dart';
-import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_activation.dart'
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_activation.dart'
     show GpuActivationReason;
 import 'package:flutter_test/flutter_test.dart';
 

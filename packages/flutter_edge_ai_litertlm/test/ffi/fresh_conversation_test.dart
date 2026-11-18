@@ -7,20 +7,21 @@ import 'dart:convert';
 import 'dart:ffi';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/npu_stacks.dart';
+import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart' show Backend;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test(
     'only a model on the MediaTek NPU gets a fresh conversation each turn',
     () {
-      final fresh = <(PreferredBackend?, NpuStack?)>{
-        for (final backend in [...PreferredBackend.values, null])
+      final fresh = <(Backend?, NpuStack?)>{
+        for (final backend in [...Backend.values, null])
           for (final vendor in [...NpuStack.values, null])
             if (liteRtLmFreshConversationEachTurn(
               backend: backend,
@@ -28,7 +29,7 @@ void main() {
             ))
               (backend, vendor),
       };
-      expect(fresh, {(PreferredBackend.npu, NpuStack.mediatek)});
+      expect(fresh, {(Backend.npu, NpuStack.mediatek)});
     },
   );
 

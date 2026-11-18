@@ -18,16 +18,17 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart' show ResolvedSampling;
 // ignore: implementation_imports — drives litertlm's FFI client directly to capture raw model output
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
+// ignore: implementation_imports — the runtime's Sampler that client takes
+import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'local_model_file_io.dart' show macosStagedFilePath;
 
-const _sampling = ResolvedSampling(
+const _sampling = Sampler(
   temperature: 0.6,
   topK: 40,
   topP: 0.95,

@@ -2,7 +2,7 @@
 // client knows when the engine pointer comes back null: the backend it asked
 // for, LiteRT-LM's own last error and the activation type the attempt ran at.
 
-import '../litertlm_bundle_activation.dart';
+import '../bundle/litertlm_bundle_activation.dart';
 
 /// LiteRT-LM's refusal of a `*-gpu.litertlm` build: litert-community
 /// publishes these for its GPU "artisan" backend (`Backend::GPU_ARTISAN`,

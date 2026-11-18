@@ -80,8 +80,8 @@ jobs:
         run: ./build.sh ${{ matrix.target }} "$RUNNER_TEMP/out"
 
       # The Dart suites against the library just built, through the hook's
-      # local-prebuilt path: the only place the bindings meet a real
-      # library in CI until a release is pinned (test.yml skips them).
+      # local-prebuilt path, so the bindings meet the library this commit
+      # builds, not the pinned release test.yml downloads.
       # The package is pure Dart, but resolving the workspace needs a
       # Flutter SDK (other members depend on it). Flutter publishes no
       # Linux arm64 archive, so that runner clones the stable branch.

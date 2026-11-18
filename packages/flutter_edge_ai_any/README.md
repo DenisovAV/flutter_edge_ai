@@ -18,8 +18,7 @@ network the package may join, are separate decisions.
   local index. See [native/any_shim/README.md](native/any_shim/README.md).
 - `hook/build.dart`: the Native Assets hook. It registers a local build
   (`native/any_shim/prebuilt/<target>/`) or downloads the release archive for
-  the target and checks its SHA256. No release is published yet, so today
-  only local builds work.
+  the target from the `native-any-v0.1.0` release and checks its SHA256.
 - `lib/src/ffi/`: the `@Native` bindings (one per C function) and a thin
   internal wrapper (`AnyShimAccount`, `AnyShimIndex`). Nothing is exported
   from `lib/flutter_edge_ai_any.dart`. `lib/` imports no Flutter.
@@ -48,9 +47,9 @@ dart test                              # bindings vs header + offline suite
 dart test -t lan --run-skipped         # two processes syncing over LAN
 ```
 
-Without a local build and with no release pinned, the native Dart suites
-skip with the reason; once the hook pins a release for the host, a missing
-library fails them instead.
+Without a local build, the hook downloads the pinned release for the host;
+a host whose archive the hook does not pin skips the native suites with the
+reason, and on a pinned host a missing library fails them.
 
 ## Known limits
 

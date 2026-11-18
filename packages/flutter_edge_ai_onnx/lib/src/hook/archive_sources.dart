@@ -48,7 +48,7 @@ Future<PinnedArchiveResult> fetchPinnedArchive({
   }
   final tried = <String>[];
   for (final source in sources) {
-    if (dest.existsSync()) dest.deleteSync();
+    _deleteQuietly(dest);
     log('downloading $source ...');
     final served = await fetch(source, dest, log);
     if (!served) {
@@ -99,13 +99,8 @@ Future<bool> httpArchiveFetch(
       final request = await client.getUrl(url);
       request.followRedirects = true;
       response = await request.close();
-    } on SocketException catch (e) {
-      log('download failed for $url: $e');
-      return false;
-    } on HttpException catch (e) {
-      log('download failed for $url: $e');
-      return false;
-    } on TlsException catch (e) {
+    } on Exception catch (e) {
+      if (!_isNetworkError(e)) rethrow;
       log('download failed for $url: $e');
       return false;
     }
@@ -116,24 +111,33 @@ Future<bool> httpArchiveFetch(
     }
     final sink = dest.openWrite();
     try {
-      await response.pipe(sink);
-    } on SocketException catch (e) {
-      log('download interrupted for $url: $e');
-      _deleteQuietly(dest);
-      return false;
-    } on HttpException catch (e) {
+      await sink.addStream(response);
+    } on Exception catch (e) {
+      // Close before deleting: an open handle keeps Windows from deleting
+      // the partial file, and the next source writes to the same path.
+      try {
+        await sink.close();
+      } on Exception {
+        // The write side failed too; the delete below still runs.
+      }
+      if (!_isNetworkError(e)) rethrow;
       log('download interrupted for $url: $e');
       _deleteQuietly(dest);
       return false;
     }
+    await sink.close();
     return true;
   } finally {
     client.close();
   }
 }
 
-/// Deletes a partial download; [fetchPinnedArchive] deletes it again before
-/// the next source, so a file still held open (Windows) is not fatal here.
+/// A failure of the source or the network, as opposed to the local machine.
+bool _isNetworkError(Object e) =>
+    e is SocketException || e is HttpException || e is TlsException;
+
+/// Deletes a partial or rejected download without failing: a file still held
+/// open (Windows) is truncated by the next source's `openWrite` anyway.
 void _deleteQuietly(File file) {
   try {
     if (file.existsSync()) file.deleteSync();

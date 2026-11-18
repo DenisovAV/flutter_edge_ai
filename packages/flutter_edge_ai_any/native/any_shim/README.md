@@ -16,6 +16,7 @@ number of local indexes.
 | `check_exports.py` | the gate every build passes: exports equal the header, container fits the target |
 | `release.py` | release archives, checksums, manifest, verification |
 | `tools/device_smoke.c` | dlopen + the offline path on a device without Dart (an Android emulator over adb) |
+| `THIRD_PARTY_NOTICES.md` | licenses of every Go module linked into the library |
 | `testdata/nodeconf-dead.yml` | the SDK's local test network with every node on a closed port |
 
 Pinned: Go 1.27.3 (`toolchain` in `go.mod`; `build.sh` refuses another),
@@ -75,8 +76,9 @@ letter suffix (`0.1.0-a`).
 
 1. Run `any-native.yml` on the commit; download the `any-shim-release-layout`
    artifact (all archives, checksums and manifest, already verified).
-2. Before the first release: add third-party notices for the Go modules
-   linked into the library (the shim's `go.sum`).
+2. Regenerate `THIRD_PARTY_NOTICES.md` when `go.sum` changed (the
+   modules `go list -deps -tags nographviz` reports for the seven targets,
+   with their license texts).
 3. Create the tag and upload the artifact's files.
 4. Download the assets back, `release.py verify <dir> <version>`.
 5. Put the checksums into `_checksums` in `hook/build.dart` and run

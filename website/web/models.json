@@ -2,8 +2,8 @@
  "schema_version": 1,
  "packages": {
   "flutter_edge_ai": "2.6.0",
-  "flutter_edge_ai_litertlm": "1.21.0",
-  "flutter_edge_ai_speech": "0.6.2"
+  "flutter_edge_ai_litertlm": "1.20.2",
+  "flutter_edge_ai_speech": "0.6.1"
  },
  "hosts": [
   {
@@ -144,7 +144,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -154,7 +154,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -173,7 +173,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -192,7 +192,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -489,7 +489,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "stale",
@@ -500,10 +500,10 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-14_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-23f84-usb.json",
         "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-14, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -513,7 +513,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-13_macos_arm64_mac-mini-m5-pro-mac17-16-2.json",
         "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -523,8 +523,8 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-2.json",
+        "status": "verified",
+        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-4.json",
         "note": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
@@ -533,7 +533,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-13_linux_x64_gce-flutter-gemma-linux-tesla-t4-2.json",
         "note": "GCE flutter-gemma-linux (Tesla T4), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -541,7 +541,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -843,7 +843,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "stale",
@@ -854,10 +854,10 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-14_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-23f84-usb.json",
         "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-14, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -865,10 +865,10 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-13_macos_arm64_mac-mini-m5-pro-mac17-16-2.json",
         "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -876,11 +876,11 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-2.json",
+        "status": "verified",
+        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-4.json",
         "note": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
@@ -889,7 +889,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-13_linux_x64_gce-flutter-gemma-linux-tesla-t4-2.json",
         "note": "GCE flutter-gemma-linux (Tesla T4), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -897,7 +897,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1208,7 +1208,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1218,7 +1218,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1228,7 +1228,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1238,7 +1238,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1248,7 +1248,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1258,7 +1258,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -1303,7 +1303,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1337,7 +1337,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1371,13 +1371,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1411,13 +1411,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1451,13 +1451,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1491,13 +1491,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1531,7 +1531,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1565,7 +1565,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1595,7 +1595,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1605,7 +1605,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1615,7 +1615,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1625,7 +1625,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1635,7 +1635,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1645,7 +1645,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -1690,7 +1690,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1724,7 +1724,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1758,13 +1758,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1798,13 +1798,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1838,13 +1838,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1878,13 +1878,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1918,7 +1918,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1952,7 +1952,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -1982,7 +1982,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -1992,7 +1992,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -2002,7 +2002,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -2012,7 +2012,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -2022,7 +2022,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -2032,7 +2032,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -2077,7 +2077,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2111,7 +2111,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2145,13 +2145,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2185,13 +2185,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2225,13 +2225,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2265,13 +2265,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2305,7 +2305,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2339,7 +2339,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2369,7 +2369,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -2379,7 +2379,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -2389,7 +2389,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -2399,7 +2399,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -2409,7 +2409,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -2419,7 +2419,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -2464,7 +2464,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2498,7 +2498,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2532,13 +2532,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2572,13 +2572,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2612,13 +2612,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2652,13 +2652,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2692,7 +2692,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -2726,7 +2726,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        }
       }
      }
@@ -3054,7 +3054,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3064,7 +3064,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3074,7 +3074,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3084,7 +3084,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3094,7 +3094,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3104,7 +3104,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3143,7 +3143,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3153,7 +3153,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3163,7 +3163,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3173,7 +3173,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3183,7 +3183,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3193,7 +3193,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3232,7 +3232,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3242,7 +3242,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3252,7 +3252,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3262,7 +3262,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3272,7 +3272,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "documented",
@@ -3282,7 +3282,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3321,7 +3321,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3330,7 +3330,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3339,7 +3339,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3348,7 +3348,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3357,7 +3357,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3366,7 +3366,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3405,7 +3405,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3414,7 +3414,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3423,7 +3423,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3432,7 +3432,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3441,7 +3441,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3450,7 +3450,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3489,7 +3489,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3498,7 +3498,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3507,7 +3507,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3516,7 +3516,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3525,7 +3525,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3534,7 +3534,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3573,7 +3573,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3582,7 +3582,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3591,7 +3591,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3600,7 +3600,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3609,7 +3609,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3618,7 +3618,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3657,7 +3657,7 @@
       "android_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3666,7 +3666,7 @@
       "ios_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3675,7 +3675,7 @@
       "macos_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3684,7 +3684,7 @@
       "windows_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3693,7 +3693,7 @@
       "linux_x64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -3702,7 +3702,7 @@
       "linux_arm64": {
        "gpu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.21.0"
+        "refused_by": "flutter_edge_ai_litertlm 1.20.2"
        },
        "cpu": {
         "status": "untested"
@@ -4348,48 +4348,48 @@
       },
       "ios_arm64": {
        "gpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-14_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-23f84-usb.json",
         "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-14, flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-14_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-23f84-usb.json",
         "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-14, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "macos_arm64": {
        "gpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-13_macos_arm64_mac-mini-m5-pro-mac17-16.json",
         "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-13_macos_arm64_mac-mini-m5-pro-mac17-16.json",
         "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "windows_x64": {
        "gpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-3.json",
         "note": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-3.json",
         "note": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "linux_x64": {
        "gpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-13_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
         "note": "GCE flutter-gemma-linux (Tesla T4), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-13_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
         "note": "GCE flutter-gemma-linux (Tesla T4), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -4582,7 +4582,7 @@
      "cells": {
       "windows_x64": {
        "npu": {
-        "status": "stale",
+        "status": "verified",
         "source": "evidence/2026-11-13_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-2.json",
         "note": "Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
@@ -5539,7 +5539,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5571,7 +5571,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5603,7 +5603,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5635,7 +5635,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5667,7 +5667,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5699,7 +5699,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5731,7 +5731,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5763,7 +5763,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5795,7 +5795,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5827,7 +5827,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5859,7 +5859,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5891,7 +5891,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5923,13 +5923,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5961,13 +5961,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -5999,13 +5999,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6037,13 +6037,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6075,13 +6075,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6113,13 +6113,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6151,13 +6151,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6346,7 +6346,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6378,7 +6378,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6410,7 +6410,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6442,7 +6442,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6474,7 +6474,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6506,7 +6506,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6538,7 +6538,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6570,7 +6570,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6602,7 +6602,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6634,7 +6634,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6666,7 +6666,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6698,7 +6698,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6730,13 +6730,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6768,13 +6768,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6806,13 +6806,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6844,13 +6844,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6882,13 +6882,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6920,13 +6920,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6958,13 +6958,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -6996,7 +6996,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8577,7 +8577,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8609,7 +8609,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8641,7 +8641,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8673,7 +8673,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8705,7 +8705,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8737,7 +8737,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8769,7 +8769,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8801,7 +8801,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8833,7 +8833,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8865,7 +8865,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8897,7 +8897,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8929,7 +8929,7 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8961,13 +8961,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -8999,13 +8999,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -9037,13 +9037,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -9075,13 +9075,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -9113,13 +9113,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -9151,13 +9151,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }
@@ -9189,13 +9189,13 @@
       "android_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "refused",
-        "refused_by": "flutter_edge_ai_speech 0.6.2"
+        "refused_by": "flutter_edge_ai_speech 0.6.1"
        }
       }
      }

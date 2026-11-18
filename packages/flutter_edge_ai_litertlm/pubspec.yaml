@@ -1,6 +1,6 @@
 name: flutter_edge_ai_litertlm
 description: "LiteRT-LM (.litertlm) engine for flutter_edge_ai: dart:ffi on 5 native platforms plus web, CPU/GPU/NPU, and the LiteRT embedding backend."
-version: 1.21.0
+version: 1.20.2
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_litertlm
 topics: [gemma, llm, litert, on-device, ffi]
@@ -49,6 +49,8 @@ dependencies:
   # The LiteRT-LM runtime and its build hook (libLiteRtLm and the NPU
   # stacks). Pinned exactly: macos/flutter_edge_ai_litertlm/Package.swift
   # fetches the companions of one native tag, the one this build's hook uses.
+  # litertlm_dart is not published yet: it resolves in this workspace, and
+  # the 2.7.0 release PR publishes it before this package.
   litertlm_dart: 0.19.1+1
   ffi: ^2.1.0
   mutex: ^3.1.0

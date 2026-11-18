@@ -109,23 +109,30 @@ Future<bool> httpArchiveFetch(
       await response.drain<void>();
       return false;
     }
-    final sink = dest.openWrite();
+    // The file handle is ours to close, and is closed (awaited) before any
+    // delete: on Windows an open handle keeps the partial file, and the next
+    // source writes to the same path.
+    final file = await dest.open(mode: FileMode.write);
+    Object? failure;
+    StackTrace? failureStack;
     try {
-      await sink.addStream(response);
-    } on Exception catch (e) {
-      // Close before deleting: an open handle keeps Windows from deleting
-      // the partial file, and the next source writes to the same path.
-      try {
-        await sink.close();
-      } on Exception {
-        // The write side failed too; the delete below still runs.
+      await for (final chunk in response) {
+        await file.writeFrom(chunk);
       }
-      if (!_isNetworkError(e)) rethrow;
-      log('download interrupted for $url: $e');
+    } on Exception catch (e, st) {
+      failure = e;
+      failureStack = st;
+    } finally {
+      await file.close();
+    }
+    if (failure != null) {
+      if (!_isNetworkError(failure)) {
+        Error.throwWithStackTrace(failure, failureStack!);
+      }
+      log('download interrupted for $url: $failure');
       _deleteQuietly(dest);
       return false;
     }
-    await sink.close();
     return true;
   } finally {
     client.close();

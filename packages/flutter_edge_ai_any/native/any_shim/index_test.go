@@ -311,3 +311,21 @@ func TestIndexHnswNoRetryWhenFilterMatchesFewer(t *testing.T) {
 		t.Fatalf("huge vector: %v", err)
 	}
 }
+
+// A config recorded without filterFields reads as the empty set.
+func TestIndexConfigWithoutFilterFieldsReopens(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "i.db")
+	x, err := openIndex(fmt.Sprintf(`{"path":%q,"dim":4}`, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stateSet(x.state, configKey, `{"dim":4,"metric":"cosine","mode":"exact"}`); err != nil {
+		t.Fatal(err)
+	}
+	x.close()
+	x, err = openIndex(fmt.Sprintf(`{"path":%q,"dim":4}`, path))
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	x.close()
+}

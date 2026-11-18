@@ -52,8 +52,7 @@ func (a *account) loadDocTypes(sp space.Space, create bool) (*docTypeCache, erro
 		return nil, err
 	}
 	c := &docTypeCache{types: map[string]docTypeProps{}}
-	var ids []string
-	pending := 0
+	var ids, incomplete []string
 	for _, t := range list {
 		if t.XKey != docTypeXKey {
 			continue
@@ -62,18 +61,11 @@ func (a *account) loadDocTypes(sp space.Space, create bool) (*docTypeCache, erro
 		if err != nil {
 			return nil, err
 		}
-		var p docTypeProps
-		for _, pd := range props {
-			switch pd.XKey {
-			case metaPropXKey:
-				p.meta = pd.Id
-			case sourcePropKey:
-				p.source = pd.Id
-			}
-		}
+		p := propsByXKey(props)
 		if p.meta == "" || p.source == "" {
-			// Its property definitions have not synced here yet.
-			pending++
+			// Its property definitions have not synced here yet, or the
+			// device that created it stopped halfway.
+			incomplete = append(incomplete, t.Id)
 			continue
 		}
 		c.types[t.Id] = p
@@ -83,13 +75,20 @@ func (a *account) loadDocTypes(sp space.Space, create bool) (*docTypeCache, erro
 		if !create {
 			return c, nil
 		}
-		if pending > 0 {
-			// Creating one now would add a second document type to
-			// the space; wait for the existing one to finish syncing.
-			return nil, withCode(codeNotFound, "the space's document type has not finished syncing here; retry")
-		}
-		id, p, err := createDocType(a, sp)
-		if err != nil {
+		var id string
+		var p docTypeProps
+		if len(incomplete) > 0 {
+			// Complete the existing type rather than add a second one, and
+			// rather than wait: a creator that crashed halfway never
+			// finishes it. If its own definitions were only still syncing,
+			// the type ends up with two of a property; every device then
+			// writes the one with the smaller id (propsByXKey).
+			sort.Strings(incomplete)
+			id = incomplete[0]
+			if p, err = completeDocType(a, sp, id); err != nil {
+				return nil, err
+			}
+		} else if id, p, err = createDocType(a, sp); err != nil {
 			return nil, err
 		}
 		c.types[id] = p
@@ -131,6 +130,61 @@ func createDocType(a *account, sp space.Space) (_ string, p docTypeProps, err er
 		return "", p, fmt.Errorf("document type body: %w", err)
 	}
 	return id, p, nil
+}
+
+// propsByXKey picks the document properties of a type; with two of one
+// XKey (see loadDocTypes), the smaller id, which every device agrees on.
+func propsByXKey(props []space.PropertyDef) docTypeProps {
+	var p docTypeProps
+	pick := func(cur *string, id string) {
+		if *cur == "" || id < *cur {
+			*cur = id
+		}
+	}
+	for _, pd := range props {
+		switch pd.XKey {
+		case metaPropXKey:
+			pick(&p.meta, pd.Id)
+		case sourcePropKey:
+			pick(&p.source, pd.Id)
+		}
+	}
+	return p
+}
+
+// completeDocType adds what a document type lacks: its two properties and
+// its body part.
+func completeDocType(a *account, sp space.Space, id string) (docTypeProps, error) {
+	props, err := sp.Types().Properties(a.ctx, id)
+	if err != nil {
+		return docTypeProps{}, err
+	}
+	p := propsByXKey(props)
+	if p.meta == "" {
+		if p.meta, err = sp.Types().AddProperty(a.ctx, id, space.PropertyDraft{Name: "Metadata", XKey: metaPropXKey, Kind: space.PropertyKindString}); err != nil {
+			return p, fmt.Errorf("complete document type: %w", err)
+		}
+	}
+	if p.source == "" {
+		if p.source, err = sp.Types().AddProperty(a.ctx, id, space.PropertyDraft{Name: "Source", XKey: sourcePropKey, Kind: space.PropertyKindString}); err != nil {
+			return p, fmt.Errorf("complete document type: %w", err)
+		}
+	}
+	parts, err := sp.Types().Parts(a.ctx, id)
+	if err != nil {
+		return p, err
+	}
+	hasBody := false
+	for _, pt := range parts {
+		hasBody = hasBody || pt.Key == "body"
+	}
+	if !hasBody {
+		if _, err = sp.Types().AddPart(a.ctx, id, space.PartDraft{Key: "body", Name: "Body",
+			UI: map[string]any{"type": "document"}, Datasets: []space.DatasetDraft{{Module: editor.Module}}}); err != nil {
+			return p, fmt.Errorf("complete document type body: %w", err)
+		}
+	}
+	return p, nil
 }
 
 // propsFor returns the property ids of the document type typeId, reloading

@@ -158,8 +158,9 @@ any_shim_status any_shim_space_sync_heads(uint64_t account,
  *   source  string, optional
  *   meta    JSON object, optional, stored as its JSON text
  * out_json: {"id","created"}. A new object whose later writes fail is
- * deleted again before the error is returned. ANY_SHIM_ERR_NOT_FOUND while
- * the space's document type exists but has not finished syncing here. */
+ * deleted again before the error is returned. A document type found
+ * without its properties (still syncing, or its creator stopped halfway) is
+ * completed rather than duplicated. */
 any_shim_status any_shim_object_put(uint64_t account, char *space_id,
                                     char *doc_json, char **out_json,
                                     char **out_error);

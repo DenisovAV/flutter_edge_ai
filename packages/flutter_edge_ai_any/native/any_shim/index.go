@@ -177,6 +177,9 @@ func openIndex(optsJSON string) (_ *localIndex, err error) {
 		if err := json.Unmarshal([]byte(prev), &have); err != nil {
 			return nil, fmt.Errorf("index config: %w", err)
 		}
+		if have.FilterFields == nil {
+			have.FilterFields = []string{} // "null" and [] are the same set
+		}
 		if have.String() != want.String() {
 			return nil, invalid("%s was created with %s; asked for %s", o.Path, have, want)
 		}

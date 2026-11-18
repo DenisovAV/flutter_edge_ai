@@ -292,7 +292,9 @@ def macho_dylibs(data):
 # does not ship (a MinGW runtime DLL, a newer glibc), found on a user's
 # machine as a load failure, not here.
 ANDROID_NEEDED = {"libc.so", "libdl.so", "libm.so", "liblog.so"}
-LINUX_NEEDED = {"libc.so.6", "libpthread.so.0", "libdl.so.2", "libm.so.6", "libresolv.so.2"}
+LINUX_NEEDED = {"libc.so.6", "libpthread.so.0", "libdl.so.2", "libm.so.6", "libresolv.so.2",
+                # the dynamic loader itself, NEEDED on arm64 builds
+                "ld-linux-aarch64.so.1", "ld-linux-x86-64.so.2"}
 # Oldest glibc a Linux build may require (Ubuntu 22.04 ships 2.35).
 GLIBC_MAX = (2, 34)
 WINDOWS_FORBIDDEN = {"libwinpthread-1.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll"}

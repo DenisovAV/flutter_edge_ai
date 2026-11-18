@@ -320,3 +320,38 @@ func TestSpaceStatusAndListOffline(t *testing.T) {
 		t.Fatalf("list: %v", l)
 	}
 }
+
+// A document type left without its properties (its creator stopped
+// halfway) is completed by the next put, not waited on forever.
+func TestIncompleteDocTypeIsCompleted(t *testing.T) {
+	a := openOffline(t)
+	sp, err := a.sdk.Spaces().Create(a.ctx, space.CreateRequest{Name: "half"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	half, err := sp.Types().Create(a.ctx, space.TypeCreateParams{Name: docTypeName, XKey: docTypeXKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := a.objectPut(sp.Id(), docIn{Name: "after a crash", Text: "body", Meta: json.RawMessage(`{"k":1}`)})
+	if err != nil {
+		t.Fatalf("put over a half-created type: %v", err)
+	}
+	got, err := a.objectGet(sp.Id(), r["id"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["type"] != half || got["meta"] != `{"k":1}` || got["text"] != "body" {
+		t.Fatalf("got %v, want a document of the completed type %s", got, half)
+	}
+	types, _ := sp.Types().List(a.ctx)
+	n := 0
+	for _, ti := range types {
+		if ti.XKey == docTypeXKey {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d document types, want the one completed", n)
+	}
+}

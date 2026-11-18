@@ -48,4 +48,30 @@ void main() {
     }
     writeManifest(root);
   });
+
+  test('writes the text-search stores', () async {
+    final root = requireEnv('RAG_COMPAT_STORES');
+    useHostVec0();
+    final rag = FlutterEdgeAiRag(
+      providers: const [SqliteVectorStoreProvider()],
+    );
+    for (final name in textSearchStores) {
+      final index = await rag.openVectors(
+        spec: VectorStoreSpec(
+          providerId: 'sqlite',
+          location: textSearchLocation(root, name),
+          enableTextSearch: true,
+        ),
+        profile: compatProfile,
+      );
+      for (final (id, content, vector) in compatDocuments) {
+        await index.addVector(id: id, content: content, embedding: vector);
+      }
+      expect(
+        [for (final h in await index.searchText(text: 'alpha')) h.id],
+        ['doc-a'],
+      );
+      await index.dispose();
+    }
+  });
 }

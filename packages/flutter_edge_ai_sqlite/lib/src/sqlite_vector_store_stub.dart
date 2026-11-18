@@ -1,9 +1,18 @@
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
+import 'sqlite_text_tokenizer.dart';
+
 /// Stub for SqliteVectorStore on web/WASM platforms.
 /// Web uses WebSqliteVectorStore (package:sqlite3/wasm + vec0) instead.
 final class SqliteVectorStore extends VectorStoreRepository {
-  SqliteVectorStore({Future<void> Function()? durabilityFenceForTesting});
+  SqliteVectorStore({
+    this.enableTextSearch = false,
+    this.textTokenizer,
+    Future<void> Function()? durabilityFenceForTesting,
+  });
+
+  final bool enableTextSearch;
+  final SqliteTextTokenizer? textTokenizer;
 
   /// Present only so the stub keeps the same surface as the native class.
   ///

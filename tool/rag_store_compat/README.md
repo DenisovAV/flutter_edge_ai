@@ -16,7 +16,10 @@ of §9.3).
   `allowLegacyProfileAdoption`, through an embedder (no text operation may
   succeed), and the store-level rebind — while still opening and searching the
   text stores. The train then re-reads every store: binding and documents
-  unchanged.
+  unchanged. Two more SQLite stores carry a text index
+  (`enableTextSearch`); the published releases write to them without knowing
+  it (an upsert, a remove and an add; a clear and a re-add of the same ids and
+  count), and the train's text search must reflect exactly those writes.
 - `generate_v2_0_1_fixtures.sh` — regenerates the committed fixtures read by
   `packages/flutter_edge_ai_{sqlite,qdrant}/test/fixture_v2_0_1_test.dart`.
 

@@ -222,9 +222,12 @@ final class RagIndex {
   /// Each leg ranks `max(4 × topK, 20)` candidates. The vector leg keeps
   /// every candidate, whatever its similarity (there is no threshold: filter
   /// on [HybridSearchResult.vectorSimilarity] yourself). Both legs run with
-  /// [filter] and see the same documents: they run exclusively, after every
-  /// operation of this index already in flight (an `add` still embedding
-  /// included), and operations started later wait for them. Results are
+  /// [filter] and see the same documents: once the query is embedded, the
+  /// two legs run as one exclusive step, so no `add`, `remove` or `clear` of
+  /// this index lands between them. That step waits for the operations
+  /// holding the index at that moment (an `add` still embedding included),
+  /// and operations queued after it wait for it. An operation that starts
+  /// while the query is still embedding may run before the legs. Results are
   /// ordered by [HybridSearchResult.rrfScore] descending, then by id. A
   /// [text] with no searchable term leaves only the vector leg's ranking.
   ///

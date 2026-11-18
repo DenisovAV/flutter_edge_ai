@@ -6,7 +6,12 @@
 // — so it does not reuse `_NativeBundle`'s tag-based URL construction.
 // Two archives are ours, on this repository's releases: the Android
 // ORT-GenAI build (`native/build_genai_android.sh`) and the iOS ONNX Runtime
-// (`native/build_ort_ios.sh`); every other archive is Microsoft's own.
+// (`native/build_ort_ios.sh`). Microsoft's own archives also list this
+// repository's `mirror-onnxruntime[-genai]-v<ver>` release with the same
+// bytes and pin: github.com/microsoft/onnxruntime and onnxruntime-genai have
+// returned 404 since 2026-11-17. The ones that could not be found with their
+// pinned bytes were rebuilt from Microsoft's NuGet packages and are
+// mirror-only (see `_Archive.urls` and `lib/src/hook/archive_sources.dart`).
 //
 // **macOS arm64, linux_x64, windows_x64/windows_arm64, android_arm64, ios
 // arm64 (v1)** —
@@ -48,7 +53,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
-import 'package:crypto/crypto.dart';
+import 'package:flutter_edge_ai_onnx/src/hook/archive_sources.dart';
 import 'package:flutter_edge_ai_onnx/src/hook/elf_page_align.dart';
 import 'package:hooks/hooks.dart';
 
@@ -58,16 +63,22 @@ const _packageName = 'flutter_edge_ai_onnx';
 /// one (library, platform) pair.
 class _Archive {
   const _Archive({
-    required this.url,
+    required this.urls,
     required this.sha256,
     required this.extractedLibPath,
     required this.assetName,
     this.thinArch,
   });
 
-  /// Full download URL: Microsoft's release, except the Android ORT-GenAI
-  /// zip, which is our build on this repository's release.
-  final String url;
+  /// Where to download the archive from, tried in order (see
+  /// `fetchPinnedArchive`): Microsoft's release URL first, then this
+  /// repository's `mirror-onnxruntime[-genai]-v<ver>` release, which holds the
+  /// same bytes. github.com/microsoft/onnxruntime and onnxruntime-genai have
+  /// returned 404 since 2026-11-17. An archive that could not be found with
+  /// its pinned bytes anywhere was rebuilt from Microsoft's NuGet package and
+  /// lists the mirror alone, with its own pin. The Android archives are
+  /// Maven Central's AAR and our own build on this repository's release.
+  final List<String> urls;
 
   /// Expected SHA256 of the downloaded `.tar.gz`/`.tgz` bytes.
   final String sha256;
@@ -97,7 +108,7 @@ class _Archive {
   /// present: this hook only ever runs on a macOS host when targeting iOS.
   final String? thinArch;
 
-  String get archiveFileName => url.split('/').last;
+  String get archiveFileName => urls.first.split('/').last;
 }
 
 /// Archives for this version pair, keyed by (os, arch[, iOSSdk]). macOS
@@ -123,9 +134,12 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
     // and fail with "same architectures and can't be in the same fat file"
     // (exact `flutter_edge_ai_litertlm` precedent).
     if (arch != Architecture.arm64) return null;
-    const url =
-        'https://github.com/microsoft/onnxruntime-genai/releases/'
-        'download/v0.20.0/onnxruntime-genai-ios-0.20.0.zip';
+    const urls = [
+      'https://github.com/microsoft/onnxruntime-genai/releases/download/'
+          'v0.20.0/onnxruntime-genai-ios-0.20.0.zip',
+      'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+          'mirror-onnxruntime-genai-v0.20.0/onnxruntime-genai-ios-0.20.0.zip',
+    ];
     const sha256Hex =
         'dd3c1235e9cecff1606a9d70fb067a9e08b58489671a8e0ba8a78203a23c09a6';
     // ONNX Runtime 1.30.0, the newest `onnxruntime-c` pod archive Microsoft
@@ -141,13 +155,13 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       return const _OrtBundle(
         dirName: 'ios_sim_arm64',
         ort: _Archive(
-          url: ortUrl,
+          urls: [ortUrl],
           sha256: ortSha256Hex,
           extractedLibPath: 'ios-arm64-simulator/libonnxruntime.dylib',
           assetName: 'onnxruntime',
         ),
         genai: _Archive(
-          url: url,
+          urls: urls,
           sha256: sha256Hex,
           // Microsoft's simulator slice is a fat arm64+x86_64 binary — the
           // Apple-Silicon-only arm64 half is pulled out by `thinArch` below
@@ -163,13 +177,13 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
     return const _OrtBundle(
       dirName: 'ios_arm64',
       ort: _Archive(
-        url: ortUrl,
+        urls: [ortUrl],
         sha256: ortSha256Hex,
         extractedLibPath: 'ios-arm64/libonnxruntime.dylib',
         assetName: 'onnxruntime',
       ),
       genai: _Archive(
-        url: url,
+        urls: urls,
         sha256: sha256Hex,
         extractedLibPath:
             'onnxruntime-genai.xcframework/ios-arm64/'
@@ -182,21 +196,29 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
     return const _OrtBundle(
       dirName: 'macos_arm64',
       ort: _Archive(
-        url:
-            'https://github.com/microsoft/onnxruntime/releases/download/'
-            'v1.32.0/onnxruntime-osx-arm64-1.32.0.tgz',
+        // Microsoft's onnxruntime-osx-arm64-1.32.0.tgz is gone and was not found anywhere
+        // with its pinned bytes: this archive holds the same library from
+        // NuGet (see the mirror-onnxruntime-v1.32.0 release notes), with its own pin.
+        urls: [
+          'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+              'mirror-onnxruntime-v1.32.0/onnxruntime-osx-arm64-1.32.0-nuget.tgz',
+        ],
         sha256:
-            '8ddca23f532b9d4fbb279ba9b08dab6c0ac94fdc9aec2eb44a1db7049216c043',
+            'ab34b5f3e13de80cef5f6698f03b88a3b67af7653a61ee49e22d20e114ceaa26',
         extractedLibPath:
             'onnxruntime-osx-arm64-1.32.0/lib/libonnxruntime.1.32.0.dylib',
         assetName: 'onnxruntime',
       ),
       genai: _Archive(
-        url:
-            'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.20.0/onnxruntime-genai-0.20.0-osx-arm64.tar.gz',
+        // Microsoft's onnxruntime-genai-0.20.0-osx-arm64.tar.gz is gone and was not found anywhere
+        // with its pinned bytes: this archive holds the same library from
+        // NuGet (see the mirror-onnxruntime-genai-v0.20.0 release notes), with its own pin.
+        urls: [
+          'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+              'mirror-onnxruntime-genai-v0.20.0/onnxruntime-genai-0.20.0-osx-arm64-nuget.tar.gz',
+        ],
         sha256:
-            'b73cfe78995489357a208f8ffa00698b260d74d08cd1aa2a677b2516df6535bb',
+            '730903013948b8947e207184a53965367b64a2b039d2a0dc75208dbdef5efd71',
         extractedLibPath:
             'onnxruntime-genai-0.20.0-osx-arm64/lib/libonnxruntime-genai.dylib',
         assetName: 'onnxruntime-genai',
@@ -207,21 +229,29 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
     return const _OrtBundle(
       dirName: 'linux_x64',
       ort: _Archive(
-        url:
-            'https://github.com/microsoft/onnxruntime/releases/download/'
-            'v1.32.0/onnxruntime-linux-x64-1.32.0.tgz',
+        // Microsoft's onnxruntime-linux-x64-1.32.0.tgz is gone and was not found anywhere
+        // with its pinned bytes: this archive holds the same library from
+        // NuGet (see the mirror-onnxruntime-v1.32.0 release notes), with its own pin.
+        urls: [
+          'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+              'mirror-onnxruntime-v1.32.0/onnxruntime-linux-x64-1.32.0-nuget.tgz',
+        ],
         sha256:
-            'bb169b7e374731730d2ae406fb39de7be4b315f413a9132efe896261c31bb503',
+            'fd01d5c6de79befd939995bb745aa76c23d0f43a9941b423a36b83bfe585735a',
         extractedLibPath:
             'onnxruntime-linux-x64-1.32.0/lib/libonnxruntime.so.1.32.0',
         assetName: 'onnxruntime',
       ),
       genai: _Archive(
-        url:
-            'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.20.0/onnxruntime-genai-0.20.0-linux-x64.tar.gz',
+        // Microsoft's onnxruntime-genai-0.20.0-linux-x64.tar.gz is gone and was not found anywhere
+        // with its pinned bytes: this archive holds the same library from
+        // NuGet (see the mirror-onnxruntime-genai-v0.20.0 release notes), with its own pin.
+        urls: [
+          'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+              'mirror-onnxruntime-genai-v0.20.0/onnxruntime-genai-0.20.0-linux-x64-nuget.tar.gz',
+        ],
         sha256:
-            'ec6731c22670ca541a0a5e3d5c3f62e8c11c2b2280ade56c020872c55879e62c',
+            '8f1a32c69d3af7f4bd933482016094ae60b2f686164131399f4e0461d78e7286',
         extractedLibPath:
             'onnxruntime-genai-0.20.0-linux-x64/lib/libonnxruntime-genai.so',
         assetName: 'onnxruntime-genai',
@@ -232,18 +262,24 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
     return const _OrtBundle(
       dirName: 'windows_x64',
       ort: _Archive(
-        url:
-            'https://github.com/microsoft/onnxruntime/releases/download/'
-            'v1.32.0/onnxruntime-win-x64-1.32.0.zip',
+        urls: [
+          'https://github.com/microsoft/onnxruntime/releases/download/'
+              'v1.32.0/onnxruntime-win-x64-1.32.0.zip',
+          'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+              'mirror-onnxruntime-v1.32.0/onnxruntime-win-x64-1.32.0.zip',
+        ],
         sha256:
             'aaa1d04fcf86bd31e84b90bc0cbde80e632bd0720dcc5d8ba05c4fe45c09d127',
         extractedLibPath: 'onnxruntime-win-x64-1.32.0/lib/onnxruntime.dll',
         assetName: 'onnxruntime',
       ),
       genai: _Archive(
-        url:
-            'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.20.0/onnxruntime-genai-0.20.0-win-x64.zip',
+        urls: [
+          'https://github.com/microsoft/onnxruntime-genai/releases/download/'
+              'v0.20.0/onnxruntime-genai-0.20.0-win-x64.zip',
+          'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+              'mirror-onnxruntime-genai-v0.20.0/onnxruntime-genai-0.20.0-win-x64.zip',
+        ],
         sha256:
             'e5670877448d1ab4cf6eef2fc14c146b70600d19e7c3f5ce64325148262b04c6',
         extractedLibPath:
@@ -256,20 +292,28 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
     return const _OrtBundle(
       dirName: 'windows_arm64',
       ort: _Archive(
-        url:
-            'https://github.com/microsoft/onnxruntime/releases/download/'
-            'v1.32.0/onnxruntime-win-arm64-1.32.0.zip',
+        // Microsoft's onnxruntime-win-arm64-1.32.0.zip is gone and was not found anywhere
+        // with its pinned bytes: this archive holds the same library from
+        // NuGet (see the mirror-onnxruntime-v1.32.0 release notes), with its own pin.
+        urls: [
+          'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+              'mirror-onnxruntime-v1.32.0/onnxruntime-win-arm64-1.32.0-nuget.zip',
+        ],
         sha256:
-            '5eacf4eb3bee0cc99e280ddef563c90c561de61b1e08809fe648922326e3ce50',
+            'f237cc81cbe9552deb2495e4bfea636f12d7935634502fcc5397bd48d8838db0',
         extractedLibPath: 'onnxruntime-win-arm64-1.32.0/lib/onnxruntime.dll',
         assetName: 'onnxruntime',
       ),
       genai: _Archive(
-        url:
-            'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.20.0/onnxruntime-genai-0.20.0-win-arm64.zip',
+        // Microsoft's onnxruntime-genai-0.20.0-win-arm64.zip is gone and was not found anywhere
+        // with its pinned bytes: this archive holds the same library from
+        // NuGet (see the mirror-onnxruntime-genai-v0.20.0 release notes), with its own pin.
+        urls: [
+          'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+              'mirror-onnxruntime-genai-v0.20.0/onnxruntime-genai-0.20.0-win-arm64-nuget.zip',
+        ],
         sha256:
-            '575ea442594b4bed39c18ddf93780320118dee9eacf0f75a856a8e6d3ce00501',
+            '3e04830bdc8118b4409d854c8e73530d1423e220155875e764cd67a0baa1be10',
         extractedLibPath:
             'onnxruntime-genai-0.20.0-win-arm64/lib/onnxruntime-genai.dll',
         assetName: 'onnxruntime-genai',
@@ -292,9 +336,10 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       // NOT on the onnxruntime GitHub release (only Maven Central publishes
       // the Android AAR) — verified by checking v1.32.0's release assets.
       ort: _Archive(
-        url:
-            'https://repo1.maven.org/maven2/com/microsoft/onnxruntime/'
-            'onnxruntime-android/1.32.0/onnxruntime-android-1.32.0.aar',
+        urls: [
+          'https://repo1.maven.org/maven2/com/microsoft/onnxruntime/'
+              'onnxruntime-android/1.32.0/onnxruntime-android-1.32.0.aar',
+        ],
         sha256:
             '8e8dbb412ed4939675a157702f0c1e3621b436a645af7f7244536ac20bfad628',
         extractedLibPath: 'jni/arm64-v8a/libonnxruntime.so',
@@ -316,10 +361,10 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       // times change the bytes), so a rebuild has a new sha256: this pin is
       // the build published on this repository's release.
       genai: _Archive(
-        url:
-            'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
-            'native-onnx-genai-v0.20.0-a/'
-            'onnxruntime-genai-android-0.20.0-a.zip',
+        urls: [
+          'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+              'native-onnx-genai-v0.20.0-a/onnxruntime-genai-android-0.20.0-a.zip',
+        ],
         sha256:
             '1ae8dfa020366acc8915c1f9f74a3b8e52ceb60ca9ae2ac28fd0efe2d8e3b164',
         extractedLibPath: 'jni/arm64-v8a/libonnxruntime-genai.so',
@@ -350,12 +395,11 @@ class _OrtBundle {
   final _Archive ort;
   final _Archive genai;
 
-  /// Cache-invalidation key — bump whenever either archive's URL/sha changes.
-  String get version => dirName.startsWith('ios')
-      ? 'ort-1.30.0-a.3a65782c_genai-0.20.0'
-      : dirName.startsWith('android')
-      ? 'ort-1.32.0_genai-0.20.0-a.1ae8dfa0'
-      : 'ort-1.32.0_genai-0.20.0';
+  /// Cache-invalidation key, derived from every archive's pin: a changed pin
+  /// (a new version, or an archive rebuilt from NuGet) refetches, and adding
+  /// a source URL for the same bytes does not.
+  String get version =>
+      archives.map((archive) => archive.sha256.substring(0, 16)).join('_');
 
   List<_Archive> get archives => [ort, genai];
 }
@@ -417,51 +461,54 @@ Directory? _localPrebuiltDir(Uri packageRoot, _OrtBundle bundle) {
 // Download + verify + extract
 // ============================================================================
 
+/// One source of [fetchPinnedArchive]: an HTTP GET written to [dest].
+Future<bool> _httpFetch(Uri url, File dest, void Function(String) log) async {
+  final client = HttpClient();
+  try {
+    final request = await client.getUrl(url);
+    // GitHub release assets 302-redirect to an S3-style signed URL; a plain
+    // HttpClient request follows redirects by default, but be explicit since
+    // a silent non-follow would produce a 3-byte HTML body that "downloads"
+    // successfully and then fails the sha256 check with a confusing mismatch
+    // instead of a clear HTTP-status error.
+    request.followRedirects = true;
+    final response = await request.close();
+    if (response.statusCode != 200) {
+      log('download failed (HTTP ${response.statusCode}) for $url');
+      await response.drain<void>();
+      return false;
+    }
+    final sink = dest.openWrite();
+    await response.pipe(sink);
+    return true;
+  } catch (e) {
+    log('download failed for $url: $e');
+    if (dest.existsSync()) dest.deleteSync();
+    return false;
+  } finally {
+    client.close();
+  }
+}
+
 Future<bool> _downloadVerifyExtract(_Archive archive, Directory destDir) async {
   final cacheRoot = destDir.parent; // .../onnx_genai/<dirName>/
   if (!cacheRoot.existsSync()) cacheRoot.createSync(recursive: true);
   final archiveFile = File('${cacheRoot.path}/${archive.archiveFileName}');
 
   try {
-    stderr.writeln('flutter_edge_ai_onnx: downloading ${archive.url} ...');
-    final client = HttpClient();
-    try {
-      final request = await client.getUrl(Uri.parse(archive.url));
-      // GitHub release assets 302-redirect to an S3-style signed URL; a
-      // plain HttpClient request follows redirects by default, but be
-      // explicit since a silent non-follow would produce a 3-byte HTML body
-      // that "downloads" successfully and then fails the sha256 check with
-      // a confusing mismatch instead of a clear HTTP-status error.
-      request.followRedirects = true;
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        stderr.writeln(
-          'flutter_edge_ai_onnx: download failed (HTTP ${response.statusCode}) '
-          'for ${archive.url}',
-        );
-        await response.drain<void>();
-        return false;
-      }
-      final sink = archiveFile.openWrite();
-      await response.pipe(sink);
-    } finally {
-      client.close();
-    }
-
-    final bytes = await archiveFile.readAsBytes();
-    final actual = sha256.convert(bytes).toString();
-    if (actual != archive.sha256) {
+    final fetched = await fetchPinnedArchive(
+      sources: [for (final url in archive.urls) Uri.parse(url)],
+      sha256Hex: archive.sha256,
+      dest: archiveFile,
+      fetch: _httpFetch,
+      log: (message) => stderr.writeln('flutter_edge_ai_onnx: $message'),
+    );
+    if (!fetched.ok) {
       stderr.writeln(
-        'flutter_edge_ai_onnx: checksum mismatch for ${archive.archiveFileName}\n'
-        '  expected: ${archive.sha256}\n'
-        '  actual:   $actual',
+        'flutter_edge_ai_onnx: ${archive.archiveFileName}: ${fetched.error}',
       );
-      archiveFile.deleteSync();
       return false;
     }
-    stderr.writeln(
-      'flutter_edge_ai_onnx: checksum verified (${archive.archiveFileName})',
-    );
 
     final tmpDir = Directory('${cacheRoot.path}/.tmp-extract-$pid');
     if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);

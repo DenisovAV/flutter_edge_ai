@@ -1,4 +1,5 @@
 ## Unreleased
+- Download ONNX Runtime and ORT-GenAI from this repository's mirror while Microsoft's releases are gone.
 - `OnnxHuggingFaceResolver` declares the `inference` role.
 - Bundle ORT-GenAI 0.20.0 and ONNX Runtime 1.32.0 (iOS: 1.30.0, needs iOS 15.1); telemetry off (#810).
 - Response formats on Windows x64.

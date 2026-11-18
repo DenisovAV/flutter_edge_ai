@@ -3,6 +3,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' show EmbeddingModality;
 import 'embedding.dart';
 import 'filter.dart';
 import 'profile_id.dart';
+import 'text_search.dart';
 
 /// A single retrieval hit from a vector store query.
 class RetrievalResult {
@@ -220,6 +221,36 @@ abstract base class VectorStoreRepository {
     double threshold = 0.0,
     Filter? filter,
   });
+
+  /// Whether this store implements [searchText]. Defaults to false.
+  ///
+  /// A capability of the store type, not of one location: `FlutterEdgeAiRag`
+  /// reads it before [initialize], and refuses a spec with
+  /// `enableTextSearch` when it is false, so a store without text search
+  /// creates nothing on disk for that spec.
+  ///
+  /// A store that returns true reads `VectorStoreSpec.enableTextSearch` when
+  /// its provider creates it. With the flag it creates the location's text
+  /// index if it is missing; without it, it still keeps an existing text index
+  /// in step with every write, so the index never goes stale.
+  bool get supportsTextSearch => false;
+
+  /// Ranks this location's documents for [text] by the store's own text
+  /// relevance, higher first, and returns at most [topK].
+  ///
+  /// [text] is plain user text, never an engine query syntax. A [text] with no
+  /// searchable term returns an empty list. [filter] applies as in
+  /// [searchSimilar].
+  ///
+  /// Throws [StateError] when this location has no text index, and
+  /// [UnsupportedError] when [supportsTextSearch] is false (the default).
+  Future<List<TextSearchResult>> searchText({
+    required String text,
+    required int topK,
+    Filter? filter,
+  }) => Future.error(
+    UnsupportedError('$runtimeType does not implement text search.'),
+  );
 
   Future<VectorStoreStats> getStats();
 

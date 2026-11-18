@@ -1,5 +1,7 @@
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
+import 'sqlite_text_tokenizer.dart';
+
 import 'sqlite_vector_store_factory_stub.dart'
     if (dart.library.ffi) 'sqlite_vector_store_factory_native.dart'
     if (dart.library.js_interop) 'sqlite_vector_store_factory_web.dart'
@@ -11,7 +13,13 @@ import 'sqlite_vector_store_factory_stub.dart'
 /// `SqliteVectorStore` and web receives `WebSqliteVectorStore` without an
 /// application-level `kIsWeb` branch.
 class SqliteVectorStoreProvider implements VectorStoreProvider {
-  const SqliteVectorStoreProvider({this.priority = 0});
+  const SqliteVectorStoreProvider({this.priority = 0, this.textTokenizer});
+
+  /// The tokenizer a new text index (`VectorStoreSpec.enableTextSearch`) is
+  /// created with. Null uses the tokenizer an existing index was created
+  /// with, and [SqliteTextTokenizer.unicode61] for a new one. A non-null value
+  /// that differs from an existing index's fails the open.
+  final SqliteTextTokenizer? textTokenizer;
 
   static const String providerId = 'sqlite';
 
@@ -36,6 +44,9 @@ class SqliteVectorStoreProvider implements VectorStoreProvider {
         'providerId is not "$providerId".',
       );
     }
-    return platform.createStore();
+    return platform.createStore(
+      enableTextSearch: spec.enableTextSearch,
+      textTokenizer: textTokenizer,
+    );
   }
 }

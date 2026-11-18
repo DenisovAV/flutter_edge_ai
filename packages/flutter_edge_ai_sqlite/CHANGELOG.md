@@ -1,3 +1,6 @@
+## 2.2.0
+- Text search with SQLite FTS5 (BM25) on every platform; require `flutter_edge_ai_rag` ^1.2.0.
+
 ## 2.1.1
 - README: the offline cache needs its version marker.
 

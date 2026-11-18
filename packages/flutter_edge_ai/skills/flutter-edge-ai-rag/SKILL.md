@@ -766,6 +766,38 @@ chunk or query is never truncated: `add` and `search` throw
 say by how much. A null `maxInputTokens` means the loaded pass cannot establish
 an effective limit, not that input is unlimited.
 
+## Text and hybrid search (`flutter_edge_ai_rag` 1.2.0, `flutter_edge_ai_sqlite` 2.2.0)
+
+```dart
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: 'sqlite',
+    location: location,
+    enableTextSearch: true, // text documents only
+  ),
+  embedder: embedder,
+);
+final byWords = await index.searchText(text: 'invoice 2024-117');
+final hybrid = await index.searchHybrid(text: 'unpaid invoice'); // RRF, k 60
+```
+
+- Only stores whose `supportsTextSearch` is true can open with the flag:
+  SQLite (FTS5, all six platforms) can, qdrant cannot and fails the open with
+  `VectorStoreException`. Never fall back to vector-only search silently.
+- `text` is plain user text. `TextSearchResult.relevanceScore` (SQLite:
+  `-bm25()`) is higher-is-better and comparable within one call only; never
+  compare it with cosine `similarity`. No `threshold` on text or hybrid search.
+- `HybridSearchResult`: `rrfScore`, `vectorSimilarity`/`vectorRank`,
+  `relevanceScore`/`textRank`; a null leg field = outside that leg's
+  candidates (`max(4 × topK, 20)` each), not "no match". The vector leg keeps
+  negative similarities. `searchHybridVector` for `openVectors` indexes.
+- `filter` applies to both legs. The SQLite tokenizer is
+  `SqliteVectorStoreProvider(textTokenizer: SqliteTextTokenizer.unicode61 |
+  porter | trigram)`, fixed when the index is created; `null` uses the stored
+  one.
+- Once a location has a text index, every open keeps it in step (with or
+  without the flag) and repairs writes made without it.
+
 ## Image and audio documents
 
 A location holds documents of one modality. An image index needs an embedder

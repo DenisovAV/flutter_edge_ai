@@ -5,7 +5,9 @@
 # flutter_edge_ai_qdrant 2.0.1 must refuse every image/audio store (empty or
 # not, with or without allowLegacyProfileAdoption) and must not rebind one,
 # while still opening the text stores; then the train re-reads every store and
-# finds it unchanged.
+# finds it unchanged. The published releases also write to two train stores
+# that carry a text index (which they do not know); the train's text search
+# must then reflect exactly those writes.
 #
 # Needs network the first time (hosted packages, the vec0 and qdrant native
 # libraries the hooks download). macOS or Linux host.
@@ -28,6 +30,7 @@ step() {
 
 step train test/write_train_stores_test.dart
 step published test/refuse_train_stores_test.dart
+step published test/write_text_search_stores_test.dart
 step train test/verify_train_stores_test.dart
 
 echo "==> downgrade harness green (stores kept in $work)"

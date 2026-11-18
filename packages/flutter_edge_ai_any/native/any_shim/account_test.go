@@ -235,6 +235,11 @@ func TestWatchAndFilesOffline(t *testing.T) {
 	if n != int64(len(payload)) || string(back) != string(payload) {
 		t.Fatalf("read back %d bytes, want %d identical", n, len(payload))
 	}
+	// Again onto the same path: the rename replaces the file (on Windows
+	// too: Go renames with MOVEFILE_REPLACE_EXISTING).
+	if n, err := a.fileRead(sid, fi.FileId, dst, 10*time.Second); err != nil || n != int64(len(payload)) {
+		t.Fatalf("second read onto %s: %d bytes, %v", dst, n, err)
+	}
 	if _, err := a.fileStatus(sid, fi.FileId); err != nil {
 		t.Fatal(err)
 	}

@@ -250,22 +250,32 @@ func completeDocType(a *account, sp space.Space, id string) (docTypeProps, error
 
 // propsFor returns the property ids of the document type typeId, reloading
 // the cache once for a type that synced in after it was filled.
+//
+// Which types are document types is cached; their property ids are not:
+// another device can add a duplicate property at any time (see
+// docTypeProps), and a write or read with a stale set would miss it. The
+// properties are a local read.
 func (a *account) propsFor(sp space.Space, typeId string) (docTypeProps, bool, error) {
 	c, err := a.loadDocTypes(sp, false)
 	if err != nil {
 		return docTypeProps{}, false, err
 	}
-	if p, ok := c.types[typeId]; ok {
-		return p, true, nil
+	if _, ok := c.types[typeId]; !ok {
+		a.docMu.Lock()
+		delete(a.docTypes, sp.Id())
+		a.docMu.Unlock()
+		if c, err = a.loadDocTypes(sp, false); err != nil {
+			return docTypeProps{}, false, err
+		}
+		if _, ok := c.types[typeId]; !ok {
+			return docTypeProps{}, false, nil
+		}
 	}
-	a.docMu.Lock()
-	delete(a.docTypes, sp.Id())
-	a.docMu.Unlock()
-	if c, err = a.loadDocTypes(sp, false); err != nil {
+	props, err := sp.Types().Properties(a.ctx, typeId)
+	if err != nil {
 		return docTypeProps{}, false, err
 	}
-	p, ok := c.types[typeId]
-	return p, ok, nil
+	return propsByXKey(props), true, nil
 }
 
 type docIn struct {
@@ -314,8 +324,12 @@ func (a *account) objectPut(spaceId string, d docIn) (_ map[string]any, err erro
 	objId, created := d.Id, false
 	switch {
 	case d.Id == "" && d.Seed == "":
+		var p docTypeProps
+		if p, _, err = a.propsFor(sp, c.primary); err != nil {
+			return nil, err
+		}
 		objId, err = sp.Objects().Create(a.ctx, space.CreateObjectOpts{Type: c.primary,
-			InitialProperties: map[string]map[string]any{c.primary: props(c.types[c.primary])}})
+			InitialProperties: map[string]map[string]any{c.primary: props(p)}})
 		if err != nil {
 			return nil, fmt.Errorf("create: %w", err)
 		}
@@ -446,16 +460,6 @@ func (a *account) objectGet(spaceId, objId string) (map[string]any, error) {
 		return nil, err
 	} else if ok {
 		out["isDocument"] = true
-		if first(row, typeId, p.allMeta) == nil {
-			// Possibly under a property id that synced in after the
-			// cache was filled: look again once.
-			a.docMu.Lock()
-			delete(a.docTypes, sp.Id())
-			a.docMu.Unlock()
-			if p2, ok2, err := a.propsFor(sp, typeId); err == nil && ok2 {
-				p = p2
-			}
-		}
 		out["meta"] = first(row, typeId, p.allMeta)
 		out["source"] = first(row, typeId, p.allSource)
 		if out["meta"] == "" {

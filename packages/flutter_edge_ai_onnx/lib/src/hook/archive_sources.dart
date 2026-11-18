@@ -10,7 +10,9 @@ import 'package:crypto/crypto.dart';
 
 /// Downloads [url] into [dest]. Returns false when the source cannot serve
 /// the file (an HTTP status other than 200, or a network error), after
-/// saying why through [log]; [dest] is then left absent.
+/// saying why through [log]; [dest] is then left absent. Any other failure
+/// (the local disk, a permission) is thrown, not reported as an unavailable
+/// source.
 typedef ArchiveFetch =
     Future<bool> Function(Uri url, File dest, void Function(String) log);
 
@@ -49,16 +51,22 @@ Future<PinnedArchiveResult> fetchPinnedArchive({
     if (dest.existsSync()) dest.deleteSync();
     log('downloading $source ...');
     final served = await fetch(source, dest, log);
-    if (!served || !dest.existsSync()) {
+    if (!served) {
       tried.add('$source');
       continue;
     }
-    final actual = sha256.convert(await dest.readAsBytes()).toString();
+    if (!dest.existsSync()) {
+      log('$source reported a download but left no file');
+      tried.add('$source');
+      continue;
+    }
+    final size = dest.lengthSync();
+    final actual = (await sha256.bind(dest.openRead()).first).toString();
     if (actual != sha256Hex) {
       dest.deleteSync();
       return PinnedArchiveResult._(
         null,
-        'CHECKSUM MISMATCH for $source\n'
+        'CHECKSUM MISMATCH for $source ($size bytes)\n'
         '  expected: $sha256Hex\n'
         '  actual:   $actual',
       );
@@ -70,4 +78,66 @@ Future<PinnedArchiveResult> fetchPinnedArchive({
     null,
     'not available from any source: ${tried.join(', ')}',
   );
+}
+
+/// The [ArchiveFetch] the hook uses: an HTTP GET, redirects followed (GitHub
+/// release assets redirect to signed storage URLs).
+///
+/// A status other than 200 and a network failure (socket, TLS, HTTP
+/// protocol) mean the source cannot serve the file. Anything else, a local
+/// write failing for one, is thrown: trying the next source would only repeat
+/// it and then blame the network.
+Future<bool> httpArchiveFetch(
+  Uri url,
+  File dest,
+  void Function(String) log,
+) async {
+  final client = HttpClient();
+  try {
+    final HttpClientResponse response;
+    try {
+      final request = await client.getUrl(url);
+      request.followRedirects = true;
+      response = await request.close();
+    } on SocketException catch (e) {
+      log('download failed for $url: $e');
+      return false;
+    } on HttpException catch (e) {
+      log('download failed for $url: $e');
+      return false;
+    } on TlsException catch (e) {
+      log('download failed for $url: $e');
+      return false;
+    }
+    if (response.statusCode != 200) {
+      log('download failed (HTTP ${response.statusCode}) for $url');
+      await response.drain<void>();
+      return false;
+    }
+    final sink = dest.openWrite();
+    try {
+      await response.pipe(sink);
+    } on SocketException catch (e) {
+      log('download interrupted for $url: $e');
+      _deleteQuietly(dest);
+      return false;
+    } on HttpException catch (e) {
+      log('download interrupted for $url: $e');
+      _deleteQuietly(dest);
+      return false;
+    }
+    return true;
+  } finally {
+    client.close();
+  }
+}
+
+/// Deletes a partial download; [fetchPinnedArchive] deletes it again before
+/// the next source, so a file still held open (Windows) is not fatal here.
+void _deleteQuietly(File file) {
+  try {
+    if (file.existsSync()) file.deleteSync();
+  } on FileSystemException {
+    // Left for the next attempt to replace.
+  }
 }

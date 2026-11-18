@@ -103,6 +103,78 @@ void main() {
     expect(result.ok, isFalse);
   });
 
+  group('httpArchiveFetch', () {
+    late HttpServer server;
+    late Uri base;
+
+    setUp(() async {
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      base = Uri.parse('http://127.0.0.1:${server.port}');
+      server.listen((request) async {
+        switch (request.uri.path) {
+          case '/a.tgz':
+            request.response.add(good);
+          case '/moved.tgz':
+            request.response
+              ..statusCode = HttpStatus.found
+              ..headers.set(HttpHeaders.locationHeader, '/a.tgz');
+          default:
+            request.response.statusCode = HttpStatus.notFound;
+        }
+        await request.response.close();
+      });
+    });
+    tearDown(() => server.close(force: true));
+
+    test('200 writes the body', () async {
+      expect(
+        await httpArchiveFetch(base.resolve('/a.tgz'), dest, (_) {}),
+        isTrue,
+      );
+      expect(dest.readAsBytesSync(), good);
+    });
+
+    test('a redirect is followed', () async {
+      expect(
+        await httpArchiveFetch(base.resolve('/moved.tgz'), dest, (_) {}),
+        isTrue,
+      );
+      expect(dest.readAsBytesSync(), good);
+    });
+
+    test('404 is an unavailable source, and no file is left', () async {
+      final log = <String>[];
+      expect(
+        await httpArchiveFetch(base.resolve('/gone.tgz'), dest, log.add),
+        isFalse,
+      );
+      expect(dest.existsSync(), isFalse);
+      expect(log.single, contains('HTTP 404'));
+    });
+
+    test('a refused connection is an unavailable source', () async {
+      final closed = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final port = closed.port;
+      await closed.close();
+      expect(
+        await httpArchiveFetch(
+          Uri.parse('http://127.0.0.1:$port/a.tgz'),
+          dest,
+          (_) {},
+        ),
+        isFalse,
+      );
+    });
+
+    test('a local write failure is thrown, not blamed on the source', () async {
+      final unwritable = File('${tmp.path}/missing/dir/a.tgz');
+      await expectLater(
+        httpArchiveFetch(base.resolve('/a.tgz'), unwritable, (_) {}),
+        throwsA(isA<FileSystemException>()),
+      );
+    });
+  });
+
   test(
     'every Microsoft archive in the hook is mirrored under its own name',
     () {

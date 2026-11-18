@@ -28,7 +28,67 @@ const (
 )
 
 type docTypeProps struct {
-	meta, source string // property ids
+	meta, source string // the property ids new writes are keyed by
+	// Every id of each property on the type, sorted. Two devices that
+	// complete one half-synced type at once each add their own; once both
+	// sets sync, values may sit under either, so writes go to all of them
+	// and reads take the first that is set.
+	allMeta, allSource []string
+}
+
+func (p *docTypeProps) add(xkey, id string) {
+	switch xkey {
+	case metaPropXKey:
+		p.allMeta = append(p.allMeta, id)
+	case sourcePropKey:
+		p.allSource = append(p.allSource, id)
+	}
+}
+
+func (p *docTypeProps) settle() {
+	sort.Strings(p.allMeta)
+	sort.Strings(p.allSource)
+	p.meta, p.source = "", ""
+	if len(p.allMeta) > 0 {
+		p.meta = p.allMeta[0]
+	}
+	if len(p.allSource) > 0 {
+		p.source = p.allSource[0]
+	}
+}
+
+// writeProps keys v under every id of each property.
+func (p docTypeProps) writeProps(meta, source string) map[string]any {
+	m := map[string]any{}
+	for _, id := range p.allMeta {
+		m[id] = meta
+	}
+	for _, id := range p.allSource {
+		m[id] = source
+	}
+	return m
+}
+
+// written reports whether a put has ever set any of ids on row (a put
+// always writes meta, "" when it has none).
+func written(row *anyenc.Value, typeId string, ids []string) bool {
+	for _, id := range ids {
+		if row.Get(typeId, id) != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// first returns the first of ids set on row as a non-empty string.
+func first(row *anyenc.Value, typeId string, ids []string) any {
+	for _, id := range ids {
+		// "" is what a put without the value writes: not set.
+		if v := strOrNil(row.Get(typeId, id)); v != nil && v != "" {
+			return v
+		}
+	}
+	return nil
 }
 
 // docTypeCache holds the space's document types. Two devices that write
@@ -119,12 +179,17 @@ func createDocType(a *account, sp space.Space) (_ string, p docTypeProps, err er
 			}
 		}
 	}()
-	if p.meta, err = sp.Types().AddProperty(a.ctx, id, space.PropertyDraft{Name: "Metadata", XKey: metaPropXKey, Kind: space.PropertyKindString}); err != nil {
+	metaId, err := sp.Types().AddProperty(a.ctx, id, space.PropertyDraft{Name: "Metadata", XKey: metaPropXKey, Kind: space.PropertyKindString})
+	if err != nil {
 		return "", p, fmt.Errorf("document type: %w", err)
 	}
-	if p.source, err = sp.Types().AddProperty(a.ctx, id, space.PropertyDraft{Name: "Source", XKey: sourcePropKey, Kind: space.PropertyKindString}); err != nil {
+	sourceId, err := sp.Types().AddProperty(a.ctx, id, space.PropertyDraft{Name: "Source", XKey: sourcePropKey, Kind: space.PropertyKindString})
+	if err != nil {
 		return "", p, fmt.Errorf("document type: %w", err)
 	}
+	p.add(metaPropXKey, metaId)
+	p.add(sourcePropKey, sourceId)
+	p.settle()
 	if _, err = sp.Types().AddPart(a.ctx, id, space.PartDraft{Key: "body", Name: "Body",
 		UI: map[string]any{"type": "document"}, Datasets: []space.DatasetDraft{{Module: editor.Module}}}); err != nil {
 		return "", p, fmt.Errorf("document type body: %w", err)
@@ -136,19 +201,10 @@ func createDocType(a *account, sp space.Space) (_ string, p docTypeProps, err er
 // XKey (see loadDocTypes), the smaller id, which every device agrees on.
 func propsByXKey(props []space.PropertyDef) docTypeProps {
 	var p docTypeProps
-	pick := func(cur *string, id string) {
-		if *cur == "" || id < *cur {
-			*cur = id
-		}
-	}
 	for _, pd := range props {
-		switch pd.XKey {
-		case metaPropXKey:
-			pick(&p.meta, pd.Id)
-		case sourcePropKey:
-			pick(&p.source, pd.Id)
-		}
+		p.add(pd.XKey, pd.Id)
 	}
+	p.settle()
 	return p
 }
 
@@ -161,15 +217,20 @@ func completeDocType(a *account, sp space.Space, id string) (docTypeProps, error
 	}
 	p := propsByXKey(props)
 	if p.meta == "" {
-		if p.meta, err = sp.Types().AddProperty(a.ctx, id, space.PropertyDraft{Name: "Metadata", XKey: metaPropXKey, Kind: space.PropertyKindString}); err != nil {
+		mid, err := sp.Types().AddProperty(a.ctx, id, space.PropertyDraft{Name: "Metadata", XKey: metaPropXKey, Kind: space.PropertyKindString})
+		if err != nil {
 			return p, fmt.Errorf("complete document type: %w", err)
 		}
+		p.add(metaPropXKey, mid)
 	}
 	if p.source == "" {
-		if p.source, err = sp.Types().AddProperty(a.ctx, id, space.PropertyDraft{Name: "Source", XKey: sourcePropKey, Kind: space.PropertyKindString}); err != nil {
+		sid, err := sp.Types().AddProperty(a.ctx, id, space.PropertyDraft{Name: "Source", XKey: sourcePropKey, Kind: space.PropertyKindString})
+		if err != nil {
 			return p, fmt.Errorf("complete document type: %w", err)
 		}
+		p.add(sourcePropKey, sid)
 	}
+	p.settle()
 	parts, err := sp.Types().Parts(a.ctx, id)
 	if err != nil {
 		return p, err
@@ -248,7 +309,7 @@ func (a *account) objectPut(spaceId string, d docIn) (_ map[string]any, err erro
 		return nil, err
 	}
 	props := func(p docTypeProps) map[string]any {
-		return map[string]any{p.meta: meta, p.source: d.Source}
+		return p.writeProps(meta, d.Source)
 	}
 	objId, created := d.Id, false
 	switch {
@@ -296,7 +357,7 @@ func (a *account) objectPut(spaceId string, d docIn) (_ map[string]any, err erro
 		}
 		// Derive does not say whether it materialized the object; a
 		// document always has its meta set, so an unset one is new.
-		created = d.Seed != "" && row.Get(typeId, p.meta) == nil
+		created = d.Seed != "" && !written(row, typeId, p.allMeta)
 		if _, err = sp.Properties().Set(a.ctx, objId, typeId, props(p)); err != nil {
 			return nil, fmt.Errorf("set properties: %w", err)
 		}
@@ -385,8 +446,18 @@ func (a *account) objectGet(spaceId, objId string) (map[string]any, error) {
 		return nil, err
 	} else if ok {
 		out["isDocument"] = true
-		out["meta"] = strOrNil(row.Get(typeId, p.meta))
-		out["source"] = strOrNil(row.Get(typeId, p.source))
+		if first(row, typeId, p.allMeta) == nil {
+			// Possibly under a property id that synced in after the
+			// cache was filled: look again once.
+			a.docMu.Lock()
+			delete(a.docTypes, sp.Id())
+			a.docMu.Unlock()
+			if p2, ok2, err := a.propsFor(sp, typeId); err == nil && ok2 {
+				p = p2
+			}
+		}
+		out["meta"] = first(row, typeId, p.allMeta)
+		out["source"] = first(row, typeId, p.allSource)
 		if out["meta"] == "" {
 			out["meta"] = nil
 		}

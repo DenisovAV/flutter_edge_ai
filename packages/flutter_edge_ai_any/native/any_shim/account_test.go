@@ -355,3 +355,52 @@ func TestIncompleteDocTypeIsCompleted(t *testing.T) {
 		t.Fatalf("%d document types, want the one completed", n)
 	}
 }
+
+// Two devices completing one half-synced type each add a property; values
+// can then sit under either id. Writes go to both, reads find either.
+func TestDuplicatePropertiesAreReconciled(t *testing.T) {
+	a := openOffline(t)
+	sp, err := a.sdk.Spaces().Create(a.ctx, space.CreateRequest{Name: "dup"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := a.objectPut(sp.Id(), docIn{Name: "one", Text: "x", Meta: json.RawMessage(`{"n":1}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := a.objectGet(sp.Id(), r["id"].(string))
+	typeId := got["type"].(string)
+	// The other device's meta property, as if it had synced in.
+	other, err := sp.Types().AddProperty(a.ctx, typeId, space.PropertyDraft{Name: "Metadata", XKey: metaPropXKey, Kind: space.PropertyKindString})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A document that device wrote: meta only under its own id.
+	r2, err := a.objectPut(sp.Id(), docIn{Name: "two", Text: "y"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2 := r2["id"].(string)
+	if _, err := sp.Properties().Set(a.ctx, id2, typeId, map[string]any{other: `{"n":2}`}); err != nil {
+		t.Fatal(err)
+	}
+	// Cached props predate `other`: the read must still find it.
+	if got, _ := a.objectGet(sp.Id(), id2); got["meta"] != `{"n":2}` {
+		t.Fatalf("meta under the other id: %v", got["meta"])
+	}
+	// A new write goes under both ids.
+	r3, err := a.objectPut(sp.Id(), docIn{Name: "three", Text: "z", Meta: json.RawMessage(`{"n":3}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, _ := sp.Objects().Get(a.ctx, r3["id"].(string))
+	p, _, _ := a.propsFor(sp, typeId)
+	if len(p.allMeta) != 2 {
+		t.Fatalf("meta ids %v", p.allMeta)
+	}
+	for _, id := range p.allMeta {
+		if strOrNil(row.Get(typeId, id)) != `{"n":3}` {
+			t.Fatalf("meta not written under %s", id)
+		}
+	}
+}

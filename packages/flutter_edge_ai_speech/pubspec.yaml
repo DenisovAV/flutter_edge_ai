@@ -1,6 +1,6 @@
 name: flutter_edge_ai_speech
 description: "On-device speech (STT + TTS) for flutter_edge_ai via the LiteRT C API + dart:ffi. Opt-in Stt/TtsBackendProvider."
-version: 0.6.2
+version: 0.6.1
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_speech
 topics: [speech, stt, gemma, litert, on-device]
@@ -34,12 +34,15 @@ dependencies:
   # 2.6.0 supplies the catalog and registry contracts used by this release.
   flutter_edge_ai: ^2.6.0
   # The LiteRT C API bindings (litert_bindings.dart) and the native bundle
-  # that carries libLiteRt / libLiteRtLm.
+  # that carries libLiteRt / libLiteRtLm. Not published yet: it resolves in
+  # this workspace, and the 2.7.0 release PR publishes it first.
   litertlm_dart: '>=0.19.1+1 <0.19.2'
-  # LiteRtLmNpuTarget, the core NpuTarget the speech catalog names. 1.21.0
-  # is the first without a build hook of its own: an older one would bundle
-  # libLiteRtLm a second time next to litertlm_dart's.
-  flutter_edge_ai_litertlm: ^1.21.0
+  # LiteRtLmNpuTarget, the core NpuTarget the speech catalog names. The
+  # published 1.20.x carry a build hook of their own, which would bundle
+  # libLiteRtLm a second time next to litertlm_dart's; this workspace's
+  # flutter_edge_ai_litertlm builds on litertlm_dart, and the 2.7.0 release
+  # PR raises this to the first release that does.
+  flutter_edge_ai_litertlm: ^1.20.2
   ffi: ^2.1.0
   meta: ^1.9.0
 

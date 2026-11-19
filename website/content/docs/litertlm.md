@@ -15,6 +15,10 @@ use [Built-in AI](/docs/builtin-ai). The native library is fetched at build time
 **Native Assets** (SHA256-verified, from the `native-v0.19.1-c` GitHub release,
 containing LiteRT-LM 0.19.1 and C API 1.0), so there is no manual native setup.
 
+Under it, from 1.21.0, is [`litertlm_dart`](/docs/litertlm-dart): LiteRT-LM from
+Dart with an API shaped like LiteRT-LM's Kotlin and Swift APIs, for calling the
+engine directly instead of through `flutter_edge_ai`'s registry.
+
 The same package also ships **`LiteRtEmbeddingBackend`**: EmbeddingGemma 2 from
 one `.litertlm` bundle (native: text since 1.13.0, images from the 440m and
 740m bundles since 1.13.1, audio and combined inputs from the 740m bundle;

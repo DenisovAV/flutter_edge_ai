@@ -179,6 +179,7 @@ void main() {
                   title: 'Engines',
                   links: [
                     SidebarLink(text: 'LiteRT-LM', href: '/docs/litertlm'),
+                    SidebarLink(text: 'litertlm_dart', href: '/docs/litertlm-dart'),
                     SidebarLink(text: 'MediaPipe', href: '/docs/mediapipe'),
                     SidebarLink(text: 'llama.cpp', href: '/docs/llama'),
                     SidebarLink(text: 'ONNX Runtime', href: '/docs/onnx'),

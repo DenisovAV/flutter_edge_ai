@@ -10,5 +10,6 @@ is_secret_define() {
   # camelCase splits into words first: accessToken is ACCESS_TOKEN.
   key=$(printf '%s' "$1" | sed 's/\([a-z0-9]\)\([A-Z]\)/\1_\2/g' |
     tr '[:lower:]' '[:upper:]')
-  [[ $key =~ (^|_)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|[A-Z]*KEY)(_|$) ]]
+  # TOKEN without a plural: MAX_TOKENS is a token count, not a secret.
+  [[ $key =~ (^|_)[A-Z0-9]*(TOKEN|SECRETS?|PASSWORDS?|PASSWD|CREDENTIALS?|KEYS?)(_|$) ]]
 }

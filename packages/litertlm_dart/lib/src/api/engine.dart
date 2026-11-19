@@ -68,13 +68,6 @@ int contextTokensFor(int maxNumTokens, BackendKind backend) {
   return minCpuGpuContextTokens;
 }
 
-/// The activation type a GPU load runs at when the caller set none: float32
-/// for Gemma 4 with a context above [gemma4Fp16MaxContextTokens] (its float16
-/// rotary positions stop being distinct there, LiteRT-LM #4001), and for a
-/// FunctionGemma bundle that declares no `prefer_activation_type` (converted
-/// before litetune 0.1.4: at float16 it answers with `<pad>` or nothing).
-/// [family] is the bundle's `llm_model_type`; [declaresActivation] whether it
-/// declares a type (null: unread). Null leaves the bundle's own.
 /// A GPU activation the caller decided by a rule of its own, for
 /// [createEngineWithBundle]: the type (null: the engine's default) and why it
 /// was chosen. Given, the engine does not apply [gpuActivationFor].
@@ -83,6 +76,13 @@ typedef GpuActivationDecision = ({
   GpuActivationReason? reason,
 });
 
+/// The activation type a GPU load runs at when the caller set none: float32
+/// for Gemma 4 with a context above [gemma4Fp16MaxContextTokens] (its float16
+/// rotary positions stop being distinct there, LiteRT-LM #4001), and for a
+/// FunctionGemma bundle that declares no `prefer_activation_type` (converted
+/// before litetune 0.1.4: at float16 it answers with `<pad>` or nothing).
+/// [family] is the bundle's `llm_model_type`; [declaresActivation] whether it
+/// declares a type (null: unread). Null leaves the bundle's own.
 ({ActivationDataType? type, GpuActivationReason? reason}) gpuActivationFor({
   required LlmModelFamily? family,
   required bool? declaresActivation,
@@ -426,27 +426,27 @@ final class Engine {
       );
       activation = chosen.type;
       reason = chosen.reason;
-      switch (reason) {
-        case GpuActivationReason.functionGemmaWithoutKey:
-          runtimeLog(
-            '[LiteRtLmEngine] this FunctionGemma bundle declares no '
-            'prefer_activation_type, and at the GPU default of float16 such '
-            'a bundle answers with <pad> only: a GPU attempt uses float32. '
-            'Pass activationDataType: ActivationDataType.float16 to keep the '
-            'default.',
-          );
-        case GpuActivationReason.gemma4LongContext:
-          runtimeLog(
-            '[LiteRtLmEngine] Gemma 4 with maxTokens $maxTokens, above '
-            '$gemma4Fp16MaxContextTokens: at float16 its rotary positions '
-            'past ~2,048 tokens stop being distinct and a long prompt '
-            'degrades (LiteRT-LM #4001), so a GPU attempt uses float32. Pass '
-            'activationDataType: ActivationDataType.float16 to keep the '
-            "bundle's float16.",
-          );
-        case null:
-          break;
-      }
+    }
+    switch (reason) {
+      case GpuActivationReason.functionGemmaWithoutKey:
+        runtimeLog(
+          '[LiteRtLmEngine] this FunctionGemma bundle declares no '
+          'prefer_activation_type, and at the GPU default of float16 such '
+          'a bundle answers with <pad> only: a GPU attempt uses float32. '
+          'Pass activationDataType: ActivationDataType.float16 to keep the '
+          'default.',
+        );
+      case GpuActivationReason.gemma4LongContext:
+        runtimeLog(
+          '[LiteRtLmEngine] Gemma 4 with maxTokens $maxTokens, above '
+          '$gemma4Fp16MaxContextTokens: at float16 its rotary positions '
+          'past ~2,048 tokens stop being distinct and a long prompt '
+          'degrades (LiteRT-LM #4001), so a GPU attempt uses float32. Pass '
+          'activationDataType: ActivationDataType.float16 to keep the '
+          "bundle's float16.",
+        );
+      case null:
+        break;
     }
     if (config.activationDataType != null && kind != BackendKind.gpu) {
       runtimeLog(

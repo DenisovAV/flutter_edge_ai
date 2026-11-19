@@ -201,7 +201,7 @@ class LiteRtLmEngine
     // declared, as flutter_edge_ai_litertlm always has: the runtime's own
     // rule (by the bundle's model type) is for plain-Dart Engine.create.
     final gpuActivation = config.activationDataType == null
-        ? await _declaredTypeActivation(spec, config)
+        ? await _declaredTypeActivation(spec, config, abi: host.abi)
         : null;
 
     final attempt = await initializeFfiRuntime<_EngineAttempt>(
@@ -302,13 +302,15 @@ class LiteRtLmEngine
 
   /// The GPU activation a load of [spec] gets when the app set none, by the
   /// model type the app declared (not the bundle's own): float32 for
-  /// `ModelType.gemma4` above a 2,048-token context (LiteRT-LM #4001) and for
+  /// `ModelType.gemma4` above a 2,048-token context (LiteRT-LM #4001), except
+  /// on Android ([abi]), where it keeps float16 and the engine says so, and for
   /// a `ModelType.functionGemma` bundle that declares no
   /// `prefer_activation_type`; none otherwise.
   static Future<GpuActivationDecision> _declaredTypeActivation(
     InferenceModelSpec spec,
-    RuntimeConfig config,
-  ) async {
+    RuntimeConfig config, {
+    required String abi,
+  }) async {
     final family = switch (spec.modelType) {
       ModelType.gemma4 => LlmModelFamily.gemma4,
       ModelType.functionGemma => LlmModelFamily.functionGemma,
@@ -342,6 +344,7 @@ class LiteRtLmEngine
       family: family,
       declaresActivation: declares,
       maxNumTokens: config.maxTokens,
+      android: abi.startsWith('android'),
     );
   }
 }

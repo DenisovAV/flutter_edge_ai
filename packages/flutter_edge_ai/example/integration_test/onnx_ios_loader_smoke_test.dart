@@ -5,9 +5,11 @@
 // `Abi.iosArm64`) with no test anywhere in the repo that actually opens the
 // bundled `onnxruntime-genai.framework` Native-Assets CodeAsset on a real
 // iOS process. This test closes that gap for the LOADER half specifically:
-// it proves `GenAiFfiClient` (ORT-GenAI, `gen_ai_client.dart`) and
-// `OrtFfiClient` (plain ORT embedding arm, `ort_ffi_client.dart`) both
-// successfully `dlopen` the framework rather than failing with a dyld
+// it proves `GenAiFfiClient` (ORT-GenAI, `gen_ai_client.dart`) opens
+// `onnxruntime-genai.framework` and `OrtFfiClient` (plain ORT embedding arm,
+// `ort_ffi_client.dart`) opens `onnxruntime.framework` — the separate ORT the
+// hook bundles on iOS, since genai keeps its own ORT private from 0.18.0 —
+// rather than failing with a dyld
 // "image not found" — the exact failure mode a bare, unanchored
 // `<name>.framework/<name>` leaf name produces on iOS's dyld 4 (dyld 4
 // cannot resolve framework names alone the way macOS's dyld does; see
@@ -33,6 +35,7 @@
 // Runs on iOS only (`skip: !Platform.isIOS`) — meaningless elsewhere. Per
 // AGENTS.md Rule 6, invoke via:
 //   flutter test integration_test/onnx_ios_loader_smoke_test.dart -d <device-id>
+import 'dart:ffi' as ffi;
 import 'dart:io';
 
 // ignore: implementation_imports — loads onnx's native libraries directly on iOS
@@ -84,7 +87,7 @@ void main() {
 
   testWidgets(
     'ONNX embedding iOS: OrtFfiClient resolves OrtGetApiBase from '
-    'onnxruntime-genai.framework (plain-ORT co-location)',
+    'onnxruntime.framework; onnxruntime-genai.framework does not export it',
     (tester) async {
       await tester.runAsync(() async {
         Object? error;
@@ -106,6 +109,17 @@ void main() {
               'OrtFfiClient() constructor failed to resolve OrtGetApiBase '
               'on iOS: $error',
         );
+        const frameworks = '@executable_path/Frameworks';
+        final ort = ffi.DynamicLibrary.open(
+          '$frameworks/onnxruntime.framework/onnxruntime',
+        );
+        final genai = ffi.DynamicLibrary.open(
+          '$frameworks/onnxruntime-genai.framework/onnxruntime-genai',
+        );
+        expect(ort.providesSymbol('OrtGetApiBase'), isTrue);
+        // ORT-GenAI 0.18.0+ exports only `Oga*`: if this ever flips, the
+        // two ORTs could interpose on each other.
+        expect(genai.providesSymbol('OrtGetApiBase'), isFalse);
       });
     },
     skip: !Platform.isIOS,

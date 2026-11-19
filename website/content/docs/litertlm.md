@@ -124,7 +124,11 @@ file decides, except that a FunctionGemma bundle declaring no
 because at half precision it answers with nothing, and so does Gemma 4 loaded
 with `maxTokens` above 2,048 (litertlm 1.20.1,
 [LiteRT-LM #4001](https://github.com/google-ai-edge/LiteRT-LM/issues/4001)); pass
-`ActivationDataType.float16` to keep half precision. It applies to the text decoder of `.litertlm` models on Android,
+`ActivationDataType.float16` to keep half precision. On Android, Gemma 4 is
+not switched to float32 by itself (litertlm 1.21.0): with the current native
+build float32 fails at the first token on Adreno 8xx GPUs, so Gemma 4 keeps
+half precision there, with one WARNING line in the log, and an explicit
+`float32` is up to you; the FunctionGemma rule still applies. It applies to the text decoder of `.litertlm` models on Android,
 iOS and desktop — not on web, and not to the vision or audio encoders, which
 keep what the model file asks for. `float32` also needs more GPU memory, and a
 GPU engine that cannot be created falls back to CPU with only a WARNING line in

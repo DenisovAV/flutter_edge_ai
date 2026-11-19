@@ -83,11 +83,20 @@ typedef GpuActivationDecision = ({
 /// before litetune 0.1.4: at float16 it answers with `<pad>` or nothing).
 /// [family] is the bundle's `llm_model_type`; [declaresActivation] whether it
 /// declares a type (null: unread). Null leaves the bundle's own.
+///
+/// On Android ([android]) Gemma 4 keeps the bundle's float16 at any context,
+/// with [GpuActivationReason.gemma4LongContextAndroid] above
+/// [gemma4Fp16MaxContextTokens] so the engine says so: float32 fails there on
+/// Adreno 8xx with this native build. An explicit float32 is still honoured.
 ({ActivationDataType? type, GpuActivationReason? reason}) gpuActivationFor({
   required LlmModelFamily? family,
   required bool? declaresActivation,
   required int maxNumTokens,
+  required bool android,
 }) => switch (family) {
+  LlmModelFamily.gemma4
+      when maxNumTokens > gemma4Fp16MaxContextTokens && android =>
+    (type: null, reason: GpuActivationReason.gemma4LongContextAndroid),
   LlmModelFamily.gemma4 when maxNumTokens > gemma4Fp16MaxContextTokens => (
     type: ActivationDataType.float32,
     reason: GpuActivationReason.gemma4LongContext,
@@ -98,6 +107,30 @@ typedef GpuActivationDecision = ({
   ),
   _ => (type: null, reason: null),
 };
+
+bool _notedAndroidGemma4Float16 = false;
+
+/// Says, once per isolate and in release builds too, that Gemma 4 with a
+/// context of [maxTokens] runs at float16 on this Android GPU, where a long
+/// prompt can degrade (LiteRT-LM #4001), and how to ask for float32.
+void noteAndroidGemma4Float16(int maxTokens) {
+  if (_notedAndroidGemma4Float16) return;
+  _notedAndroidGemma4Float16 = true;
+  // ignore: avoid_print
+  print(
+    '[litertlm_dart] WARNING: Gemma 4 with maxTokens $maxTokens runs at '
+    "float16 on this Android GPU (the bundle's default): a prompt past about "
+    '$gemma4Fp16MaxContextTokens tokens can degrade (LiteRT-LM #4001). '
+    'float32, which avoids that, is not chosen on Android: with this native '
+    'build it fails on Adreno 8xx GPUs ("Invalid work group size" at the '
+    'first token). Pass activationDataType: ActivationDataType.float32 to ask '
+    'for it. Shown once.',
+  );
+}
+
+/// Lets a test see [noteAndroidGemma4Float16] print again.
+@visibleForTesting
+void resetAndroidGemma4Float16Note() => _notedAndroidGemma4Float16 = false;
 
 /// A platform for code that passed no [NpuPlatform]: the manifest is not
 /// readable (the stack is then checked by loading it), Android cannot prepare
@@ -423,6 +456,7 @@ final class Engine {
         family: family,
         declaresActivation: declares,
         maxNumTokens: maxTokens,
+        android: abi.startsWith('android'),
       );
       activation = chosen.type;
       reason = chosen.reason;
@@ -445,6 +479,8 @@ final class Engine {
           'activationDataType: ActivationDataType.float16 to keep the '
           "bundle's float16.",
         );
+      case GpuActivationReason.gemma4LongContextAndroid:
+        noteAndroidGemma4Float16(maxTokens);
       case null:
         break;
     }

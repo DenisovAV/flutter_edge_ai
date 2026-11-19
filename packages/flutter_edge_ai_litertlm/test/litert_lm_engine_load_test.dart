@@ -541,6 +541,48 @@ void main() {
     await model.close();
   });
 
+  test('on an Android GPU, a declared gemma4 above 2,048 tokens keeps the '
+      "bundle's float16 and says so once, in release builds too; float32 "
+      'asked for is honoured', () async {
+    final path = write('g4.litertlm', _bundle(text: 'gpu,cpu'));
+    host = _FakeHost(os: 'android', abiName: 'android_arm64');
+    _install(host);
+    resetAndroidGemma4Float16Note();
+    addTearDown(resetAndroidGemma4Float16Note);
+    final printed = <String>[];
+    final models = await runZoned(
+      () async => [
+        await load(
+          path,
+          modelType: ModelType.gemma4,
+          maxTokens: 4096,
+          preferredBackend: PreferredBackend.gpu,
+        ),
+        await load(
+          path,
+          modelType: ModelType.gemma4,
+          maxTokens: 4096,
+          preferredBackend: PreferredBackend.gpu,
+          activationDataType: ActivationDataType.float32,
+        ),
+      ],
+      zoneSpecification: ZoneSpecification(
+        print: (_, _, _, line) => printed.add(line),
+      ),
+    );
+    expect(host.activationDataTypes, [null, 0]);
+    expect(host.gpuActivationReasons, [
+      GpuActivationReason.gemma4LongContextAndroid,
+      null,
+    ]);
+    final notes = printed.where((l) => l.contains('#4001')).toList();
+    expect(notes, hasLength(1), reason: printed.join('\n'));
+    expect(notes.single, contains('ActivationDataType.float32'));
+    for (final model in models) {
+      await model.close();
+    }
+  });
+
   test('the real host hands the client the activation reason and the log '
       'level', () async {
     final client = _InitCapturingClient();

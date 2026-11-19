@@ -1,12 +1,85 @@
 /// JavaScript interop for Cache API
 ///
 /// Provides type-safe wrappers for Cache API operations using dart:js_interop.
-/// All operations go through cache_api.js to ensure proper error handling.
+/// Operations go through cache_api.js to ensure proper error handling, except
+/// [WebCacheInterop.put], which streams a body into the Cache API itself.
 library;
 
 import 'dart:js_interop';
+
 import 'package:flutter/foundation.dart';
+
 import '../utils/edge_ai_log.dart';
+
+/// A model's bytes on their way into browser storage, held by the browser and
+/// never copied into a Dart typed array.
+///
+/// Under dart2wasm a Dart `Uint8List` is a WasmGC array inside V8's heap,
+/// which V8 caps at 2^30 - 20 bytes (Chrome 157, every build mode); a larger
+/// one traps with `RuntimeError: requested new array is too large`, which no
+/// Dart `catch` sees, so the call never completes. A download goes from
+/// `fetch` into the Cache API as a stream instead.
+///
+/// [body] is what `new Response(body)` takes: a `ReadableStream` that reads a
+/// download as it arrives (read once), or a `Blob`.
+class WebModelBody {
+  WebModelBody(
+    this.body, {
+    required this.bytesRead,
+    this.replayable = false,
+    void Function()? abort,
+  }) : abort = abort ?? _noAbort;
+
+  static void _noAbort() {}
+
+  /// A body over [bytes], for data that is already in Dart memory.
+  factory WebModelBody.ofBytes(Uint8List bytes) {
+    final blob = _Blob(
+      [bytes.toJS].toJS,
+      {'type': 'application/octet-stream'}.jsify(),
+    );
+    return WebModelBody(blob, bytesRead: () => bytes.length, replayable: true);
+  }
+
+  final JSObject body;
+
+  /// The bytes the body has given so far.
+  final int Function() bytesRead;
+
+  /// Whether [body] can be read more than once (a `Blob`); a download can
+  /// not.
+  final bool replayable;
+
+  /// Stops a download: the fetch is aborted and whoever reads [body] gets
+  /// an `AbortError`. A no-op for a body that is not a download.
+  final void Function() abort;
+
+  /// The bytes the body has given so far: its size once it has been read to
+  /// its end.
+  int get size => bytesRead();
+}
+
+@JS('Blob')
+extension type _Blob._(JSObject _) implements JSObject {
+  external factory _Blob(JSArray<JSAny> parts, JSAny? options);
+}
+
+@JS('caches')
+external _CacheStorage get _caches;
+
+extension type _CacheStorage._(JSObject _) implements JSObject {
+  external JSPromise<_Cache> open(JSString cacheName);
+}
+
+extension type _Cache._(JSObject _) implements JSObject {
+  external JSPromise<JSAny?> put(JSString url, _Response response);
+}
+
+@JS('Response')
+extension type _Response._(JSObject _) implements JSObject {
+  external factory _Response(JSAny body, JSAny? init);
+  external JSPromise<_Blob> blob();
+}
 
 /// External JS functions for Cache API
 @JS('cacheHas')
@@ -16,13 +89,6 @@ external JSPromise<JSBoolean> _cacheHasJS(JSString cacheName, JSString url);
 external JSPromise<JSString?> _cacheGetBlobUrlJS(
   JSString cacheName,
   JSString url,
-);
-
-@JS('cachePut')
-external JSPromise<JSAny?> _cachePutJS(
-  JSString cacheName,
-  JSString url,
-  JSUint8Array data,
 );
 
 @JS('cacheDelete')
@@ -88,10 +154,21 @@ class WebCacheInterop {
     }
   }
 
-  /// Save data to cache
-  Future<void> put(String cacheName, String url, Uint8List data) async {
+  /// Stores [body] in the cache under [url], reading it to its end: a
+  /// download streams from the network into the cache.
+  ///
+  /// Calls the Cache API directly rather than `cache_api.js`'s `cachePut`,
+  /// whose copy in an app takes a `Uint8Array` (it reads `data.length`).
+  Future<void> put(String cacheName, String url, WebModelBody body) async {
     try {
-      await _cachePutJS(cacheName.toJS, url.toJS, data.toJS).toDart;
+      final cache = await _caches.open(cacheName.toJS).toDart;
+      final response = _Response(
+        body.body,
+        {
+          'headers': {'Content-Type': 'application/octet-stream'},
+        }.jsify(),
+      );
+      await cache.put(url.toJS, response).toDart;
     } catch (e) {
       edgeAiLog('[WebCacheInterop] ❌ put failed for $url: $e');
       rethrow;
@@ -162,10 +239,10 @@ class WebCacheInterop {
     }
   }
 
-  /// Create blob URL from data
-  String createBlobUrl(Uint8List data) {
+  /// Reads [body] to its end into a `Blob` and returns a blob URL for it.
+  Future<String> createBlobUrl(WebModelBody body) async {
     try {
-      final blob = _createBlobJs(data.toJS);
+      final blob = await _Response(body.body, null).blob().toDart;
       return _createObjectUrlJs(blob).toDart;
     } catch (e) {
       edgeAiLog('[WebCacheInterop] ❌ createBlobUrl failed: $e');
@@ -176,6 +253,3 @@ class WebCacheInterop {
 
 @JS('URL.createObjectURL')
 external JSString _createObjectUrlJs(JSAny blob);
-
-@JS('createBlob')
-external JSAny _createBlobJs(JSUint8Array data);

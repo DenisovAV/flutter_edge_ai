@@ -87,22 +87,8 @@ class WebBundledSourceHandler implements SourceHandler {
           );
 
           onProgress(0.0);
-          final response = await jsInterop.fetchFile('/$resourceName');
-
-          // Validate resource is not empty
-          if (response.data.isEmpty) {
-            throw StateError(
-              'Bundled resource is empty: $resourceName. '
-              'Check that the resource exists in the web bundle.',
-            );
-          }
-
-          edgeAiLog(
-            '[WebBundledSourceHandler] Resource fetched: ${response.data.length} bytes',
-          );
-          onProgress(1.0);
-
-          return response.data;
+          // An empty resource is refused by the cache service once read.
+          return jsInterop.fetchBody('/$resourceName', onProgress: onProgress);
         },
         targetPath: targetPath,
       );

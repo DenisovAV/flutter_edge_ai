@@ -149,6 +149,7 @@ void main() {
           family: LlmModelFamily.gemma4,
           declaresActivation: true,
           maxNumTokens: 2048,
+          android: false,
         ),
         (type: null, reason: null),
       );
@@ -157,10 +158,45 @@ void main() {
           family: LlmModelFamily.gemma4,
           declaresActivation: true,
           maxNumTokens: 2049,
+          android: false,
         ),
         (
           type: ActivationDataType.float32,
           reason: GpuActivationReason.gemma4LongContext,
+        ),
+      );
+    });
+
+    test('on Android, Gemma 4 keeps float16 above 2,048 and says why; '
+        'FunctionGemma without the key still gets float32', () {
+      expect(
+        gpuActivationFor(
+          family: LlmModelFamily.gemma4,
+          declaresActivation: true,
+          maxNumTokens: 4096,
+          android: true,
+        ),
+        (type: null, reason: GpuActivationReason.gemma4LongContextAndroid),
+      );
+      expect(
+        gpuActivationFor(
+          family: LlmModelFamily.gemma4,
+          declaresActivation: true,
+          maxNumTokens: 2048,
+          android: true,
+        ),
+        (type: null, reason: null),
+      );
+      expect(
+        gpuActivationFor(
+          family: LlmModelFamily.functionGemma,
+          declaresActivation: false,
+          maxNumTokens: 1024,
+          android: true,
+        ),
+        (
+          type: ActivationDataType.float32,
+          reason: GpuActivationReason.functionGemmaWithoutKey,
         ),
       );
     });
@@ -172,6 +208,7 @@ void main() {
             family: LlmModelFamily.functionGemma,
             declaresActivation: false,
             maxNumTokens: tokens,
+            android: false,
           ),
           (
             type: ActivationDataType.float32,
@@ -190,6 +227,7 @@ void main() {
               family: LlmModelFamily.functionGemma,
               declaresActivation: declares,
               maxNumTokens: 1024,
+              android: false,
             ).type,
             isNull,
           );
@@ -205,6 +243,7 @@ void main() {
               family: family,
               declaresActivation: declares,
               maxNumTokens: 8192,
+              android: false,
             ).type,
             isNull,
             reason: '$family, declares $declares',

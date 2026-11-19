@@ -219,6 +219,7 @@ export 'src/api/engine.dart'
         debugEngineHost,
         GpuActivationDecision,
         gpuActivationFor,
+        resetAndroidGemma4Float16Note,
         liteRtLmNativeLogLevel;
 export 'src/api/message.dart'
     show

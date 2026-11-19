@@ -1,6 +1,31 @@
 /// Stub implementation for non-web platforms
 library;
 
+import 'dart:typed_data';
+
+/// Stub of the web model body for non-web platforms.
+class WebModelBody {
+  WebModelBody(
+    this.body, {
+    required this.bytesRead,
+    this.replayable = false,
+    void Function()? abort,
+  }) : abort = abort ?? _noAbort;
+
+  static void _noAbort() {}
+
+  factory WebModelBody.ofBytes(Uint8List bytes) {
+    throw UnsupportedError('WebModelBody is only available on web platform');
+  }
+
+  final Object body;
+  final int Function() bytesRead;
+  final bool replayable;
+  final void Function() abort;
+
+  int get size => bytesRead();
+}
+
 /// Storage quota Dart wrapper
 class StorageQuota {
   final int usage;
@@ -30,7 +55,7 @@ class WebCacheInterop {
     throw UnsupportedError('WebCacheInterop is only available on web platform');
   }
 
-  Future<void> put(String cacheName, String url, dynamic data) {
+  Future<void> put(String cacheName, String url, WebModelBody body) {
     throw UnsupportedError('WebCacheInterop is only available on web platform');
   }
 
@@ -58,7 +83,7 @@ class WebCacheInterop {
     throw UnsupportedError('WebCacheInterop is only available on web platform');
   }
 
-  String createBlobUrl(dynamic data) {
+  Future<String> createBlobUrl(WebModelBody body) {
     throw UnsupportedError('WebCacheInterop is only available on web platform');
   }
 }

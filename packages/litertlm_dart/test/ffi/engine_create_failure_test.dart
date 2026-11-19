@@ -160,4 +160,66 @@ void main() {
       );
     });
   });
+
+  group('stream failure', () {
+    // The S25 Ultra (Adreno 830) failure of a float32 Gemma 4 turn.
+    const s25 =
+        'INTERNAL: ERROR: [third_party/odml/litert_lm/runtime/executor/'
+        'llm_litert_compiled_model_executor.cc] Failed to invoke the compiled '
+        'model';
+
+    String stream({
+      String error = s25,
+      String? backend = 'gpu',
+      int? activationDataType = 0,
+      GpuActivationReason? reason,
+    }) => streamFailureMessage(
+      nativeError: error,
+      backend: backend,
+      activationDataType: activationDataType,
+      gpuActivationReason: reason,
+    );
+
+    test('a float32 GPU turn that failed in the compiled model names float32 '
+        'and the way to float16 or the CPU', () {
+      for (final reason in [null, ...GpuActivationReason.values]) {
+        final message = stream(reason: reason);
+        expect(message, startsWith('Stream error: $s25'));
+        expect(message, contains('float32 activations on the GPU'));
+        expect(message, contains('Invalid work group size'));
+        expect(message, contains('PreferredBackend.cpu'));
+        expect(message, isNot(contains('the default')));
+      }
+      expect(stream(), contains('activationDataType asked for float32'));
+      expect(stream(), contains('ActivationDataType.float16'));
+      final g4 = stream(reason: GpuActivationReason.gemma4LongContext);
+      expect(g4, contains('the engine chose float32 because Gemma 4'));
+      expect(g4, contains('maxTokens of 2048 or less'));
+      expect(g4, contains('degrades'));
+      final fg = stream(reason: GpuActivationReason.functionGemmaWithoutKey);
+      expect(fg, contains('answers with nothing'));
+      expect(
+        fg,
+        isNot(contains('ActivationDataType.float16')),
+        reason: 'float16 is what this bundle cannot run at',
+      );
+      expect(
+        stream(error: 'INTERNAL: something else'),
+        contains('float32 activations on the GPU'),
+      );
+    });
+
+    test('is left bare off float32, off the GPU and for other errors', () {
+      for (final message in [
+        stream(activationDataType: null),
+        stream(activationDataType: 1),
+        stream(backend: 'cpu'),
+        stream(backend: null),
+        stream(error: 'RESOURCE_EXHAUSTED: context full'),
+      ]) {
+        expect(message, startsWith('Stream error: '));
+        expect(message, isNot(contains('float32')));
+      }
+    });
+  });
 }

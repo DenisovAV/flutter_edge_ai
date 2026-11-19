@@ -1813,6 +1813,23 @@ class LiteRtLmFfiClient {
   /// params — it must never gate what we send again.
   String? _backend;
 
+  /// The activation wire value this engine was created with (0 = float32;
+  /// null: the bundle's own) and why the engine chose it, for a failed turn's
+  /// message.
+  int? _activationDataType;
+  GpuActivationReason? _gpuActivationReason;
+
+  /// The message of a streamed turn on this engine that native failed with
+  /// [nativeError]: [streamFailureMessage] for the backend and activation the
+  /// engine was created with.
+  @visibleForTesting
+  String streamFailureFor(String nativeError) => streamFailureMessage(
+    nativeError: nativeError,
+    backend: _backend,
+    activationDataType: _activationDataType,
+    gpuActivationReason: _gpuActivationReason,
+  );
+
   /// Conversation creates, and rewinds of a stopped turn, currently suspended
   /// across an `await`.
   ///
@@ -2448,6 +2465,8 @@ class LiteRtLmFfiClient {
     final bindingsSw = Stopwatch()..start();
     _ensureBindings();
     _backend = backend;
+    _activationDataType = activationDataType;
+    _gpuActivationReason = gpuActivationReason;
     // This engine's part of the shared native log starts here.
     final logPath = _nativeLogPath;
     if (logPath != null && File(logPath).existsSync()) {
@@ -3970,7 +3989,7 @@ class LiteRtLmFfiClient {
           if (error.startsWith('CANCELLED')) {
             send.cancelled();
           } else {
-            send.failed(Exception('Stream error: $error'));
+            send.failed(Exception(streamFailureFor(error)));
           }
         });
         releaseNative();
@@ -4725,6 +4744,8 @@ class LiteRtLmFfiClient {
 
     _isInitialized = false;
     _backend = null;
+    _activationDataType = null;
+    _gpuActivationReason = null;
     _bundleSamplerRead = const BundleSamplerRead.notRead();
     _modelPath = null;
     _maxTokens = null;

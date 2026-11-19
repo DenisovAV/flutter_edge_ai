@@ -11,18 +11,17 @@ compatible models and runtimes. See [advanced usage](doc/advanced_usage.md) and 
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
 Version 0.0.3 adds native text embeddings with llamadart 0.15.1.
-Version 0.0.6 moved to llamadart 0.17.5; 0.1.0 added core 2.6 sessions and response formats on that pair.
-Source now targets llamadart `^0.20.1` with exact Apple companion `0.20.1` and Web bridge `v0.1.86`.
+Version 0.0.6 moved to llamadart 0.17.5; 0.1.0 kept that runtime pair with core 2.6 sessions and response formats.
+Version 0.2.0 targets llamadart `^0.20.1` with exact Apple companion `0.20.1` and Web bridge `v0.1.86`.
 
 The minimum is Flutter **3.44 / Dart 3.12**, with core **2.6.0+**.
-Version 0.1.0 shipped on llamadart **0.17.5** with typed overflow reporting
-and Apple companion **0.17.3** (0.0.3 to 0.0.5 used 0.15.1 / 0.15.0); the
-current source line updates the SDK constraint to **^0.20.1** (tested on SDK
-**0.20.1**, Apple companion **0.20.1**, and Web bridge **v0.1.86**). Connector CI uses Flutter
+Version 0.2.0 updates the SDK constraint to **^0.20.1** (tested on SDK
+**0.20.1**, Apple companion **0.20.1**, and Web bridge **v0.1.86**; 0.1.0 shipped
+on **0.17.5** / **0.17.3**, and 0.0.3 to 0.0.5 used **0.15.1** / **0.15.0**). Connector CI uses Flutter
 3.47.1 / Dart 3.13.1 for reproducible checks. Native EmbeddingGemma 2 text embeddings are described in
 [the embedding guide](doc/embeddings.md). macOS CPU/Metal (llamadart 0.15.1,
-0.17.5 (#764), and 0.20.1) and Linux/Windows CPU (0.15.1) have been measured; Android has a
-maintainer Pixel 8a diagnostic (0.15.1) and iOS remains unqualified. See the [per-platform evidence](doc/platforms.md#embedding-qualification-by-platform).
+0.17.5 (#764), and 0.20.1) and Linux/Windows CPU (0.15.1) have been measured; Android has an
+ARM64 emulator gate (0.20.1) plus a maintainer Pixel 8a diagnostic (0.15.1) and iOS remains unqualified. See the [per-platform evidence](doc/platforms.md#embedding-qualification-by-platform).
 Explicit GPU embeddings on Android (every device) and on iOS simulators fall
 back to CPU by default; `backendFallback: false` refuses those requests before
 loading.
@@ -73,14 +72,14 @@ API 28. Passing builds do not qualify every device or GPU.
 
 ### Run in a browser
 
-From the package directory, prepare the runtime files before launching. After
-updating the package or source checkout, rerun `tool/fetch_web_assets.py` to
-refresh the staged Web runtime files for that version:
+From the example directory, prepare the runtime files before launching. After
+updating the package or `llamadart`, rerun `dart run llamadart:web_setup --no-index-html`
+to refresh the staged Web runtime files for the resolved SDK:
 
 ```sh
-python3 tool/fetch_web_assets.py
 cd example
 flutter pub get
+dart run llamadart:web_setup --no-index-html
 flutter run -d chrome \
   --web-header Cross-Origin-Opener-Policy=same-origin \
   --web-header Cross-Origin-Embedder-Policy=require-corp
@@ -93,7 +92,7 @@ remote host blocks the request, serve the downloaded fixture locally with
 second terminal from the package directory, then use
 `http://127.0.0.1:8098/chat.gguf`.
 
-The preparation script verifies the pinned llama.cpp bridge files and stages
+`llamadart:web_setup` verifies the pinned llama.cpp bridge files and stages
 them under the example's origin. For deployment, build with
 `python3 tool/verify.py build --platform web` and host `example/build/web` with
 the same COOP/COEP headers on HTML, worker and Wasm responses. `_headers` is
@@ -105,16 +104,15 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-The current source line requires core 2.6.0+ and llamadart `^0.20.1`.
-The hosted 0.1.0 release uses Apple companion 0.17.3. This example uses the updated connector from a local checkout:
+Version 0.2.0 requires core 2.6.0+ and llamadart `^0.20.1`.
+Use these hosted dependencies:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
   flutter_edge_ai: ^2.6.0
-  flutter_edge_ai_llama:
-    path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
+  flutter_edge_ai_llama: ^0.2.0
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.20.1
 
@@ -130,12 +128,13 @@ when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph.
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
 actionable collision error. On Apple the llama.cpp companion is required too.
-Source bounds llamadart to `^0.20.1` and selects exact Apple companion `0.20.1`
+Version 0.2.0 bounds llamadart to `^0.20.1` and selects exact Apple companion `0.20.1`
 (tested with SDK `0.20.1`, companion `0.20.1`, native artifacts `v1.0.0-2`, and
 Web bridge `v0.1.86`). Full platform qualification of this pair is pending (see the
 [platform matrix](doc/platforms.md)). The companion requires SDK `>=0.20.1 <0.21.0`.
-The Apple build hook validates its SwiftPM package, and the Web verification
-lanes check staged bridge assets against the resolved SDK.
+The Apple build hook validates its SwiftPM package. For Web, stage and check your
+app's bridge assets against its resolved SDK using `dart run llamadart:web_setup --no-index-html`
+and `tool/validate_web_build.py`.
 Android apps must exclude `armeabi-v7a`: llama.cpp supplies arm64-v8a and x86_64.
 For fat APKs and app bundles, clear inherited `ndk.abiFilters` before setting
 those two ABIs. With `--split-per-abi`, let Flutter own the filters and pass
@@ -262,26 +261,32 @@ They shipped in core 2.3.2; typed tool history requires core 2.4.0; the embeddin
 
 ## Web setup from an installed package
 
-The installed package includes `tool/fetch_web_assets.py`,
-`tool/validate_web_build.py` and the example's Web files. Find its `rootUri` in
-your app's `.dart_tool/package_config.json` (resolve it relative to that file).
-With Python 3 and curl installed, stage the checksum-verified bridge into your app:
+Stage the checksum-verified bridge assets from your app's resolved `llamadart`
+SDK into `<app-root>/web/webgpu_bridge` without overwriting your `index.html`:
 
 ```sh
-python3 <package-root>/tool/fetch_web_assets.py --output <app-root>/web/webgpu_bridge
+dart run llamadart:web_setup --no-index-html
 ```
 
-Rerun this command after upgrading the connector. After changing the resolved SDK, run `dart run llamadart:web_setup --no-index-html --check` from your app to verify the staged assets against that SDK.
+Rerun this command after upgrading `llamadart` or this connector, or run
+`dart run llamadart:web_setup --no-index-html --check` from your app to verify
+staged assets offline against the resolved SDK.
 
-Copy `example/web/cache_api.js`, `cache_api.LICENSE` and `_headers` into your
-app's `web/` directory, and load `cache_api.js` inside the `<head>` of `web/index.html`. Hosts that ignore `_headers` need equivalent server configuration.
-Use the module bootstrap in `example/web/index.html`: it loads the local bridge,
-sets its worker/core/Wasm URLs before Flutter starts, and reports load errors.
-The validator permits extra headers while checking the required wildcard isolation
-rules, storage helper interface, license and pinned runtime hashes. A customized
-storage helper also needs browser tests; static interface checks do not prove its behavior.
-Release validation also requires Node.js. Build with
-`flutter build web --wasm`, then run:
+The installed package includes `tool/validate_web_build.py` and the example's
+Web files. Find its `rootUri` in your app's `.dart_tool/package_config.json`
+(resolve it relative to that file). Copy `example/web/cache_api.js`,
+`cache_api.LICENSE` and `_headers` into your app's `web/` directory, and load
+`cache_api.js` inside the `<head>` of `web/index.html`. Hosts that ignore
+`_headers` need equivalent server configuration. Use the module bootstrap in
+`example/web/index.html`: it loads the local bridge, sets its worker/core/Wasm
+URLs before Flutter starts, and reports load errors.
+The validator checks the built `webgpu_bridge` bytes against your app's resolved
+`llamadart` SDK via `dart run llamadart:web_setup --check --no-index-html --web-dir`,
+and permits extra headers while checking the required wildcard isolation rules,
+storage helper interface and license. A customized storage helper also needs
+browser tests; static interface checks do not prove its behavior.
+Release validation requires Dart and Node.js. Build with
+`flutter build web --wasm`, then run from your app:
 
 ```sh
 python3 <package-root>/tool/validate_web_build.py <app-root>/build/web

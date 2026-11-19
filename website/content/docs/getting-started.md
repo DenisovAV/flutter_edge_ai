@@ -54,6 +54,9 @@ only the engines, stores and features your app uses — see
   and `ContextLimitException` distinguishes an input that never fit.
 - **Open APIs are canonical**: `createSession`, `createChat`, `session` and
   `chat` remain compatible but are deprecated until core 3.0.0.
+- **llama.cpp on llamadart ^0.20.1** (`flutter_edge_ai_llama` 0.2.0, with
+  Apple companion 0.20.1; 0.1.0 added `responseFormat` and core 2.6 sessions on
+  0.17.5). See [llama.cpp](/docs/llama).
 - [Add your app to the showcase](/showcase/submit) — submit a shipped Flutter
   Edge AI app for review.
 
@@ -85,8 +88,8 @@ only the engines, stores and features your app uses — see
   otherwise. ORT-GenAI 0.17.0. See [ONNX](/docs/onnx).
 - **Windows memory diagnostics** (`flutter_edge_ai_diagnostics` 0.6.0):
   `memorySnapshot()` on Windows. See [Diagnostics](/docs/diagnostics).
-- **llama.cpp on llamadart 0.17.5** (`flutter_edge_ai_llama` 0.0.6), with
-  Apple companion 0.17.3. See [llama.cpp](/docs/llama).
+- **llama.cpp on llamadart 0.17.5** (`flutter_edge_ai_llama` 0.0.6; superseded by
+  0.2.0 on `^0.20.1`), with Apple companion 0.17.3. See [llama.cpp](/docs/llama).
 
 ## What's new in 2.4
 

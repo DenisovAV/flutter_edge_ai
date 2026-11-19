@@ -173,6 +173,19 @@ def workspace_flutter():
     return json.loads(config.read_text())["flutter"] if config.is_file() else None
 
 
+def ensure_web_test_fixture_link():
+    target = Path("../example/web/webgpu_bridge")
+    link = PACKAGE / "test/webgpu_bridge"
+    if link.is_symlink() and os.readlink(link) == str(target):
+        return
+    if link.is_symlink():
+        link.unlink()
+    elif link.exists():
+        raise RuntimeError(f"Expected symlink or absent path at {link}")
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(target, target_is_directory=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("lane", choices=("contracts", "native", "web", "package", "build", "device", "capabilities"))
@@ -291,8 +304,9 @@ def main():
         else:
             run([flutter, "test", "test/native_smoke_test.dart", fixture, "--reporter", "json"], smoke="published facade installs GGUF")
     elif args.lane == "web":
-        run([sys.executable, "tool/fetch_web_assets.py"])
+        run([dart, "run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html"])
         run([dart, "run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html", "--check"])
+        ensure_web_test_fixture_link()
         command = [sys.executable, "tool/run_web_smoke.py", "--flutter", flutter, "--model-url", args.model_url]
         if args.storage_helper_url:
             command += ["--storage-helper-url", args.storage_helper_url]
@@ -354,14 +368,14 @@ def main():
         if args.platform == "ios":
             command += ["--no-codesign"]
         elif args.platform == "web":
-            run([sys.executable, "tool/fetch_web_assets.py"])
+            run([dart, "run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html"])
             run([dart, "run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html", "--check"])
             command += ["--wasm"]
         run(command, PACKAGE / "example")
         if args.platform == "android":
             validate_android_apk(PACKAGE / "example/build/app/outputs/flutter-apk/app-release.apk")
         if args.platform == "web":
-            run([sys.executable, "tool/validate_web_build.py"])
+            run([sys.executable, "tool/validate_web_build.py", "--app-dir", str(PACKAGE / "example"), "--dart", dart])
 
 
 if __name__ == "__main__":

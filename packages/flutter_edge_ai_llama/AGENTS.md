@@ -1,7 +1,7 @@
 # llama.cpp adapter maintenance
 
-Version 0.1.0 requires core 2.6.0+ through public engine libraries; source
-targets llamadart ^0.20.1 (0.1.0 shipped on 0.17.5; 0.0.3 to 0.0.5 used SDK
+Version 0.2.0 requires core 2.6.0+ through public engine libraries and targets
+llamadart `^0.20.1` (0.1.0 shipped on 0.17.5; 0.0.3 to 0.0.5 used SDK
 0.15.1 / companion 0.15.0). Keep source qualification
 separate from hosted consumer qualification. Inference routes by declared type.
 LlamaEmbeddingBackend registers self-contained GGUF through core's embedding SPI; see doc/embeddings.md.
@@ -29,8 +29,10 @@ LlamaEmbeddingBackend registers self-contained GGUF through core's embedding SPI
 - The SDK constraint is `^0.20.1` (`>=0.20.1 <0.21.0`); the Apple companion
   is exact (`0.20.1`, native `v1.0.0-2`). Pub enforces the companion's
   SDK constraint (`>=0.20.1 <0.21.0`), and the Apple hook validates its
-  SwiftPM package. The Web verification lanes compare the staged bridge
-  (currently `v0.1.86`) against the resolved SDK's checksums. Preserve historical
+  SwiftPM package. Consumer Web setup stages and checks assets with
+  `dart run llamadart:web_setup --no-index-html` (currently `v0.1.86`), and
+  `tool/validate_web_build.py` checks release builds via `llamadart:web_setup --check --no-index-html --web-dir`
+  against the consuming app's resolved SDK. Preserve historical
   0.15.1 / 0.15.0 and 0.17.5 / 0.17.3 evidence without relabeling it.
   SDK 0.20.1 constrains workspace hooks/code_assets below 3.0. Never silently
   widen these constraints.

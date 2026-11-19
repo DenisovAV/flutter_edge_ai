@@ -2,6 +2,7 @@ import contextlib
 import io
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import struct
@@ -20,6 +21,83 @@ from smoke_result import require_smoke_success
 
 
 REAL_RUN_SMOKE = package_verify.run_smoke
+
+
+def _stage_synthetic_web_sdk_app(root, tag, assets):
+    manifest = json.dumps({
+        "release_tag": tag,
+        "files": {
+            name: {"size_bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}
+            for name, content in assets.items()
+        },
+    }).encode()
+    sdk = root / "llamadart_sdk"
+    (sdk / "bin").mkdir(parents=True)
+    (sdk / "lib").mkdir(parents=True)
+    (sdk / "pubspec.yaml").write_text("name: llamadart\nversion: 0.20.99\nenvironment:\n  sdk: '>=3.12.0 <4.0.0'\n")
+    asset_literals = ",\n".join(f"    {json.dumps(name)}: {list(content)}" for name, content in assets.items())
+    (sdk / "bin" / "web_setup.dart").write_text(
+        "import 'dart:io';\n"
+        f"const _tag = {json.dumps(tag)};\n"
+        f"const _manifest = <int>{list(manifest)};\n"
+        "const _assets = <String, List<int>>{\n"
+        f"{asset_literals}\n"
+        "};\n"
+        "bool _bytesEqual(List<int> a, List<int> b) {\n"
+        "  if (a.length != b.length) return false;\n"
+        "  for (var i = 0; i < a.length; i++) { if (a[i] != b[i]) return false; }\n"
+        "  return true;\n"
+        "}\n"
+        "void main(List<String> args) {\n"
+        "  if (!args.contains('--check') || !args.contains('--no-index-html')) {\n"
+        "    stderr.writeln('expected --check and --no-index-html');\n"
+        "    exit(64);\n"
+        "  }\n"
+        "  final idx = args.indexOf('--web-dir');\n"
+        "  if (idx < 0 || idx + 1 >= args.length) { exit(64); }\n"
+        "  final dir = args[idx + 1];\n"
+        "  final manifestFile = File('$dir/webgpu_bridge/manifest.json');\n"
+        "  if (!manifestFile.existsSync() || !_bytesEqual(manifestFile.readAsBytesSync(), _manifest)) {\n"
+        "    stderr.writeln('web_setup: manifest.json is missing or is not the $_tag manifest');\n"
+        "    exit(1);\n"
+        "  }\n"
+        "  for (final entry in _assets.entries) {\n"
+        "    final file = File('$dir/webgpu_bridge/${entry.key}');\n"
+        "    if (!file.existsSync() || !_bytesEqual(file.readAsBytesSync(), entry.value)) {\n"
+        "      stderr.writeln('web_setup: ${entry.key} does not match the $_tag manifest');\n"
+        "      exit(1);\n"
+        "    }\n"
+        "  }\n"
+        "  stdout.writeln('web_setup: bridge assets $_tag in $dir are verified.');\n"
+        "}\n"
+    )
+    app = root / "app"
+    (app / ".dart_tool").mkdir(parents=True)
+    (app / "lib").mkdir(parents=True)
+    (app / "pubspec.yaml").write_text(
+        "name: app\nenvironment:\n  sdk: '>=3.12.0 <4.0.0'\ndependencies:\n  llamadart:\n    path: ../llamadart_sdk\n"
+    )
+    (app / ".dart_tool" / "package_config.json").write_text(json.dumps({
+        "configVersion": 2,
+        "packages": [
+            {"name": "app", "rootUri": "../", "packageUri": "lib/", "languageVersion": "3.12"},
+            {"name": "llamadart", "rootUri": "../llamadart_sdk", "packageUri": "lib/", "languageVersion": "3.12"},
+        ],
+    }))
+    build_web = app / "build/web"
+    runtime = build_web / "webgpu_bridge"
+    runtime.mkdir(parents=True)
+    (runtime / "manifest.json").write_bytes(manifest)
+    for name, content in assets.items():
+        (runtime / name).write_bytes(content)
+    for filename in ("flutter_bootstrap.js", "main.dart.wasm"):
+        (build_web / filename).write_text("fixture")
+    web = validate_web_build.PACKAGE / "example/web"
+    (build_web / "index.html").write_text((web / "index.html").read_text())
+    (build_web / "cache_api.js").write_bytes((web / "cache_api.js").read_bytes())
+    (build_web / "cache_api.LICENSE").write_bytes((web / "cache_api.LICENSE").read_bytes())
+    (build_web / "_headers").write_bytes((web / "_headers").read_bytes())
+    return app, build_web, manifest
 
 
 class ToolingTests(unittest.TestCase):
@@ -362,30 +440,21 @@ class ToolingTests(unittest.TestCase):
     def test_consumer_additions_keep_runtime_hash_and_helper_interface_checks(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            runtime = root / "webgpu_bridge"
-            runtime.mkdir()
-            asset = b"pinned runtime"
-            (runtime / "runtime.js").write_bytes(asset)
-            manifest = json.dumps({"artifacts": {"runtime.js": {"size_bytes": len(asset), "sha256": hashlib.sha256(asset).hexdigest()}}}).encode()
-            (runtime / "manifest.json").write_bytes(manifest)
-            for filename in ["flutter_bootstrap.js", "main.dart.wasm"]:
-                (root / filename).write_text("fixture")
+            _, build_web, _ = _stage_synthetic_web_sdk_app(
+                root, "v0.1.86", {"llama_webgpu_bridge.js": b"pinned runtime"}
+            )
             web = validate_web_build.PACKAGE / "example/web"
-            (root / "index.html").write_text((web / "index.html").read_text())
             helper = (web / "cache_api.js").read_text() + "\nwindow.consumerExtra = true;\n"
-            (root / "cache_api.js").write_text(helper)
-            (root / "cache_api.LICENSE").write_bytes((web / "cache_api.LICENSE").read_bytes())
-            (root / "_headers").write_text((web / "_headers").read_text() + "  X-Content-Type-Options: nosniff\n")
-            with patch.object(validate_web_build, "FILES", ("runtime.js",)), \
-                 patch.object(validate_web_build, "MANIFEST_SHA256", hashlib.sha256(manifest).hexdigest()):
-                validate_web_build.validate(root)
-                (root / "cache_api.js").write_text(helper.replace("window.cacheHas", "window.missingCacheHas"))
-                with self.assertRaisesRegex(RuntimeError, "missing cacheHas"):
-                    validate_web_build.validate(root)
-                (root / "cache_api.js").write_text(helper)
-                (runtime / "runtime.js").write_bytes(b"changed runtime")
-                with self.assertRaisesRegex(RuntimeError, "corrupt runtime"):
-                    validate_web_build.validate(root)
+            (build_web / "cache_api.js").write_text(helper)
+            (build_web / "_headers").write_text((web / "_headers").read_text() + "  X-Content-Type-Options: nosniff\n")
+            validate_web_build.validate(build_web)
+            (build_web / "cache_api.js").write_text(helper.replace("window.cacheHas", "window.missingCacheHas"))
+            with self.assertRaisesRegex(RuntimeError, "missing cacheHas"):
+                validate_web_build.validate(build_web)
+            (build_web / "cache_api.js").write_text(helper)
+            (build_web / "webgpu_bridge/llama_webgpu_bridge.js").write_bytes(b"changed runtime")
+            with self.assertRaisesRegex(RuntimeError, "does not match"):
+                validate_web_build.validate(build_web)
 
     def test_javascript_checks_actual_exports_and_bootstrap_asset_selection(self):
         web = validate_web_build.PACKAGE / "example/web"
@@ -530,13 +599,63 @@ class ToolingTests(unittest.TestCase):
     def test_release_build_rejects_missing_or_corrupt_runtime(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            missing = root / "missing"
             with self.assertRaises(FileNotFoundError):
-                validate_web_build.validate(root)
-            runtime = root / "webgpu_bridge"
-            runtime.mkdir()
-            (runtime / "manifest.json").write_text("{}")
-            with self.assertRaisesRegex(RuntimeError, "wrong Web runtime manifest"):
-                validate_web_build.validate(root)
+                validate_web_build.validate(missing)
+            app, build_web, _ = _stage_synthetic_web_sdk_app(
+                root, "v0.1.86", {"llama_webgpu_bridge.js": b"pinned runtime"}
+            )
+            (build_web / "webgpu_bridge/manifest.json").write_text("{}")
+            with self.assertRaisesRegex(RuntimeError, "manifest.json is missing or is not the v0.1.86 manifest"):
+                validate_web_build.validate(build_web, app_dir=app)
+
+    def test_release_build_accepts_alternate_future_sdk_pin_and_refuses_stale_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, build_web, _ = _stage_synthetic_web_sdk_app(
+                root,
+                "v0.9.99",
+                {
+                    "llama_webgpu_bridge.js": b"future-bridge-bytes",
+                    "llama_webgpu_core.wasm": b"future-wasm-bytes",
+                },
+            )
+            validate_web_build.validate(build_web)
+            (build_web / "webgpu_bridge/llama_webgpu_core.wasm").write_bytes(b"stale-v0.1.86-wasm-bytes")
+            with self.assertRaisesRegex(RuntimeError, "does not match the v0.9.99 manifest"):
+                validate_web_build.validate(build_web)
+            stale_manifest = json.dumps({"release_tag": "v0.1.86", "files": {}}).encode()
+            (build_web / "webgpu_bridge/manifest.json").write_bytes(stale_manifest)
+            with self.assertRaisesRegex(RuntimeError, "is not the v0.9.99 manifest"):
+                validate_web_build.validate(build_web)
+
+    def test_web_and_build_lanes_stage_via_sdk_and_keep_test_fixture_link(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "connector"
+            (package / "example/web").mkdir(parents=True)
+            (package / ".flutter-version").write_text("3.47.1")
+            with patch.object(package_verify, "PACKAGE", package), \
+                 patch.object(sys, "argv", ["verify.py", "web", "--model-url", "https://example.test/chat.gguf"]), \
+                 patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+                 patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+                package_verify.main()
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertEqual(commands[1][1:], ["run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html"])
+            self.assertEqual(commands[2][1:], ["run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html", "--check"])
+            self.assertEqual(Path(commands[3][1]).name, "run_web_smoke.py")
+            link = package / "test/webgpu_bridge"
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(os.readlink(link), "../example/web/webgpu_bridge")
+            with patch.object(package_verify, "PACKAGE", package), \
+                 patch.object(sys, "argv", ["verify.py", "build", "--platform", "web"]), \
+                 patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+                 patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+                package_verify.main()
+            build_commands = [call.args[0] for call in run.call_args_list]
+            self.assertEqual(build_commands[2][1:], ["run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html"])
+            self.assertEqual(build_commands[3][1:], ["run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html", "--check"])
+            self.assertEqual(Path(build_commands[-1][1]).name, "validate_web_build.py")
+            self.assertIn("--app-dir", build_commands[-1])
 
 
 if __name__ == "__main__":

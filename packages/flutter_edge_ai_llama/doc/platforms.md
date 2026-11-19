@@ -1,9 +1,10 @@
 # Platform support
 
 The connector provides GGUF inference through llamadart on Android, iOS, macOS,
-Windows, Linux and Web. Version 0.1.0 requires Flutter 3.44+, Dart 3.12+,
-core 2.6.0+ (`flutter_edge_ai: ^2.6.0`) and llamadart 0.17.5. The 0.0.x releases
-are the historical core 2.5.x line.
+Windows, Linux and Web. Version 0.2.0 requires Flutter 3.44+, Dart 3.12+,
+core 2.6.0+ (`flutter_edge_ai: ^2.6.0`) and llamadart `^0.20.1` (0.1.0 used
+llamadart 0.17.5 with Apple companion 0.17.3; the 0.0.x releases are the
+historical core 2.5.x line).
 A passing build does not qualify every device, model or accelerator.
 
 Version 0.0.6 pairs llamadart `>=0.17.5 <0.17.6` with exact Apple
@@ -34,8 +35,7 @@ memory. Other SDK failures map to `StateError`; wrappers retain the cause and st
 
 ## Consumer setup
 
-This section describes the source checkout. See the
-[README recipe](../README.md#add-it-to-your-app).
+See the [README recipe](../README.md#add-it-to-your-app).
 
 Declare `ModelFileType.gguf` and register `LlamaEngineProvider`. Put this selection
 in the **application/workspace root** pubspec; dependency settings do not propagate:
@@ -80,10 +80,11 @@ CI lane or qualification of the new SDK pair on phones.
 Oldest-device compatibility still requires device testing.
 
 The Apple metadata fix in [native #110](https://github.com/leehack/llamadart-native/issues/110)
-is included in companion 0.17.3 (native v0.8.0-1). App Store submission remains
-unvalidated. Apple workspace setup is covered below.
+was included in companion 0.17.3 (native v0.8.0-1) and carried forward into
+0.20.1 (native v1.0.0-2). App Store submission remains unvalidated. Apple
+workspace setup is covered below.
 
-llamadart 0.17.5 reads native hook contract 2 and downloads the Windows x64
+Since llamadart 0.17.5, the SDK reads native hook contract 2 and downloads the Windows x64
 CUDA sidecar only when `cuda` is selected. A CPU-only SDK download is about
 15 MiB; it no longer includes the large CUDA DLL payload
 ([#812](https://github.com/leehack/llamadart/issues/812)).
@@ -141,21 +142,25 @@ qualify every device, model or accelerator.
 | Web | Wasm build and real worker/Wasm generation | Hardware WebGPU, advanced model/browser combinations |
 
 CI uses pinned Flutter 3.47.1 for reproducible checks; that is a test SDK, not the
-package minimum. The source constraint is `llamadart: ^0.20.1`. The local
-macOS arm64 checks used SDK **0.20.1**, Apple companion **0.20.1**
-(native **v1.0.0-2**), and Web bridge **v0.1.86**. The packaged macOS CPU chat smoke passed three lifecycle cycles. EmbeddingGemma 2
-passed on macOS CPU and Metal, and Chrome on macOS passed the dart2wasm WebGPU
-structured-output test. The Android 16 Pixel 9 Pro emulator completed three CPU chat
-cycles, selected CPU for automatic EmbeddingGemma 2 placement, and refused an
-explicit GPU embedding request.
-The Linux, Windows and minimum-SDK source checks run in GGUF source qualification.
+package minimum. Version 0.2.0 constrains `llamadart: ^0.20.1`. On **2026-11-19**,
+local checks on a **MacBook Pro (Apple M4 Max, 64 GB, macOS 26.7.1)** used SDK
+**0.20.1**, Apple companion **0.20.1** (native **v1.0.0-2**), and Web bridge
+**v0.1.86**:
+- Packaged macOS CPU chat smoke (`verify.py native`, 1 CPU thread): 3 lifecycle cycles passed in **10,174 ms**.
+- macOS EmbeddingGemma 2 Q8_0: CPU passed 3 cycles (dim 768, fp32 golden cosines **0.999744–0.999940**, min **0.99974**) and Metal passed 3 cycles (CPU/Metal cosine **0.999939**).
+- Web (`verify.py web`, Chrome on macOS 26.7.1, dart2wasm): CPU load, reply generation, cancellation rollback/retry, and the WebGPU structured-output check passed.
+- Android (`Android 16 API 36 arm64-v8a Pixel_9_Pro` emulator): packaged CPU chat smoke passed 3 lifecycle cycles in **9,246 ms** (1 CPU thread); EmbeddingGemma 2 Q8_0 selected CPU automatically (3 cycles, dim 768, fp32 golden cosines **0.998871–0.999703**, min **0.99887**), and explicit GPU embeddings were refused before loading (`unavailable on Android`).
+- Hosted package gate (`verify.py package`) passed with 0 warnings; maintainer also reported the contracts lane green on Flutter 3.50 against 0.20.1 and Linux/Windows/minimum-SDK source jobs green on CI ([PR #855](https://github.com/DenisovAV/flutter_edge_ai/pull/855#issuecomment-7010382093)).
 
 The example pins the Apple companion exactly. Its published dependency permits
 `>=0.20.1 <0.21.0`; the SDK build hook checks the selected SwiftPM runtime.
-For Web, the connector verifies the bridge manifest and each asset. After
-resolving a newer SDK patch, run `dart run llamadart:web_setup --no-index-html --check`
-from the app to check those bytes against the **resolved SDK's** manifest.
-If its pin changes, update the staged bridge and rerun Web qualification.
+For Web, consuming apps stage bridge assets with
+`dart run llamadart:web_setup --no-index-html`, verify staged files with
+`dart run llamadart:web_setup --no-index-html --check`, and validate release
+builds with `tool/validate_web_build.py` (which invokes
+`llamadart:web_setup --check --no-index-html --web-dir` from the consuming app
+against its resolved SDK alongside bootstrap, storage-helper, license and
+isolation-header checks).
 The previously shipped SDK 0.17.5 used Apple companion 0.17.3 and bridge v0.1.79.
 
 llamadart verifies llama.cpp archive SHA-256
@@ -175,17 +180,20 @@ or absent model execution fails. Optional capability fixtures have their own
 
 ### Embedding qualification by platform
 
-The following historical results use the pinned EmbeddingGemma 2 Q8_0 fixture
-and predate the current SDK update; they do not qualify SDK 0.20.1. Inference
-qualification does not qualify embeddings or other EG2 quantizations. Source
-checks and standalone hosted-consumer checks remain separate gates.
+All results below use the pinned EmbeddingGemma 2 Q8_0 fixture. **macOS**
+CPU/Metal and the **Android 16 arm64 emulator** were measured on **llamadart
+0.20.1** (2026-11-19); **Linux**, **Windows**, and the **Pixel 8a** diagnostic
+are historical **0.15.1** measurements that predate 0.20.1 (Linux and Windows
+CPU embeddings also run in GGUF source CI). Inference qualification does not
+qualify embeddings or other EG2 quantizations. Source checks and standalone
+hosted-consumer checks remain separate gates.
 
 | Platform | Embedding evidence | Remaining scope |
 | --- | --- | --- |
-| macOS | CPU and Metal measured; packaged lifecycle and CPU/Metal cosine 0.99994 | Other devices, models and quantizations |
-| Linux | Packaged CPU embeddings measured | GPU and other hardware |
-| Windows | Packaged CPU embeddings measured | GPU and other hardware |
-| Android | Maintainer diagnostic on Pixel 8a CPU and explicit Vulkan GPU; see below. Packaged CPU embeddings on the arm64 emulator (API 37, 2026-10-22): min cos 0.99887 to Sentence Transformers fp32 (macOS CPU: 0.99974), automatic placement on the CPU without the warning, explicit GPU refused; CI runs the same gates on the x86_64 emulator | CPU qualification on physical devices; explicit GPU embeddings are refused |
+| macOS | **SDK 0.20.1 (2026-11-19, MacBook Pro Apple M4 Max, 64 GB, macOS 26.7.1):** packaged CPU (3 cycles, dim 768, min cos **0.99974** to Sentence Transformers fp32) and Metal (3 cycles, CPU/Metal cos **0.99994** [`0.999939`]) | Other devices, models and quantizations |
+| Linux | Historical (SDK 0.15.1): packaged CPU embeddings measured; GGUF source CI runs Linux CPU embeddings against workspace core and resolved SDK | GPU and other hardware |
+| Windows | Historical (SDK 0.15.1): packaged CPU embeddings measured; GGUF source CI runs Windows CPU embeddings against workspace core and resolved SDK | GPU and other hardware |
+| Android | **SDK 0.20.1 (2026-11-19, Android 16 API 36 `arm64-v8a` `Pixel_9_Pro` emulator):** packaged CPU embeddings (3 cycles, dim 768, min cos **0.99887** to Sentence Transformers fp32), automatic placement on CPU, explicit GPU refused (`unavailable on Android`). Historical (0.15.1): maintainer Pixel 8a diagnostic below; CI runs the same gates on the x86_64 emulator | CPU qualification on physical devices; explicit GPU embeddings are refused |
 | iOS | Unqualified; simulator GPU embeddings are refused | Physical-device CPU/Metal and simulator CPU embedding execution |
 | Web | Unavailable | No GGUF embedding implementation |
 

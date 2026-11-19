@@ -5,10 +5,12 @@ set -u
 . "$(dirname "$0")/define_guard.sh"
 failed=0
 for name in HF_TOKEN hf_token TOKEN GITHUB_TOKEN_VALUE API_KEY APIKEY OPENAI_API_KEY \
-  DB_PASSWORD CLIENT_SECRET SECRET GCP_CREDENTIALS; do
+  DB_PASSWORD CLIENT_SECRET SECRET GCP_CREDENTIALS accessToken githubToken \
+  clientSecret dbPassword openAiApiKey; do
   if ! is_secret_define "$name"; then echo "FAIL: $name passed"; failed=1; fi
 done
-for name in STT_TOKENIZER_FILE TOKENIZER MTK_MODEL STT_MODEL_FILE TTS_VOICE KEYWORD_LIST; do
+for name in STT_TOKENIZER_FILE TOKENIZER MTK_MODEL STT_MODEL_FILE TTS_VOICE KEYWORD_LIST \
+  sttTokenizerFile; do
   if is_secret_define "$name"; then echo "FAIL: $name refused"; failed=1; fi
 done
 [ "$failed" = 0 ] && echo "define guard: ok"

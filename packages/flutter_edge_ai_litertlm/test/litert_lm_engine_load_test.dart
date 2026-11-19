@@ -465,6 +465,45 @@ void main() {
     }
   });
 
+  test('a CPU-only FunctionGemma load reads no activation header and warns '
+      'about no GPU attempt; a GPU load of an unreadable one does', () async {
+    // Not a .litertlm container: the activation header cannot be read.
+    final path = write('fg.litertlm', Uint8List.fromList(List.filled(64, 7)));
+    host = _FakeHost();
+    _install(host);
+    Future<List<String>> printed(Future<void> Function() body) async {
+      final lines = <String>[];
+      await runZoned(
+        body,
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => lines.add(line),
+        ),
+      );
+      return lines;
+    }
+
+    bool warns(List<String> lines) =>
+        lines.any((l) => l.contains('could not read which activation type'));
+    final cpu = await printed(() async {
+      final m = await load(
+        path,
+        modelType: ModelType.functionGemma,
+        preferredBackend: PreferredBackend.cpu,
+      );
+      await m.close();
+    });
+    expect(warns(cpu), isFalse, reason: '$cpu');
+    final gpu = await printed(() async {
+      final m = await load(
+        path,
+        modelType: ModelType.functionGemma,
+        preferredBackend: PreferredBackend.gpu,
+      );
+      await m.close();
+    });
+    expect(warns(gpu), isTrue, reason: '$gpu');
+  });
+
   test('the GPU activation follows the model type the app declared, not the '
       "bundle's: a Gemma 4 bundle declared gemmaIt stays at the GPU default "
       'above 2,048 tokens (FP32 on Adreno 830 fails to invoke)', () async {

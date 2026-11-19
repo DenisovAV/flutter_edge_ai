@@ -314,7 +314,11 @@ class LiteRtLmEngine
       ModelType.functionGemma => LlmModelFamily.functionGemma,
       _ => null,
     };
-    if (family == null) return (type: null, reason: null);
+    // The CPU executor does not read the type, and a CPU-only load has no GPU
+    // attempt to warn about.
+    if (family == null || config.preferredBackend == PreferredBackend.cpu) {
+      return (type: null, reason: null);
+    }
     bool? declares;
     if (family == LlmModelFamily.functionGemma) {
       final read = await tryReadBundleActivationDeclaration(config.modelPath);

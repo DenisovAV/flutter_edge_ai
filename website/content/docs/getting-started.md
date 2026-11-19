@@ -43,6 +43,9 @@ only the engines, stores and features your app uses — see
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
 
+The upcoming `flutter_edge_ai_llama` 0.2.0 connector pairs llamadart
+`^0.20.1` with Apple companion 0.20.1. See [llama.cpp](/docs/llama).
+
 ## What's new in 2.6
 
 - **Typed JSON replies** (`flutter_edge_ai` 2.6.0): `openSession` and
@@ -54,9 +57,6 @@ only the engines, stores and features your app uses — see
   and `ContextLimitException` distinguishes an input that never fit.
 - **Open APIs are canonical**: `createSession`, `createChat`, `session` and
   `chat` remain compatible but are deprecated until core 3.0.0.
-- **llama.cpp on llamadart ^0.20.1** (`flutter_edge_ai_llama` 0.2.0, with
-  Apple companion 0.20.1; 0.1.0 added `responseFormat` and core 2.6 sessions on
-  0.17.5). See [llama.cpp](/docs/llama).
 - [Add your app to the showcase](/showcase/submit) — submit a shipped Flutter
   Edge AI app for review.
 

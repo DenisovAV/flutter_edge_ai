@@ -652,9 +652,10 @@ class ToolingTests(unittest.TestCase):
                  patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
                 package_verify.main()
             build_commands = [call.args[0] for call in run.call_args_list]
-            self.assertEqual(build_commands[2][1:], ["run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html"])
-            self.assertEqual(build_commands[3][1:], ["run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html", "--check"])
+            self.assertEqual(build_commands[2][1:], ["run", "llamadart:web_setup", "--no-index-html"])
+            self.assertEqual(build_commands[3][1:], ["run", "llamadart:web_setup", "--no-index-html", "--check"])
             self.assertEqual(Path(build_commands[-1][1]).name, "validate_web_build.py")
+            self.assertEqual(run.call_args_list[2].kwargs["cwd"], package / "example")
             self.assertIn("--app-dir", build_commands[-1])
 
 

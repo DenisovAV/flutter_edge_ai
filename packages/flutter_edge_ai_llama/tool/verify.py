@@ -368,8 +368,8 @@ def main():
         if args.platform == "ios":
             command += ["--no-codesign"]
         elif args.platform == "web":
-            run([dart, "run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html"])
-            run([dart, "run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html", "--check"])
+            run([dart, "run", "llamadart:web_setup", "--no-index-html"], PACKAGE / "example")
+            run([dart, "run", "llamadart:web_setup", "--no-index-html", "--check"], PACKAGE / "example")
             command += ["--wasm"]
         run(command, PACKAGE / "example")
         if args.platform == "android":

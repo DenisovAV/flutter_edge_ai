@@ -1828,7 +1828,13 @@ class LiteRtLmFfiClient {
     backend: _backend,
     activationDataType: _activationDataType,
     gpuActivationReason: _gpuActivationReason,
+    android: androidForTest ?? Platform.isAndroid,
   );
+
+  /// Test seam: whether [streamFailureFor] words its hint for Android; null
+  /// asks the platform.
+  @visibleForTesting
+  bool? androidForTest;
 
   /// Conversation creates, and rewinds of a stopped turn, currently suspended
   /// across an `await`.

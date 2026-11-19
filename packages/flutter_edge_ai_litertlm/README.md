@@ -1548,6 +1548,22 @@ ActivationDataType.float32` still asks for it, but do not ask on an Adreno 8xx
 GPU; if a turn then fails with `Stream error: INTERNAL`, the error names
 float32 as the likely cause.
 
+### Gemma 4 on an Adreno GPU fails at the first token
+
+Symptom: an Android GPU load succeeds, then the first turn fails with
+`Stream error: INTERNAL … Failed to invoke the compiled model`, and logcat
+shows `Invalid work group size` from `delegate_opencl.cc`.
+
+Cause: with the current native build, LiteRT's GPU kernels ask for more work
+items than some Adreno GPUs allow: an Adreno 610 at the default half precision
+(a Galaxy A05s at `maxTokens` 4096;
+[LiteRT #12075](https://github.com/google-ai-edge/LiteRT/pull/12075)) and
+an Adreno 830 at `ActivationDataType.float32` (a Galaxy S25 Ultra). Since 1.21.0
+the error message names this.
+
+Fix: load the model on the CPU (`preferredBackend: PreferredBackend.cpu`). A
+future native build is expected to fix it.
+
 ### `Qwen3-0.6B.litertlm` fails to load
 
 Symptom: the engine fails to create for `Qwen3-0.6B.litertlm` from

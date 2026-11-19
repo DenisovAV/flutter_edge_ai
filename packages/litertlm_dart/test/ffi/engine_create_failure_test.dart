@@ -173,11 +173,13 @@ void main() {
       String? backend = 'gpu',
       int? activationDataType = 0,
       GpuActivationReason? reason,
+      bool android = false,
     }) => streamFailureMessage(
       nativeError: error,
       backend: backend,
       activationDataType: activationDataType,
       gpuActivationReason: reason,
+      android: android,
     );
 
     test('a float32 GPU turn that failed in the compiled model names float32 '
@@ -209,6 +211,39 @@ void main() {
       );
     });
 
+    test('on Android, a GPU turn that failed in the compiled model at any '
+        'other activation names the Adreno work-group limits and the CPU', () {
+      // The Galaxy A05s (Adreno 610) failure of a float16 Gemma 4 turn.
+      for (final activation in [null, 1]) {
+        final message = stream(activationDataType: activation, android: true);
+        expect(message, startsWith('Stream error: $s25 ('));
+        expect(message, contains('Invalid work group size'));
+        expect(message, contains('LiteRT #12075'));
+        expect(message, contains('PreferredBackend.cpu'));
+        expect(message, isNot(contains('float32')));
+      }
+      // float32 keeps its own wording on Android too.
+      final fp32 = stream(android: true);
+      expect(fp32, contains('float32 activations on the GPU'));
+      expect(fp32, isNot(contains('#12075')));
+      for (final message in [
+        stream(activationDataType: 1, android: true, backend: 'cpu'),
+        stream(activationDataType: null, android: true, backend: null),
+        stream(
+          activationDataType: 1,
+          android: true,
+          error: 'RESOURCE_EXHAUSTED: context full',
+        ),
+        stream(
+          activationDataType: 1,
+          android: true,
+          error: 'RESOURCE_EXHAUSTED: Failed to invoke the compiled model',
+        ),
+      ]) {
+        expect(message, isNot(contains('(')), reason: message);
+      }
+    });
+
     test('is left bare off float32, off the GPU and for other errors', () {
       for (final message in [
         stream(activationDataType: null),
@@ -216,9 +251,11 @@ void main() {
         stream(backend: 'cpu'),
         stream(backend: null),
         stream(error: 'RESOURCE_EXHAUSTED: context full'),
+        stream(error: 'NOT_FOUND: Failed to invoke the compiled model'),
       ]) {
         expect(message, startsWith('Stream error: '));
         expect(message, isNot(contains('float32')));
+        expect(message, isNot(contains(' (')), reason: 'no hint at all');
       }
     });
   });

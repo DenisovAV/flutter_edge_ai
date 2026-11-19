@@ -3,7 +3,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 /// Why a response format is refused in a browser with [userAgent], in an app
 /// compiled by dart2wasm when [wasm], for a model loaded on [backend]; null
 /// where the discriminating run passed: Chrome on macOS, a dart2wasm build
-/// and WebGPU (2026-11-04, Chrome 156 on macOS arm64, bridge assets v0.1.79,
+/// and WebGPU (2026-11-19, macOS arm64, llamadart 0.20.1, bridge assets v0.1.86,
 /// SmolLM2 135M). The user agent names macOS, not the CPU: Chrome reports
 /// "Intel Mac OS X" on Apple silicon too. Pure, so the VM tests it.
 String? webStructuredOutputRefusal(

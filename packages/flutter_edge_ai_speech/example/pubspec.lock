@@ -188,14 +188,14 @@ packages:
       path: "../../flutter_edge_ai"
       relative: true
     source: path
-    version: "2.6.0"
+    version: "2.7.0"
   flutter_edge_ai_agent:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_agent"
       relative: true
     source: path
-    version: "0.4.2"
+    version: "0.4.3"
   flutter_edge_ai_embeddings:
     dependency: "direct overridden"
     description:

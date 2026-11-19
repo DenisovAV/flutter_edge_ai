@@ -1,4 +1,4 @@
-## Unreleased
+## 1.21.0
 - A stopped, paused turn that ends after the next one no longer reorders replayed history.
 - The runtime and the native build hook move to `litertlm_dart`; `user_defines` key is now `litertlm_dart:`.
 - `LitertlmManifestResolver` declares the `inference` role and returns `family`.

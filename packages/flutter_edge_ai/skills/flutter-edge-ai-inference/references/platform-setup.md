@@ -52,7 +52,9 @@ Only `arm64-v8a` is shipped for `.litertlm`. The OpenCL manifest entries the GPU
 backend needs are merged in by the plugin; nothing to add.
 
 `PreferredBackend.npu` on Snapdragon is opt-in (`flutter_edge_ai_litertlm`
-1.10.0+): Qualcomm licenses its QNN runtime for redistribution inside an app
+1.10.0+; the `user_defines` key below is `litertlm_dart:` from 1.21.0, and
+earlier releases read `flutter_edge_ai_litertlm:`, which 1.21.0 still accepts
+with a warning): Qualcomm licenses its QNN runtime for redistribution inside an app
 only, so the app's own `pubspec.yaml` asks for it — the workspace root's, if
 the app is a pub workspace member:
 
@@ -101,13 +103,14 @@ MT6991/MT6993 bundles are refused there.
 
 ## iOS
 
-Minimum iOS 15.0 — 16.0 if the app includes `flutter_edge_ai_mediapipe`, 16.4
-with `flutter_edge_ai_llama`.
+Minimum iOS 15.0 — 15.1 if the app includes `flutter_edge_ai_onnx` (0.10.0:
+Microsoft compiles ONNX Runtime for iOS 15.1), 16.0 with
+`flutter_edge_ai_mediapipe`, 16.4 with `flutter_edge_ai_llama`.
 
 With CocoaPods, in `ios/Podfile`, declared once:
 
 ```ruby
-platform :ios, '15.0'   # '16.0' if the app includes flutter_edge_ai_mediapipe
+platform :ios, '15.0'   # '15.1' with flutter_edge_ai_onnx, '16.0' with flutter_edge_ai_mediapipe
 use_frameworks! :linkage => :static
 ```
 

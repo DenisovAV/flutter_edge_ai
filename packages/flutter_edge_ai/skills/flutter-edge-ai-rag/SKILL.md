@@ -417,7 +417,7 @@ The same repos hold each bundle compiled for one SoC's NPU
 `embeddinggemma-2-text-vision-440m_Qualcomm_QCS8275.litertlm`, …). It runs on
 Qualcomm Android (arm64) and Qualcomm Linux arm64, in an app whose pubspec (the
 workspace root's, for a workspace member) sets
-`hooks: user_defines: flutter_edge_ai_litertlm: qualcomm_npu: true` (the flag
+`hooks: user_defines: litertlm_dart: qualcomm_npu: true` (the flag
 the LLM NPU path uses), loaded with `preferredBackend: PreferredBackend.npu`:
 
 ```dart
@@ -494,7 +494,7 @@ final npuIndex = await rag.open(
   `…_Google_Tensor_G5.litertlm` / `…_Google_Tensor_G6.litertlm` (270m, 440m)
   load the same way with `preferredBackend: PreferredBackend.npu`, in an app
   whose pubspec (the workspace root's, for a workspace member) sets
-  `hooks: user_defines: flutter_edge_ai_litertlm: google_tensor_npu: true` (the
+  `hooks: user_defines: litertlm_dart: google_tensor_npu: true` (the
   flag the LLM path uses), on
   a Pixel with that Tensor generation and Android 16 or later, not a BP2A
   build. Profile id: the CPU text id plus the SoC, e.g. `-npu-tensor_g6`,
@@ -504,7 +504,7 @@ final npuIndex = await rag.open(
   `…_MediaTek_MT6991.litertlm` / `…_MediaTek_MT6993.litertlm` are accepted the
   same way with `preferredBackend: PreferredBackend.npu`, in an app whose pubspec
   (the workspace root's, for a workspace member) sets
-  `hooks: user_defines: flutter_edge_ai_litertlm: mediatek_npu: true`, on a phone with that SoC, Android 12 or later, whose
+  `hooks: user_defines: litertlm_dart: mediatek_npu: true`, on a phone with that SoC, Android 12 or later, whose
   vendor exposes NeuroPilot to apps. Profile id: the CPU text id plus the SoC,
   e.g. `-npu-mt6991`. Not run on an MT6991/MT6993 phone yet; the LLM path
   runs on an MT6989.

@@ -152,7 +152,7 @@ dev_dependencies:
 # hooks: user_defines because the example is not a workspace member.
 hooks:
   user_defines:
-    flutter_edge_ai_litertlm:
+    litertlm_dart:
       qualcomm_npu: true
       google_tensor_npu: true
       mediatek_npu: true

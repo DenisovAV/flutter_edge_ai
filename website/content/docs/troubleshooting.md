@@ -276,7 +276,7 @@ floor applies only to the GPU and CPU attempts of a generic bundle.
 **`PreferredBackend.npu` on Android falls back to GPU, or an NPU bundle fails
 to load, after an upgrade.** From `flutter_edge_ai_litertlm` 1.10.0 the
 Qualcomm QNN runtime is not part of the package; the app opts in with
-`qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:` in
+`qualcomm_npu: true` under `hooks: user_defines: litertlm_dart:` in
 its pubspec — see [LiteRT-LM](/docs/litertlm). Without it a bundle compiled for
 an NPU is refused with a `BackendInitException` whose
 `NpuDispatchUnavailableException` names it. A generic bundle never runs on the
@@ -381,9 +381,12 @@ if you hit it.
 ## Native libraries fetched at build time
 
 Some packages download their native library from a GitHub Release when you first
-build for a platform, then cache it under `~/.cache/flutter_gemma/native/`
-(`~/Library/Caches/…` on macOS, `%LOCALAPPDATA%\…` on Windows). This applies to
-`flutter_edge_ai_litertlm` (always has), `flutter_edge_ai_onnx`, and
+build for a platform, then cache it. LiteRT-LM (`litertlm_dart`, under
+`flutter_edge_ai_litertlm`) caches each release in its own directory under
+`~/.cache/litertlm_dart/native/` (`~/Library/Caches/…` on macOS,
+`%LOCALAPPDATA%\…` on Windows); `flutter_edge_ai_onnx` and
+`flutter_edge_ai_sqlite` cache under `~/.cache/flutter_gemma/native/`. This
+applies to `flutter_edge_ai_litertlm` (always has), `flutter_edge_ai_onnx`, and
 `flutter_edge_ai_sqlite` (every release; as `flutter_gemma_rag_sqlite` from
 1.3.0 — before that it shipped the loadables inside the package).
 
@@ -392,9 +395,10 @@ build for a platform, then cache it under `~/.cache/flutter_gemma/native/`
   `flutter_edge_ai_onnx` also needs `repo1.maven.org`, and the `qualcomm_npu`
   opt-in needs Maven Central (Android) or `softwarecenter.qualcomm.com` (Linux
   arm64). In an air-gapped or proxied CI,
-  copy the whole `flutter_gemma/native` cache directory from a machine that
-  built the same package versions, including its hidden version-marker files —
-  a folder copied without them is discarded and fetched again. Only the
+  copy the cache directories (`litertlm_dart/native` and `flutter_gemma/native`)
+  from a machine that built the same package versions; for
+  `flutter_gemma/native`, include its hidden version-marker files — a folder
+  copied without them is discarded and fetched again. Only the
   Qualcomm NPU stack has settings that point the build at a mirror or a copy
   you vendor yourself (`qualcomm_npu_maven_url`, `qualcomm_npu_aar`,
   `qualcomm_npu_qairt_zip`; see [NPU](#npu)).

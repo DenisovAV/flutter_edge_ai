@@ -578,7 +578,7 @@ has. The released Linux bundle needs glibc 2.34, so this is a stale copy in the
 build cache. Clear it and let `hook/build.dart` re-fetch the release:
 
 ```
-rm -rf ~/.cache/flutter_gemma/native
+rm -rf ~/.cache/litertlm_dart/native
 flutter clean && flutter run
 ```
 

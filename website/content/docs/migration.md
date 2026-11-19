@@ -532,7 +532,7 @@ on the device. An app that wants the Qualcomm NPU asks for it in its
 ```
 hooks:
   user_defines:
-    flutter_edge_ai_litertlm:
+    litertlm_dart:
       qualcomm_npu: true
 ```
 
@@ -1146,7 +1146,9 @@ inference engine. See the full [Installation guide](/docs/installation).
 **`dlopen` "library not found" after upgrading from `flutter_gemma_*`:** run
 `flutter clean` and delete `~/Library/Caches/flutter_gemma/native` (Linux:
 `~/.cache/flutter_gemma/native`, Windows: `%LOCALAPPDATA%\flutter_gemma\native`),
-then `flutter pub get`.
+then `flutter pub get`. Since LiteRT-LM moved to `litertlm_dart` (the
+`flutter_edge_ai_litertlm` released with core 2.7.0), its own cache is
+`litertlm_dart/native` in the same places.
 `flutter_edge_ai_litertlm` owns the native LiteRT library;
 `flutter_edge_ai_speech` consumes it transitively — it has no Native-Assets hook
 of its own. `flutter_edge_ai_embeddings` has no native code at all.

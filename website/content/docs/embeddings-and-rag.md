@@ -479,7 +479,7 @@ print(embedder.activeBackend); // PreferredBackend.npu
 ```
 
 - **The app opts in to Qualcomm's stack** with the flag the LLM NPU path uses,
-  **qualcomm_npu: true** under **hooks: user_defines: flutter_edge_ai_litertlm:**
+  **qualcomm_npu: true** under **hooks: user_defines: litertlm_dart:**
   ([LiteRT-LM](/docs/litertlm)).
 - **Use the bundle for the device's SoC.** Run on device: SM8850
   (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
@@ -523,7 +523,7 @@ Google's `…_Google_Tensor_G5.litertlm` and `…_Google_Tensor_G6.litertlm`
 bundles (270m, 440m, 740m) load from flutter_edge_ai_litertlm 1.15.0 on a **Pixel with
 that Tensor generation and Android 16 or later** (not a BP2A build), with
 **PreferredBackend.npu**, in an app whose pubspec sets **google_tensor_npu:
-true** under **hooks: user_defines: flutter_edge_ai_litertlm:**
+true** under **hooks: user_defines: litertlm_dart:**
 ([LiteRT-LM](/docs/litertlm)). Install the bundle from its model's repository at
 the revision the [Model Registry](/docs/registry) pins (each size has its own),
 and load it as above.

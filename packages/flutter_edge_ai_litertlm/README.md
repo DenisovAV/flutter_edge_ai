@@ -840,7 +840,7 @@ assert(embedder.activeBackend == PreferredBackend.npu);
 ```
 
 - **Opt in to the Qualcomm stack**, as for the LLM NPU path:
-  `qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:`
+  `qualcomm_npu: true` under `hooks: user_defines: litertlm_dart:`
   ([Qualcomm NPU](#qualcomm-npu-on-android-and-linux-arm64-opt-in)).
 - **Pick the bundle for the device's SoC.** Run on device: SM8850
   (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
@@ -1316,7 +1316,7 @@ The dispatch is opt-in, as Qualcomm's is:
 ```yaml
 hooks:
   user_defines:
-    flutter_edge_ai_litertlm:
+    litertlm_dart:
       google_tensor_npu: true
 ```
 
@@ -1350,7 +1350,7 @@ The dispatch is opt-in:
 ```yaml
 hooks:
   user_defines:
-    flutter_edge_ai_litertlm:
+    litertlm_dart:
       mediatek_npu: true
 ```
 
@@ -1395,7 +1395,7 @@ Snapdragon, opt in from your app's `pubspec.yaml`:
 ```yaml
 hooks:
   user_defines:
-    flutter_edge_ai_litertlm:
+    litertlm_dart:
       qualcomm_npu: true
 ```
 
@@ -1420,7 +1420,7 @@ point it at a mirror or at the AAR itself:
 ```yaml
 hooks:
   user_defines:
-    flutter_edge_ai_litertlm:
+    litertlm_dart:
       qualcomm_npu: true
       qualcomm_npu_maven_url: https://maven.example.com/maven2
       # or: qualcomm_npu_aar: third_party/qnn-runtime-2.50.0.aar
@@ -1451,7 +1451,7 @@ SHA-256, and caches them; about 90 MB more installed. Offline, download
 ```yaml
 hooks:
   user_defines:
-    flutter_edge_ai_litertlm:
+    litertlm_dart:
       qualcomm_npu: true
       qualcomm_npu_qairt_zip: third_party/v2.50.0.260828.zip
 ```

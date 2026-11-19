@@ -1,15 +1,11 @@
-// This test exercises the legacy native-conversation constructor directly.
-// ignore_for_file: deprecated_member_use
-
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
-import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'ffi_test_support.dart';
 
 final _image1 = Uint8List.fromList([1, 1]);
 final _image2 = Uint8List.fromList([2, 2]);
@@ -23,19 +19,15 @@ List<String> _parts(
   Uint8List? audio,
   MultimodalOrder? order,
 }) {
-  final json = order == null
-      ? LiteRtLmFfiClient.buildMessageJson(
-          text,
-          imagesBytes: images,
-          audioBytes: audio,
-        )
-      : LiteRtLmFfiClient.buildMessageJson(
-          text,
-          imagesBytes: images,
-          audioBytes: audio,
-          order: order.toRuntime,
-        );
-  final message = jsonDecode(json) as Map<String, Object?>;
+  // What a session sends: its user message as litertlm_dart serializes it.
+  final message = messageJson(
+    liteRtLmUserMessage(
+      text,
+      images: images ?? const [],
+      audio: audio,
+      order: order ?? const MultimodalOrder(),
+    ),
+  );
   expect(message['role'], 'user');
   return [
     for (final part in message['content']! as List<Object?>)
@@ -55,40 +47,11 @@ List<String> _parts(
   ];
 }
 
-/// Records the order the model asks the conversation for, then stops: no
-/// engine is loaded.
-class _CapturingClient extends LiteRtLmFfiClient {
-  MediaOrder? multimodalOrder;
-
-  @override
-  BundleSampler get bundleSampler => const BundleSampler();
-
-  @override
-  Future<LiteRtLmConversationHandle> createConversationHandle({
-    String? systemMessage,
-    String? toolsJson,
-    String? messagesJson,
-    required Sampler sampling,
-    required bool samplingExplicit,
-    int? maxOutputTokens,
-    required MediaOrder multimodalOrder,
-    String? jsonSchema,
-    required bool filterChannelContent,
-  }) {
-    this.multimodalOrder = multimodalOrder;
-    throw const _Captured();
-  }
-}
-
-class _Captured implements Exception {
-  const _Captured();
-}
-
 void main() {
   const at = MultimodalOrder.imagesAudioText;
   const ta = MultimodalOrder.imagesTextAudio;
 
-  group('buildMessageJson', () {
+  group('liteRtLmUserMessage', () {
     test('a text message is the text alone, in every order', () {
       for (final order in [at, ta]) {
         expect(_parts('hi', order: order), ['text:hi']);
@@ -180,37 +143,32 @@ void main() {
   });
 
   group('FfiInferenceModel', () {
-    Future<MediaOrder?> orderAskedFor(
+    Future<MultimodalOrder> orderOfSession(
       ModelType type, {
       MultimodalOrder? multimodalOrder,
     }) async {
-      final client = _CapturingClient();
-      final model = FfiInferenceModel(
-        ffiClient: client,
+      final model = ffiModelForClient(
+        ffiClient: LiteRtLmFfiClient(),
         maxTokens: 1024,
         modelType: type,
         activeBackend: null,
         multimodalOrder: multimodalOrder,
         onClose: () {},
       );
-      await expectLater(model.createSession(), throwsA(isA<_Captured>()));
-      return client.multimodalOrder;
+      final session = await model.openSession() as FfiInferenceModelSession;
+      final order = session.multimodalOrder;
+      await session.close();
+      return order;
     }
 
     test('a conversation gets the order of the model type', () async {
-      expect(await orderAskedFor(ModelType.gemma4), ta.toRuntime);
-      expect(await orderAskedFor(ModelType.gemmaIt), at.toRuntime);
+      expect(await orderOfSession(ModelType.gemma4), ta);
+      expect(await orderOfSession(ModelType.gemmaIt), at);
     });
 
     test('an order given to the model wins over its type', () async {
-      expect(
-        await orderAskedFor(ModelType.gemma4, multimodalOrder: at),
-        at.toRuntime,
-      );
-      expect(
-        await orderAskedFor(ModelType.general, multimodalOrder: ta),
-        ta.toRuntime,
-      );
+      expect(await orderOfSession(ModelType.gemma4, multimodalOrder: at), at);
+      expect(await orderOfSession(ModelType.general, multimodalOrder: ta), ta);
     });
   });
 }

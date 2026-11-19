@@ -7,7 +7,7 @@
 import 'package:flutter_edge_ai/engine.dart' show NpuTarget, NpuVendor;
 import 'package:meta/meta.dart' show internal;
 
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 
 /// The SoC a `.litertlm` bundle's compiled sections target.
 ///

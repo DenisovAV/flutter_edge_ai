@@ -43,7 +43,8 @@ From the diff, detect which package(s)/area(s) are affected:
 
 **Packages (`packages/<pkg>/`):**
 - `flutter_edge_ai/` — core: registry, contracts, shells, ModelSource, slim native plugin (its `android/` `ios/` host only the bundled channel)
-- `flutter_edge_ai_litertlm/` — `.litertlm` FFI engine; `native/litert_lm/` build scripts, `lib/src/ffi/`, `hook/build.dart`
+- `litertlm_dart/` — pure-Dart LiteRT-LM runtime: `lib/src/ffi/` (FFI client, bindings), `hook/build.dart` (the sole libLiteRtLm hook), `native/litert_lm/` build scripts
+- `flutter_edge_ai_litertlm/` — `.litertlm` engine adapter over `litertlm_dart` (`lib/src/adapter/`, `lib/src/embedding/`, web arm)
 - `flutter_edge_ai_embeddings/` — embedding tokenizers (pure Dart; the app registers them)
 - `flutter_edge_ai_mediapipe/` — `.task` MediaPipe; owns pigeon (`lib/pigeon.g.dart`) + Kotlin/Swift + web JS
 - `flutter_edge_ai_rag/` — instance-scoped RAG orchestration and contracts.
@@ -65,7 +66,7 @@ From the diff, detect which package(s)/area(s) are affected:
 
 **Native (per package):** `packages/<pkg>/android/`, `ios/`, `windows/`, `native/`, `hook/build.dart`
 **Web:** `packages/*/lib/src/web/`, `packages/*/web/` (JS interop, WASM)
-**Desktop:** `packages/flutter_edge_ai/lib/src/desktop/` + FFI in `flutter_edge_ai_litertlm`
+**Desktop:** `packages/flutter_edge_ai/lib/src/desktop/` + FFI in `litertlm_dart` (adapter: `flutter_edge_ai_litertlm`)
 **Site:** `website/` — Jaspr landing + docs (deployed to flutteredge.ai; CI `.github/workflows/firebase-hosting-merge.yml`)
 **Repo-level:** `.github/workflows/`, `.claude/skills/`, root `pubspec.yaml` (workspace + melos)
 
@@ -326,12 +327,13 @@ flutter_edge_ai. Desktop is Dart FFI directly into the LiteRT-LM C API — there
 NO JVM, NO gRPC, NO separate server process and no proto layer. If the diff or a
 task description mentions any of those, it predates 0.14.0.
 
-- packages/flutter_edge_ai_litertlm/lib/src/ffi/ — the FFI client, generated
-  bindings, and the inference model
-- packages/flutter_edge_ai_litertlm/hook/build.dart — the SOLE hook that owns the
-  shared libLiteRtLm bundle. embeddings and speech consume it transitively and
-  have no hook of their own.
-- packages/flutter_edge_ai_litertlm/native/litert_lm/ — build_*.sh, patch_c_api.sh,
+- packages/litertlm_dart/lib/src/ffi/ — the FFI client and generated bindings
+- packages/flutter_edge_ai_litertlm/lib/src/adapter/ — the inference model over
+  litertlm_dart (ffi_inference_model.dart)
+- packages/litertlm_dart/hook/build.dart — the SOLE hook that owns the
+  shared libLiteRtLm bundle. flutter_edge_ai_litertlm and speech consume it
+  through their litertlm_dart dependency and have no hook of their own.
+- packages/litertlm_dart/native/litert_lm/ — build_*.sh, patch_c_api.sh,
   stream_proxy.c
 - packages/flutter_edge_ai/{linux,windows}/ — thin plugin registration C++
 - packages/flutter_edge_ai/lib/src/desktop/ — the registry-dispatch shell

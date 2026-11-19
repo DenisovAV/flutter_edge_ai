@@ -18,7 +18,7 @@ dependencies:
   flutter_edge_ai: ^2.6.0                      # Core — always required (no engine on its own)
 
   # Inference engines — add at least one:
-  flutter_edge_ai_litertlm: ^1.20.0            # .litertlm models (FFI; mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_litertlm: ^1.21.0            # .litertlm models (FFI; mobile + desktop + web) + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.3.0            # .task / .bin models (MediaPipe; mobile + web)
   flutter_edge_ai_builtin_ai: ^0.4.1           # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS 26+) / Windows AI Foundry / Chrome Prompt API (Web)
   flutter_edge_ai_onnx: ^0.9.1                 # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
@@ -321,6 +321,8 @@ hooks:
       qualcomm_npu: true
 ```
 
+The `litertlm_dart:` key is read from `flutter_edge_ai_litertlm` 1.21.0;
+earlier versions read the same flags under `flutter_edge_ai_litertlm:`.
 The build hook then fetches the runtime — from Maven Central for Android, from
 Qualcomm's QAIRT SDK for Linux arm64 boards. Without the flag a bundle
 compiled for an NPU is refused with a `BackendInitException` that says why; a

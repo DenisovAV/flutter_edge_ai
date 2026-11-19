@@ -29,7 +29,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 │   │  FlutterEdgeAiDesktop (lib/src/desktop/)       │ │
 │   │           ↓                                    │ │
 │   │  LiteRtLmFfiClient                            │ │
-│   │  (flutter_edge_ai_litertlm/lib/src/ffi/)        │ │
+│   │  (litertlm_dart/lib/src/ffi/)                   │ │
 │   │           ↓ dart:ffi                           │ │
 │   │  ───────────────────────────────────           │ │
 │   │  libLiteRtLm.{dylib,dll,so}                    │ │
@@ -482,7 +482,7 @@ you see this error on a stock Ubuntu 22.04 system you're loading a stale copy
 from the build cache. Clear it and let the hook re-fetch the release:
 
 ```bash
-rm -rf ~/.cache/flutter_gemma/native
+rm -rf ~/.cache/litertlm_dart/native
 flutter clean && flutter run
 ```
 
@@ -557,5 +557,5 @@ all platform-agnostic. See `lib/src/interface.dart` and the
 [example app](example/) for usage patterns.
 
 For native debugging on iOS / Linux, see comments in
-`flutter_edge_ai_litertlm/lib/src/ffi/litert_lm_client.dart` (search for `stream_proxy_redirect_stderr`
+`litertlm_dart/lib/src/ffi/litert_lm_client.dart` (search for `stream_proxy_redirect_stderr`
 and `_dumpNativeLog`).

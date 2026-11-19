@@ -9,7 +9,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/litertlm_dart.dart' show liteRtLmNativeVersion;
+import 'package:litertlm_dart/internal_io.dart' show liteRtLmNativeVersion;
 
 String _read(String path) =>
     File(path).readAsStringSync().replaceAll('\r\n', '\n');

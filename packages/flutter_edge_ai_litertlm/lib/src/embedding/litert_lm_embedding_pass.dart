@@ -12,12 +12,13 @@ import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../adapter/runtime_log_binding.dart';
 import '../adapter/runtime_mapping.dart';
-import 'package:litertlm_dart/common.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'package:litertlm_dart/bindings.dart';
 import 'litert_lm_embedding_common.dart';
 
-export 'package:litertlm_dart/litertlm_dart.dart'
+export 'package:litertlm_dart/internal_io.dart'
     show LiteRtLmEmbeddingConfig, checkLiteRtLmEmbeddingSymbols;
 export 'litert_lm_embedding_common.dart'
     show
@@ -117,30 +118,50 @@ Future<T> _withCoreErrors<T>(Future<T> Function() body) async {
   }
 }
 
-/// Core's [EmbeddingPass] over the runtime's [LiteRtLmEmbedder].
+/// Core's [EmbeddingPass] over litertlm_dart's [lm.EmbeddingEngine], loaded
+/// from the config `describe()` placed on the app's isolate.
 final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   LiteRtLmEmbeddingPass(
-    LiteRtLmEmbeddingConfig config, {
+    this._config, {
     @visibleForTesting LiteRtLmEmbeddingBindings Function()? openBindings,
     @visibleForTesting Allocator allocator = calloc,
     @visibleForTesting DateTime Function()? clock,
-  }) : _embedder = LiteRtLmEmbedder(
-         config,
-         openBindings: openBindings,
-         allocator: allocator,
-         clock: clock,
-       );
+  }) : _openBindings = openBindings,
+       _allocator = allocator,
+       _clock = clock;
 
-  final LiteRtLmEmbedder _embedder;
+  final LiteRtLmEmbeddingConfig _config;
+  final LiteRtLmEmbeddingBindings Function()? _openBindings;
+  final Allocator _allocator;
+  final DateTime Function()? _clock;
+  lm.EmbeddingEngine? _engine;
+  bool _loading = false;
+  bool _closed = false;
 
   /// The engine-owned cache directory [load] created; null before.
   @visibleForTesting
-  String? get cacheDir => _embedder.cacheDir;
+  String? get cacheDir => _engine?.cacheDir;
 
   @override
   Future<EmbeddingPassInfo> load() => _withCoreErrors(() async {
+    if (_loading || _closed) {
+      throw StateError('LiteRtLmEmbeddingPass.load() runs once, before close');
+    }
+    _loading = true;
     bindRuntimeLogToCore();
-    final info = await _embedder.load();
+    final engine = await createEmbeddingEngineWith(
+      _config,
+      openBindings: _openBindings,
+      allocator: _allocator,
+      clock: _clock,
+    );
+    if (_closed) {
+      // Closed while it loaded: nobody will close this engine but us.
+      await engine.close();
+      throw StateError('The embedding pass was closed while it loaded.');
+    }
+    _engine = engine;
+    final info = engine.info;
     final images = info.modalities.contains(EmbedderModality.image);
     final audio = info.modalities.contains(EmbedderModality.audio);
     return EmbeddingPassInfo(
@@ -157,8 +178,25 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
 
   @override
   Future<List<double>> embed(EmbeddingInput input, TaskType taskType) =>
-      _withCoreErrors(() => _embedder.embed(embedderInputOf(input, taskType)));
+      _withCoreErrors(() async {
+        final engine = _engine;
+        if (engine == null || _closed) {
+          throw StateError(
+            'LiteRtLmEmbeddingPass.embed() needs a loaded engine',
+          );
+        }
+        final vector = await engine.computeEmbedding([
+          if (input.text case final text?)
+            lm.Content.text('${taskType.prefix}$text'),
+          for (final image in input.images) lm.Content.imageBytes(image),
+          if (input.audio case final audio?) lm.Content.audioBytes(audio),
+        ]);
+        return List<double>.of(vector);
+      });
 
   @override
-  Future<void> close() => _embedder.close();
+  Future<void> close() async {
+    _closed = true;
+    await _engine?.close();
+  }
 }

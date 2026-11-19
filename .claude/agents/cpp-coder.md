@@ -72,7 +72,7 @@ the caller throw. "Could not determine" must not be spelled the same way as
 `LiteRtLayout` used to put `dimensions[]` at offset 8 under MSVC and 4 under
 GCC/Clang, until LiteRT `d84656955` made both bit-fields `unsigned int` and
 static_asserted one layout (#7459). Our bindings now carry a single
-`LiteRtLayoutPosix` (`packages/flutter_edge_ai_litertlm/lib/src/ffi/litert_bindings.dart`);
+`LiteRtLayoutPosix` (`packages/litertlm_dart/lib/src/ffi/litert_bindings.dart`);
 the MSVC mirror we kept after that fix broke Windows embeddings and speech.
 Any struct that mixes types inside a bit-field needs its layout checked
 against the header **at the pinned revision** — both when it diverges and

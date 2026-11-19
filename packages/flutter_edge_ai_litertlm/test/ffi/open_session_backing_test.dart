@@ -8,9 +8,10 @@ import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'ffi_test_support.dart';
 
 const _abis = [
   'macos_arm64',
@@ -26,7 +27,7 @@ void main() {
   group('liteRtLmOpenSessionBacking', () {
     OpenSessionBacking backing(
       String abi,
-      Backend? backend, {
+      BackendKind? backend, {
       NpuStack? npu,
       AndroidGpuFamily? gpu,
     }) => liteRtLmOpenSessionBacking(
@@ -40,7 +41,7 @@ void main() {
         'Android and iOS', () {
       final native = {
         for (final abi in _abis)
-          if (backing(abi, Backend.cpu) == OpenSessionBacking.native) abi,
+          if (backing(abi, BackendKind.cpu) == OpenSessionBacking.native) abi,
       };
       expect(native, {
         'macos_arm64',
@@ -55,7 +56,7 @@ void main() {
       final native = {
         for (final abi in _abis)
           if (abi != 'android_arm64' &&
-              backing(abi, Backend.gpu) == OpenSessionBacking.native)
+              backing(abi, BackendKind.gpu) == OpenSessionBacking.native)
             abi,
       };
       expect(native, {'macos_arm64'});
@@ -64,22 +65,29 @@ void main() {
     test('Android GPU: Adreno and Mali only; any other family or an unread '
         'one is virtual', () {
       expect(
-        backing('android_arm64', Backend.gpu, gpu: AndroidGpuFamily.adreno),
+        backing('android_arm64', BackendKind.gpu, gpu: AndroidGpuFamily.adreno),
         OpenSessionBacking.native,
       );
       expect(
-        backing('android_arm64', Backend.gpu, gpu: AndroidGpuFamily.mali),
+        backing('android_arm64', BackendKind.gpu, gpu: AndroidGpuFamily.mali),
         OpenSessionBacking.native,
       );
       expect(
-        backing('android_arm64', Backend.gpu, gpu: AndroidGpuFamily.powerVr),
+        backing(
+          'android_arm64',
+          BackendKind.gpu,
+          gpu: AndroidGpuFamily.powerVr,
+        ),
         OpenSessionBacking.virtual,
       );
       expect(
-        backing('android_arm64', Backend.gpu, gpu: AndroidGpuFamily.other),
+        backing('android_arm64', BackendKind.gpu, gpu: AndroidGpuFamily.other),
         OpenSessionBacking.virtual,
       );
-      expect(backing('android_arm64', Backend.gpu), OpenSessionBacking.virtual);
+      expect(
+        backing('android_arm64', BackendKind.gpu),
+        OpenSessionBacking.virtual,
+      );
     });
 
     test('NPU: Qualcomm and Tensor on Android, Intel on Windows; Qualcomm on '
@@ -87,7 +95,7 @@ void main() {
       final native = <(NpuStack, String)>{
         for (final npu in NpuStack.values)
           for (final abi in _abis)
-            if (backing(abi, Backend.npu, npu: npu) ==
+            if (backing(abi, BackendKind.npu, npu: npu) ==
                 OpenSessionBacking.native)
               (npu, abi),
       };
@@ -96,7 +104,10 @@ void main() {
         (NpuStack.googleTensor, 'android_arm64'),
         (NpuStack.intel, 'windows_x64'),
       });
-      expect(backing('android_arm64', Backend.npu), OpenSessionBacking.virtual);
+      expect(
+        backing('android_arm64', BackendKind.npu),
+        OpenSessionBacking.virtual,
+      );
     });
 
     test('an unknown backend is virtual', () {
@@ -108,7 +119,7 @@ void main() {
 
   group('FfiInferenceModel.openSession', () {
     FfiInferenceModel model(OpenSessionBacking backing, {int? cap}) =>
-        FfiInferenceModel(
+        ffiModelForClient(
           // Uninitialized: any native call it is asked for fails.
           ffiClient: LiteRtLmFfiClient(),
           maxTokens: 1024,
@@ -182,7 +193,7 @@ void main() {
   test('conversations rewind on the CPU and GPU, never on the NPU or a model '
       'with linear attention state', () {
     String? reason(PreferredBackend? backend, {bool linear = false}) =>
-        FfiInferenceModel(
+        ffiModelForClient(
           ffiClient: LiteRtLmFfiClient(),
           maxTokens: 1024,
           modelType: ModelType.gemmaIt,
@@ -211,7 +222,7 @@ void main() {
       'gives no session and deletes the conversation', () async {
     final gate = Completer<void>();
     final client = _SlowClient(gate);
-    final m = FfiInferenceModel(
+    final m = ffiModelForClient(
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -244,7 +255,7 @@ void main() {
     final client = LiteRtLmFfiClient()
       ..registerLiveForTest(conv)
       ..recordTurnEndForTest(conv, NativeLastTurnEnd.contextFull);
-    final m = FfiInferenceModel(
+    final m = ffiModelForClient(
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -253,7 +264,7 @@ void main() {
       onClose: () {},
     );
     final session = await m.openSession() as FfiInferenceModelSession;
-    final handle = session.handle;
+    final handle = conversationHandle(session.conversation);
     // A context_full end recorded for this session's token.
     client.watchVirtualTurnEnd(
       (handle as dynamic).token as Object,
@@ -265,9 +276,9 @@ void main() {
     await session.close();
   });
   test('a native open session on a model whose file could not be read is '
-      'rebuilt, never rewound; createSession keeps rewinding', () async {
+      'rebuilt, never rewound, as every conversation of the model', () async {
     final gate = Completer<void>()..complete();
-    final m = FfiInferenceModel(
+    final m = ffiModelForClient(
       ffiClient: _SlowClient(gate),
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -277,9 +288,13 @@ void main() {
       onClose: () {},
     );
     final session = await m.openSession() as FfiInferenceModelSession;
-    final handle = session.handle as RecoveringConversationHandle;
+    final handle =
+        conversationHandle(session.conversation)
+            as RecoveringConversationHandle;
     expect(handle.noRewindReason, contains('could not be read'));
-    expect(m.noRewindReason, isNull);
+    // One rule for every conversation of the model: createSession's too,
+    // which before litertlm_dart rewound a model it could not read.
+    expect(m.noRewindReason, contains('could not be read'));
     await session.close();
   });
 }
@@ -299,7 +314,8 @@ class _SlowClient extends LiteRtLmFfiClient {
     required bool samplingExplicit,
     int? maxOutputTokens,
     required MediaOrder multimodalOrder,
-    String? jsonSchema,
+    Constraint? constraint,
+    ConversationExtras extras = ConversationExtras.none,
     required bool filterChannelContent,
   }) async {
     await gate.future;

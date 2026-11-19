@@ -7,12 +7,12 @@
 
 import 'package:flutter/services.dart';
 
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'litert_lm_load_errors.dart' show NpuDispatchUnavailableException;
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 
-/// [NpuPlatformBindings] for a Flutter app.
-final class FlutterNpuPlatform implements NpuPlatformBindings {
+/// [NpuPlatform] for a Flutter app.
+final class FlutterNpuPlatform implements NpuPlatform {
   const FlutterNpuPlatform();
 
   /// `flutter_assets/NativeAssetsManifest.json`, uncached: the runtime caches

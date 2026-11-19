@@ -1,12 +1,12 @@
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart';
 import 'package:litertlm_dart/src/bundle/litertlm_load_plan.dart';
 import 'package:test/test.dart';
 import 'package:litertlm_dart/src/runtime/types.dart';
 import 'package:litertlm_dart/src/bundle/litertlm_bundle_info.dart';
 
-const npu = Backend.npu;
-const gpu = Backend.gpu;
-const cpu = Backend.cpu;
+const npu = BackendKind.npu;
+const gpu = BackendKind.gpu;
+const cpu = BackendKind.cpu;
 const sm8750 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8750');
 
 /// A Gemma 4-shaped bundle: text model, vision and audio encoders, optionally
@@ -85,12 +85,12 @@ void main() {
 
   LiteRtLmLoadPlan plan({
     BundleInfo? info,
-    Backend? preferred,
+    BackendKind? preferred,
     bool fallback = true,
     bool image = false,
     bool audio = false,
-    Backend? visionBackend,
-    Backend? audioBackend,
+    BackendKind? visionBackend,
+    BackendKind? audioBackend,
     bool npuHere = true,
     String abi = 'android_arm64',
   }) => planLiteRtLmLoad(
@@ -179,9 +179,10 @@ void main() {
         () => plan(info: generic, preferred: npu, fallback: false),
         refusedWith(
           LiteRtLmBundleProblem.wrongBackend,
-          '$noNpuGraph. Load it with PreferredBackend.gpu or .cpu, or omit '
-          'preferredBackend; to run on the NPU, install the bundle compiled '
-          "for this device's NPU.",
+          '$noNpuGraph. Load it on the GPU or the CPU (Backend.gpu() or '
+          'Backend.cpu(); in flutter_edge_ai, preferredBackend: '
+          'PreferredBackend.gpu or .cpu, or none); to run on the NPU, install '
+          "the bundle compiled for this device's NPU.",
         ),
       );
       expect(npuAsked, 0);
@@ -339,9 +340,9 @@ void main() {
         () => plan(info: npuOrCpu, preferred: npu, fallback: false),
         refusedWith(
           LiteRtLmBundleProblem.wrongBackend,
-          '$noNpuGraph. Load it with PreferredBackend.cpu, or omit '
-          'preferredBackend; to run on the NPU, install the bundle compiled '
-          "for this device's NPU.",
+          '$noNpuGraph. Load it on the CPU (Backend.cpu(); in flutter_edge_ai, '
+          'preferredBackend: PreferredBackend.cpu, or none); to run on the '
+          "NPU, install the bundle compiled for this device's NPU.",
         ),
       );
       expect(
@@ -349,8 +350,9 @@ void main() {
         refusedWith(
           LiteRtLmBundleProblem.wrongBackend,
           'model.litertlm declares that its text model runs on npu, cpu '
-          '(backend_constraint), not on gpu. Load it with '
-          'PreferredBackend.cpu, or omit preferredBackend.',
+          '(backend_constraint), not on gpu. Load it on the CPU '
+          '(Backend.cpu(); in flutter_edge_ai, preferredBackend: '
+          'PreferredBackend.cpu, or none).',
         ),
       );
       expect(npuAsked, 0);
@@ -358,14 +360,16 @@ void main() {
 
     test("liteRtLmTextCandidates is the plan's text order, which the engine "
         'reads to know whether to look for an NPU stack', () {
-      List<Backend> candidates(BundleInfo? info, [Backend? preferred]) =>
-          liteRtLmTextCandidates(
-            path: 'model.litertlm',
-            bundle: info,
-            preferredBackend: preferred,
-            backendFallback: true,
-            abi: 'android_arm64',
-          ).backends;
+      List<BackendKind> candidates(
+        BundleInfo? info, [
+        BackendKind? preferred,
+      ]) => liteRtLmTextCandidates(
+        path: 'model.litertlm',
+        bundle: info,
+        preferredBackend: preferred,
+        backendFallback: true,
+        abi: 'android_arm64',
+      ).backends;
       expect(candidates(officialSm8750), [npu]);
       expect(candidates(generic), [gpu, cpu]);
       expect(candidates(generic, npu), [gpu, cpu]);
@@ -471,8 +475,8 @@ void main() {
           LiteRtLmBundleProblem.unsupportedNpu,
           'model.litertlm has sections the load turns on compiled for '
           'different NPUs (Qualcomm SM8750, Google Tensor_G5); '
-          "flutter_edge_ai_litertlm runs one NPU's dispatch per load. Load it "
-          'without supportImage or supportAudio to run the text model alone, '
+          "litertlm_dart runs one NPU's dispatch per load. Load it "
+          'without its encoders (visionBackend: null, audioBackend: null; in flutter_edge_ai, without supportImage or supportAudio) to run the text model alone, '
           'or install a bundle compiled for one NPU throughout.',
         ),
       );
@@ -666,7 +670,7 @@ void main() {
           LiteRtLmBundleProblem.unsupportedNpu,
           "model.litertlm's vision encoder is compiled for the Qualcomm SM8750 "
           'NPU, which runs on android_arm64 and linux_arm64 only, and this is '
-          'macos_arm64; load it without supportImage, or install the generic '
+          'macos_arm64; load it without its vision encoder (visionBackend: null; in flutter_edge_ai, without supportImage), or install the generic '
           'bundle of this model to run it here.',
         ),
       );
@@ -676,10 +680,11 @@ void main() {
           LiteRtLmBundleProblem.unsupportedNpu,
           "model.litertlm's audio encoder is compiled for the Qualcomm SM8750 "
           'NPU, which runs on android_arm64 and linux_arm64 only, and this is '
-          'windows_x64; load it without supportAudio',
+          'windows_x64; load it without its audio encoder (audioBackend: '
+          'null; in flutter_edge_ai, without supportAudio)',
         ),
       );
-      for (final backend in Backend.values) {
+      for (final backend in BackendKind.values) {
         expect(
           () => plan(
             info: visionSm8750,
@@ -706,8 +711,8 @@ void main() {
         refused(
           LiteRtLmBundleProblem.unsupportedNpu,
           "model.litertlm's audio encoder is compiled for the Samsung E9955 "
-          'NPU. flutter_edge_ai_litertlm runs Qualcomm, Google Tensor, MediaTek and Intel '
-          'NPU bundles only; load it without supportAudio, or install',
+          'NPU. litertlm_dart runs Qualcomm, Google Tensor, MediaTek and Intel '
+          'NPU bundles only; load it without its audio encoder (audioBackend: null; in flutter_edge_ai, without supportAudio), or install',
         ),
       );
     });
@@ -720,10 +725,11 @@ void main() {
           LiteRtLmBundleProblem.unsupportedNpu,
           "model.litertlm's vision encoder is compiled for the Qualcomm SM8750 "
           'NPU and runs only there, and its text model would be tried on gpu, '
-          'then cpu, not on the NPU alone. flutter_edge_ai_litertlm runs an '
+          'then cpu, not on the NPU alone. litertlm_dart runs an '
           'encoder on the NPU only together with a text model on the NPU (a '
-          'bundle compiled for the NPU throughout). Load it without '
-          'supportImage to run the text model alone, or install the generic '
+          'bundle compiled for the NPU throughout). Load it without its '
+          'vision encoder (visionBackend: null; in flutter_edge_ai, without '
+          'supportImage) to run the text model alone, or install the generic '
           'bundle of this model.',
         ),
       );
@@ -772,9 +778,10 @@ void main() {
         // to be about the text model.
         refusedWith(
           LiteRtLmBundleProblem.wrongBackend,
-          '$noNpuGraph. Load it with PreferredBackend.gpu or .cpu, or omit '
-          'preferredBackend; to run on the NPU, install the bundle compiled '
-          "for this device's NPU.",
+          '$noNpuGraph. Load it on the GPU or the CPU (Backend.gpu() or '
+          'Backend.cpu(); in flutter_edge_ai, preferredBackend: '
+          'PreferredBackend.gpu or .cpu, or none); to run on the NPU, install '
+          "the bundle compiled for this device's NPU.",
         ),
       );
     });
@@ -807,7 +814,7 @@ void main() {
         BundleInfo? info, {
         bool image = false,
         bool audio = false,
-        Backend? visionBackend,
+        BackendKind? visionBackend,
       }) => liteRtLmEncoderOnNpu(
         bundle: info,
         supportImage: image,

@@ -1,4 +1,6 @@
 ## Unreleased
+- Android GPU keeps Gemma 4 at FP16 above 2,048 tokens; Adreno GPU failures name the CPU.
+- A stopped, paused turn that ends after the next one no longer reorders replayed history.
 - The runtime and the native build hook move to `litertlm_dart`; `user_defines` key is now `litertlm_dart:`.
 - `LitertlmManifestResolver` declares the `inference` role and returns `family`.
 - Native: a message sends `images` when non-empty, else `imageBytes`; no duplicate photo.

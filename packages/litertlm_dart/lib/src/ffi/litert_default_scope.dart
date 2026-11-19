@@ -212,7 +212,7 @@ String _shadowedBy(String soname) =>
 String _notExported(String soname) =>
     '$soname loaded but does not export $_controlSymbol. This is not a '
     'load-order problem: the bundled native library is not a libLiteRtLm this '
-    'version of flutter_edge_ai_litertlm can drive. Usually a stale native '
+    'version of litertlm_dart can drive. Usually a stale native '
     'cache — remove the litertlm_dart native cache directory and rebuild.';
 
 String _poisonedBy(String soname) =>

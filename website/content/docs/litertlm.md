@@ -52,7 +52,7 @@ engines your app uses:
 ```
 dependencies:
   flutter_edge_ai: ^2.6.0
-  flutter_edge_ai_litertlm: ^1.20.0   # .litertlm inference engine
+  flutter_edge_ai_litertlm: ^1.21.0   # .litertlm inference engine
 ```
 
 ```dart
@@ -124,7 +124,11 @@ file decides, except that a FunctionGemma bundle declaring no
 because at half precision it answers with nothing, and so does Gemma 4 loaded
 with `maxTokens` above 2,048 (litertlm 1.20.1,
 [LiteRT-LM #4001](https://github.com/google-ai-edge/LiteRT-LM/issues/4001)); pass
-`ActivationDataType.float16` to keep half precision. It applies to the text decoder of `.litertlm` models on Android,
+`ActivationDataType.float16` to keep half precision. On Android, Gemma 4 is
+not switched to float32 by itself (litertlm 1.21.0): with the current native
+build float32 fails at the first token on Adreno 8xx GPUs, so Gemma 4 keeps
+half precision there, with one WARNING line in the log, and an explicit
+`float32` is up to you; the FunctionGemma rule still applies. It applies to the text decoder of `.litertlm` models on Android,
 iOS and desktop — not on web, and not to the vision or audio encoders, which
 keep what the model file asks for. `float32` also needs more GPU memory, and a
 GPU engine that cannot be created falls back to CPU with only a WARNING line in
@@ -151,6 +155,8 @@ hooks:
       qualcomm_npu: true
 ```
 
+The `litertlm_dart:` key is read from `flutter_edge_ai_litertlm` 1.21.0;
+earlier versions read the same flags under `flutter_edge_ai_litertlm:`.
 The build hook then fetches `com.qualcomm.qti:qnn-runtime:2.50.0` from Maven
 Central once, verifies its SHA-256, raises the Hexagon libraries to the 16 KB
 page alignment Google Play requires, and bundles them: about 22 MB more to

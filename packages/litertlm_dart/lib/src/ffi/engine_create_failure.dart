@@ -67,7 +67,69 @@ String engineCreateFailureMessage({
                 'ActivationDataType.float16, asks for the default, where a '
                 'prompt past about $gemma4Fp16MaxContextTokens tokens '
                 'degrades)',
+          // Float16: no float32 attempt to blame.
+          GpuActivationReason.gemma4LongContextAndroid => '',
         };
   return 'Failed to create engine on $backend$because. Model: $modelPath'
       '$hint';
+}
+
+/// A turn that failed inside the compiled model: LiteRT-LM's `INTERNAL`
+/// status, which leads its error text ("INTERNAL: … Failed to invoke the
+/// compiled model"). Another status is not this failure, whatever it says.
+final _compiledModelFailure = RegExp(r'^\s*INTERNAL\b');
+
+/// The message of a streamed turn that failed with [nativeError].
+///
+/// On a GPU engine loaded at float32 ([activationDataType] 0), a failure
+/// inside the compiled model is named as possibly the float32 activations'
+/// (Adreno 8xx with this native build fails at the first token with
+/// "Invalid work group size"), with how to load at float16 or on the CPU.
+/// [gpuActivationReason] is why the engine chose float32, null when the caller
+/// asked for it. On [android], such a failure at any other activation type is
+/// named as LiteRT's GPU kernels exceeding the work-group limits of some
+/// Adreno GPUs (Adreno 610 at float16, LiteRT #12075), with the CPU as the
+/// way out.
+String streamFailureMessage({
+  required String nativeError,
+  required String? backend,
+  required int? activationDataType,
+  required GpuActivationReason? gpuActivationReason,
+  required bool android,
+}) {
+  final message = 'Stream error: $nativeError';
+  if (backend != 'gpu' || !_compiledModelFailure.hasMatch(nativeError)) {
+    return message;
+  }
+  const cpu =
+      'on the CPU (Backend.cpu(); in flutter_edge_ai, '
+      'PreferredBackend.cpu)';
+  if (activationDataType != 0) {
+    if (!android) return message;
+    return '$message (the GPU turn failed inside LiteRT. A known cause on '
+        "some Adreno GPUs: LiteRT's GPU kernels exceed the device's "
+        'work-group limits with this native build, "Invalid work group size" '
+        'in the native log (Adreno 610, LiteRT #12075), which a future native '
+        'build is expected to fix. Load $cpu)';
+  }
+  final why = switch (gpuActivationReason) {
+    // Never float32; named like a caller's.
+    null || GpuActivationReason.gemma4LongContextAndroid =>
+      'activationDataType asked for float32. Load without it, or with '
+          'ActivationDataType.float16, or $cpu',
+    GpuActivationReason.functionGemmaWithoutKey =>
+      'the engine chose float32 because this FunctionGemma bundle declares no '
+          'prefer_activation_type, and at float16 such a bundle answers with '
+          'nothing. Load it $cpu',
+    GpuActivationReason.gemma4LongContext =>
+      'the engine chose float32 because Gemma 4 with a context (maxTokens) '
+          'above $gemma4Fp16MaxContextTokens tokens runs at float32 on the '
+          'GPU. Load with a maxTokens of $gemma4Fp16MaxContextTokens or less, '
+          'or with ActivationDataType.float16, where a prompt past about '
+          '$gemma4Fp16MaxContextTokens tokens degrades, or $cpu',
+  };
+  return '$message (this engine runs float32 activations on the GPU, which '
+      'fail inside the compiled model on some GPUs: Adreno 8xx with this '
+      'native build fails at the first token with "Invalid work group size"; '
+      '$why)';
 }

@@ -28,7 +28,8 @@ spec = importlib.util.spec_from_file_location("gate", sys.argv[4])
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
 main_symbols = set(gate.REQUIRED + gate.SCORING_SYMBOLS
-                   + gate.THINKING_BUDGET_SYMBOLS + gate.OWN_BUILD_SYMBOLS
+                   + gate.THINKING_BUDGET_SYMBOLS + gate.OPTION_SYMBOLS
+                   + gate.OWN_BUILD_SYMBOLS
                    + gate.LLM_SYMBOLS)
 tables = json.loads(sys.argv[3])
 def exports(path):

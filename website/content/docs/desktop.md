@@ -34,7 +34,7 @@ statement: **there is no MediaPipe engine on desktop.** See
 │   │  FlutterEdgeAiDesktop (lib/src/desktop/)       │ │
 │   │           ↓                                    │ │
 │   │  LiteRtLmFfiClient                            │ │
-│   │  (flutter_edge_ai_litertlm/lib/src/ffi/)        │ │
+│   │  (litertlm_dart/lib/src/ffi/)                   │ │
 │   │           ↓ dart:ffi                           │ │
 │   │  ───────────────────────────────────           │ │
 │   │  libLiteRtLm.{dylib,dll,so}                    │ │

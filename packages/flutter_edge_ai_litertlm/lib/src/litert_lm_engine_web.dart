@@ -2,7 +2,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_web.dart';
 
 import 'catalog/litert_catalog.dart' show LiteRtLmModels;
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 import 'thinking_token_budget.dart';
 import 'web/litert_lm_web_inference.dart';

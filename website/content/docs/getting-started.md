@@ -207,7 +207,8 @@ Upgrading from 2.3: see [Migration](/docs/migration).
   (breaking); `ModelRuntimeDefaults.isThinking` is
   `thinkingDeclared`. New `ModelType.qwen35`. See [Migration](/docs/migration).
 - **Qualcomm NPU is opt-in** (`flutter_edge_ai_litertlm` 1.10.0): set
-  `qualcomm_npu: true` under `hooks: user_defines: litertlm_dart:`,
+  `qualcomm_npu: true` under `hooks: user_defines: litertlm_dart:`
+  (`flutter_edge_ai_litertlm:` before 1.21.0),
   and the build hook fetches Qualcomm's QNN runtime. The same flag now covers
   **Qualcomm Linux arm64** boards. See [LiteRT-LM](/docs/litertlm).
 - **LiteRT-LM v0.18.0** (`native-v0.18.0-d`). Apple's Metal accelerator ships as

@@ -19,9 +19,9 @@ import 'dart:convert';
 import 'dart:io';
 
 // ignore: implementation_imports — drives litertlm's FFI client directly to capture raw model output
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart';
 // ignore: implementation_imports — the runtime's Sampler that client takes
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';

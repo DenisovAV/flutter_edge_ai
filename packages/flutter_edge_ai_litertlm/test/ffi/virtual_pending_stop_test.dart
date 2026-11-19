@@ -5,9 +5,10 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:litertlm_dart/bindings.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'ffi_test_support.dart';
 
 void main() {
   test('a plain virtual session stopped during slow prefill cancels native '
@@ -87,7 +88,7 @@ void main() {
       }
       ..virtualRewindForTest = ((_, _, _) async =>
           StoppedTurnRewind.unsupported)
-      ..metricsForTest = ((_) => TurnMetrics())
+      ..metricsForTest = ((_) => BenchmarkInfo())
       ..spawnedSendPrefillDelayForTest = const Duration(milliseconds: 600);
     client.streamForTest(
       createProxy: (dartCallback, _, _, _, _, outProxyFn) {
@@ -98,7 +99,7 @@ void main() {
       freeString: calloc.free,
       destroyProxy: (_) {},
     );
-    final model = FfiInferenceModel(
+    final model = ffiModelForClient(
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -146,7 +147,9 @@ void main() {
       reason: 'retries stop when the native send call returns',
     );
     expect(
-      virtualConversationHistoryForTest(session.handle),
+      virtualConversationHistoryForTest(
+        conversationHandle(session.conversation),
+      ),
       isEmpty,
       reason: 'Rule A takes back a stopped turn that produced no text',
     );
@@ -185,8 +188,8 @@ void main() {
         }
         return send;
       }
-      ..metricsForTest = (_) => TurnMetrics(tokensPerSecond: 42);
-    final model = FfiInferenceModel(
+      ..metricsForTest = (_) => BenchmarkInfo(tokensPerSecond: 42);
+    final model = ffiModelForClient(
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
@@ -240,8 +243,8 @@ void main() {
         if (isFollowUp) scheduleMicrotask(send.finished);
         return send;
       }
-      ..metricsForTest = (_) => TurnMetrics(tokensPerSecond: 42);
-    final model = FfiInferenceModel(
+      ..metricsForTest = (_) => BenchmarkInfo(tokensPerSecond: 42);
+    final model = ffiModelForClient(
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,

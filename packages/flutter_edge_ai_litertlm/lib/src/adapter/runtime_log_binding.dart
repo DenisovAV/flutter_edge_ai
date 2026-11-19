@@ -9,7 +9,7 @@
 import 'package:flutter_edge_ai/engine.dart'
     show EdgeAiLogLevel, edgeAiLog, edgeAiLogLevel;
 
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 
 void _edgeAiLogSink(String message, {bool verbose = false}) => edgeAiLog(
   message,
@@ -23,8 +23,9 @@ RuntimeLogLevel _coreLevel() => switch (edgeAiLogLevel) {
 };
 
 /// Points this isolate's runtime log at core's `edgeAiLog` and
-/// `edgeAiLogLevel`. Idempotent.
+/// `edgeAiLogLevel`, except what the app set itself through litertlm_dart's
+/// `LiteRtLmLog`. Idempotent.
 void bindRuntimeLogToCore() {
-  runtimeLogSink = _edgeAiLogSink;
-  runtimeLogLevelSource = _coreLevel;
+  if (!runtimeLogSinkSetByApp) runtimeLogSink = _edgeAiLogSink;
+  if (!runtimeLogLevelSetByApp) runtimeLogLevelSource = _coreLevel;
 }

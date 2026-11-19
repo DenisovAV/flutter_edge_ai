@@ -18,3 +18,9 @@ const bool isDebugBuild = !isProductBuild && !isProfileBuild;
 /// A release build: [isProductBuild] under the name of Flutter's
 /// `kReleaseMode`. A profile build is not one.
 const bool isReleaseBuild = isProductBuild;
+
+/// A debug build of a Flutter app (`flutter run`, `flutter test`): Flutter's
+/// `kDebugMode` where the code runs under Flutter, false under `dart run` and
+/// `dart test`. `dart.library.ui` is defined only by Flutter's compilers.
+const bool isFlutterDebugBuild =
+    isDebugBuild && bool.fromEnvironment('dart.library.ui');

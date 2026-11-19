@@ -71,13 +71,13 @@ for t in <old-tag> <new-tag>; do
 done
 ```
 
-If it moved, diff the headers the bindings use (`litert/c/litert_{model,environment,options,tensor_buffer,compiled_model}.h`) at both refs. Symbol list — the hand-written bindings moved into the litertlm package, so the
-old embeddings-only grep now misses more than half of them (23 vs 52 symbols):
+If it moved, diff the headers the bindings use (`litert/c/litert_{model,environment,options,tensor_buffer,compiled_model}.h`) at both refs. Symbol list — the hand-written bindings live in `litertlm_dart`, and their callers in three places (speech's `litert/` and `qwen3/`, and the adapter's `.tflite` embedding pass); a grep that skips any of them passes on a partial list:
 
 ```bash
 grep -rohE "LiteRt[A-Za-z_]+" \
-  packages/flutter_edge_ai_litertlm/lib/src/ffi/litert_bindings.dart \
-  packages/flutter_edge_ai_speech/lib/src/litert/ | sort -u
+  packages/litertlm_dart/lib/src/ffi/litert_bindings.dart \
+  packages/flutter_edge_ai_speech/lib/src/ \
+  packages/flutter_edge_ai_litertlm/lib/src/embedding/litert_embedding_pass.dart | sort -u
 ```
 
 **Diff the structs too, not only the function signatures.** A struct we mirror by hand (`LiteRtLayout`, `LiteRtRankedTensorType`) can change layout while every symbol and signature stays the same, so the symbol list above passes. LiteRT `d84656955` (2026-07-09) turned `bool has_strides : 1` into `unsigned int has_strides : 1`, which moved `dimensions[]` from offset 8 to 4 **under MSVC only**; our Windows-only mirror kept offset 8 and broke Windows embeddings and speech from native-v0.16.0 on (pitfall #16). Diff `litert/c/litert_layout.h` and `litert/c/litert_model_types.h` at both refs, and when a divergence we work around disappears upstream, delete the workaround in the same bump. `test/ffi/litert_layout_abi_test.dart` pins the current sizes.
@@ -479,7 +479,7 @@ Run `nm -gU | grep -c '_litert_lm_'` — expect ~50 symbols (matches `bindings.d
 **EmbeddingEngine exports (EmbeddingGemma 2).** `verify_tarball_manifest.sh` runs
 `check_embedding_exports.py` on every tarball: `libLiteRtLm` must export the 33
 EmbeddingEngine / ModelInfo / error-reporter functions the `.litertlm` embedding
-pass calls (`liteRtLmEmbeddingSymbols` in `lib/src/embedding/litert_lm_embedding_pass.dart`;
+pass calls (`liteRtLmEmbeddingSymbols` in `packages/litertlm_dart/lib/src/embedder/litert_lm_embedder.dart`;
 a VM test keeps the two lists equal); three are the dispatch-directory setters
 the NPU path calls for the main, vision and audio executors. Two are ours, not
 upstream's:
@@ -492,7 +492,7 @@ platform. On a **LiteRT-LM pin bump** also:
 - replace `native/litert_lm/include/c/*.h` with upstream's `c/` headers at the new
   pin, verbatim — then re-add §14's two getter declarations — and regenerate
   `lib/src/ffi/litert_lm_embedding_bindings.dart`:
-  `dart pub global activate ffigen 20.1.1`, then in `packages/flutter_edge_ai_litertlm`
+  `dart pub global activate ffigen 20.1.1`, then in `packages/litertlm_dart`
   `dart pub global run ffigen --config ffigen_embedding.yaml` (ffigen is no
   dependency of the workspace; upstream `main` after v0.18.0 already changed the
   embedding setters to return status codes);
@@ -554,7 +554,7 @@ find build -name 'libLiteRtLm*' -o -name 'LiteRtLm*' | head
 
 ### 7b. Build with `prebuilt/` moved aside — the only test of what users actually get
 
-`_resolveLibDir` tries local `packages/litertlm_dart/native/litert_lm/prebuilt/<dir>/`, then the cache; its caller falls back to `_downloadAndExtract` from `native-v<version>`. The cache path is NOT version-scoped — staleness is decided by the marker file. **End users only ever reach the download** — `prebuilt/` is gitignored and ships in no pub package (confirm with `dart pub publish --dry-run | grep -ciE 'prebuilt|\.so$|\.dylib|\.dll'` → must be `0`).
+`_resolveLibDir` tries local `packages/litertlm_dart/native/litert_lm/prebuilt/<dir>/`, then the cache; its caller falls back to `_downloadAndExtract` from `native-v<version>`. The cache is one directory per release tag (`<cacheBase>/litertlm_dart/native/native-v<version>/<platform>`, `_NativeBundle.cacheRoot`), with no marker file: a new tag never reads an old tag's files, but a cache already filled for **this** tag (by an earlier build, or by a re-upload under the same tag) is used as is and never re-downloaded. **End users only ever reach the download** — `prebuilt/` is gitignored and ships in no pub package (confirm with `dart pub publish --dry-run | grep -ciE 'prebuilt|\.so$|\.dylib|\.dll'` → must be `0`).
 
 On a maintainer machine the first source always hits. So every build you run locally — including check #7 and the release skill's `flutter build apk --release` pre-flight — silently validates **your** bundle and never touches the download, checksum verification, or extraction. Green means nothing about the artifact you are about to publish.
 
@@ -562,12 +562,17 @@ After the release exists and the hook's `checksums` are updated, force the real 
 
 ```bash
 mv packages/litertlm_dart/native/litert_lm/prebuilt /tmp/prebuilt-aside
-# Cache location is per-OS (_cacheBaseDir()). On the Windows NPU VM the macOS
-# path wipes nothing and you silently re-test the cache instead of the download.
-#   macOS   ~/Library/Caches/flutter_gemma/native
-#   Linux   ~/.cache/flutter_gemma/native
-#   Windows %LOCALAPPDATA%\flutter_gemma\native
-rm -rf "$HOME/Library/Caches/flutter_gemma/native"     # kill the cache too, or you test source #2
+# Cache location is per-OS (_cacheBaseDir() in packages/litertlm_dart/hook/build.dart).
+# On the Windows NPU VM the macOS path wipes nothing and you silently re-test the
+# cache instead of the download.
+#   macOS   ~/Library/Caches/litertlm_dart/native
+#   Linux   ~/.cache/litertlm_dart/native
+#   Windows %LOCALAPPDATA%\litertlm_dart\native
+# (~/Library/Caches/flutter_gemma/native/macos_arm64 is only the Podfile
+# stager's mirror of the companions; the hook never resolves libLiteRtLm there.)
+rm -rf "$HOME/Library/Caches/litertlm_dart/native"     # kill the cache too, or you test source #2
+# Only a download recreates it: after the build, the tag's directory must exist
+# again (ls ~/Library/Caches/litertlm_dart/native/native-v*/).
 cd packages/flutter_edge_ai/example && flutter clean && flutter pub get && flutter build apk --release
 mv /tmp/prebuilt-aside packages/litertlm_dart/native/litert_lm/prebuilt
 ```

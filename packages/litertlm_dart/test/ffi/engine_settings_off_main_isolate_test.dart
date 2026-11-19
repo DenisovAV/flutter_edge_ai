@@ -3,8 +3,8 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:litertlm_dart/litertlm_dart.dart'
-    show LiteRtLmEngineCreateException, LiteRtLmLogLevel;
+import 'package:litertlm_dart/internal_io.dart'
+    show GpuActivationReason, LiteRtLmEngineCreateException, LiteRtLmLogLevel;
 import 'package:litertlm_dart/src/ffi/litert_lm_bindings.dart';
 import 'package:litertlm_dart/src/ffi/litert_lm_client.dart';
 import 'package:test/test.dart';
@@ -84,6 +84,56 @@ void main() {
     );
     expect(requests, hasLength(1));
     expect(client.isInitialized, isTrue);
+  });
+
+  test('a failed turn names float32 only on an engine created on the GPU at '
+      'float32', () async {
+    const s25 = 'INTERNAL: Failed to invoke the compiled model';
+    Future<String> failureOn(
+      String backend,
+      int? activation, {
+      bool android = false,
+    }) async {
+      final client = clientWithoutNativeLibrary()..androidForTest = android;
+      await quietly(
+        () => client.initialize(
+          modelPath: '/models/gemma.litertlm',
+          backend: backend,
+          activationDataType: activation,
+          gpuActivationReason: activation == 0
+              ? GpuActivationReason.gemma4LongContext
+              : null,
+        ),
+      );
+      return client.streamFailureFor(s25);
+    }
+
+    final fp32Gpu = await failureOn('gpu', 0);
+    expect(fp32Gpu, startsWith('Stream error: $s25 ('));
+    expect(fp32Gpu, contains('the engine chose float32 because Gemma 4'));
+    for (final (backend, activation) in [
+      ('gpu', 1),
+      ('gpu', null),
+      ('cpu', 0),
+    ]) {
+      expect(
+        await failureOn(backend, activation),
+        'Stream error: $s25',
+        reason: '$backend at $activation',
+      );
+    }
+    final android = await failureOn('gpu', 1, android: true);
+    expect(android, contains('LiteRT #12075'));
+    expect(
+      await failureOn('cpu', null, android: true),
+      'Stream error: $s25',
+      reason: 'the CPU on Android',
+    );
+    expect(
+      LiteRtLmFfiClient().streamFailureFor(s25),
+      'Stream error: $s25',
+      reason: 'no engine',
+    );
   });
 
   test('the request carries every argument initialize was given', () async {

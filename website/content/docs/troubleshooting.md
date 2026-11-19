@@ -95,6 +95,7 @@ final chat = await model.openChat(maxOutputTokens: 100);        // reply cap
 - **`.litertlm` / embeddings / vision are `arm64-v8a` only.** MediaPipe text inference (`.task` / `.bin`) also runs on `x86_64` and `armeabi-v7a`. If you only use arm64-only features, add `ndk { abiFilters 'arm64-v8a' }` (in `build.gradle.kts`: `ndk { abiFilters += listOf("arm64-v8a") }`) so the Play Store doesn't offer broken APKs. See [Installation → Android architecture](/docs/installation#android-architecture-support).
 - **GPU:** nothing to add — the OpenCL `<uses-native-library>` entries come from the core plugin's own manifest (`flutter_gemma` 1.2.0+) through the manifest merger. If the GPU backend still falls back, check that the merged manifest contains `libvndksupport.so` and `libOpenCL.so`. See [Installation → Android](/docs/installation#android).
 - **Which GPU flush ran (`kernel_batch_size`).** On an Adreno GPU (`/dev/kgsl-3d0` exists) the GPU load asks LiteRT-LM to flush every 2 kernels, so the UI keeps drawing during a long prefill ([#364](https://github.com/DenisovAV/flutter_edge_ai/issues/364)); on every other Android GPU it sets nothing and the engine's default applies, which is faster on Mali ([#763](https://github.com/DenisovAV/flutter_edge_ai/issues/763)). Debug builds log the choice (`[LiteRtLmFfi] Android GPU (Adreno): hint_kernel_batch_size=2`). In a release build, create the engine with `LiteRtLmEngine(nativeLogLevel: LiteRtLmLogLevel.verbose)` and look in logcat for the engine's `kernel_batch_size` line at load: `-1` is the engine default (no flush), as reported in #763.
+- **Gemma 4 on an Adreno GPU fails at the first token: `Stream error: INTERNAL … Failed to invoke the compiled model`, with `Invalid work group size` in logcat.** The model loads, then the first decode fails. LiteRT's GPU kernels ask for more work items than some Adreno GPUs allow with the current native build: an Adreno 610 at the default half precision (a Galaxy A05s at `maxTokens` 4096; [LiteRT #12075](https://github.com/google-ai-edge/LiteRT/pull/12075)), and an Adreno 830 at `ActivationDataType.float32` (a Galaxy S25 Ultra). Load the model on the CPU (`preferredBackend: PreferredBackend.cpu`); a future native build is expected to fix it. Since `flutter_edge_ai_litertlm` 1.21.0 the error message says so.
 - **Google Play rejects the release: "Your app does not support 16 KB memory page sizes".** Fixed in `flutter_gemma_litertlm` 1.8.0; every `flutter_edge_ai_litertlm` release includes the fix. Nothing fails at build or run time — the rejection happens at submission. The Qualcomm Hexagon DSP blobs of the NPU path (`libQnnHtpV{73,75,79,81}Skel.so`) come from Qualcomm with a 4 KB `p_align`, and Play scans `lib/**/*.so` without caring that a Hexagon image is loaded by the DSP rather than mapped by the kernel. Since 1.10.0 they ship only in apps that set `qualcomm_npu: true`, and the build hook raises them to 16 KB. Check your own build with Google’s `check_elf_alignment.sh` against the APK. See [#529](https://github.com/DenisovAV/flutter_edge_ai/issues/529).
 - **GPU backend crashes at `engine_create` on Mali GPUs (`SIGSEGV`, `pc 0` in `libLiteRtOpenClAccelerator.so`).** Fixed in `flutter_gemma_litertlm` 1.8.2; every `flutter_edge_ai_litertlm` release includes the fix. In 1.7.0–1.8.1 the OpenCL and GPU accelerators called `AHardwareBuffer_allocate` without declaring `libandroid.so`, so Android bound the call to address 0; only Mali GPUs (Samsung A-series, MediaTek, Google Tensor) take that path, so CPU and Adreno were unaffected. See [#545](https://github.com/DenisovAV/flutter_edge_ai/issues/545).
 - **Zero chunks and `Stream error: <U+FFFD>`, then `SIGABRT`.** Fixed in `flutter_gemma_litertlm` 1.5.2; every `flutter_edge_ai_litertlm` release includes the fix. On Android the first `dlopen` of `libLiteRtLm` decides for the whole process whether its symbols are reachable from the default search scope, and bionic never promotes it afterwards — so an app that embedded or transcribed anything before its first generation left the stream-callback ABI probe blind and the wrong callback shape was registered. If your own or third-party code loads `libLiteRtLm` first, load it with `RTLD_GLOBAL` — the package cannot repair that case, but it raises a `StateError` naming it rather than generating corrupt text. See [#447](https://github.com/DenisovAV/flutter_edge_ai/issues/447).
@@ -167,7 +168,10 @@ and at half precision the rotary positions past about 2,048 tokens stop being
 distinct ([LiteRT-LM #4001](https://github.com/google-ai-edge/LiteRT-LM/issues/4001)).
 Since `flutter_edge_ai_litertlm` 1.20.1 a Gemma 4 model loaded with `maxTokens`
 above 2,048 and no `activationDataType` gets full precision on its GPU attempt
-by itself; with an older version, or a smaller `maxTokens`, ask for it:
+by itself, except on Android (litertlm 1.21.0 keeps half precision there and
+prints a WARNING). With an older version, or a smaller `maxTokens`, ask for
+it, but not on an Adreno 8xx GPU (a Galaxy S25, for one): with the current
+native build float32 fails there at the first token, at any `maxTokens`:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(
@@ -277,7 +281,8 @@ floor applies only to the GPU and CPU attempts of a generic bundle.
 to load, after an upgrade.** From `flutter_edge_ai_litertlm` 1.10.0 the
 Qualcomm QNN runtime is not part of the package; the app opts in with
 `qualcomm_npu: true` under `hooks: user_defines: litertlm_dart:` in
-its pubspec — see [LiteRT-LM](/docs/litertlm). Without it a bundle compiled for
+its pubspec (`flutter_edge_ai_litertlm:` before `flutter_edge_ai_litertlm`
+1.21.0) — see [LiteRT-LM](/docs/litertlm). Without it a bundle compiled for
 an NPU is refused with a `BackendInitException` whose
 `NpuDispatchUnavailableException` names it. A generic bundle never runs on the
 NPU, with or without the flag: it has no NPU graph, so `npu` falls back to GPU,

@@ -6,10 +6,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha256;
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 
 const _sm8850 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8850');
 const _tensorG5 = NpuStamp(vendor: 'Google', soc: 'Tensor_G5');

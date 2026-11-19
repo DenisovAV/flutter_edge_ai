@@ -39,7 +39,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:litertlm_dart/bindings.dart';
 import 'package:flutter_test/flutter_test.dart';

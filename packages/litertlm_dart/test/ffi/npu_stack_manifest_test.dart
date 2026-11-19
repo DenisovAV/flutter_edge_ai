@@ -206,4 +206,26 @@ void main() {
     expect(qualcommNpuLibs, hasLength(11));
     expect(androidLibFileName('QnnHtp'), 'libQnnHtp.so');
   });
+
+  test("each opt-in reason sets the define under litertlm_dart's key and says "
+      'what the old key still does', () {
+    for (final (reason, define) in [
+      (qualcommNpuNotEnabledReason, qualcommNpuUserDefine),
+      (googleTensorNpuNotEnabledReason, googleTensorNpuUserDefine),
+      (mediatekNpuNotEnabledReason, mediatekNpuUserDefine),
+    ]) {
+      expect(reason, contains('      litertlm_dart:\n        $define: true\n'));
+      expect(reason, isNot(contains('      flutter_edge_ai_litertlm:\n')));
+      expect(
+        reason,
+        allOf(
+          contains(
+            '1.20 and older read this key under '
+            'flutter_edge_ai_litertlm:',
+          ),
+          contains('a value under litertlm_dart: wins, a false one included'),
+        ),
+      );
+    }
+  });
 }

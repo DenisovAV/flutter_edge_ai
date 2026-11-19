@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
 import '../adapter/bundle_info.dart' show LiteRtLmNpuTarget;
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'catalog_host_web.dart'
     if (dart.library.ffi) 'catalog_host_io.dart'
     as host;

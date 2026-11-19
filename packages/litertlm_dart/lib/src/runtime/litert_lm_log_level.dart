@@ -1,7 +1,8 @@
 /// The minimum severity of LiteRT-LM's own native log:
 /// `LiteRtLmLogSeverity` of its C API (`litert_lm_set_min_log_level`).
 ///
-/// Passed as `LiteRtLmEngine(nativeLogLevel:)`, read on native platforms
+/// Set as `LiteRtLmLog.nativeLevel` (in flutter_edge_ai,
+/// `LiteRtLmEngine(nativeLogLevel:)`), read on native platforms
 /// only. The level is process-wide: it applies to every LiteRT-LM engine in
 /// the process, and the last value set wins.
 enum LiteRtLmLogLevel {

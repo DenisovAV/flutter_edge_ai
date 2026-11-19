@@ -1,24 +1,28 @@
-// The web-safe part of litertlm_dart: the runtime's vocabulary (backends,
-// samplers, NPU stacks, bundle-info types, embedder types and limits, load
-// errors), with no dart:io and no dart:ffi, so code that names them compiles
-// for the web. `litertlm_dart.dart` exports all of it too.
+// The web-safe internals of litertlm_dart that flutter_edge_ai_litertlm's web
+// arm and catalog share with the runtime: its vocabulary, bundle-info types,
+// NPU stacks, embedder types and limits, load errors. No dart:io, no dart:ffi.
+// For this repository's packages only: no compatibility promise.
 library;
 
 export 'src/runtime/types.dart'
     show
-        ActivationType,
-        Backend,
+        ActivationDataType,
+        BackendKind,
         BundleSampler,
         CancelSignal,
         MediaOrder,
         MediaSide,
         Sampler,
         ScoringRun,
-        TurnMetrics;
+        BenchmarkInfo;
 export 'src/runtime/errors.dart'
     show ConstraintUnsupportedException, ScoringCancelledException;
 export 'src/runtime/load_errors.dart'
-    show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
+    show
+        LibraryLoadFailure,
+        markLibraryLoadFailure,
+        LiteRtLmEngineCreateException,
+        NpuDispatchUnavailableException;
 export 'src/runtime/litert_lm_log_level.dart' show LiteRtLmLogLevel;
 export 'src/runtime/npu_stacks.dart'
     show

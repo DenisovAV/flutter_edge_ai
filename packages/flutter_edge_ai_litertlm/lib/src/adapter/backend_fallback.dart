@@ -9,9 +9,9 @@ import 'dart:ffi';
 
 import 'package:flutter_edge_ai/engine.dart';
 
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import '../litert_lm_load_errors.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'runtime_mapping.dart';
 
 String _wire(PreferredBackend backend) => ffiBackendWireName(backend.toRuntime);
@@ -37,6 +37,13 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   // model file rules it out (`LiteRtLmLoadPlan.dropped`). The notice below
   // says that instead of a reason about the host.
   Map<PreferredBackend, String> droppedBecause = const {},
+  // An attempt whose failure means the backend is not there at all rather
+  // than that it failed (an NPU this device cannot reach): with backends left
+  // it is dropped with the notice a request that cannot be honoured gets,
+  // and is no attempt; as the last one it is a failed attempt.
+  bool Function(PreferredBackend backend, Object error)? skipAttempt,
+  // An error no other backend can avoid: thrown as it is.
+  bool Function(Object error)? isFatal,
 }) async {
   final attempts = <BackendInitAttemptFailure>[];
   if (backends.isEmpty) {
@@ -83,6 +90,41 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
       await initializeClient(client, backend);
       return (client: client, activeBackend: backend);
     } on Exception catch (error, stackTrace) {
+      if (isFatal?.call(error) ?? false) {
+        await shutdownClient(client);
+        // An NPU an encoder needs, out of reach, whatever the text backend:
+        // one NPU attempt that failed, as it always was.
+        if (backend != PreferredBackend.npu &&
+            error is NpuDispatchUnavailableException) {
+          Error.throwWithStackTrace(
+            BackendInitException(
+              attempts: [
+                BackendInitAttemptFailure(
+                  backend: PreferredBackend.npu,
+                  error: error,
+                  stackTrace: stackTrace,
+                ),
+              ],
+            ),
+            stackTrace,
+          );
+        }
+        rethrow;
+      }
+      if (backend != backends.last &&
+          (skipAttempt?.call(backend, error) ?? false)) {
+        await shutdownClient(client);
+        final rest = backends.sublist(backends.indexOf(backend) + 1);
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai] WARNING: $logTag ${_wire(backend)} was requested, '
+          'but ${error is NpuDispatchUnavailableException ? error.message : error} '
+          '— trying ${rest.map(_wire).join(" -> ")} instead. NPU runs on '
+          '${npuSentenceList(NpuStack.values.map(whereNpuRuns))}. '
+          'InferenceModel.activeBackend names what actually ran.',
+        );
+        continue;
+      }
       attempts.add(
         BackendInitAttemptFailure(
           backend: backend,

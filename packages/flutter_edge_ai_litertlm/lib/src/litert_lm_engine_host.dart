@@ -1,8 +1,7 @@
-// What `LiteRtLmEngine.createModel` reaches outside Dart — the app's support
-// directory, the platform, the NPU stack and hardware probes, the FFI client —
-// behind one object, so a VM test can drive the whole load (the bundle read,
-// the load plan, the backends and encoders handed to the client) without
-// path_provider, a native library or a device. Not exported.
+// What `LiteRtLmEngine.createModel` reaches outside Dart and outside
+// litertlm_dart — the app's support directory and the platform layer the NPU
+// asks — behind one object, so a VM test can drive a whole load without
+// path_provider or a device. Not exported.
 
 import 'dart:ffi' show Abi;
 import 'dart:io' show File, Platform;
@@ -10,55 +9,39 @@ import 'dart:io' show File, Platform;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart'
+    show AndroidGpuFamily, NpuPlatform, androidGpuFamilyFrom;
+
 import 'flutter_npu_platform.dart';
-import 'package:litertlm_dart/common.dart';
 
 /// The app's support directory (path_provider): the default
 /// [LiteRtLmEngineHost.cacheDir].
 Future<String> applicationSupportDirectoryPath() async =>
     (await getApplicationSupportDirectory()).path;
 
-/// What a native `.litertlm` LLM load reaches outside Dart. Its NPU answers
-/// are the same [LiteRtLmNpuHost] the EmbeddingGemma 2 placement asks, so
-/// [chooseNpuVendor] runs over either.
-///
-/// The Flutter-bound answers are injected: [cacheDirectory] (the app's
-/// support directory by default) and [npu] ([flutterNpuHost] by default), so
-/// the client and the NPU code below them take plain values.
-class LiteRtLmEngineHost implements LiteRtLmNpuHost {
+/// What a native `.litertlm` LLM load reaches outside Dart: the app's
+/// support directory, the platform layer the NPU asks, the host ABI and the
+/// Android GPU family. Injected so a VM test can drive a whole load without
+/// path_provider or a device; the native side is litertlm_dart's
+/// `debugEngineHost`.
+class LiteRtLmEngineHost {
   const LiteRtLmEngineHost({
     this.cacheDirectory = applicationSupportDirectoryPath,
-    this.npu = flutterNpuHost,
+    this.npuPlatform = const FlutterNpuPlatform(),
   });
 
   /// Where [cacheDir] comes from.
   final Future<String> Function() cacheDirectory;
 
-  /// What the NPU questions below are answered by.
-  final LiteRtLmNpuHost npu;
+  /// What the NPU asks of the app: the build manifest and, on Android, the
+  /// vendor's dispatch directory.
+  final NpuPlatform npuPlatform;
 
   /// The directory LiteRT-LM keeps its caches in.
   Future<String> cacheDir() async => cacheDirectory();
 
-  @override
-  String get operatingSystem => Platform.operatingSystem;
-
-  @override
+  /// `Abi.current()`, as its `toString()`.
   String get abi => '${Abi.current()}';
-
-  @override
-  Future<NpuStackCheck> stack(NpuStack vendor) => npu.stack(vendor);
-
-  /// On Android it opens a vendor library.
-  @override
-  String? unreachable(NpuStack vendor) => npu.unreachable(vendor);
-
-  /// On Android it extracts the vendor's libraries out of the APK when the
-  /// installer did not.
-  @override
-  Future<String> prepareDispatchDir(NpuStack vendor) =>
-      npu.prepareDispatchDir(vendor);
 
   /// The GPU family of an Android device, told by the device node its driver
   /// exposes (`/dev/kgsl-3d0` Adreno, `/dev/mali0` Mali, `/dev/pvr_sync`
@@ -66,45 +49,6 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
   AndroidGpuFamily? androidGpuFamily() => Platform.isAndroid
       ? androidGpuFamilyFrom((path) => File(path).existsSync())
       : null;
-
-  /// A client for one backend attempt.
-  LiteRtLmFfiClient createClient() => LiteRtLmFfiClient();
-
-  /// Creates the engine in [client]: [LiteRtLmFfiClient.initialize].
-  Future<void> initializeClient(
-    LiteRtLmFfiClient client, {
-    required String modelPath,
-    required String backend,
-    required int maxTokens,
-    required String cacheDir,
-    required bool enableVision,
-    required String visionBackend,
-    required int maxNumImages,
-    required bool enableAudio,
-    required String audioBackend,
-    required bool? enableSpeculativeDecoding,
-    required int? activationDataType,
-    GpuActivationReason? gpuActivationReason,
-    required NpuDispatch? npuDispatch,
-    LiteRtLmLogLevel? nativeLogLevel,
-    required int? thinkingTokenBudget,
-  }) => client.initialize(
-    modelPath: modelPath,
-    backend: backend,
-    maxTokens: maxTokens,
-    cacheDir: cacheDir,
-    enableVision: enableVision,
-    visionBackend: visionBackend,
-    maxNumImages: maxNumImages,
-    enableAudio: enableAudio,
-    audioBackend: audioBackend,
-    enableSpeculativeDecoding: enableSpeculativeDecoding,
-    activationDataType: activationDataType,
-    gpuActivationReason: gpuActivationReason,
-    npuDispatch: npuDispatch,
-    nativeLogLevel: nativeLogLevel,
-    thinkingTokenBudget: thinkingTokenBudget,
-  );
 }
 
 LiteRtLmEngineHost _host = const LiteRtLmEngineHost();

@@ -23,7 +23,7 @@ export 'src/adapter/bundle_info.dart'
 export 'src/adapter/bundle_reader_stub.dart'
     if (dart.library.ffi) 'src/adapter/bundle_reader.dart'
     show readLiteRtLmBundleInfo;
-export 'package:litertlm_dart/common.dart'
+export 'package:litertlm_dart/internal.dart'
     show LiteRtLmBundleException, LiteRtLmBundleProblem, LiteRtLmLogLevel;
 export 'src/litert_lm_load_errors.dart';
 

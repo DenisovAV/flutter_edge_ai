@@ -720,7 +720,7 @@ class FlutterEdgeAi {
     // Merge precedence: explicit argument > manifest [defaults] > SDK default.
     // maxTokens keeps its historical 1024 fallback, so an omitted arg with no
     // defaults behaves exactly as before. The .litertlm engine still clamps
-    // this value downstream (clampLitertlmContextTokens) — a manifest cannot
+    // this value downstream (litertlm_dart's contextTokensFor) — a manifest cannot
     // set a context window the engine rejects (guards #318).
     final merged = (
       maxTokens: mergeRuntimeDefault(maxTokens, defaults?.maxTokens, 1024),

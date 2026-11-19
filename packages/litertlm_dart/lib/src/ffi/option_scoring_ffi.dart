@@ -90,7 +90,7 @@ Future<String> renderUserMessageOffMainIsolate({
         ),
       );
       if (rendered == nullptr) {
-        throw StateError(
+        throw const LiteRtLmNativeException(
           'litert_lm_conversation_render_message_to_string returned no text',
         );
       }
@@ -179,14 +179,15 @@ Future<ScoringRun> scoreTargetsOffMainIsolate({
 }
 
 /// The C calls, made through [b] on the isolate that makes them. A failure
-/// is a [StateError] naming the call, its status and LiteRT-LM's last error,
+/// is a [LiteRtLmNativeException] naming the call, its status and LiteRT-LM's last error,
 /// which is thread-local and so read here.
 final class _Native {
   _Native(this.b);
 
   final LiteRtLmBindings b;
 
-  Never _fail(LiteRtLmCallException e) => throw StateError(e.toString());
+  Never _fail(LiteRtLmCallException e) =>
+      throw LiteRtLmNativeException(e.toString());
 
   void check(String call, int code) {
     try {
@@ -339,7 +340,7 @@ final class _Native {
           final n = count.value;
           final scores = values.value;
           if (n <= 0 || scores == nullptr) {
-            throw StateError(
+            throw LiteRtLmNativeException(
               'litert_lm_session_run_text_scoring returned $n token scores',
             );
           }

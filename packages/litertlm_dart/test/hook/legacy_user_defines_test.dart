@@ -118,6 +118,17 @@ hooks:
       );
     });
 
+    test('packageOf names the key a value came from, for the errors about '
+        'that value', () {
+      final d = defines(
+        current: {'qualcomm_npu_aar': 7},
+        legacy: {'qualcomm_npu_aar': 'x', 'mediatek_npu_aar': 8},
+      );
+      expect(d.packageOf('qualcomm_npu_aar'), 'litertlm_dart');
+      expect(d.packageOf('mediatek_npu_aar'), 'flutter_edge_ai_litertlm');
+      expect(d.packageOf('qualcomm_npu_maven_url'), 'litertlm_dart');
+    });
+
     test('a key set under neither is null', () {
       expect(defines()['mediatek_npu'], isNull);
       expect(defines().path('qualcomm_npu_aar'), isNull);

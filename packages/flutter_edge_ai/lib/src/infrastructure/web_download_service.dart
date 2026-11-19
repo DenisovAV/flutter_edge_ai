@@ -1,7 +1,9 @@
 import 'dart:async';
+
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
+
 import 'dart:js_interop';
-import 'package:flutter/foundation.dart';
+
 import 'package:flutter_edge_ai/src/domain/download_exception.dart';
 import 'package:flutter_edge_ai/src/domain/download_error.dart';
 import 'package:flutter_edge_ai/src/domain/web_storage_mode.dart';
@@ -285,15 +287,8 @@ class WebDownloadService implements DownloadService {
 
           edgeAiLog('[WebDownloadService] 📥 Downloading public model: $url');
 
-          // Note: fetchFile doesn't support progress callbacks yet
-          final response = await _jsInterop.fetchFile(url);
-
-          edgeAiLog(
-            '[WebDownloadService] ✅ Downloaded: ${response.data.length} bytes',
-          );
-          onProgress(1.0);
-
-          return response.data;
+          // The cache reads the body; progress comes as it does.
+          return _jsInterop.fetchBody(url, onProgress: onProgress);
         },
         targetPath: targetPath,
       );
@@ -339,27 +334,11 @@ class WebDownloadService implements DownloadService {
             '[WebDownloadService] 📥 Downloading authenticated model: $url',
           );
 
-          // Create completer for async result
-          final completer = Completer<Uint8List>();
-
-          // Start download with streaming progress
-          _jsInterop
-              .fetchWithAuth(
-                url,
-                authToken,
-                onProgress: onProgress, // Pass progress callback directly
-              )
-              .then((response) {
-                edgeAiLog(
-                  '[WebDownloadService] ✅ Downloaded: ${response.data.length} bytes',
-                );
-                completer.complete(response.data);
-              })
-              .catchError((error) {
-                completer.completeError(error);
-              });
-
-          return await completer.future;
+          return _jsInterop.fetchBody(
+            url,
+            authToken: authToken,
+            onProgress: onProgress, // Pass progress callback directly
+          );
         },
         targetPath: targetPath,
       );

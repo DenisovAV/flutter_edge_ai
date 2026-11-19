@@ -3,6 +3,9 @@ import 'package:flutter_edge_ai/src/domain/model_source.dart';
 import 'package:flutter_edge_ai/src/handlers/source_handler.dart';
 import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
 import 'package:flutter_edge_ai/src/infrastructure/web_file_system_service.dart';
+import 'package:flutter_edge_ai/src/infrastructure/web_cache_interop_stub.dart'
+    if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_cache_interop.dart'
+    show WebModelBody;
 import 'package:flutter_edge_ai/src/infrastructure/web_cache_service.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart';
 import 'package:path/path.dart' as path;
@@ -98,7 +101,7 @@ class WebAssetSourceHandler implements SourceHandler {
           );
           onProgress(1.0);
 
-          return bytes;
+          return WebModelBody.ofBytes(bytes);
         },
         targetPath: filename,
       );

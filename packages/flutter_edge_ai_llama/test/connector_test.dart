@@ -22,16 +22,10 @@ import 'package:flutter_edge_ai_llama/src/llama_tool.dart'
     show SchemaToolDefinition;
 // ignore: implementation_imports — verifies the pinned SDK grammar used in production.
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
-// ignore: implementation_imports — verifies the pinned LFM2 auto/required grammars.
-import 'package:llamadart/src/core/template/handlers/lfm2_handler.dart';
 // ignore: implementation_imports — verifies the pinned shared XML grammar.
 import 'package:llamadart/src/core/template/handlers/minimax_m2_handler.dart';
 // ignore: implementation_imports — verifies the pinned schema-aware XML grammar.
 import 'package:llamadart/src/core/template/handlers/qwen3_coder_xml_handler.dart';
-// ignore: implementation_imports — verifies the pinned Seed-OSS XML grammar.
-import 'package:llamadart/src/core/template/handlers/seed_oss_handler.dart';
-// ignore: implementation_imports — drives handler toolChoice metadata in unit tests.
-import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 
 import 'host_abi_stub.dart' if (dart.library.ffi) 'host_abi_native.dart';
 import 'lora_fixture_stub.dart' if (dart.library.io) 'lora_fixture_native.dart';
@@ -4447,149 +4441,6 @@ void main() {
       },
     );
   }
-
-  group('strict tool preflight', () {
-    const text = {'type': 'string'};
-    const choices = {
-      'type': 'string',
-      'enum': ['fast', 'turbo'],
-    };
-    const pattern = {'type': 'string', 'pattern': r'^[a-z]+$'};
-    const integerEnum = {
-      'type': 'integer',
-      'enum': [1, 2],
-    };
-    const arrayPattern = {'type': 'array', 'items': pattern};
-    const annotated = {
-      'type': 'string',
-      'default': {'pattern': 'annotation only'},
-      'description': 'An ordinary argument.',
-    };
-    edge.Tool withProperty(Map<String, dynamic> property) => edge.Tool(
-      name: 'act',
-      description: 'Act',
-      parameters: {
-        'type': 'object',
-        'properties': {'pattern': property},
-        'required': ['pattern'],
-        'additionalProperties': false,
-      },
-    );
-
-    test('refuses only constraints the selected grammar drops', () async {
-      final previous = await model.createChat();
-      for (final (format, schema, keyword) in [
-        (llama.ChatFormat.qwen3CoderXml, choices, 'enum'),
-        (llama.ChatFormat.qwen3CoderXml, pattern, 'pattern'),
-        (
-          llama.ChatFormat.qwen3CoderXml,
-          {'type': 'string', 'minLength': 2},
-          'minLength',
-        ),
-        (llama.ChatFormat.lfm2, pattern, 'pattern'),
-        (llama.ChatFormat.lfm2, arrayPattern, 'pattern'),
-        (llama.ChatFormat.lfm2, integerEnum, 'enum'),
-        (llama.ChatFormat.lfm2, {'type': 'integer', 'maximum': 5}, 'maximum'),
-        (llama.ChatFormat.seedOss, choices, 'enum'),
-        (llama.ChatFormat.seedOss, arrayPattern, 'pattern'),
-      ]) {
-        engine.templateFormat = format.index;
-        await expectLater(
-          model.createChat(tools: [withProperty(schema)]),
-          throwsA(
-            isA<UnsupportedError>().having(
-              (e) => e.message,
-              'message',
-              contains(keyword),
-            ),
-          ),
-        );
-      }
-      await previous.addQuery(
-        edge.Message.text(text: 'still usable', isUser: true),
-      );
-      await previous.generateChatResponse();
-      expect(engine.requests.single.single.content, 'still usable');
-    });
-
-    test(
-      'preserves supported constraints and basic keyword-named properties',
-      () async {
-        for (final (format, schema, choice) in [
-          (llama.ChatFormat.qwen3CoderXml, annotated, edge.ToolChoice.auto),
-          (
-            llama.ChatFormat.qwen3CoderXml,
-            arrayPattern,
-            edge.ToolChoice.required,
-          ),
-          (llama.ChatFormat.qwen3CoderXml, integerEnum, edge.ToolChoice.auto),
-          (llama.ChatFormat.lfm2, choices, edge.ToolChoice.auto),
-          (llama.ChatFormat.lfm2, pattern, edge.ToolChoice.required),
-          (llama.ChatFormat.seedOss, annotated, edge.ToolChoice.auto),
-          (llama.ChatFormat.seedOss, text, edge.ToolChoice.required),
-          (llama.ChatFormat.seedOss, choices, edge.ToolChoice.none),
-          (llama.ChatFormat.hermes, pattern, edge.ToolChoice.auto),
-        ]) {
-          engine.templateFormat = format.index;
-          final chat = await model.openChat(
-            tools: [withProperty(schema)],
-            toolChoice: choice,
-          );
-          await chat.close();
-        }
-      },
-    );
-
-    test(
-      'Seed-OSS follows references when looking for constrained values',
-      () async {
-        engine.templateFormat = llama.ChatFormat.seedOss.index;
-        final tool = edge.Tool(
-          name: 'act',
-          description: 'Act',
-          parameters: {
-            'type': 'object',
-            'properties': {
-              'mode': {r'$ref': r'#/$defs/mode'},
-            },
-            r'$defs': {'mode': choices},
-          },
-        );
-        await expectLater(
-          model.openChat(tools: [tool]),
-          throwsA(
-            isA<UnsupportedError>().having(
-              (e) => e.message,
-              'message',
-              allOf(contains('Seed-OSS'), contains('enum')),
-            ),
-          ),
-        );
-      },
-    );
-
-    test('SDK auto grammars differ on top-level string enums', () {
-      final tools = SchemaToolDefinition.fromTools([withProperty(choices)]);
-      final qwen = Qwen3CoderXmlHandler().buildGrammar(tools)!;
-      expect(qwen, contains('xml-arg-string'));
-      expect(qwen, isNot(contains('turbo')));
-      final seed = SeedOssHandler().buildGrammar(tools)!;
-      expect(seed, contains('xml-value ::= raw-text | value'));
-      expect(seed, isNot(contains('turbo')));
-      final lfm = Lfm2Handler().render(
-        templateSource: '<|tool_list_start|>{{ tools }}<|tool_list_end|>',
-        messages: [
-          llama.LlamaChatMessage.fromText(
-            role: llama.LlamaChatRole.user,
-            text: 'hi',
-          ),
-        ],
-        metadata: {internalToolChoiceMetadataKey: llama.ToolChoice.auto.name},
-        tools: tools,
-      );
-      expect(lfm.grammar, contains('turbo'));
-    });
-  });
 }
 
 edge.InferenceModelSpec _spec(

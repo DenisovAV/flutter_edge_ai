@@ -271,15 +271,24 @@ class WebDownloadService implements DownloadService {
 
   /// A cancel that lands after the body was read (while the cache stores it
   /// or its blob URL is made) aborts nothing: the install registered the
-  /// model. Undo that and report the cancel.
+  /// model. Undo that, putting back the URL [targetPath] had before
+  /// ([previousUrl]: a model this install was replacing), and report the
+  /// cancel.
   Future<void> _unregisterIfCancelled(
     String targetPath,
+    String? previousUrl,
     CancelToken? cancelToken,
   ) async {
     if (!(cancelToken?.isCancelled ?? false)) return;
     final url = _fileSystem.getUrl(targetPath);
-    await _fileSystem.deleteFile(targetPath);
-    if (url != null) _blobUrlManager.cleanupByUrl(url);
+    if (url != previousUrl) {
+      if (previousUrl != null) {
+        _fileSystem.registerUrl(targetPath, previousUrl);
+      } else {
+        await _fileSystem.deleteFile(targetPath);
+      }
+      if (url != null) _blobUrlManager.cleanupByUrl(url);
+    }
     cancelToken!.throwIfCancelled();
   }
 
@@ -292,6 +301,8 @@ class WebDownloadService implements DownloadService {
   ) async* {
     try {
       cancelToken?.throwIfCancelled();
+
+      final previousUrl = _fileSystem.getUrl(targetPath);
 
       // Use unified caching helper with progress
       yield* cacheService.getOrCacheAndRegisterWithProgress(
@@ -310,7 +321,7 @@ class WebDownloadService implements DownloadService {
         },
         targetPath: targetPath,
       );
-      await _unregisterIfCancelled(targetPath, cancelToken);
+      await _unregisterIfCancelled(targetPath, previousUrl, cancelToken);
 
       // Track blob URL for cleanup (works with or without cache)
       final blobUrl = _fileSystem.getUrl(targetPath);
@@ -347,6 +358,8 @@ class WebDownloadService implements DownloadService {
         'WebDownloadService: Starting authenticated download for $targetPath',
       );
 
+      final previousUrl = _fileSystem.getUrl(targetPath);
+
       // Use unified caching helper with auth download
       yield* cacheService.getOrCacheAndRegisterWithProgress(
         cacheKey: normalizedUrl,
@@ -366,7 +379,7 @@ class WebDownloadService implements DownloadService {
         },
         targetPath: targetPath,
       );
-      await _unregisterIfCancelled(targetPath, cancelToken);
+      await _unregisterIfCancelled(targetPath, previousUrl, cancelToken);
 
       // Track blob URL for cleanup (works with or without cache)
       final blobUrl = _fileSystem.getUrl(targetPath);

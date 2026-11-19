@@ -1,4 +1,4 @@
-## 0.4.2
+## 0.4.3
 - `BuiltInAiHuggingFaceResolver` declares the `inference` role.
 
 ## 0.4.2

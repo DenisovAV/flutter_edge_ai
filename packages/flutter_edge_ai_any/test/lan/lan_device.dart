@@ -7,6 +7,8 @@
 //   dart run test/lan/lan_device.dart a <dir> <n>   creates the space and n
 //       documents (+ a file on the first), then waits for <dir>/stop,
 //       reporting the document B writes back
+//   dart run test/lan/lan_device.dart init <dir> 0  writes a fresh TEST
+//       account.json for running a and b by hand
 //   dart run test/lan/lan_device.dart b <dir> <n>   pulls the space, indexes
 //       every document into a local index through the change feed, searches
 //       it, fetches the file from A, writes one document back, exits
@@ -21,8 +23,15 @@ import 'package:flutter_edge_ai_any/src/ffi/any_shim.dart';
 
 final _sw = Stopwatch()..start();
 
-void log(String ev, [Map<String, Object?> f = const {}]) =>
-    stdout.writeln(jsonEncode({'t': _sw.elapsedMilliseconds, 'ev': ev, ...f}));
+void log(String ev, [Map<String, Object?> f = const {}]) => stdout.writeln(
+  jsonEncode({
+    't': _sw.elapsedMilliseconds,
+    // Wall clock, to line events up with the SDK's own (debug) log.
+    'ts': DateTime.now().toUtc().toIso8601String(),
+    'ev': ev,
+    ...f,
+  }),
+);
 
 /// A deterministic stand-in for an embedder: hashed character trigrams,
 /// L2-normalised. Not semantic; enough to check the plumbing.
@@ -96,7 +105,27 @@ void main(List<String> args) {
   AnyShim.checkAbi();
   final role = args[0], dir = args[1], n = int.parse(args[2]);
   try {
-    role == 'a' ? runA(dir, n) : runB(dir, n);
+    switch (role) {
+      case 'init':
+        // A fresh TEST account for a manual run of the two devices.
+        File('$dir/account.json').writeAsStringSync(
+          jsonEncode({
+            'note': 'TEST account, dead nodeconf, LAN only',
+            'mnemonic': AnyShim.newMnemonic(),
+            'device_a': AnyShim.newDeviceKey(),
+            'device_b': AnyShim.newDeviceKey(),
+            'serviceName':
+                '_fea${Random.secure().nextInt(1 << 30).toRadixString(16)}._tcp',
+            'nodeConfYaml': File(
+              'native/any_shim/testdata/nodeconf-dead.yml',
+            ).readAsStringSync(),
+          }),
+        );
+      case 'a':
+        runA(dir, n);
+      default:
+        runB(dir, n);
+    }
   } catch (e, st) {
     log('error', {'error': '$e', 'stack': '$st'});
     exit(1);

@@ -465,6 +465,26 @@ void main() {
     }
   });
 
+  test('the GPU activation follows the model type the app declared, not the '
+      "bundle's: a Gemma 4 bundle declared gemmaIt stays at the GPU default "
+      'above 2,048 tokens (FP32 on Adreno 830 fails to invoke)', () async {
+    final path = write(
+      'g4.litertlm',
+      _bundle(text: 'gpu,cpu', llmModelType: 8),
+    );
+    host = _FakeHost(
+      failures: const {'gpu': LiteRtLmEngineCreateException('no GPU')},
+    );
+    _install(host);
+    final model = await load(
+      path,
+      modelType: ModelType.gemmaIt,
+      maxTokens: 4096,
+    );
+    expect(host.activationDataTypes.first, isNull);
+    await model.close();
+  });
+
   test('a Gemma 4 bundle that names no family keeps the rule by the type the '
       'app declared', () async {
     final path = write('unnamed_g4.litertlm', _bundle(text: 'gpu,cpu'));

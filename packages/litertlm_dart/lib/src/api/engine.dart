@@ -75,6 +75,14 @@ int contextTokensFor(int maxNumTokens, BackendKind backend) {
 /// before litetune 0.1.4: at float16 it answers with `<pad>` or nothing).
 /// [family] is the bundle's `llm_model_type`; [declaresActivation] whether it
 /// declares a type (null: unread). Null leaves the bundle's own.
+/// A GPU activation the caller decided by a rule of its own, for
+/// [createEngineWithBundle]: the type (null: the engine's default) and why it
+/// was chosen. Given, the engine does not apply [gpuActivationFor].
+typedef GpuActivationDecision = ({
+  ActivationDataType? type,
+  GpuActivationReason? reason,
+});
+
 ({ActivationDataType? type, GpuActivationReason? reason}) gpuActivationFor({
   required LlmModelFamily? family,
   required bool? declaresActivation,
@@ -308,6 +316,7 @@ final class Engine {
     LiteRtLmLogLevel? nativeLevel,
     EngineBundle? read, {
     ToolCallReader toolCallsOf = nativeToolCalls,
+    GpuActivationDecision? gpuActivation,
   }) async {
     if (config.backend case CpuBackend(
       :final threadCount?,
@@ -398,7 +407,14 @@ final class Engine {
     // the engine's rule for a GPU load.
     var activation = config.activationDataType;
     GpuActivationReason? reason;
-    if (activation == null && kind == BackendKind.gpu) {
+    if (activation == null &&
+        kind == BackendKind.gpu &&
+        gpuActivation != null) {
+      // The caller decided by its own rule (the Flutter adapter, by the model
+      // type the app declared): the bundle's model type is not consulted.
+      activation = gpuActivation.type;
+      reason = gpuActivation.reason;
+    } else if (activation == null && kind == BackendKind.gpu) {
       final family = await _readFamily(path);
       final declares = family == LlmModelFamily.functionGemma
           ? await _readActivationDeclaration(path)
@@ -849,6 +865,7 @@ Future<Engine> createEngineWithBundle(
   EngineBundle bundle, {
   ToolCallReader toolCallsOf = nativeToolCalls,
   LiteRtLmLogLevel? nativeLevel,
+  GpuActivationDecision? gpuActivation,
 }) {
   if (bundle.path != config.modelPath) {
     throw ArgumentError.value(
@@ -860,8 +877,14 @@ Future<Engine> createEngineWithBundle(
   // The caller's level for this engine, else the one LiteRtLmLog set.
   final level = nativeLevel ?? liteRtLmNativeLogLevel;
   return Engine._oneCreateAtATime(
-    () =>
-        Engine._create(config, _host, level, bundle, toolCallsOf: toolCallsOf),
+    () => Engine._create(
+      config,
+      _host,
+      level,
+      bundle,
+      toolCallsOf: toolCallsOf,
+      gpuActivation: gpuActivation,
+    ),
   );
 }
 

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show FileSystemException;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
@@ -15,7 +14,7 @@ import 'package:litertlm_dart/internal_io.dart'
         liteRtLmEncoderOnNpu,
         liteRtLmTextCandidates,
         readEngineBundle,
-        readLlmModelFamily,
+        GpuActivationDecision,
         tryReadBundleActivationDeclaration;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'package:litertlm_dart/litertlm_dart.dart'
@@ -198,9 +197,9 @@ class LiteRtLmEngine
       bundle?.declaredAudioBackend,
     );
 
-    // The GPU activation rule is the runtime's, from the bundle's own model
-    // type. A Gemma 4 or FunctionGemma bundle that does not name its type
-    // keeps the rule by the type the app declared.
+    // The GPU activation rule is decided here, by the model type the app
+    // declared, as flutter_edge_ai_litertlm always has: the runtime's own
+    // rule (by the bundle's model type) is for plain-Dart Engine.create.
     final gpuActivation = config.activationDataType == null
         ? await _declaredTypeActivation(spec, config)
         : null;
@@ -224,9 +223,7 @@ class LiteRtLmEngine
             maxNumTokens: config.maxTokens,
             maxNumImages: config.supportImage ? config.maxNumImages : null,
             cacheDir: cacheDir,
-            activationDataType:
-                config.activationDataType?.toRuntime ??
-                (backend == PreferredBackend.gpu ? gpuActivation : null),
+            activationDataType: config.activationDataType?.toRuntime,
             speculativeDecoding: switch (config.enableSpeculativeDecoding) {
               true => lm.SpeculativeDecodingMode.on,
               false => lm.SpeculativeDecodingMode.off,
@@ -235,6 +232,7 @@ class LiteRtLmEngine
           ),
           read,
           toolCallsOf: liteRtLmToolCallsOf,
+          gpuActivation: gpuActivation,
           // This engine's own level, set before each of its engines; null
           // leaves the process's level as it is, whatever LiteRtLmLog says.
           nativeLevel: nativeLogLevel,
@@ -302,12 +300,12 @@ class LiteRtLmEngine
     );
   }
 
-  /// The GPU activation a [spec] of a family with a known float16 failure
-  /// gets when its bundle does not name its model type (`llm_model_type`):
-  /// the rule the runtime applies from the bundle, by the type the app
-  /// declared instead. Null when the bundle names its type (the runtime
-  /// decides) or the rule does not apply.
-  static Future<lm.ActivationDataType?> _declaredTypeActivation(
+  /// The GPU activation a load of [spec] gets when the app set none, by the
+  /// model type the app declared (not the bundle's own): float32 for
+  /// `ModelType.gemma4` above a 2,048-token context (LiteRT-LM #4001) and for
+  /// a `ModelType.functionGemma` bundle that declares no
+  /// `prefer_activation_type`; none otherwise.
+  static Future<GpuActivationDecision> _declaredTypeActivation(
     InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
@@ -316,21 +314,7 @@ class LiteRtLmEngine
       ModelType.functionGemma => LlmModelFamily.functionGemma,
       _ => null,
     };
-    if (family == null) return null;
-    LlmModelFamily? named;
-    try {
-      named = await readLlmModelFamily(config.modelPath);
-    } on Object catch (e) {
-      if (e is! FileSystemException &&
-          e is! FormatException &&
-          e is! RangeError) {
-        rethrow;
-      }
-    }
-    if (named == LlmModelFamily.gemma4 ||
-        named == LlmModelFamily.functionGemma) {
-      return null;
-    }
+    if (family == null) return (type: null, reason: null);
     bool? declares;
     if (family == LlmModelFamily.functionGemma) {
       final read = await tryReadBundleActivationDeclaration(config.modelPath);
@@ -354,7 +338,7 @@ class LiteRtLmEngine
       family: family,
       declaresActivation: declares,
       maxNumTokens: config.maxTokens,
-    ).type;
+    );
   }
 }
 

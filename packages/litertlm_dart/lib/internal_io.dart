@@ -217,6 +217,7 @@ export 'src/api/engine.dart'
         engineRenderUserMessage,
         readEngineBundle,
         debugEngineHost,
+        GpuActivationDecision,
         gpuActivationFor,
         liteRtLmNativeLogLevel;
 export 'src/api/message.dart'

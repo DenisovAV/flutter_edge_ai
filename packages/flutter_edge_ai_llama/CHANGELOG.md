@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- README links the full documentation; the showcase link is in the core README only.
+
 ## 0.1.0
 
 - `responseFormat` on `openSession`/`openChat`, enforced by llamadart's grammar (#195).

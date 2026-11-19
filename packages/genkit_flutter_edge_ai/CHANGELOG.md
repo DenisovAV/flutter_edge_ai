@@ -1,3 +1,6 @@
+## 0.12.1
+- README: the showcase link is in the core package README only.
+
 ## 0.12.0
 - An output schema goes to the model as `responseFormat` when it enforces one (#195).
 - The embedder passes Genkit's cancel to `embedAll`.

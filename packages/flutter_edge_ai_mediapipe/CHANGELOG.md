@@ -1,3 +1,6 @@
+## 1.3.1
+- README: the showcase link is in the core package README only.
+
 ## 1.3.0
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and audio.
 - Android: a streamed reply no longer loses chunks while the UI thread is busy.

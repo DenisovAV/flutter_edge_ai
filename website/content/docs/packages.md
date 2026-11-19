@@ -27,7 +27,6 @@ depend on it. Apps ship only the runtimes and vector stores they use.
 | **`flutter_edge_ai_sqlite`** | SQLite + `sqlite-vec` provider for `flutter_edge_ai_rag`. Exact + portable. | All (incl. Web) |
 | **`flutter_edge_ai_agent`** | On-device [agent skills](/docs/agent) — SKILL.md catalog + tool-calling loop (text / JS / native-intent / MCP). | Native, no Web (JS skills: no Linux) |
 | **`flutter_edge_ai_speech`** | On-device [speech](/docs/speech) — speech-to-text + text-to-speech + a `VoiceSession` voice loop (moonshine/Whisper/Parakeet STT + Matcha/Qwen3/Inflect TTS) via the LiteRT C API + `dart:ffi`. | Native (no Web) |
-| **`litertlm_dart`** | [LiteRT-LM from Dart](/docs/litertlm-dart): `Engine`, `Conversation` and `EmbeddingEngine` shaped like LiteRT-LM's Kotlin and Swift APIs, over `dart:ffi`; owns the native LiteRT-LM build. No dependency on `flutter_edge_ai`. The runtime under `flutter_edge_ai_litertlm` and `flutter_edge_ai_speech`. | Android, iOS, macOS, Linux, Windows (inside Flutter apps today) |
 | **`flutter_edge_ai_diagnostics`** | [Memory diagnostics](/docs/diagnostics) — the anonymous footprint (the memory the OS cannot reclaim) and the memory still available, read from the OS. No native code, no dependency on core. | Android + iOS + macOS + Linux + Windows |
 
 Which runtime gives you text generation, embeddings and speech on each platform
@@ -48,8 +47,8 @@ is on the [Capabilities](/docs/capabilities) page.
 - **One app can run both formats.** Register both `LiteRtLmEngine()` and
   `MediaPipeEngine()`, and the registry routes each model to the engine that
   handles its declared `ModelFileType` — not its file extension.
-- **Shared native library.** [`litertlm_dart`](/docs/litertlm-dart), the
-  pure-Dart LiteRT-LM runtime under `flutter_edge_ai_litertlm` (from 1.21.0), owns the native LiteRT library
+- **Shared native library.** [`litertlm_dart`](https://pub.dev/packages/litertlm_dart),
+  the pure-Dart LiteRT-LM runtime under `flutter_edge_ai_litertlm` (from 1.21.0), owns the native LiteRT library
   (fetched at build time via its Native-Assets hook);
   `flutter_edge_ai_litertlm` and `flutter_edge_ai_speech` have no hook of their
   own and consume that bundle through it. `flutter_edge_ai_embeddings` touches no native library at all. `flutter_edge_ai_onnx` owns its own separate ORT / ORT-GenAI

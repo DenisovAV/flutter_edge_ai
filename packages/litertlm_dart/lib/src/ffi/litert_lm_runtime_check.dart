@@ -49,7 +49,7 @@ void checkOwnLiteRtLmBuild(
 }) {
   if (provides(liteRtLmOwnBuildSymbol)) return;
   throw StateError(
-    'The LiteRT-LM library at $path is not the one flutter_edge_ai_litertlm '
+    'The LiteRT-LM library at $path is not the one litertlm_dart '
     'ships (it lacks $liteRtLmOwnBuildSymbol). Another package in this app '
     'bundles its own LiteRT-LM under the same name — llamadart before 0.12.0 '
     'does by default. Upgrade llamadart, or set '
@@ -81,7 +81,7 @@ void checkLiteRtLmCApiVersion(
   if (!provides('litert_lm_get_api_version')) {
     throw StateError(
       'The LiteRT-LM library at $path predates its C API 1.0 (it lacks '
-      'litert_lm_get_api_version), which this flutter_edge_ai_litertlm '
+      'litert_lm_get_api_version), which this litertlm_dart '
       'release is built against. A stale local prebuilt under '
       'native/litert_lm/prebuilt/ or in the native cache is the usual cause; '
       'run `flutter clean` once.',
@@ -92,7 +92,7 @@ void checkLiteRtLmCApiVersion(
     throw StateError(
       'The LiteRT-LM library at $path reports C API '
       '${code == 0 ? '$major.$minor.$patch' : 'version unknown (status $code)'}; '
-      'this flutter_edge_ai_litertlm release is built against '
+      'this litertlm_dart release is built against '
       '$liteRtLmCApiMajor.x.',
     );
   }

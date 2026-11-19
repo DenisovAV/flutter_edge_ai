@@ -13,9 +13,9 @@ import 'dart:io';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_io.dart';
 import 'package:litertlm_dart/litert_bindings.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 import 'package:flutter_edge_ai_litertlm/src/adapter/backend_fallback.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
@@ -184,7 +184,7 @@ void main() {
           isA<StateError>().having(
             (e) => e.message,
             'message',
-            contains('is not the one flutter_edge_ai_litertlm ships'),
+            contains('is not the one litertlm_dart ships'),
           ),
         ),
       );
@@ -223,7 +223,7 @@ void main() {
             allOf(
               contains(
                 'The LiteRT-LM library at $_iosPath is not the one '
-                'flutter_edge_ai_litertlm ships',
+                'litertlm_dart ships',
               ),
               contains('(it lacks $liteRtLmOwnBuildSymbol)'),
               contains(
@@ -257,7 +257,7 @@ void main() {
     test('is an Error: the backend fallback loop stops at the first backend '
         'instead of retrying the same library on the next', () async {
       final backends = ffiBackendFallbackOrder(
-        Backend.gpu,
+        BackendKind.gpu,
         npuAvailable: false,
       );
       expect(

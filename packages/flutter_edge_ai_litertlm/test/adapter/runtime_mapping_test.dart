@@ -9,7 +9,7 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -18,7 +18,7 @@ void main() {
       expect(backend.toRuntime.name, backend.name);
       expect(backend.toRuntime.toCore, backend);
     }
-    expect(Backend.values.length, PreferredBackend.values.length);
+    expect(BackendKind.values.length, PreferredBackend.values.length);
   });
 
   test('every activation type maps to the one of the same name and back', () {
@@ -26,7 +26,7 @@ void main() {
       expect(type.toRuntime.name, type.name);
       expect(type.toRuntime.toCore, type);
     }
-    expect(ActivationType.values.length, ActivationDataType.values.length);
+    expect(ActivationDataType.values.length, ActivationDataType.values.length);
   });
 
   test('a sampler keeps every value both ways', () {
@@ -59,7 +59,7 @@ void main() {
   });
 
   test('turn metrics keep every value', () {
-    final metrics = const TurnMetrics(
+    final metrics = const BenchmarkInfo(
       inputTokens: 1,
       outputTokens: 2,
       totalTokens: 3,

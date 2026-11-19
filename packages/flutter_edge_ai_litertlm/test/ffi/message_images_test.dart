@@ -5,10 +5,10 @@
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'ffi_test_support.dart';
 
 /// Records the images each turn hands the conversation; no native code.
 class _ImageRecordingHandle implements ConversationHandle {
@@ -43,7 +43,10 @@ class _ImageRecordingHandle implements ConversationHandle {
   Stream<String> chatRawMessage(
     String messageJson, {
     bool enableThinking = false,
+    SendOptions options = SendOptions.none,
   }) async* {
+    final images = sentMessage(messageJson).images;
+    sentImages.add(images.isEmpty ? null : images);
     yield '{"role":"assistant","content":[{"type":"text","text":"ok"}]}';
   }
 
@@ -56,7 +59,7 @@ class _ImageRecordingHandle implements ConversationHandle {
   ) async => StoppedTurnRewind.unsupported;
 
   @override
-  TurnMetrics getSessionMetrics() => const TurnMetrics();
+  BenchmarkInfo getSessionMetrics() => const BenchmarkInfo();
 
   @override
   NativeLastTurnEnd? get lastTurnEnd => null;
@@ -75,7 +78,7 @@ void main() {
     group('${modelType.name} session', () {
       Future<List<Uint8List>?> stagedImages(Message message) async {
         final handle = _ImageRecordingHandle();
-        final session = FfiInferenceModelSession(
+        final session = ffiSessionForHandle(
           handle: handle,
           modelType: modelType,
           fileType: ModelFileType.litertlm,

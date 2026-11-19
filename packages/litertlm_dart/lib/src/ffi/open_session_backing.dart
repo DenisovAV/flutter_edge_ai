@@ -88,17 +88,17 @@ const liteRtLmConversationsNpus = {
 /// [androidGpu] the GPU family of an Android device, null when not read.
 OpenSessionBacking liteRtLmOpenSessionBacking({
   required String abi,
-  required Backend? backend,
+  required BackendKind? backend,
   NpuStack? npuVendor,
   AndroidGpuFamily? androidGpu,
 }) {
   final verified = switch (backend) {
-    Backend.cpu => liteRtLmConversationsCpuAbis.contains(abi),
-    Backend.gpu =>
+    BackendKind.cpu => liteRtLmConversationsCpuAbis.contains(abi),
+    BackendKind.gpu =>
       abi == 'android_arm64'
           ? liteRtLmConversationsAndroidGpus.contains(androidGpu)
           : liteRtLmConversationsGpuAbis.contains(abi),
-    Backend.npu =>
+    BackendKind.npu =>
       npuVendor != null && liteRtLmConversationsNpus.contains((npuVendor, abi)),
     null => false,
   };
@@ -118,7 +118,8 @@ const liteRtLmFreshConversationNpus = {NpuStack.mediatek};
 /// ([liteRtLmFreshConversationNpus]), in `createSession` and `openSession`
 /// sessions alike.
 bool liteRtLmFreshConversationEachTurn({
-  required Backend? backend,
+  required BackendKind? backend,
   NpuStack? npuVendor,
 }) =>
-    backend == Backend.npu && liteRtLmFreshConversationNpus.contains(npuVendor);
+    backend == BackendKind.npu &&
+    liteRtLmFreshConversationNpus.contains(npuVendor);

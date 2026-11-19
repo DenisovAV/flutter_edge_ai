@@ -1,56 +1,49 @@
 // Regression test for #318: a maxTokens below the model's baked
 // `kv_cache_max_len` (1024 for every supported .litertlm model) underflows the
 // native KV-cache resize and DYNAMIC_UPDATE_SLICE crashes at generation.
-// `clampLitertlmContextTokens` raises any value below the floor up to it.
+// `contextTokensFor` raises any value below the floor up to it on the CPU
+// and the GPU; `Engine.create` applies it to the backend it loads.
 //
 // Reproduced on Pixel 8a (Gemma 4 E2B, CPU): 100/256/512 crash, 1024/4096 work.
 @TestOn('vm')
 library;
 
-import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
-import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
-import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal_io.dart';
+import 'package:test/test.dart';
 
 void main() {
-  group('clampLitertlmContextTokens (#318)', () {
+  group('contextTokensFor (#318)', () {
     test('the floor constant is 1024 (the max known kv_cache_max_len)', () {
-      expect(kMinLitertlmContextTokens, 1024);
+      expect(minCpuGpuContextTokens, 1024);
     });
 
     test('clamps values below the floor up to 1024', () {
       // The user's exact value, plus the verified-crashing thresholds.
-      expect(clampLitertlmContextTokens(100), 1024);
-      expect(clampLitertlmContextTokens(256), 1024);
-      expect(clampLitertlmContextTokens(512), 1024);
-      expect(clampLitertlmContextTokens(1), 1024);
-      expect(clampLitertlmContextTokens(1023), 1024);
+      expect(contextTokensFor(100, BackendKind.cpu), 1024);
+      expect(contextTokensFor(256, BackendKind.cpu), 1024);
+      expect(contextTokensFor(512, BackendKind.cpu), 1024);
+      expect(contextTokensFor(1, BackendKind.cpu), 1024);
+      expect(contextTokensFor(1023, BackendKind.cpu), 1024);
     });
 
     test('leaves the floor itself untouched', () {
-      expect(clampLitertlmContextTokens(1024), 1024);
+      expect(contextTokensFor(1024, BackendKind.cpu), 1024);
     });
 
     test('passes through values above the floor unchanged', () {
-      expect(clampLitertlmContextTokens(2048), 2048);
-      expect(clampLitertlmContextTokens(4096), 4096);
-      expect(clampLitertlmContextTokens(8192), 8192);
+      expect(contextTokensFor(2048, BackendKind.cpu), 2048);
+      expect(contextTokensFor(4096, BackendKind.cpu), 4096);
+      expect(contextTokensFor(8192, BackendKind.cpu), 8192);
     });
 
     test('handles zero (treated as below the floor)', () {
-      expect(clampLitertlmContextTokens(0), 1024);
+      expect(contextTokensFor(0, BackendKind.cpu), 1024);
     });
 
     test('clamps for every backend that is not NPU', () {
-      for (final backend in [
-        null,
-        PreferredBackend.cpu,
-        PreferredBackend.gpu,
-      ]) {
+      for (final backend in [BackendKind.cpu, BackendKind.gpu]) {
         expect(
-          clampLitertlmContextTokens(512, preferredBackend: backend),
+          contextTokensFor(512, backend),
           1024,
           reason:
               'the #318 floor is a CPU/GPU fact and still applies to $backend',
@@ -66,27 +59,18 @@ void main() {
   // length only when the metadata has none (LiteRT-LM#4184), so a clamped 1024
   // is safe only on a bundle whose metadata matches its cache. The #318 floor
   // is a CPU/GPU fact, and the caller's number passes through.
-  group('clampLitertlmContextTokens leaves NPU alone (LiteRT-LM#3508)', () {
+  group('contextTokensFor leaves NPU alone (LiteRT-LM#3508)', () {
     test('896 — the measured Gemma 3 Qualcomm value — is passed through', () {
-      expect(
-        clampLitertlmContextTokens(896, preferredBackend: PreferredBackend.npu),
-        896,
-      );
+      expect(contextTokensFor(896, BackendKind.npu), 896);
     });
 
     test('every value below the floor survives on NPU', () {
       for (final tokens in [1, 128, 512, 768, 896, 1023]) {
-        expect(
-          clampLitertlmContextTokens(
-            tokens,
-            preferredBackend: PreferredBackend.npu,
-          ),
-          tokens,
-        );
+        expect(contextTokensFor(tokens, BackendKind.npu), tokens);
       }
     });
 
-    // The trap this pins: `PreferredBackend.npu` does not mean the NPU runs.
+    // The trap this pins: `BackendKind.npu` does not mean the NPU runs.
     // A generic bundle is never tried on the NPU, and a file the load plan
     // cannot read is tried npu -> gpu -> cpu (`ffiBackendFallbackOrder`), so an
     // NPU-sized context below the floor must NOT survive into the GPU and CPU
@@ -104,38 +88,23 @@ void main() {
           // and applied to whatever follows it, which needs a three-backend
           // chain regardless of whether the test host ships an NPU dispatch.
           for (final backend in ffiBackendFallbackOrder(
-            Backend.npu,
+            BackendKind.npu,
             npuAvailable: true,
           ))
-            backend.toCore: clampLitertlmContextTokens(
-              requested,
-              preferredBackend: backend.toCore,
-            ),
+            backend: contextTokensFor(requested, backend),
         };
 
         expect(perAttempt, {
-          PreferredBackend.npu: 896,
-          PreferredBackend.gpu: 1024,
-          PreferredBackend.cpu: 1024,
+          BackendKind.npu: 896,
+          BackendKind.gpu: 1024,
+          BackendKind.cpu: 1024,
         });
       },
     );
 
     test('values at or above the floor are unchanged on NPU too', () {
-      expect(
-        clampLitertlmContextTokens(
-          1024,
-          preferredBackend: PreferredBackend.npu,
-        ),
-        1024,
-      );
-      expect(
-        clampLitertlmContextTokens(
-          4096,
-          preferredBackend: PreferredBackend.npu,
-        ),
-        4096,
-      );
+      expect(contextTokensFor(1024, BackendKind.npu), 1024);
+      expect(contextTokensFor(4096, BackendKind.npu), 4096);
     });
   });
 }

@@ -23,11 +23,11 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
 import 'package:flutter_edge_ai_litertlm/src/catalog/litert_catalog.dart'
     show debugLiteRtCatalogHost;
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 // ignore: implementation_imports — the fake LiteRT-LM implements the generated EmbeddingEngine bindings class
 import 'package:litertlm_dart/src/ffi/litert_lm_embedding_bindings.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 
 const _file = 'eg2.litertlm';
 const _noAudioEncoder =
@@ -1481,7 +1481,7 @@ void main() {
         '(core refuses it first; reaching the pass is a host bug)', () async {
       await expectLater(
         p.embed(EmbeddingInput.image(_png), TaskType.none),
-        throwsA(isA<EmbeddingEngineException>()),
+        throwsArgumentError,
       );
       expect(native.order, isNot(contains('input_data_create')));
       expect(allocator.live, 0);
@@ -1601,7 +1601,7 @@ void main() {
           EmbeddingInput.audio(Uint8List.fromList([1, 2, 3])),
           TaskType.none,
         ),
-        throwsA(isA<EmbeddingEngineException>()),
+        throwsArgumentError,
       );
       expect(native.order, isNot(contains('input_data_create')));
       expect(allocator.live, 0);
@@ -1763,10 +1763,7 @@ void main() {
         EmbeddingInput.audio(_wav),
         EmbeddingInput(text: 'x', audio: _wav),
       ]) {
-        await expectLater(
-          p.embed(input, TaskType.none),
-          throwsA(isA<EmbeddingEngineException>()),
-        );
+        await expectLater(p.embed(input, TaskType.none), throwsArgumentError);
       }
       expect(native.order, isNot(contains('input_data_create')));
       expect(allocator.live, 0);
@@ -2478,7 +2475,7 @@ void main() {
                 allOf(
                   contains('could not run $_file on the GPU'),
                   contains('DEADLINE_EXCEEDED'),
-                  contains('preferredBackend: cpu'),
+                  contains('PreferredBackend.cpu'),
                   isNot(contains('NPU')),
                 ),
               )
@@ -2520,7 +2517,7 @@ void main() {
             'message',
             allOf(
               contains('on the GPU: no WebGPU adapter'),
-              contains('preferredBackend: cpu'),
+              contains('PreferredBackend.cpu'),
               isNot(contains('cache directory')),
             ),
           ),

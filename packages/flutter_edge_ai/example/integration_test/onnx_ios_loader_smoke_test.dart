@@ -13,7 +13,7 @@
 // "image not found" — the exact failure mode a bare, unanchored
 // `<name>.framework/<name>` leaf name produces on iOS's dyld 4 (dyld 4
 // cannot resolve framework names alone the way macOS's dyld does; see
-// `flutter_edge_ai_litertlm/lib/src/ffi/litert_lm_client.dart`'s
+// `litertlm_dart/lib/src/ffi/litert_lm_client.dart`'s
 // `@executable_path/Frameworks/` precedent, and `gen_ai_client.dart`'s
 // `_candidateNames`/`ort_ffi_client.dart`'s `_openOnnxRuntime` iOS branches).
 //

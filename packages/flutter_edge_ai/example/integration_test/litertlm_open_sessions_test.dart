@@ -45,7 +45,7 @@ import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 // ignore: implementation_imports — the open-session backing the load chose
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 // ignore: implementation_imports — the open-session backing the load chose
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -212,10 +212,10 @@ void main() {
   testWidgets('the load chose the expected backing', (tester) async {
     final m = await ensureModel();
     _result(
-      'backing=${m.openSessionBacking.name} active=${m.activeBackend?.name} '
+      'backing=${engineConversationBacking(m.engine).name} active=${m.activeBackend?.name} '
       'noRewind=${m.noRewindReason} maxTokens=${m.maxTokens}',
     );
-    expect(m.openSessionBacking.name, _expectBacking);
+    expect(engineConversationBacking(m.engine).name, _expectBacking);
   });
 
   testWidgets('three interleaved sessions each recall only their own word', (
@@ -409,7 +409,7 @@ void main() {
       expect(name, contains('zorblax'));
       expect(colour, contains('purple'));
       final m = await ensureModel();
-      if (m.openSessionBacking == OpenSessionBacking.native) {
+      if (engineConversationBacking(m.engine) == OpenSessionBacking.native) {
         if (m.noRewindReason == null) {
           expect(rewound, hasLength(1));
           expect(rebuilt, isEmpty);
@@ -553,7 +553,7 @@ void main() {
     final sameSends = <int>[];
     for (var i = 0; i < 10; i++) {
       await _ask(first, 'Reply with OK only.');
-      sameSends.add(m.ffiClient.lastSendCallMicros!);
+      sameSends.add(engineClient(m.engine).lastSendCallMicros!);
     }
     Future<(int, int?, int?)> read() async {
       final snapshot = await FlutterEdgeAiDiagnostics.memorySnapshot();
@@ -601,8 +601,8 @@ void main() {
       final sw = Stopwatch()..start();
       for (var i = 0; i < _switches; i++) {
         await _ask(i.isEven ? first : b, 'Reply with OK only.');
-        switchSends.add(m.ffiClient.lastSendCallMicros!);
-        switchNative.add(m.ffiClient.lastSendNativeMicros!);
+        switchSends.add(engineClient(m.engine).lastSendCallMicros!);
+        switchNative.add(engineClient(m.engine).lastSendNativeMicros!);
         if ((i + 1) % 10 == 0) {
           final now = await read();
           _result(

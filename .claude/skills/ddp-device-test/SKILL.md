@@ -102,7 +102,10 @@ crash in the app's process.
   a gated file use a short-lived signed URL.
 - **No secrets as `KEY=VALUE`.** A dart-define is compiled into the APK, and the
   APK stays on a phone other people use after us. `run_instrumented.sh` refuses
-  a name containing TOKEN, KEY, SECRET or PASSWORD. Stage gated models instead;
+  a name with TOKEN, SECRET, PASSWORD, CREDENTIALS or a word ending in KEY as a
+  whole word between underscores (`HF_TOKEN`, `API_KEY`; `STT_TOKENIZER_FILE`
+  passes; `define_guard.sh`, checked by `test_define_guard.sh`). Stage gated
+  models instead;
   a test that needs a cloud key (the hybrid-AI codelab's cloud half) runs on a
   device of your own.
 - **Not every phone has `curl`.** Samsung images ship `/system/bin/curl`; the

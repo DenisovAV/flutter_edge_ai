@@ -1,5 +1,5 @@
 name: litertlm_dart
-description: "LiteRT-LM from Dart, without Flutter: dart:ffi bindings, patched native builds fetched by a build hook, open sessions with rewind, NPU stacks and EmbeddingGemma 2."
+description: "LiteRT-LM in pure Dart, no Flutter dependency: dart:ffi bindings, patched native builds fetched by a build hook, open sessions with rewind, NPU stacks and EmbeddingGemma 2."
 # The upstream LiteRT-LM version this is built from, plus a build number for
 # each of our native rebuilds of it: 0.19.1+1 is LiteRT-LM 0.19.1 on
 # native-v0.19.1-c. Breaking Dart API changes ride an upstream version change.
@@ -32,5 +32,8 @@ dependencies:
   yaml: ^3.1.0
 
 dev_dependencies:
+  # The member golden (test/public_surface/) resolves the public library
+  # with the analyzer; the range is flutter_edge_ai's.
+  analyzer: '>=13.0.0 <15.0.0'
   lints: ^6.0.0
   test: ^1.25.0

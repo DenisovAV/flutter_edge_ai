@@ -3,7 +3,8 @@
 pass calls (R5 §4.11), every one option scoring calls (SCORING_SYMBOLS),
 every LiteRT C function LiteRtBindings looks up (LITERT_BINDINGS_SYMBOLS, from
 libLiteRt.so on Linux and LiteRt.dll on Windows, by the platform in the label),
-every one a thinking token budget calls (THINKING_BUDGET_SYMBOLS), the
+every one a thinking token budget calls (THINKING_BUDGET_SYMBOLS), every
+one the per-message and engine options call (OPTION_SYMBOLS), the
 symbol the loader checks to recognise this package's build
 (OWN_BUILD_SYMBOLS), the LLM functions the C API 1.0 client binds
 (LLM_SYMBOLS), the StreamProxy entry it streams through
@@ -24,7 +25,8 @@ fat), PE export directory — so it needs no platform toolchain and checks the
 bytes that ship.
 
 REQUIRED must equal `liteRtLmEmbeddingSymbols` in
-lib/src/embedding/litert_lm_embedding_pass.dart (a VM test compares them).
+packages/litertlm_dart/lib/src/embedder/litert_lm_embedder.dart (a VM test
+compares them).
 
 Usage: check_embedding_exports.py <extracted_bundle_dir> [<label>]
 Exit 1 when the main library is missing, unreadable, or misses a symbol.
@@ -123,6 +125,38 @@ THINKING_BUDGET_SYMBOLS = [
     "litert_lm_thinking_config_delete",
     "litert_lm_thinking_config_set_enable_thinking",
     "litert_lm_thinking_config_set_thinking_token_budget",
+]
+
+# Every C function the API's per-message and engine options call
+# (applySendOptions in lib/src/ffi/send_options.dart, the speculative decoding
+# config and the CPU thread count in litert_lm_client.dart, the conversation's
+# extra context; a VM test keeps this list equal to the calls). Upstream C API
+# since v0.19.0, so every archive has them; a tarball without one would fail
+# the option's first use instead of the release.
+OPTION_SYMBOLS = [
+    "litert_lm_conversation_config_set_extra_context",
+    "litert_lm_conversation_optional_args_set_no_repeat_ngram_config",
+    "litert_lm_conversation_optional_args_set_repetition_penalty_config",
+    "litert_lm_conversation_optional_args_set_suppress_tokens_config",
+    "litert_lm_engine_settings_set_num_threads",
+    "litert_lm_engine_settings_set_speculative_decoding_config",
+    "litert_lm_no_repeat_ngram_config_create",
+    "litert_lm_no_repeat_ngram_config_delete",
+    "litert_lm_no_repeat_ngram_config_set_no_repeat_ngram_size",
+    "litert_lm_no_repeat_ngram_config_set_window_size",
+    "litert_lm_repetition_penalty_config_create",
+    "litert_lm_repetition_penalty_config_delete",
+    "litert_lm_repetition_penalty_config_set_frequency_penalty",
+    "litert_lm_repetition_penalty_config_set_presence_penalty",
+    "litert_lm_repetition_penalty_config_set_repetition_penalty",
+    "litert_lm_repetition_penalty_config_set_window_size",
+    "litert_lm_session_config_set_speculative_decoding_config",
+    "litert_lm_speculative_decoding_config_create",
+    "litert_lm_speculative_decoding_config_delete",
+    "litert_lm_speculative_decoding_config_set_mode",
+    "litert_lm_suppress_tokens_config_create",
+    "litert_lm_suppress_tokens_config_delete",
+    "litert_lm_suppress_tokens_config_set_suppress_tokens",
 ]
 
 # The symbol every libLiteRtLm open checks to tell this package's build from
@@ -427,6 +461,8 @@ def main(argv):
                           "(createDecider) calls"),
                          (THINKING_BUDGET_SYMBOLS, "functions a thinking "
                           "token budget calls"),
+                         (OPTION_SYMBOLS, "functions the per-message and "
+                          "engine options call"),
                          (OWN_BUILD_SYMBOLS, "symbols the loader checks to "
                           "recognise this package's build"),
                          (LLM_SYMBOLS, "LLM functions the C API 1.0 client "

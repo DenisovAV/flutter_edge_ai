@@ -82,6 +82,25 @@ Uint8List _fakeAar() => buildZip({
 
 void main() {
   group('readBoolUserDefine', () {
+    test('a bad value names the user_defines key it came from', () {
+      expect(
+        () => readBoolUserDefine(
+          'yes',
+          'qualcomm_npu',
+          package: 'flutter_edge_ai_litertlm',
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains(
+              'hooks.user_defines.flutter_edge_ai_litertlm.qualcomm_npu',
+            ),
+          ),
+        ),
+      );
+    });
+
     test('absent is off', () {
       expect(readBoolUserDefine(null, 'qualcomm_npu'), isFalse);
     });

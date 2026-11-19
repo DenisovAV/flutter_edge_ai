@@ -26,12 +26,12 @@ OUT=${DDP_RUNS:-${TMPDIR:-/tmp}/ddp-runs}/$NAME
 mkdir -p "$OUT"
 export JAVA_HOME=${JAVA_HOME:-"/Applications/Android Studio.app/Contents/jbr/Contents/Home"}
 
+. "$(dirname "$0")/define_guard.sh"
 defines=""
 for kv in "$@"; do
   # A define is compiled into the APK, and the APK stays on a phone other
   # people use after us: stage gated models instead of passing a token.
-  key=$(printf '%s' "${kv%%=*}" | tr '[:lower:]' '[:upper:]')
-  if [[ $key =~ TOKEN|KEY|SECRET|PASSWORD ]]; then
+  if is_secret_define "${kv%%=*}"; then
     echo "refusing --dart-define ${kv%%=*}: it would be compiled into the APK on a shared phone"; exit 2
   fi
   defines="${defines:+$defines,}$(printf '%s' "$kv" | base64)"

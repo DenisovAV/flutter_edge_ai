@@ -5,35 +5,36 @@
 
 import 'package:flutter_edge_ai/engine.dart';
 
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'package:litertlm_dart/internal.dart' as lm show ActivationDataType;
 
 extension PreferredBackendToRuntime on PreferredBackend {
-  Backend get toRuntime => switch (this) {
-    PreferredBackend.cpu => Backend.cpu,
-    PreferredBackend.gpu => Backend.gpu,
-    PreferredBackend.npu => Backend.npu,
+  BackendKind get toRuntime => switch (this) {
+    PreferredBackend.cpu => BackendKind.cpu,
+    PreferredBackend.gpu => BackendKind.gpu,
+    PreferredBackend.npu => BackendKind.npu,
   };
 }
 
-extension BackendToCore on Backend {
+extension BackendToCore on BackendKind {
   PreferredBackend get toCore => switch (this) {
-    Backend.cpu => PreferredBackend.cpu,
-    Backend.gpu => PreferredBackend.gpu,
-    Backend.npu => PreferredBackend.npu,
+    BackendKind.cpu => PreferredBackend.cpu,
+    BackendKind.gpu => PreferredBackend.gpu,
+    BackendKind.npu => PreferredBackend.npu,
   };
 }
 
 extension ActivationDataTypeToRuntime on ActivationDataType {
-  ActivationType get toRuntime => switch (this) {
-    ActivationDataType.float32 => ActivationType.float32,
-    ActivationDataType.float16 => ActivationType.float16,
+  lm.ActivationDataType get toRuntime => switch (this) {
+    ActivationDataType.float32 => lm.ActivationDataType.float32,
+    ActivationDataType.float16 => lm.ActivationDataType.float16,
   };
 }
 
-extension ActivationTypeToCore on ActivationType {
+extension ActivationTypeToCore on lm.ActivationDataType {
   ActivationDataType get toCore => switch (this) {
-    ActivationType.float32 => ActivationDataType.float32,
-    ActivationType.float16 => ActivationDataType.float16,
+    lm.ActivationDataType.float32 => ActivationDataType.float32,
+    lm.ActivationDataType.float16 => ActivationDataType.float16,
   };
 }
 
@@ -67,7 +68,7 @@ extension MediaPositionToRuntime on MediaPosition {
   };
 }
 
-extension TurnMetricsToCore on TurnMetrics {
+extension BenchmarkInfoToCore on BenchmarkInfo {
   SessionMetrics get toCore => SessionMetrics(
     inputTokens: inputTokens,
     outputTokens: outputTokens,

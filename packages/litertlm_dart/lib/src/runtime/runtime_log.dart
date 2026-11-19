@@ -28,6 +28,14 @@ RuntimeLogLevel runtimeLogLevel = RuntimeLogLevel.info;
 /// [runtimeLogLevel]: the adapter points it at core's `edgeAiLogLevel`.
 RuntimeLogLevel Function()? runtimeLogLevelSource;
 
+/// The app set the level through `LiteRtLmLog.level` on this isolate: the
+/// Flutter adapter then leaves [runtimeLogLevelSource] alone.
+bool runtimeLogLevelSetByApp = false;
+
+/// The app set the sink through `LiteRtLmLog.sink` on this isolate: the
+/// Flutter adapter then leaves [runtimeLogSink] alone.
+bool runtimeLogSinkSetByApp = false;
+
 /// The level this isolate logs at now, to hand to an isolate it spawns.
 RuntimeLogLevel currentRuntimeLogLevel() =>
     runtimeLogLevelSource?.call() ?? runtimeLogLevel;
@@ -54,6 +62,8 @@ void runtimeLog(String message, {bool verbose = false}) {
 void resetRuntimeLogSink() {
   runtimeLogSink = _printSink;
   runtimeLogLevelSource = null;
+  runtimeLogLevelSetByApp = false;
+  runtimeLogSinkSetByApp = false;
 }
 
 /// [text] with every lone UTF-16 surrogate and U+FFFD written as `U+FFFD`, so

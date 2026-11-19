@@ -192,13 +192,18 @@ void main() {
       final message = macOSLoadErrorMessage(_missingCompanion);
       expect(
         message,
-        startsWith('flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS'),
+        startsWith('litertlm_dart: LiteRT-LM did not load on macOS'),
       );
       expect(message, contains('LLM, embeddings, speech'));
       expect(message, contains('Swift Package Manager'));
       // With it on, the Swift package brings them: a stale build, not a
       // missing setup step (#689).
       expect(message, contains("Swift Package Manager on (Flutter's default)"));
+      // An app on litertlm_dart alone has nothing that embeds them: a
+      // `flutter clean` there loops, so the message names the package that
+      // does.
+      expect(message, contains('depends on litertlm_dart alone'));
+      expect(message, contains('adds flutter_edge_ai_litertlm'));
       expect(message, contains('flutter clean'));
       expect(message, contains('enable-swift-package-manager: false'));
       // Flutter's generated Podfile has a post_install already; a second one
@@ -395,7 +400,7 @@ void main() {
       expect(
         '${(thrown! as UnsupportedError).message}',
         contains(
-          '/dev/libLiteRtLm.dylib: loads, but is not a flutter_edge_ai_litertlm '
+          '/dev/libLiteRtLm.dylib: loads, but is not a litertlm_dart '
           'build',
         ),
       );

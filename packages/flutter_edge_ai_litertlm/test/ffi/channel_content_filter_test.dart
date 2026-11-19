@@ -10,10 +10,11 @@ import 'dart:io';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:litertlm_dart/bindings.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
+import 'ffi_test_support.dart';
 
 void main() {
   group('filterChannelContent', () {
@@ -37,7 +38,7 @@ void main() {
         expect(model.filterChannelContent, expected);
         expect(
           model.filterChannelContent,
-          model.openSessionNoRewindReason == null,
+          model.noRewindReason == null,
           reason: 'on only where every conversation is known to rewind',
         );
       });
@@ -90,7 +91,7 @@ void main() {
             sends.add(send);
             return send;
           }
-          ..metricsForTest = (_) => const TurnMetrics();
+          ..metricsForTest = (_) => const BenchmarkInfo();
         final model = _model(
           client,
           backend: backend,
@@ -169,7 +170,7 @@ FfiInferenceModel _model(
   required PreferredBackend? backend,
   required bool? linearAttentionState,
   OpenSessionBacking backing = OpenSessionBacking.virtual,
-}) => FfiInferenceModel(
+}) => ffiModelForClient(
   ffiClient: client,
   maxTokens: 1024,
   modelType: ModelType.gemmaIt,

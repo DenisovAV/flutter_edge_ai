@@ -5,7 +5,7 @@ import 'dart:ffi' show Abi;
 
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtLmNpuTarget;
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

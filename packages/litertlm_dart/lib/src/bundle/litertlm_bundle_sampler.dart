@@ -32,23 +32,64 @@ Future<BundleSampler> readBundleSampler(String modelPath) async =>
 Future<({BundleSampler sampler, bool declaresChannel})> readBundleMetadata(
   String modelPath,
 ) async {
+  final metadata = await _readLlmMetadata(modelPath);
+  if (metadata == null) {
+    return (sampler: const BundleSampler(), declaresChannel: false);
+  }
+  return (
+    sampler: samplerFromLlmMetadata(metadata),
+    declaresChannel: llmMetadataDeclaresChannel(metadata),
+  );
+}
+
+/// The serialized `LlmMetadata` of the bundle at [modelPath], or null when it
+/// has no such section.
+Future<Uint8List?> _readLlmMetadata(String modelPath) async {
   final file = await File(modelPath).open();
   try {
     final headerEnd = litertlmHeaderEnd(await _readExactly(file, 0, 32));
     final header = await _readExactly(file, 32, headerEnd - 32);
     final section = llmMetadataRange(header);
-    if (section == null) {
-      return (sampler: const BundleSampler(), declaresChannel: false);
-    }
+    if (section == null) return null;
     final (begin, end) = section;
-    final metadata = await _readExactly(file, begin, end - begin);
-    return (
-      sampler: samplerFromLlmMetadata(metadata),
-      declaresChannel: llmMetadataDeclaresChannel(metadata),
-    );
+    return await _readExactly(file, begin, end - begin);
   } finally {
     await file.close();
   }
+}
+
+/// The model families whose `LlmModelType` the runtime acts on (the GPU
+/// activation rules of `Engine.create`); every other family is [other].
+enum LlmModelFamily { gemma4, functionGemma, other }
+
+/// The family `LlmMetadata.llm_model_type` (field 6) names: its oneof
+/// `gemma4 = 8`, `function_gemma = 3` (LiteRT-LM v0.19.1
+/// `runtime/proto/llm_model_type.proto`), [LlmModelFamily.other] for any other
+/// case, and null when the bundle has no `LlmMetadata` or no model type.
+LlmModelFamily? llmModelFamilyFrom(Uint8List llmMetadata) {
+  try {
+    for (final f in _ProtoReader(llmMetadata).fields()) {
+      if (f.number != 6 || f.bytes == null) continue;
+      for (final type in _ProtoReader(f.bytes!).fields()) {
+        if (type.bytes == null) continue;
+        return switch (type.number) {
+          8 => LlmModelFamily.gemma4,
+          3 => LlmModelFamily.functionGemma,
+          _ => LlmModelFamily.other,
+        };
+      }
+    }
+    return null;
+  } on RangeError {
+    throw const FormatException('LlmMetadata proto is truncated');
+  }
+}
+
+/// [llmModelFamilyFrom] of the bundle at [modelPath]; null when it has no
+/// `LlmMetadata` or no model type.
+Future<LlmModelFamily?> readLlmModelFamily(String modelPath) async {
+  final metadata = await _readLlmMetadata(modelPath);
+  return metadata == null ? null : llmModelFamilyFrom(metadata);
 }
 
 /// [readBundleSampler], with a file it cannot read or parse returned instead

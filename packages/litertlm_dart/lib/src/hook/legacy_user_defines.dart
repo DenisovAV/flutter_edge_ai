@@ -93,6 +93,13 @@ final class HookDefines {
     return _legacy[key];
   }
 
+  /// The `user_defines` package key [key]'s value comes from: litertlm_dart's
+  /// own, or [legacyUserDefinesPackage] when only that one sets it.
+  String packageOf(String key) =>
+      _current(key) == null && _legacy.containsKey(key)
+      ? legacyUserDefinesPackage
+      : 'litertlm_dart';
+
   /// [key]'s value as a path, resolved against the pubspec that set it.
   Uri? path(String key) {
     final value = _currentPath(key);

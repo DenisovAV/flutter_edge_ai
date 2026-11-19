@@ -5,9 +5,10 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
+import 'ffi_test_support.dart';
 
 /// Records what reaches the native layer, then stops: no engine is loaded.
 class _CapturingClient extends LiteRtLmFfiClient {
@@ -38,7 +39,8 @@ class _CapturingClient extends LiteRtLmFfiClient {
     required bool samplingExplicit,
     int? maxOutputTokens,
     required MediaOrder multimodalOrder,
-    String? jsonSchema,
+    Constraint? constraint,
+    ConversationExtras extras = ConversationExtras.none,
     required bool filterChannelContent,
     bool freshConversation = false,
   }) {
@@ -59,7 +61,9 @@ class _CapturingClient extends LiteRtLmFfiClient {
     String? extraContext,
     required bool thinking,
     int? maxOutputTokens,
-    String? jsonSchema,
+    Constraint? constraint,
+    SendOptions options = SendOptions.none,
+    ConversationExtras extras = ConversationExtras.none,
     required bool filterChannelContent,
     bool freshConversation = false,
   }) {
@@ -75,7 +79,7 @@ class _Captured implements Exception {
 }
 
 FfiInferenceModel _model(_CapturingClient client, ModelType type) =>
-    FfiInferenceModel(
+    ffiModelForClient(
       ffiClient: client,
       maxTokens: 1024,
       modelType: type,

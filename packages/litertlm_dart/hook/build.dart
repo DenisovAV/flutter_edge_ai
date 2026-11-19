@@ -114,9 +114,10 @@ class _NativeBundle {
   String get releaseBase =>
       'https://github.com/DenisovAV/flutter_edge_ai/releases/download/$releaseTag';
 
-  /// Directory containing this bundle's per-platform subdirectories. For flat
-  /// layout that's the cache root itself; for namespaced bundles it's the
-  /// `<cacheBase>/<namespace>/` subdir.
+  /// Directory containing this bundle's per-platform subdirectories:
+  /// `<cacheBase>/<releaseTag>/` for the flat layout (libLiteRtLm), the
+  /// `<cacheBase>/<namespace>/` subdir for a namespaced bundle; `<cacheBase>`
+  /// is `…/litertlm_dart/native`.
   Directory cacheRoot() => useFlatLayout
       ? Directory('${_cacheBaseDir().path}/$releaseTag')
       : Directory('${_cacheBaseDir().path}/$namespace');
@@ -475,8 +476,8 @@ bool _hasMainLib(Directory dir, _NativeBundle bundle, OS os) {
 /// main lib exists. Search order:
 ///   1. local `native/<bundle-namespace>/prebuilt/<dirName>/` inside the
 ///      package — useful for in-tree development.
-///   2. cached `<cacheBase>/<bundle-namespace>/<dirName>/` from a previous
-///      `_downloadAndExtract`.
+///   2. cached `<cacheRoot>/<dirName>/` ([_NativeBundle.cacheRoot]) from a
+///      previous `_downloadAndExtract`.
 /// Package-relative local prebuilt directory for [bundle] on [dirName].
 ///
 /// LiteRT keeps the historical `native/litert_lm/`; new bundles use
@@ -869,7 +870,12 @@ Future<void> _processBundle({
   for (final vendor in NpuStack.values) {
     if (!vendor.abis.any((abi) => abi.startsWith('${os.name}_'))) continue;
     final define = npuUserDefine(vendor);
-    if (define != null && !readBoolUserDefine(_defines[define], define)) {
+    if (define != null &&
+        !readBoolUserDefine(
+          _defines[define],
+          define,
+          package: _defines.packageOf(define),
+        )) {
       continue;
     }
     if (!vendor.abis.contains(targetAbi)) {
@@ -1084,7 +1090,7 @@ Future<Directory> _ensureMediatekRuntime(
   final rawAar = _defines[mediatekNpuAarUserDefine];
   if (rawAar != null && rawAar is! String) {
     throw FormatException(
-      'hooks.user_defines.$_packageName.$mediatekNpuAarUserDefine must be a path string',
+      'hooks.user_defines.${_defines.packageOf(mediatekNpuAarUserDefine)}.$mediatekNpuAarUserDefine must be a path string',
     );
   }
   final localAar = _defines.path(mediatekNpuAarUserDefine);
@@ -1111,7 +1117,7 @@ Future<Directory> _ensureMediatekRuntime(
   final mirror = _defines[mediatekNpuMavenUrlUserDefine];
   if (mirror != null && mirror is! String) {
     throw FormatException(
-      'hooks.user_defines.$_packageName.$mediatekNpuMavenUrlUserDefine must '
+      'hooks.user_defines.${_defines.packageOf(mediatekNpuMavenUrlUserDefine)}.$mediatekNpuMavenUrlUserDefine must '
       'be a URL string',
     );
   }
@@ -1202,7 +1208,7 @@ Future<Directory> _ensureQnnRuntime(
   final rawAar = _defines[qualcommNpuAarUserDefine];
   if (rawAar != null && rawAar is! String) {
     throw FormatException(
-      'hooks.user_defines.$_packageName.$qualcommNpuAarUserDefine must be a path string',
+      'hooks.user_defines.${_defines.packageOf(qualcommNpuAarUserDefine)}.$qualcommNpuAarUserDefine must be a path string',
     );
   }
   final localAar = _defines.path(qualcommNpuAarUserDefine);
@@ -1230,7 +1236,7 @@ Future<Directory> _ensureQnnRuntime(
   final mirror = _defines[qualcommNpuMavenUrlUserDefine];
   if (mirror != null && mirror is! String) {
     throw FormatException(
-      'hooks.user_defines.$_packageName.$qualcommNpuMavenUrlUserDefine must '
+      'hooks.user_defines.${_defines.packageOf(qualcommNpuMavenUrlUserDefine)}.$qualcommNpuMavenUrlUserDefine must '
       'be a URL string',
     );
   }

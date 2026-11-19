@@ -15,12 +15,12 @@ import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_pass.dar
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 
 EmbeddingModelSpec _tflite({String model = 'gemma.tflite'}) =>
     EmbeddingModelSpec(
@@ -413,7 +413,7 @@ void main() {
         final config = descriptor.config as LiteRtLmEmbeddingConfig;
         expect(config.npuTarget, isNull);
         expect(config.npuDispatchDir, isNull);
-        expect(config.backend, Backend.cpu);
+        expect(config.backend, BackendKind.cpu);
       }
     });
 
@@ -510,7 +510,7 @@ void main() {
         const NpuStamp(vendor: 'Qualcomm', soc: 'SM8850'),
       );
       expect(config.npuDispatchDir, '/data/app/npu');
-      expect(config.backend, Backend.npu);
+      expect(config.backend, BackendKind.npu);
       expect(config.declaredMedia, {EmbedderModality.image});
       expect(config.cacheBase, '/cache/flutter_edge_ai/emb');
     });
@@ -533,7 +533,7 @@ void main() {
         const NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL'),
       );
       expect(config.npuDispatchDir, r'C:\Apps\demo');
-      expect(config.backend, Backend.npu);
+      expect(config.backend, BackendKind.npu);
     });
 
     test('an Intel per-SoC bundle with npu on Qualcomm Android is refused '

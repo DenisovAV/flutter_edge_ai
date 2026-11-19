@@ -6,7 +6,7 @@ import 'dart:async';
 // rebuild of the shared conversation after a failed turn (decision W: a
 // failed turn is taken back on both sides).
 
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
 

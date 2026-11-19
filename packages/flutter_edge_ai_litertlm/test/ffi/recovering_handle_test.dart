@@ -2,9 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 
 /// A conversation that answers with scripted text chunks, one turn at a time,
 /// and can be held open mid-turn so a test can stop it there.
@@ -100,6 +99,7 @@ class _Conversation implements ConversationHandle {
   Stream<String> chatRawMessage(
     String messageJson, {
     bool enableThinking = false,
+    SendOptions options = SendOptions.none,
   }) => _reply(messageJson);
 
   @override
@@ -127,7 +127,7 @@ class _Conversation implements ConversationHandle {
   }
 
   @override
-  TurnMetrics getSessionMetrics() => TurnMetrics();
+  BenchmarkInfo getSessionMetrics() => BenchmarkInfo();
 
   /// How native's last send ended, as the handle would read it.
   NativeLastTurnEnd? turnEnd;
@@ -164,7 +164,7 @@ void main() {
     reopenGate = null;
     handle = RecoveringConversationHandle(
       first,
-      toolCallsOf: liteRtLmToolCalls,
+      toolCallsOf: nativeToolCalls,
       reopen: (messagesJson) async {
         await reopenGate?.future;
         final c = _Conversation(
@@ -375,7 +375,7 @@ void main() {
       'block the next turn forever', () async {
     handle = RecoveringConversationHandle(
       first,
-      toolCallsOf: liteRtLmToolCalls,
+      toolCallsOf: nativeToolCalls,
       reopen: (messagesJson) async {
         final c = _Conversation('rebuilt', seed: messagesJson);
         reopened.add(c);
@@ -401,6 +401,39 @@ void main() {
     await sub.cancel();
   });
 
+  test('a stopped turn that winds down after the next one took over writes '
+      'nothing: the history a rebuild replays keeps its order', () async {
+    handle = RecoveringConversationHandle(
+      first,
+      toolCallsOf: nativeToolCalls,
+      reopen: (messagesJson) async {
+        final c = _Conversation(
+          'rebuilt ${reopened.length}',
+          seed: messagesJson,
+        );
+        reopened.add(c);
+        return c;
+      },
+      windDownTimeout: const Duration(milliseconds: 100),
+    );
+    final sub = handle.chat('one').listen(null)..pause();
+    await pumpEventQueue();
+    handle.cancelGeneration();
+    expect(await handle.chat('two').join(), 'Hello there.');
+    // The stopped turn ends only now, long after 'two' took over.
+    sub.resume();
+    await pumpEventQueue();
+    await stopMidTurn('three', reopened.single);
+    await handle.chat('four').join();
+    final seed = reopened.last.seed!;
+    final users = [
+      for (final m in jsonDecode(seed) as List<Object?>)
+        if ((m as Map)['role'] == 'user') jsonEncode(m['content']),
+    ];
+    expect(users.where((u) => u.contains('one')), isEmpty, reason: seed);
+    expect(users.first, contains('two'), reason: seed);
+  });
+
   test('closing closes the live conversation, rebuilt or not', () async {
     await stopMidTurn('one', first);
     await handle.chat('two').join();
@@ -422,7 +455,7 @@ void main() {
           return c;
         },
         noRewindReason: 'the NPU executor rolls back one token at most',
-        toolCallsOf: liteRtLmToolCalls,
+        toolCallsOf: nativeToolCalls,
         freshConversationEachTurn: true,
       );
     });
@@ -514,7 +547,7 @@ void main() {
             return c;
           },
           noRewindReason: 'the NPU executor rolls back one token at most',
-          toolCallsOf: liteRtLmToolCalls,
+          toolCallsOf: nativeToolCalls,
           freshConversationEachTurn: true,
           windDownTimeout: const Duration(milliseconds: 50),
         );
@@ -567,7 +600,7 @@ void main() {
         final shared = RecoveringConversationHandle(
           _Conversation('shared'),
           reopen: (_) async => throw StateError('no rebuild expected'),
-          toolCallsOf: liteRtLmToolCalls,
+          toolCallsOf: nativeToolCalls,
         );
         expect(shared.freshConversationEachTurn, isFalse);
         await shared.chat('one').join();
@@ -581,7 +614,7 @@ void main() {
     // for release builds carry the package name.
     List<String> releaseLines(List<String> printed) => [
       for (final line in printed)
-        if (line.startsWith('[flutter_edge_ai_litertlm]')) line,
+        if (line.startsWith('[litertlm_dart]')) line,
     ];
 
     Map<String, Object?> textReply(String text) => {
@@ -690,7 +723,7 @@ void main() {
     test('on the NPU a stop rebuilds without trying to rewind', () async {
       handle = RecoveringConversationHandle(
         first,
-        toolCallsOf: liteRtLmToolCalls,
+        toolCallsOf: nativeToolCalls,
         reopen: (messagesJson) async {
           final c = _Conversation('rebuilt', seed: messagesJson);
           reopened.add(c);
@@ -752,7 +785,7 @@ void main() {
         'rebuilt, not rewound: its reply is not known in time', () async {
       handle = RecoveringConversationHandle(
         first,
-        toolCallsOf: liteRtLmToolCalls,
+        toolCallsOf: nativeToolCalls,
         reopen: (messagesJson) async {
           final c = _Conversation('rebuilt', seed: messagesJson);
           reopened.add(c);
@@ -872,7 +905,7 @@ void main() {
         'one is not cut off and nothing is rebuilt', () async {
       handle = RecoveringConversationHandle(
         first,
-        toolCallsOf: liteRtLmToolCalls,
+        toolCallsOf: nativeToolCalls,
         reopen: (messagesJson) async {
           final c = _Conversation('rebuilt', seed: messagesJson);
           reopened.add(c);
@@ -949,7 +982,7 @@ void main() {
         'wind-down bound, instead of rebuilding under it', () async {
       handle = RecoveringConversationHandle(
         first,
-        toolCallsOf: liteRtLmToolCalls,
+        toolCallsOf: nativeToolCalls,
         reopen: (messagesJson) async {
           final c = _Conversation('rebuilt', seed: messagesJson);
           reopened.add(c);
@@ -1056,7 +1089,7 @@ void main() {
         'refused input is not in', () async {
       handle = RecoveringConversationHandle(
         first,
-        toolCallsOf: liteRtLmToolCalls,
+        toolCallsOf: nativeToolCalls,
         reopen: (messagesJson) async {
           final c = _Conversation('rebuilt', seed: messagesJson);
           reopened.add(c);
@@ -1104,7 +1137,7 @@ void main() {
       () async {
         handle = RecoveringConversationHandle(
           first,
-          toolCallsOf: liteRtLmToolCalls,
+          toolCallsOf: nativeToolCalls,
           reopen: (messagesJson) async {
             final c = _Conversation(
               'rebuilt ${reopened.length}',

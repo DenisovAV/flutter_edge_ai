@@ -8,11 +8,10 @@ import 'package:test/test.dart';
 void main() {
   group('ffiBackendFallbackOrder', () {
     test('tries NPU, then GPU, then CPU where an NPU dispatch stack ships', () {
-      expect(ffiBackendFallbackOrder(Backend.npu, npuAvailable: true), const [
-        Backend.npu,
-        Backend.gpu,
-        Backend.cpu,
-      ]);
+      expect(
+        ffiBackendFallbackOrder(BackendKind.npu, npuAvailable: true),
+        const [BackendKind.npu, BackendKind.gpu, BackendKind.cpu],
+      );
     });
 
     test('does not offer NPU where no dispatch stack ships', () {
@@ -22,8 +21,8 @@ void main() {
       // a Mac report `activeBackend == npu`. Measured on macOS with Gemma 4
       // E2B before this gate existed.
       expect(
-        ffiBackendFallbackOrder(Backend.npu, npuAvailable: false),
-        const [Backend.gpu, Backend.cpu],
+        ffiBackendFallbackOrder(BackendKind.npu, npuAvailable: false),
+        const [BackendKind.gpu, BackendKind.cpu],
         reason:
             'a backend we cannot run must not be reported as the one we ran',
       );
@@ -260,31 +259,32 @@ void main() {
 
   group('ffiBackendFallbackOrder (continued)', () {
     test('tries GPU, then CPU for a GPU preference', () {
-      expect(ffiBackendFallbackOrder(Backend.gpu, npuAvailable: false), const [
-        Backend.gpu,
-        Backend.cpu,
-      ]);
+      expect(
+        ffiBackendFallbackOrder(BackendKind.gpu, npuAvailable: false),
+        const [BackendKind.gpu, BackendKind.cpu],
+      );
     });
 
     test('tries GPU, then CPU when no preference is provided', () {
       expect(ffiBackendFallbackOrder(null, npuAvailable: false), const [
-        Backend.gpu,
-        Backend.cpu,
+        BackendKind.gpu,
+        BackendKind.cpu,
       ]);
     });
 
     test('tries only CPU for a CPU preference', () {
-      expect(ffiBackendFallbackOrder(Backend.cpu, npuAvailable: false), const [
-        Backend.cpu,
-      ]);
+      expect(
+        ffiBackendFallbackOrder(BackendKind.cpu, npuAvailable: false),
+        const [BackendKind.cpu],
+      );
     });
   });
 
   group('ffiBackendWireName', () {
     test('serializes backend preferences for LiteRT-LM', () {
-      expect(ffiBackendWireName(Backend.npu), 'npu');
-      expect(ffiBackendWireName(Backend.gpu), 'gpu');
-      expect(ffiBackendWireName(Backend.cpu), 'cpu');
+      expect(ffiBackendWireName(BackendKind.npu), 'npu');
+      expect(ffiBackendWireName(BackendKind.gpu), 'gpu');
+      expect(ffiBackendWireName(BackendKind.cpu), 'cpu');
     });
   });
 
@@ -300,14 +300,14 @@ void main() {
     });
 
     test('passes an explicit override through unchanged', () {
-      expect(encoderBackendWireName(Backend.gpu), 'gpu');
-      expect(encoderBackendWireName(Backend.npu), 'npu');
-      expect(encoderBackendWireName(Backend.cpu), 'cpu');
+      expect(encoderBackendWireName(BackendKind.gpu), 'gpu');
+      expect(encoderBackendWireName(BackendKind.npu), 'npu');
+      expect(encoderBackendWireName(BackendKind.cpu), 'cpu');
     });
   });
 
   group('activationDataTypeWireValue', () {
-    // The numbers are LiteRT-LM's ActivationType order in
+    // The numbers are LiteRT-LM's ActivationDataType order in
     // executor_settings_base.h, which the C setter casts the int to. A wrong
     // number is silent: F16 for F32 builds an engine that still writes the
     // wrong digits the setting was meant to fix.
@@ -316,8 +316,8 @@ void main() {
     });
 
     test('matches the C API numbering', () {
-      expect(activationDataTypeWireValue(ActivationType.float32), 0);
-      expect(activationDataTypeWireValue(ActivationType.float16), 1);
+      expect(activationDataTypeWireValue(ActivationDataType.float32), 0);
+      expect(activationDataTypeWireValue(ActivationDataType.float16), 1);
     });
 
     test('offers only the two float types', () {
@@ -325,9 +325,9 @@ void main() {
       // ours: at the pinned version they are not half precision the way F16 is,
       // and an unsupported type fails engine init, which reads as a quiet fall
       // back to CPU. Adding one back means adding a number here too.
-      expect(ActivationType.values, [
-        ActivationType.float32,
-        ActivationType.float16,
+      expect(ActivationDataType.values, [
+        ActivationDataType.float32,
+        ActivationDataType.float16,
       ]);
     });
   });

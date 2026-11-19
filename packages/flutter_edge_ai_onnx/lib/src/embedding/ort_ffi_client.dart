@@ -48,7 +48,7 @@ ffi.DynamicLibrary _openOnnxRuntime() {
     // 0.18.0 (microsoft/onnxruntime-genai#2673), so `OrtGetApiBase` is not
     // there to find. The open MUST use the `@executable_path/Frameworks/`
     // anchor — iOS dyld 4 cannot resolve a bare `<name>.framework/<name>`
-    // leaf name (same anchor as `flutter_edge_ai_litertlm`'s
+    // leaf name (same anchor as `litertlm_dart`'s
     // `LiteRtLm.framework` and `gen_ai_client.dart`'s iOS branch).
     return ffi.DynamicLibrary.open(
       '@executable_path/Frameworks/onnxruntime.framework/onnxruntime',

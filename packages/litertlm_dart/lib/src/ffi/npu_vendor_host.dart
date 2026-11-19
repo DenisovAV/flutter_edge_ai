@@ -55,7 +55,7 @@ abstract interface class LiteRtLmNpuHost {
 /// dispatch directory the app's native side prepares. The Flutter one is
 /// `FlutterNpuPlatform` (flutter_npu_platform.dart), which reads the manifest
 /// through `rootBundle` and asks core's `flutter_gemma_bundled` channel.
-abstract interface class NpuPlatformBindings {
+abstract interface class NpuPlatform {
   /// The text of the build's `NativeAssetsManifest.json`. Throws when it
   /// cannot be read; [checkNpuStackInManifest] turns that into
   /// [NpuStackCheck.unknown].
@@ -82,12 +82,52 @@ String executableDirOf([String? executable]) =>
 
 /// The host this process runs on, with what only the app's platform layer
 /// can answer coming from [platform].
+/// [host], for a load the caller gave a prepared [dispatchDir]: the Intel
+/// stack is checked in that directory, not beside the executable, and the
+/// directory is the one a dispatch loads from. Null [dispatchDir]: [host].
+LiteRtLmNpuHost npuHostWithDispatchDir(
+  LiteRtLmNpuHost host,
+  String? dispatchDir,
+) => dispatchDir == null ? host : _PreparedDirNpuHost(host, dispatchDir);
+
+final class _PreparedDirNpuHost implements LiteRtLmNpuHost {
+  _PreparedDirNpuHost(this._host, this._dir);
+
+  final LiteRtLmNpuHost _host;
+  final String _dir;
+
+  @override
+  String get operatingSystem => _host.operatingSystem;
+
+  @override
+  String get abi => _host.abi;
+
+  @override
+  Future<NpuStackCheck> stack(NpuStack vendor) async {
+    if (vendor != NpuStack.intel) return _host.stack(vendor);
+    return File(
+          '$_dir${Platform.pathSeparator}$intelNpuDispatchLib',
+        ).existsSync()
+        ? const NpuStackCheck.bundled()
+        : NpuStackCheck.missing(
+            '$intelNpuDispatchLib is not in the dispatch directory passed as '
+            'Backend.npu(dispatchDir: $_dir)',
+          );
+  }
+
+  @override
+  String? unreachable(NpuStack vendor) => _host.unreachable(vendor);
+
+  @override
+  Future<String> prepareDispatchDir(NpuStack vendor) async => _dir;
+}
+
 final class LiteRtLmPlatformNpuHost implements LiteRtLmNpuHost {
   const LiteRtLmPlatformNpuHost(this.platform);
 
   /// The manifest, the Android dispatch directory and the executable's
   /// directory.
-  final NpuPlatformBindings platform;
+  final NpuPlatform platform;
 
   @override
   String get operatingSystem => Platform.operatingSystem;
@@ -248,7 +288,7 @@ Future<bool> _intelBrokenNpuMasks(
     // runs its broken masks and degrades past ~2,048 tokens.
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] NPU: could not hash the tf_lite_aux '
+      '[litertlm_dart] NPU: could not hash the tf_lite_aux '
       'section of $path ($e); use_hw_masking_for_npu stays false',
     );
     return false;
@@ -352,26 +392,22 @@ bool npuStagesWeightBanks(NpuStack vendor) => switch (vendor) {
 /// ([checkIntelNpuStack]) — the directory LiteRT is pointed at, and a stack
 /// that answers [NpuStackCheck.unknown] there would go unchecked: Intel's
 /// [prepareNpuDispatchDir] checks nothing (it only sweeps stale weight banks).
-Future<NpuStackCheck> npuStackOf(
-  NpuStack vendor,
-  NpuPlatformBindings platform,
-) async => switch (vendor) {
-  NpuStack.qualcomm => await _checkManifest(vendor, platform),
-  NpuStack.googleTensor => await _checkManifest(vendor, platform),
-  NpuStack.mediatek => await _checkManifest(vendor, platform),
-  NpuStack.intel => checkIntelNpuStack(
-    windowsNpuDispatchDirOf(platform.executableDir),
-  ),
-};
+Future<NpuStackCheck> npuStackOf(NpuStack vendor, NpuPlatform platform) async =>
+    switch (vendor) {
+      NpuStack.qualcomm => await _checkManifest(vendor, platform),
+      NpuStack.googleTensor => await _checkManifest(vendor, platform),
+      NpuStack.mediatek => await _checkManifest(vendor, platform),
+      NpuStack.intel => checkIntelNpuStack(
+        windowsNpuDispatchDirOf(platform.executableDir),
+      ),
+    };
 
-Future<NpuStackCheck> _checkManifest(
-  NpuStack vendor,
-  NpuPlatformBindings platform,
-) => checkNpuStackInManifest(
-  vendor,
-  read: platform.readNativeAssetsManifest,
-  cache: true,
-);
+Future<NpuStackCheck> _checkManifest(NpuStack vendor, NpuPlatform platform) =>
+    checkNpuStackInManifest(
+      vendor,
+      read: platform.readNativeAssetsManifest,
+      cache: true,
+    );
 
 /// The `dispatch_lib_dir` to hand LiteRT for [vendor] on this host: the
 /// prepared Qualcomm libraries on Android ([prepareAndroidNpuDispatchDir]) and
@@ -385,7 +421,7 @@ Future<NpuStackCheck> _checkManifest(
 /// unreachable from a test run on another host.
 Future<String> prepareNpuDispatchDir(
   NpuStack vendor,
-  NpuPlatformBindings platform, {
+  NpuPlatform platform, {
   String? operatingSystem,
 }) async => switch (vendor) {
   NpuStack.qualcomm => switch (operatingSystem ?? Platform.operatingSystem) {
@@ -450,7 +486,7 @@ Future<String> prepareNpuDispatchDir(
 Future<String> prepareAndroidNpuDispatchDir(
   List<String> libs,
   NpuStack vendor,
-  NpuPlatformBindings platform,
+  NpuPlatform platform,
 ) async {
   final dir = await platform.prepareAndroidDispatchDir([
     for (final n in libs) androidLibFileName(n),
@@ -477,7 +513,7 @@ Future<String> prepareAndroidNpuDispatchDir(
 /// change after the process started. A library already loaded under that
 /// SONAME is matched first, so the Stubs are loaded here by full path, after
 /// the libcdsprpc.so shim they NEED. [executableDir] is the running app's
-/// directory ([NpuPlatformBindings.executableDir]).
+/// directory ([NpuPlatform.executableDir]).
 String prepareLinuxNpuDispatchDir(String executableDir) {
   final libDir = '$executableDir/lib';
   final missing = [
@@ -546,7 +582,7 @@ NpuStackCheck checkIntelNpuStack(String dir) =>
     ? const NpuStackCheck.bundled()
     : NpuStackCheck.missing(
         '$intelNpuDispatchLib is not beside the executable ($dir). Every '
-        'Windows x64 build with flutter_edge_ai_litertlm puts the Intel NPU '
+        'Windows x64 build with litertlm_dart puts the Intel NPU '
         'stack there; ship all the DLLs the build put next to the executable '
         'with the app',
       );

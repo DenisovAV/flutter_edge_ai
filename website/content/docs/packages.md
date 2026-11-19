@@ -47,10 +47,11 @@ is on the [Capabilities](/docs/capabilities) page.
 - **One app can run both formats.** Register both `LiteRtLmEngine()` and
   `MediaPipeEngine()`, and the registry routes each model to the engine that
   handles its declared `ModelFileType` — not its file extension.
-- **Shared native library.** `flutter_edge_ai_litertlm` owns the native LiteRT
-  library (fetched at build time via its Native-Assets hook), and
-  `flutter_edge_ai_speech` has no hook of its own and consumes that bundle
-  transitively. `flutter_edge_ai_embeddings` touches no native library at all. `flutter_edge_ai_onnx` owns its own separate ORT / ORT-GenAI
+- **Shared native library.** `litertlm_dart`, the pure-Dart LiteRT-LM runtime
+  under `flutter_edge_ai_litertlm` (from 1.21.0), owns the native LiteRT library
+  (fetched at build time via its Native-Assets hook);
+  `flutter_edge_ai_litertlm` and `flutter_edge_ai_speech` have no hook of their
+  own and consume that bundle through it. `flutter_edge_ai_embeddings` touches no native library at all. `flutter_edge_ai_onnx` owns its own separate ORT / ORT-GenAI
   native archives.
 - **LiteRT-LM open sessions.** `openSession` / `openChat` use one native
   conversation and KV cache per session on macOS CPU/Metal, Linux and Windows

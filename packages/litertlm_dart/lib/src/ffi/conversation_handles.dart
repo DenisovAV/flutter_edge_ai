@@ -16,6 +16,8 @@ import '../runtime/runtime_log.dart';
 import '../runtime/types.dart';
 import 'litert_lm_client.dart';
 import 'native_turns.dart' show LiteRtLmTurnCancelledException;
+import 'send_options.dart';
+import '../api/message.dart' show messageFromJson;
 
 /// The tool calls in a raw LiteRT-LM reply: each call's name and arguments.
 /// Reading them is chat-template knowledge (a model can write a call as
@@ -24,6 +26,66 @@ typedef ToolCallReader =
     List<({String name, Map<String, Object?> arguments})> Function(
       String rawReply,
     );
+
+/// The calls native converted itself: the `tool_calls` of every JSON object
+/// in [rawReply] (a streamed reply is several, concatenated). A call the model
+/// wrote as text stays text, as the native conversation keeps it.
+List<({String name, Map<String, Object?> arguments})> nativeToolCalls(
+  String rawReply,
+) => [
+  for (final message in concatenatedJsonObjects(rawReply)) ..._callsIn(message),
+];
+
+/// The calls of one reply object; one this release cannot read has none (the
+/// turn's text is replayed instead, as native keeps an unconverted call).
+List<({String name, Map<String, Object?> arguments})> _callsIn(
+  Map<String, Object?> message,
+) {
+  try {
+    return [
+      for (final call in messageFromJson(message).toolCalls)
+        (name: call.name, arguments: call.arguments),
+    ];
+  } on FormatException {
+    return const [];
+  } on StateError {
+    return const [];
+  }
+}
+
+/// The JSON objects of [text], a run of concatenated JSON values; anything
+/// that is not an object, or not JSON, is skipped.
+Iterable<Map<String, Object?>> concatenatedJsonObjects(String text) sync* {
+  var depth = 0, start = -1;
+  var inString = false, escaped = false;
+  for (var i = 0; i < text.length; i++) {
+    final c = text.codeUnitAt(i);
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (c == 0x5C) {
+        escaped = true;
+      } else if (c == 0x22) {
+        inString = false;
+      }
+      continue;
+    }
+    if (c == 0x22) {
+      inString = true;
+    } else if (c == 0x7B) {
+      if (depth++ == 0) start = i;
+    } else if (c == 0x7D && depth > 0 && --depth == 0) {
+      try {
+        if (jsonDecode(text.substring(start, i + 1))
+            case final Map<String, Object?> object) {
+          yield object;
+        }
+      } on FormatException {
+        // Not JSON after all: skipped.
+      }
+    }
+  }
+}
 
 /// The assistant turn to replay: its tool calls when it made any, so the
 /// tool results recorded after it still answer something, and its text
@@ -152,6 +214,10 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// waits for the one before it, so turns take the conversation one at a
   /// time, and a stopped turn's end is known before the next one decides how
   /// to recover.
+  /// Stopped turns a later one gave up waiting for and rebuilt without: when
+  /// one of them ends at last, it leaves the history alone.
+  final _abandonedTurns = <Future<void>>{};
+
   Future<void>? _turnDone;
 
   /// The turn that holds the conversation — past its wait — and so owns
@@ -281,14 +347,14 @@ class RecoveringConversationHandle implements ConversationHandle {
         if (failure != null) {
           // ignore: avoid_print
           print(
-            '[flutter_edge_ai_litertlm] could not rewind the conversation '
+            '[litertlm_dart] could not rewind the conversation '
             'after a stopped turn or a full context ($failure); rebuilding it',
           );
         }
       } else if (canRewind && rebuildBecause != null) {
         // ignore: avoid_print
         print(
-          '[flutter_edge_ai_litertlm] rebuilding the conversation: '
+          '[litertlm_dart] rebuilding the conversation: '
           '$rebuildBecause',
         );
       }
@@ -350,6 +416,7 @@ class RecoveringConversationHandle implements ConversationHandle {
               }
               _stopped = true;
               _stoppedReply = null;
+              _abandonedTurns.add(previous);
               _rebuildBecause =
                   'the previous turn did not wind down within '
                   '${windDownTimeout.inSeconds}s';
@@ -415,6 +482,7 @@ class RecoveringConversationHandle implements ConversationHandle {
       // its bound) leaves the shared state to that one.
       final latest = identical(_current, done);
       if (latest) _inFlight = false;
+      final abandoned = _abandonedTurns.remove(done.future);
       if (poisoned) {
         if (latest) {
           _stopped = true;
@@ -462,10 +530,15 @@ class RecoveringConversationHandle implements ConversationHandle {
             _stoppedReply = reply;
           }
           // The message reached the model, so it belongs in the history a
-          // rebuild replays — with whatever of the reply was produced.
-          _history
-            ..add(message)
-            ..add(reply);
+          // rebuild replays — with whatever of the reply was produced. Not a
+          // stopped turn the next one gave up on past its bound: that one
+          // rebuilt without it, so its exchange is not in the conversation,
+          // and written now it would land after the newer one.
+          if (!abandoned) {
+            _history
+              ..add(message)
+              ..add(reply);
+          }
         }
       }
       done.complete();
@@ -529,9 +602,14 @@ class RecoveringConversationHandle implements ConversationHandle {
   Stream<String> chatRawMessage(
     String messageJson, {
     bool enableThinking = false,
+    SendOptions options = SendOptions.none,
   }) => _turn(
     jsonDecode(messageJson) as Map<String, Object?>,
-    (live) => live.chatRawMessage(messageJson, enableThinking: enableThinking),
+    (live) => live.chatRawMessage(
+      messageJson,
+      enableThinking: enableThinking,
+      options: options,
+    ),
     raw: true,
   );
 
@@ -555,7 +633,7 @@ class RecoveringConversationHandle implements ConversationHandle {
   ) async => StoppedTurnRewind.unsupported;
 
   @override
-  TurnMetrics getSessionMetrics() => _live.getSessionMetrics();
+  BenchmarkInfo getSessionMetrics() => _live.getSessionMetrics();
 
   /// The latest turn reached its send, so native's record is that turn's
   /// end; a turn that failed before it (a recovery that threw) has none.
@@ -605,9 +683,13 @@ class VirtualConversationHandle implements ConversationHandle {
     required this.filterChannelContent,
     required this.toolCallsOf,
     this.maxOutputTokens,
-    this.jsonSchema,
+    this.constraint,
+    this.extras = ConversationExtras.none,
+    List<Map<String, Object?>> initialHistory = const [],
     this.freshConversationEachTurn = false,
-  });
+  }) {
+    _history.addAll(initialHistory);
+  }
 
   /// The tool calls of a raw reply, for the assistant turn a switch replays.
   final ToolCallReader toolCallsOf;
@@ -623,7 +705,8 @@ class VirtualConversationHandle implements ConversationHandle {
   final bool samplingExplicit;
   final MediaOrder multimodalOrder;
   final int? maxOutputTokens;
-  final String? jsonSchema;
+  final Constraint? constraint;
+  final ConversationExtras extras;
   final bool filterChannelContent;
 
   /// The tokenizer belongs to the engine, not to a conversation, so a virtual
@@ -651,6 +734,10 @@ class VirtualConversationHandle implements ConversationHandle {
   bool _stopRequested = false;
 
   /// Completes when the current turn has recorded its history.
+  /// Counts the turns started: a turn compares its own number with it to
+  /// tell whether a later one took over.
+  int _generation = 0;
+
   Future<void>? _turnDone;
 
   /// Drive one turn through the multiplexer, then record the sent [message]
@@ -661,6 +748,7 @@ class VirtualConversationHandle implements ConversationHandle {
     Map<String, Object?> message, {
     required bool raw,
     bool enableThinking = false,
+    SendOptions options = SendOptions.none,
   }) async* {
     if (_closed) throw StateError('Conversation handle is closed');
     // After a stop the client rebuilds the conversation from this snapshot,
@@ -684,8 +772,12 @@ class VirtualConversationHandle implements ConversationHandle {
     _turnDone = done.future;
     _inFlight = true;
     _stopRequested = false;
+    // This turn's place: a stopped turn that ends after a later one took
+    // over (past the bound above) owns neither the busy flag nor the history.
+    final generation = ++_generation;
+    bool superseded() => generation != _generation;
     final messageJson = jsonEncode(message);
-    final extraContext = thinkingExtraContext(enableThinking);
+    final extraContext = sendExtraContext(enableThinking, options.extraContext);
     // Snapshot history BEFORE this turn — the live message is sent separately.
     final historySnapshot = List<Map<String, Object?>>.from(_history);
     final assistantText = StringBuffer();
@@ -693,7 +785,7 @@ class VirtualConversationHandle implements ConversationHandle {
     var recorded = false;
     var failed = false;
     void record() {
-      if (recorded) return;
+      if (recorded || superseded()) return;
       recorded = true;
       // Record both turns so the next switch back replays the full context.
       _history.add(message);
@@ -719,8 +811,10 @@ class VirtualConversationHandle implements ConversationHandle {
         extraContext: extraContext,
         thinking: enableThinking,
         maxOutputTokens: maxOutputTokens,
-        jsonSchema: jsonSchema,
+        constraint: constraint,
         filterChannelContent: filterChannelContent,
+        options: options,
+        extras: extras,
         freshConversation: freshConversationEachTurn,
       )) {
         final chunkText = LiteRtLmFfiClient.extractTextFromResponse(rawChunk);
@@ -740,21 +834,25 @@ class VirtualConversationHandle implements ConversationHandle {
       // A stopped or abandoned turn keeps what it produced, as core's chat
       // does; one that produced nothing is taken back (Rule A).
       if (!failed && assistantText.isNotEmpty) record();
-      client.finishVirtualStoppedTurn(
-        token,
-        messageJson: messageJson,
-        // Decision W takes a failed turn back even if it streamed text.
-        partialReply: failed || assistantText.isEmpty
-            ? null
-            : assistantTurnMessage(
-                toolCallsOf,
-                assistantText.toString(),
-                assistantRaw.toString(),
-              ),
-        extraContext: extraContext,
-        freshConversation: freshConversationEachTurn,
-      );
-      _inFlight = false;
+      // A superseded turn's exchange is not the conversation's stopped one:
+      // the turn that took over settles its own stop.
+      if (!superseded()) {
+        client.finishVirtualStoppedTurn(
+          token,
+          messageJson: messageJson,
+          // Decision W takes a failed turn back even if it streamed text.
+          partialReply: failed || assistantText.isEmpty
+              ? null
+              : assistantTurnMessage(
+                  toolCallsOf,
+                  assistantText.toString(),
+                  assistantRaw.toString(),
+                ),
+          extraContext: extraContext,
+          freshConversation: freshConversationEachTurn,
+        );
+      }
+      if (!superseded()) _inFlight = false;
       done.complete();
     }
   }
@@ -793,10 +891,12 @@ class VirtualConversationHandle implements ConversationHandle {
   Stream<String> chatRawMessage(
     String messageJson, {
     bool enableThinking = false,
+    SendOptions options = SendOptions.none,
   }) => _run(
     jsonDecode(messageJson) as Map<String, Object?>,
     raw: true,
     enableThinking: enableThinking,
+    options: options,
   );
 
   Map<String, Object?> _userMessage(
@@ -828,7 +928,7 @@ class VirtualConversationHandle implements ConversationHandle {
   ) async => StoppedTurnRewind.unsupported;
 
   @override
-  TurnMetrics getSessionMetrics() => client.virtualSessionMetrics(token);
+  BenchmarkInfo getSessionMetrics() => client.virtualSessionMetrics(token);
 
   /// The latest turn reached native; a turn refused before it has no end of
   /// its own to report.

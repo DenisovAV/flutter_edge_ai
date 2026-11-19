@@ -367,25 +367,25 @@ String whereNpuRuns(NpuStack vendor) => switch (vendor) {
 
 /// The backends to try, in order, for a [preferredBackend] request, the NPU
 /// only when [npuAvailable].
-List<Backend> ffiBackendFallbackOrder(
-  Backend? preferredBackend, {
+List<BackendKind> ffiBackendFallbackOrder(
+  BackendKind? preferredBackend, {
   required bool npuAvailable,
 }) => switch (preferredBackend) {
-  Backend.npu => [
+  BackendKind.npu => [
     // Offered only where a dispatch stack exists. Dropping it here is what
     // makes the reported `activeBackend` true on the other four platforms.
-    if (npuAvailable) Backend.npu,
-    Backend.gpu,
-    Backend.cpu,
+    if (npuAvailable) BackendKind.npu,
+    BackendKind.gpu,
+    BackendKind.cpu,
   ],
-  Backend.gpu || null => const [Backend.gpu, Backend.cpu],
-  Backend.cpu => const [Backend.cpu],
+  BackendKind.gpu || null => const [BackendKind.gpu, BackendKind.cpu],
+  BackendKind.cpu => const [BackendKind.cpu],
 };
 
-String ffiBackendWireName(Backend backend) => switch (backend) {
-  Backend.npu => 'npu',
-  Backend.gpu => 'gpu',
-  Backend.cpu => 'cpu',
+String ffiBackendWireName(BackendKind backend) => switch (backend) {
+  BackendKind.npu => 'npu',
+  BackendKind.gpu => 'gpu',
+  BackendKind.cpu => 'cpu',
 };
 
 /// Wire name for an ENCODER backend (vision / audio), defaulting to `cpu` when
@@ -399,16 +399,16 @@ String ffiBackendWireName(Backend backend) => switch (backend) {
 /// prepare — it hard-fails at `conversation_create` with no backend fallback
 /// (LiteRT-LM#2461, open upstream) — and the published Gemma 4 and Gemma 3n
 /// AUDIO encoders declare `backend_constraint` cpu.
-String encoderBackendWireName(Backend? encoderBackend) =>
+String encoderBackendWireName(BackendKind? encoderBackend) =>
     encoderBackend == null ? 'cpu' : ffiBackendWireName(encoderBackend);
 
-/// The C API's number for [type] (`ActivationType` in LiteRT-LM's
+/// The C API's number for [type] (`ActivationDataType` in LiteRT-LM's
 /// `executor_settings_base.h`: 0 F32, 1 F16, and 2 I16 / 3 I8 which the Dart
 /// enum does not offer), or null to leave the engine setting untouched.
 /// Spelled out rather than taken from `index`, so reordering the Dart enum
 /// cannot silently change what native receives.
-int? activationDataTypeWireValue(ActivationType? type) => switch (type) {
+int? activationDataTypeWireValue(ActivationDataType? type) => switch (type) {
   null => null,
-  ActivationType.float32 => 0,
-  ActivationType.float16 => 1,
+  ActivationDataType.float32 => 0,
+  ActivationDataType.float16 => 1,
 };

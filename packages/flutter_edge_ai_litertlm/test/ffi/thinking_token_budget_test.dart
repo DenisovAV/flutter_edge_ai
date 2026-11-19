@@ -11,10 +11,10 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:litertlm_dart/bindings.dart';
-import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai_litertlm/src/thinking_token_budget.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/common.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 
 // C API 1.0: a create writes through an out-parameter and every call that
 // can fail returns a LiteRtLmStatusCode.

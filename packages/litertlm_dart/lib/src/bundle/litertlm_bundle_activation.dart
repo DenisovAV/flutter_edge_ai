@@ -12,7 +12,7 @@
 //
 // Gemma 4 declares the key, and is still given FP32 on the GPU above a 2,048
 // token context, where its FP16 rotary positions break (LiteRT-LM #4001): see
-// `gpuActivationDefault`.
+// `gpuActivationFor` (lib/src/api/engine.dart).
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -115,15 +115,21 @@ Future<Uint8List> _readExactly(
 }
 
 /// The largest context Gemma 4 keeps at the GPU's FP16 default: above it a
-/// GPU attempt runs at FP32 (LiteRT-LM #4001).
+/// GPU attempt runs at FP32 (LiteRT-LM #4001), except on Android.
 const gemma4Fp16MaxContextTokens = 2048;
 
-/// Why [gpuActivationDefault] chose FP32 for a GPU attempt, for the engine's
-/// log line.
+/// Why `gpuActivationFor` (`Engine.create`) chose the activation of a GPU
+/// load, for the engine's log line.
 enum GpuActivationReason {
-  /// A FunctionGemma bundle that declares no `prefer_activation_type`.
+  /// FP32: a FunctionGemma bundle that declares no `prefer_activation_type`.
   functionGemmaWithoutKey,
 
-  /// Gemma 4 with a context above [gemma4Fp16MaxContextTokens].
+  /// FP32: Gemma 4 with a context above [gemma4Fp16MaxContextTokens].
   gemma4LongContext,
+
+  /// The bundle's own (FP16): Gemma 4 with a context above
+  /// [gemma4Fp16MaxContextTokens] on an Android GPU, where FP32 fails on
+  /// Adreno 8xx with this native build (OpenCL "Invalid work group size" at
+  /// the first decode, measured on a Galaxy S25 Ultra).
+  gemma4LongContextAndroid,
 }

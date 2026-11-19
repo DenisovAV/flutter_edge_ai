@@ -120,8 +120,16 @@ String npuNotBundledReason(NpuStack vendor) => switch (vendor) {
   NpuStack.mediatek => mediatekNpuNotEnabledReason,
   NpuStack.intel =>
     'this build carries none of the Intel NPU stack; use a '
-        'flutter_edge_ai_litertlm whose native release bundles it and rebuild',
+        'litertlm_dart whose native release bundles it and rebuild',
 };
+
+/// The key an app written for flutter_edge_ai_litertlm 1.20 and older set,
+/// and which one counts when both are set (the hook reads the old key while
+/// the new one leaves a define unset).
+const _legacyOptInNote =
+    'flutter_edge_ai_litertlm 1.20 and older read this key under '
+    'flutter_edge_ai_litertlm: instead; 1.21 still reads it there, but a '
+    'value under litertlm_dart: wins, a false one included';
 
 /// What an app that did not opt in to Google Tensor sees when it asks for npu.
 const googleTensorNpuNotEnabledReason =
@@ -129,10 +137,10 @@ const googleTensorNpuNotEnabledReason =
     'opt-in: add\n'
     '  hooks:\n'
     '    user_defines:\n'
-    '      flutter_edge_ai_litertlm:\n'
+    '      litertlm_dart:\n'
     '        $googleTensorNpuUserDefine: true\n'
     "to the app's pubspec.yaml (the workspace root pubspec if the app is a "
-    'pub workspace member) and rebuild';
+    'pub workspace member) and rebuild. $_legacyOptInNote';
 
 /// What an app that did not opt in to MediaTek sees when it asks for npu.
 const mediatekNpuNotEnabledReason =
@@ -141,10 +149,10 @@ const mediatekNpuNotEnabledReason =
     "is MediaTek's code under MediaTek's licence. Add\n"
     '  hooks:\n'
     '    user_defines:\n'
-    '      flutter_edge_ai_litertlm:\n'
+    '      litertlm_dart:\n'
     '        $mediatekNpuUserDefine: true\n'
     "to the app's pubspec.yaml (the workspace root pubspec if the app is a "
-    'pub workspace member) and rebuild';
+    'pub workspace member) and rebuild. $_legacyOptInNote';
 
 /// What an app that did not opt in sees when it asks for npu.
 const qualcommNpuNotEnabledReason =
@@ -152,7 +160,7 @@ const qualcommNpuNotEnabledReason =
     "the QNN runtime is Qualcomm's code under Qualcomm's licence: add\n"
     '  hooks:\n'
     '    user_defines:\n'
-    '      flutter_edge_ai_litertlm:\n'
+    '      litertlm_dart:\n'
     '        $qualcommNpuUserDefine: true\n'
     "to the app's pubspec.yaml (the workspace root pubspec if the app is a "
-    'pub workspace member) and rebuild';
+    'pub workspace member) and rebuild. $_legacyOptInNote';

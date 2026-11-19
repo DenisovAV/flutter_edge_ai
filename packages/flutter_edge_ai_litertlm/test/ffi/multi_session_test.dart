@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/common.dart';
 
 /// Fake [ConversationHandle] that echoes scripted responses without touching
 /// native code. Each fake owns its own response script, so two fakes model
@@ -80,7 +81,7 @@ class _FakeConversationHandle implements ConversationHandle {
   ) async => StoppedTurnRewind.unsupported;
 
   @override
-  SessionMetrics getSessionMetrics() => SessionMetrics();
+  TurnMetrics getSessionMetrics() => const TurnMetrics();
 
   @override
   NativeLastTurnEnd? get lastTurnEnd => null;

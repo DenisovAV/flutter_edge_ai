@@ -11,9 +11,9 @@
 // CPU by default; --dart-define=TOOLS_BACKEND=gpu for the GPU backend.
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 // ignore: implementation_imports — white-box check of the sampler litertlm's FFI client read from the bundle (#572)
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 // ignore: implementation_imports — reads the bundle's sampler directly to compare with what the session got (#572)
-import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_sampler.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 

@@ -18,16 +18,17 @@
 import 'dart:io' show FileSystemException, Platform;
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../catalog/litert_catalog.dart' show LiteRtEmbedders;
+import 'embedding_cache_dir.dart';
 import 'litert_embedding_pass.dart';
+import 'package:litertlm_dart/common.dart';
 import 'litert_lm_embedding_pass.dart';
 import 'litert_lm_npu.dart';
-import 'litertlm_npu_target.dart';
-import '../native_hosts.dart' show LiteRtLmEg2Bundle;
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'vision_budget.dart';
 import 'weight_cache_notice.dart';
+import '../adapter/runtime_log_binding.dart';
 
 /// LiteRT embedding backend: `.tflite` embedders (EmbeddingGemma 1, Gecko)
 /// over the LiteRT C API, and `.litertlm` embedding bundles (EmbeddingGemma 2:
@@ -39,7 +40,7 @@ import 'weight_cache_notice.dart';
 /// (`…_Qualcomm_SM8850.litertlm`, `…_Intel_PTL.litertlm`), loaded with
 /// `getActiveEmbedder(preferredBackend: PreferredBackend.npu)` — on that SoC's
 /// NPU: on Qualcomm Android and Qualcomm Linux arm64 in an app built with
-/// `hooks: user_defines: flutter_edge_ai_litertlm: qualcomm_npu: true`, and
+/// `hooks: user_defines: litertlm_dart: qualcomm_npu: true`, and
 /// on Intel NPUs with Windows x64 (Panther Lake).
 /// Nothing switches backend on its own: the generic bundle with `npu`, a
 /// per-SoC bundle without it, and `npu` where it cannot run are refused with
@@ -143,6 +144,7 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider
     EmbeddingModelSpec spec,
     RuntimeConfig config,
   ) async {
+    bindRuntimeLogToCore();
     final file = spec.files.first.filename;
     final opensBundle = isLiteRtLmFilename(config.modelPath);
     // Wherever it is used: a misconfigured backend fails at its first load,
@@ -167,6 +169,7 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider
         file,
         _visionTokensPerImage,
         requireWeightCache: _requireWeightCache,
+        cacheDirectory: liteRtEmbeddingCacheDirectory,
       );
     }
     final descriptor = _describeTflite(spec, file, config);
@@ -191,15 +194,19 @@ const _liteRtLm = liteRtLmEngineTag;
 /// ModelInfo at load (the 270m has none). Where it runs — CPU, or the NPU it
 /// was compiled for — is decided here too, from the bundle's own bytes
 /// ([readLiteRtLmNpuTarget], [placeLiteRtLmEmbedder]). Both refusals come
-/// before any isolate or engine exists.
+/// before any isolate or engine exists. [cacheDirectory] is the platform
+/// cache directory ([liteRtEmbeddingCacheDirectory]), asked for after them.
 Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   RuntimeConfig config,
   String file,
   int visionTokensPerImage, {
   required bool requireWeightCache,
+  required Future<String> Function() cacheDirectory,
 }) async {
-  if (config.supportAudio) requireLiteRtLmAudioEncoder(config.modelPath);
-  final LiteRtLmNpuTarget? target;
+  if (config.supportAudio) {
+    requireLiteRtLmAudioEncoderForCore(config.modelPath);
+  }
+  final NpuStamp? target;
   try {
     target = await readLiteRtLmNpuTarget(config.modelPath);
   } on FileSystemException catch (e) {
@@ -229,7 +236,7 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   // on the NPU and engine create fails (L1, Galaxy S25 Ultra, 2026-11-04).
   final onNpu = placement.target != null;
   final towers = onGpu || onNpu
-      ? readLiteRtLmMediaTowers(config.modelPath)
+      ? readLiteRtLmMediaTowersForCore(config.modelPath)
       : (vision: false, audio: false);
   if (onGpu) {
     final bundle = LiteRtLmEg2Bundle.of(
@@ -270,7 +277,7 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   // which a 71-385 MB weight cache would break. If the OS purges the cache,
   // the next engine create rebuilds it. Resolved here: the pass runs in core's
   // worker isolate, which has no platform channels.
-  final cache = (await getApplicationCacheDirectory()).path;
+  final cache = await cacheDirectory();
   final sep = Platform.pathSeparator;
   return EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>(
     engineTag: _liteRtLm,
@@ -281,8 +288,8 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
       // name below it, and Windows paths must stay under MAX_PATH.
       cacheBase: '$cache${sep}flutter_edge_ai${sep}emb',
       declaredMedia: {
-        if (config.supportImage) EmbeddingModality.image,
-        if (config.supportAudio) EmbeddingModality.audio,
+        if (config.supportImage) EmbedderModality.image,
+        if (config.supportAudio) EmbedderModality.audio,
       },
       visionTokensPerImage: visionTokensPerImage,
       // The pass checks the cache on CPU and on the GPU, and on the NPU for

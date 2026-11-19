@@ -1,6 +1,9 @@
 ## Unreleased
 - `BuiltInAiHuggingFaceResolver` declares the `inference` role.
 
+## 0.4.2
+- Require `flutter_edge_ai` >=2.6.0 <2.7.0.
+
 ## 0.4.1
 - Require `flutter_local_ai` ^0.4.0: no launch crash on Apple OS older than 26.
 

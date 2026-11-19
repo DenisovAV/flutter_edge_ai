@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/common.dart';
 
 /// A conversation whose native side the test plays: each send is a real
 /// [NativeTurnStream] on [turns], and the test posts its chunks and its end
@@ -37,7 +37,7 @@ class _Handle implements ConversationHandle {
   Future<int?> tokenCount(String text) async => text.length;
 
   @override
-  SessionMetrics getSessionMetrics() => SessionMetrics();
+  TurnMetrics getSessionMetrics() => const TurnMetrics();
 
   /// Native's turn-end record, as the test sets it.
   NativeLastTurnEnd? turnEnd;

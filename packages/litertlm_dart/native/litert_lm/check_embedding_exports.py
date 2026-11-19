@@ -1,0 +1,530 @@
+#!/usr/bin/env python3
+"""The LiteRT-LM main library must export every C function the EmbeddingGemma 2
+pass calls (R5 §4.11), every one option scoring calls (SCORING_SYMBOLS),
+every LiteRT C function LiteRtBindings looks up (LITERT_BINDINGS_SYMBOLS, from
+libLiteRt.so on Linux and LiteRt.dll on Windows, by the platform in the label),
+every one a thinking token budget calls (THINKING_BUDGET_SYMBOLS), the
+symbol the loader checks to recognise this package's build
+(OWN_BUILD_SYMBOLS), the LLM functions the C API 1.0 client binds
+(LLM_SYMBOLS), the StreamProxy entry it streams through
+(STREAM_PROXY_SYMBOLS, from libStreamProxy / StreamProxy.dll), and, from every
+NPU dispatch in the bundle, the versioned dispatch entry LiteRT loads it by
+(DISPATCH_SYMBOL).
+
+flutter_edge_ai_litertlm's `.litertlm` embedding pass binds the EmbeddingEngine,
+ModelInfo and error-reporter C API out of libLiteRtLm. Nothing else gates those
+exports: they leave the library through visibility attributes, not the Windows
+`.def` whitelist in patch_c_api.sh, and none of the LLM tests calls them. A
+rebuild that loses one ships an embedder that fails at load on that platform
+only. The pass refuses such a library by name at runtime; this refuses to
+publish it.
+
+Reads the export table itself — ELF `.dynsym`, Mach-O `LC_SYMTAB` (thin or
+fat), PE export directory — so it needs no platform toolchain and checks the
+bytes that ship.
+
+REQUIRED must equal `liteRtLmEmbeddingSymbols` in
+lib/src/embedding/litert_lm_embedding_pass.dart (a VM test compares them).
+
+Usage: check_embedding_exports.py <extracted_bundle_dir> [<label>]
+Exit 1 when the main library is missing, unreadable, or misses a symbol.
+"""
+import os
+import struct
+import sys
+
+REQUIRED = [
+    "litert_lm_clear_last_error",
+    "litert_lm_get_last_error_message",
+    "litert_lm_loaded_file_create",
+    "litert_lm_loaded_file_delete",
+    "litert_lm_loaded_file_model_type",
+    "litert_lm_loaded_file_embedding_dimension",
+    "litert_lm_loaded_file_embedding_signature_selection",
+    "litert_lm_loaded_file_vision_signature_selection",
+    "litert_lm_embedding_engine_settings_create",
+    "litert_lm_embedding_engine_settings_delete",
+    "litert_lm_embedding_engine_settings_set_cache_dir",
+    "litert_lm_embedding_engine_settings_set_max_input_length",
+    "litert_lm_embedding_engine_settings_set_num_threads",
+    "litert_lm_embedding_engine_settings_set_vision_tokens_per_image",
+    "litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir",
+    "litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir",
+    "litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir",
+    "litert_lm_embedding_engine_create",
+    "litert_lm_embedding_engine_delete",
+    "litert_lm_embedding_engine_compute_embedding",
+    "litert_lm_embedding_options_create",
+    "litert_lm_embedding_options_delete",
+    "litert_lm_embedding_options_set_normalize",
+    "litert_lm_embedding_options_set_insert_special_tokens",
+    "litert_lm_embedding_options_set_input_overflow_strategy",
+    "litert_lm_input_data_create",
+    "litert_lm_input_data_delete",
+    "litert_lm_embedding_response_get_size",
+    "litert_lm_embedding_response_get_values",
+    # Exported from native-v0.18.0-e on (patch_c_api.sh section 14); the pass
+    # reads both for every request since flutter_edge_ai_litertlm 1.13.1.
+    "litert_lm_embedding_response_get_input_length",
+    "litert_lm_embedding_response_get_truncated_length",
+    "litert_lm_embedding_response_delete",
+]
+
+# Every C function InferenceModel.createDecider's option scoring calls
+# (lib/src/ffi/option_scoring_ffi.dart, and the tokenizer calls of
+# litert_lm_client.dart's tokenIds / detokenizeIds); a VM test compares them.
+# Missing one, every decision fails at its first scoring pass.
+SCORING_SYMBOLS = [
+    "litert_lm_clear_last_error",
+    "litert_lm_conversation_config_create",
+    "litert_lm_conversation_config_delete",
+    "litert_lm_conversation_config_set_session_config",
+    "litert_lm_conversation_create",
+    "litert_lm_conversation_delete",
+    "litert_lm_conversation_render_message_to_string",
+    "litert_lm_engine_create_session",
+    "litert_lm_get_last_error_message",
+    "litert_lm_input_data_create",
+    "litert_lm_input_data_delete",
+    "litert_lm_responses_delete",
+    "litert_lm_responses_get_num_token_scores_at",
+    "litert_lm_responses_get_token_scores_at",
+    "litert_lm_sampler_params_create",
+    "litert_lm_sampler_params_delete",
+    "litert_lm_sampler_params_set_seed",
+    "litert_lm_sampler_params_set_temperature",
+    "litert_lm_sampler_params_set_top_k",
+    "litert_lm_sampler_params_set_top_p",
+    "litert_lm_session_config_create",
+    "litert_lm_session_config_delete",
+    "litert_lm_session_config_set_apply_prompt_template",
+    "litert_lm_session_config_set_max_output_tokens",
+    "litert_lm_session_config_set_sampler_params",
+    "litert_lm_session_delete",
+    "litert_lm_session_rewind_to_checkpoint",
+    "litert_lm_session_run_prefill",
+    "litert_lm_session_run_text_scoring",
+    "litert_lm_session_save_checkpoint",
+    "litert_lm_detokenize_result_delete",
+    "litert_lm_detokenize_result_get_string",
+    "litert_lm_engine_detokenize",
+    "litert_lm_engine_tokenize",
+    "litert_lm_tokenize_result_delete",
+    "litert_lm_tokenize_result_get_num_tokens",
+    "litert_lm_tokenize_result_get_tokens",
+]
+
+# Every C function a send with a thinking token budget calls
+# (applyThinkingTokenBudget in lib/src/ffi/litert_lm_client.dart); a VM test
+# compares them. Missing one, the first such send fails, not the load.
+THINKING_BUDGET_SYMBOLS = [
+    "litert_lm_conversation_optional_args_set_thinking_config",
+    "litert_lm_thinking_config_create",
+    "litert_lm_thinking_config_delete",
+    "litert_lm_thinking_config_set_enable_thinking",
+    "litert_lm_thinking_config_set_thinking_token_budget",
+]
+
+# The symbol every libLiteRtLm open checks to tell this package's build from
+# another package's LiteRT-LM under the same name (liteRtLmOwnBuildSymbol in
+# lib/src/ffi/litert_lm_runtime_check.dart; a VM test compares them). Missing
+# from one archive, every app on that target refuses our own library.
+OWN_BUILD_SYMBOLS = [
+    "litert_lm_engine_settings_set_kernel_batch_size",
+]
+
+# Every LiteRT C function LiteRtBindings looks up (lib/src/ffi/litert_bindings.dart;
+# a VM test compares them): embeddings on .tflite and every speech model. They
+# come out of the library LiteRtBindings opens — libLiteRtLm on Apple and
+# Android, Google's libLiteRt.so / LiteRt.dll beside it on Linux and Windows.
+# Missing one, that load fails on that target only (the opaque-options three
+# carry the speech-to-text GPU options, #747).
+LITERT_BINDINGS_SYMBOLS = [
+    "LiteRtAddOpaqueOptions",
+    "LiteRtCreateCompiledModel",
+    "LiteRtCreateEnvironment",
+    "LiteRtCreateModelFromFile",
+    "LiteRtCreateOpaqueOptions",
+    "LiteRtCreateOptions",
+    "LiteRtCreateTensorBufferFromHostMemory",
+    "LiteRtDestroyCompiledModel",
+    "LiteRtDestroyEnvironment",
+    "LiteRtDestroyModel",
+    "LiteRtDestroyOpaqueOptions",
+    "LiteRtDestroyOptions",
+    "LiteRtDestroyTensorBuffer",
+    "LiteRtGetCompiledModelInputBufferRequirements",
+    "LiteRtGetCompiledModelInputTensorLayout",
+    "LiteRtGetCompiledModelOutputBufferRequirements",
+    "LiteRtGetCompiledModelOutputTensorLayouts",
+    "LiteRtGetModelSignature",
+    "LiteRtGetNumSignatureInputs",
+    "LiteRtGetSignatureInputName",
+    "LiteRtLockTensorBuffer",
+    "LiteRtRunCompiledModel",
+    "LiteRtSetOptionsHardwareAccelerators",
+    "LiteRtUnlockTensorBuffer",
+]
+
+# The LLM functions the C API 1.0 Dart client (core 2.6.0, PRs L2, L3 and 6)
+# binds beyond the ones above: the version gate, structured output, real
+# conversations for open sessions, the effective NPU context (#4184), and our
+# patches' section 16 rewind and section 23 turn-end record. Missing one, that
+# feature fails on that target only, at its first use.
+LLM_SYMBOLS = [
+    "litert_lm_benchmark_info_get_max_num_tokens",
+    "litert_lm_conversation_config_set_constraint_provider",
+    "litert_lm_conversation_get_last_turn_end",
+    "litert_lm_conversation_get_token_count",
+    "litert_lm_conversation_optional_args_create",
+    "litert_lm_conversation_optional_args_delete",
+    "litert_lm_conversation_optional_args_set_constraint",
+    "litert_lm_conversation_rewind_cancelled_turn",
+    "litert_lm_conversation_wait_until_done",
+    "litert_lm_get_api_version",
+    "litert_lm_stream_chunk_get_error",
+    "litert_lm_stream_chunk_get_text",
+    "litert_lm_stream_chunk_is_final",
+]
+
+# The StreamProxy shim (stream_proxy.c) every streamed reply goes through. Its
+# C API 1.0 entry replaced stream_proxy_create and stream_proxy_create2, which
+# typed the accessors the pre-1.0 way: a library still carrying them is an old
+# build.
+STREAM_PROXY_LIBRARY = ("libStreamProxy.dylib", "libStreamProxy.so",
+                        "StreamProxy.dll")
+STREAM_PROXY_SYMBOLS = ["stream_proxy_create_v1", "stream_proxy_destroy_v1",
+                        "stream_proxy_free_string"]
+STREAM_PROXY_RETIRED = ["stream_proxy_create", "stream_proxy_create2"]
+
+MAIN_LIBRARY = ("libLiteRtLm.dylib", "libLiteRtLm.so", "LiteRtLm.dll")
+
+# An NPU dispatch is any library whose name holds this: what LiteRT's dispatch
+# scan matches (litert/runtime/dispatch/litert_dispatch.cc). From LiteRT
+# f59b79337 (the LiteRT pin of LiteRT-LM v0.19.0) the loader resolves only
+# DISPATCH_SYMBOL, with no fallback, so a dispatch that exports only the legacy
+# entry (a carried-forward build, or Google's AAR build of MediaTek's) is never
+# loaded. The MediaTek adapter (mediatek_dispatch_compat.c) exports the
+# versioned entry over Google's library, which ships under another name.
+DISPATCH_NAME = "LiteRtDispatch"
+DISPATCH_SYMBOL = "LiteRtDispatchQueryInterface"
+DISPATCH_RETIRED = "LiteRtDispatchGetApi"
+
+# The library LiteRtBindings opens where it is not the main library, by the
+# platform in the bundle's label (litertlm-<platform>): Google's prebuilt
+# LiteRT beside libLiteRtLm (_openLiteRt in lib/src/ffi/litert_bindings.dart).
+# Every other platform links LiteRT into the main library.
+LITERT_C_LIBRARY = {"linux": "libLiteRt.so", "windows": "LiteRt.dll"}
+
+
+class FormatError(Exception):
+    pass
+
+
+def _cstr(data, offset):
+    end = data.index(b"\0", offset)
+    return data[offset:end].decode("utf-8", "replace")
+
+
+def elf_exports(data):
+    if data[4] != 2:
+        raise FormatError("32-bit ELF is not a LiteRT-LM target")
+    if data[5] != 1:
+        raise FormatError("big-endian ELF is not a LiteRT-LM target")
+    shoff = struct.unpack_from("<Q", data, 0x28)[0]
+    shentsize, shnum = struct.unpack_from("<HH", data, 0x3A)
+    sections = []
+    for i in range(shnum):
+        base = shoff + i * shentsize
+        sh_type = struct.unpack_from("<I", data, base + 4)[0]
+        sh_offset, sh_size = struct.unpack_from("<QQ", data, base + 0x18)
+        sh_link = struct.unpack_from("<I", data, base + 0x28)[0]
+        sh_entsize = struct.unpack_from("<Q", data, base + 0x38)[0]
+        sections.append((sh_type, sh_offset, sh_size, sh_link, sh_entsize))
+    names = set()
+    found = False
+    for sh_type, offset, size, link, entsize in sections:
+        if sh_type != 11:  # SHT_DYNSYM
+            continue
+        found = True
+        strtab = sections[link][1]
+        for i in range(size // (entsize or 24)):
+            sym = offset + i * (entsize or 24)
+            st_name, st_info, _, st_shndx = struct.unpack_from("<IBBH", data, sym)
+            binding = st_info >> 4
+            if st_shndx != 0 and binding in (1, 2) and st_name:  # defined GLOBAL/WEAK
+                names.add(_cstr(data, strtab + st_name))
+    if not found:
+        raise FormatError("no .dynsym section")
+    return names
+
+
+def _macho_thin_exports(data, base=0):
+    magic = struct.unpack_from("<I", data, base)[0]
+    if magic != 0xFEEDFACF:
+        raise FormatError(f"not a 64-bit little-endian Mach-O (magic {magic:#x})")
+    ncmds = struct.unpack_from("<I", data, base + 16)[0]
+    cmd_offset = base + 32
+    for _ in range(ncmds):
+        cmd, cmdsize = struct.unpack_from("<II", data, cmd_offset)
+        if cmd == 0x2:  # LC_SYMTAB
+            symoff, nsyms, stroff, _ = struct.unpack_from("<IIII", data, cmd_offset + 8)
+            names = set()
+            for i in range(nsyms):
+                entry = base + symoff + i * 16
+                n_strx, n_type = struct.unpack_from("<IB", data, entry)
+                # N_EXT, defined in a section (N_SECT), not a debug entry.
+                if n_type & 0xE0 == 0 and n_type & 0x01 and n_type & 0x0E == 0x0E:
+                    name = _cstr(data, base + stroff + n_strx)
+                    names.add(name[1:] if name.startswith("_") else name)
+            return names
+        cmd_offset += cmdsize
+    raise FormatError("no LC_SYMTAB")
+
+
+def macho_exports(data):
+    magic = struct.unpack_from(">I", data, 0)[0]
+    if magic in (0xCAFEBABE, 0xCAFEBABF):  # fat: every slice must export it
+        nfat = struct.unpack_from(">I", data, 4)[0]
+        wide = magic == 0xCAFEBABF
+        slices = []
+        for i in range(nfat):
+            if wide:
+                offset = struct.unpack_from(">Q", data, 8 + i * 32 + 8)[0]
+            else:
+                offset = struct.unpack_from(">I", data, 8 + i * 20 + 8)[0]
+            slices.append(_macho_thin_exports(data, offset))
+        return set.intersection(*slices) if slices else set()
+    return _macho_thin_exports(data)
+
+
+def pe_exports(data):
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[pe:pe + 4] != b"PE\0\0":
+        raise FormatError("no PE signature")
+    coff = pe + 4
+    nsections, = struct.unpack_from("<H", data, coff + 2)
+    opt_size, = struct.unpack_from("<H", data, coff + 16)
+    opt = coff + 20
+    magic, = struct.unpack_from("<H", data, opt)
+    if magic == 0x20B:  # PE32+
+        data_dirs = opt + 112
+    elif magic == 0x10B:  # PE32
+        data_dirs = opt + 96
+    else:
+        raise FormatError(f"unknown optional header magic {magic:#x}")
+    export_rva, export_size = struct.unpack_from("<II", data, data_dirs)
+    if export_rva == 0 or export_size == 0:
+        return set()
+    sections = []
+    table = opt + opt_size
+    for i in range(nsections):
+        entry = table + i * 40
+        vsize, vaddr, rawsize, rawptr = struct.unpack_from("<IIII", data, entry + 8)
+        sections.append((vaddr, max(vsize, rawsize), rawptr))
+
+    def at(rva):
+        for vaddr, size, rawptr in sections:
+            if vaddr <= rva < vaddr + size:
+                return rawptr + rva - vaddr
+        raise FormatError(f"RVA {rva:#x} is in no section")
+
+    directory = at(export_rva)
+    number_of_names, = struct.unpack_from("<I", data, directory + 24)
+    names_rva, = struct.unpack_from("<I", data, directory + 32)
+    names_table = at(names_rva)
+    names = set()
+    for i in range(number_of_names):
+        name_rva, = struct.unpack_from("<I", data, names_table + i * 4)
+        names.add(_cstr(data, at(name_rva)))
+    return names
+
+
+def exports(path):
+    data = open(path, "rb").read()
+    if data[:4] == b"\x7fELF":
+        return elf_exports(data)
+    if data[:2] == b"MZ":
+        return pe_exports(data)
+    if struct.unpack_from("<I", data, 0)[0] == 0xFEEDFACF or data[:4] in (
+        b"\xca\xfe\xba\xbe",
+        b"\xca\xfe\xba\xbf",
+    ):
+        return macho_exports(data)
+    raise FormatError("neither ELF, Mach-O nor PE")
+
+
+def find_libraries(bundle, names):
+    found = []
+    for root, _, files in os.walk(bundle):
+        for name in files:
+            if name in names:
+                found.append(os.path.join(root, name))
+    return found
+
+
+def find_libraries_containing(bundle, fragment):
+    found = []
+    for root, _, files in os.walk(bundle):
+        for name in files:
+            if fragment in name:
+                found.append(os.path.join(root, name))
+    return found
+
+
+def find_main_library(bundle):
+    return find_libraries(bundle, MAIN_LIBRARY)
+
+
+# Platforms a bundle label (litertlm-<platform>_<arch>) can name.
+KNOWN_PLATFORMS = ("android", "ios", "macos", "linux", "windows")
+
+
+def bundle_platform(label):
+    """The platform in a bundle label such as litertlm-linux_x86_64, or None
+    when the label names none of KNOWN_PLATFORMS."""
+    name = label.split("litertlm-", 1)[-1]
+    platform = name.split("_", 1)[0]
+    return platform if platform in KNOWN_PLATFORMS else None
+
+
+def find_litert_c_library(bundle, platform, main_library):
+    """The libraries LiteRtBindings opens on [platform]: every libLiteRt.so /
+    LiteRt.dll in the bundle on Linux / Windows (exactly one is expected), the
+    main library elsewhere (Apple, Android)."""
+    name = LITERT_C_LIBRARY.get(platform)
+    if name is None:
+        return os.path.basename(main_library), [main_library]
+    found = []
+    for root, _, files in os.walk(bundle):
+        if name in files:
+            found.append(os.path.join(root, name))
+    return name, found
+
+
+def main(argv):
+    if len(argv) not in (2, 3):
+        sys.exit(__doc__)
+    bundle = argv[1]
+    label = argv[2] if len(argv) == 3 else os.path.basename(bundle.rstrip("/"))
+    libraries = find_main_library(bundle)
+    if len(libraries) != 1:
+        # "inspected nothing" must not pass as "found nothing missing".
+        print(f"  [FAIL] {label} — expected one of {', '.join(MAIN_LIBRARY)}, "
+              f"found {len(libraries)}: {libraries}")
+        return 1
+    library = libraries[0]
+    try:
+        names = exports(library)
+    except (FormatError, struct.error, ValueError, IndexError) as e:
+        print(f"  [FAIL] {label} — cannot read the exports of "
+              f"{os.path.basename(library)}: {e}")
+        return 1
+    failed = False
+    for wanted, what in ((REQUIRED, "EmbeddingEngine functions the "
+                          "EmbeddingGemma 2 pass calls"),
+                         (SCORING_SYMBOLS, "functions option scoring "
+                          "(createDecider) calls"),
+                         (THINKING_BUDGET_SYMBOLS, "functions a thinking "
+                          "token budget calls"),
+                         (OWN_BUILD_SYMBOLS, "symbols the loader checks to "
+                          "recognise this package's build"),
+                         (LLM_SYMBOLS, "LLM functions the C API 1.0 client "
+                          "binds")):
+        missing = [s for s in wanted if s not in names]
+        if missing:
+            failed = True
+            print(f"  [FAIL] {label} — {os.path.basename(library)} does not "
+                  f"export {len(missing)} of the {len(wanted)} {what}:")
+            for symbol in missing:
+                print(f"         {symbol}")
+        else:
+            print(f"  [ok]   {label} — {os.path.basename(library)} exports all "
+                  f"{len(wanted)} {what}")
+    proxies = find_libraries(bundle, STREAM_PROXY_LIBRARY)
+    if len(proxies) != 1:
+        failed = True
+        print(f"  [FAIL] {label} — expected one of "
+              f"{', '.join(STREAM_PROXY_LIBRARY)}, found {len(proxies)}: "
+              f"{proxies}")
+    else:
+        proxy = proxies[0]
+        try:
+            proxy_names = exports(proxy)
+        except (FormatError, struct.error, ValueError, IndexError) as e:
+            print(f"  [FAIL] {label} — cannot read the exports of "
+                  f"{os.path.basename(proxy)}: {e}")
+            return 1
+        missing = [s for s in STREAM_PROXY_SYMBOLS if s not in proxy_names]
+        retired = [s for s in STREAM_PROXY_RETIRED if s in proxy_names]
+        if missing or retired:
+            failed = True
+            print(f"  [FAIL] {label} — {os.path.basename(proxy)} is not the "
+                  f"C API 1.0 StreamProxy:")
+            for symbol in missing:
+                print(f"         missing {symbol}")
+            for symbol in retired:
+                print(f"         still exports {symbol}")
+        else:
+            print(f"  [ok]   {label} — {os.path.basename(proxy)} exports "
+                  f"{', '.join(STREAM_PROXY_SYMBOLS)} and none of "
+                  f"{', '.join(STREAM_PROXY_RETIRED)}")
+    dispatches = sorted(
+        path for path in find_libraries_containing(bundle, DISPATCH_NAME)
+        if path.endswith((".so", ".dll")))
+    for dispatch in dispatches:
+        try:
+            dispatch_names = exports(dispatch)
+        except (FormatError, struct.error, ValueError, IndexError) as e:
+            print(f"  [FAIL] {label} — cannot read the exports of "
+                  f"{os.path.basename(dispatch)}: {e}")
+            return 1
+        if (DISPATCH_SYMBOL not in dispatch_names
+                or DISPATCH_RETIRED in dispatch_names):
+            failed = True
+            print(f"  [FAIL] {label} — {os.path.basename(dispatch)} is not a "
+                  f"versioned-ABI dispatch: it must export {DISPATCH_SYMBOL} "
+                  f"and not {DISPATCH_RETIRED}, which LiteRT no longer loads")
+        else:
+            print(f"  [ok]   {label} — {os.path.basename(dispatch)} exports "
+                  f"{DISPATCH_SYMBOL}")
+    platform = bundle_platform(label)
+    if platform is None:
+        # Which library LiteRtBindings opens depends on the platform; a label
+        # that names none must not pass by checking the wrong one.
+        print(f"  [FAIL] {label} — the label names no platform "
+              f"({', '.join(KNOWN_PLATFORMS)}), so the library LiteRtBindings "
+              f"opens is unknown")
+        return 1
+    litert_name, litert_libraries = find_litert_c_library(
+        bundle, platform, library)
+    if len(litert_libraries) != 1:
+        print(f"  [FAIL] {label} — expected one {litert_name}, the library "
+              f"LiteRtBindings opens there, found {len(litert_libraries)}: "
+              f"{litert_libraries}")
+        return 1
+    litert_library = litert_libraries[0]
+    try:
+        litert_names = (names if litert_library == library
+                        else exports(litert_library))
+    except (FormatError, struct.error, ValueError, IndexError) as e:
+        print(f"  [FAIL] {label} — cannot read the exports of "
+              f"{os.path.basename(litert_library)}: {e}")
+        return 1
+    missing = [s for s in LITERT_BINDINGS_SYMBOLS if s not in litert_names]
+    what = "LiteRT C functions LiteRtBindings looks up"
+    if missing:
+        failed = True
+        print(f"  [FAIL] {label} — {os.path.basename(litert_library)} does not "
+              f"export {len(missing)} of the {len(LITERT_BINDINGS_SYMBOLS)} "
+              f"{what}:")
+        for symbol in missing:
+            print(f"         {symbol}")
+    else:
+        print(f"  [ok]   {label} — {os.path.basename(litert_library)} exports "
+              f"all {len(LITERT_BINDINGS_SYMBOLS)} {what}")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

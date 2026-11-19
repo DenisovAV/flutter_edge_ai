@@ -417,7 +417,7 @@ The same repos hold each bundle compiled for one SoC's NPU
 `embeddinggemma-2-text-vision-440m_Qualcomm_QCS8275.litertlm`, …). It runs on
 Qualcomm Android (arm64) and Qualcomm Linux arm64, in an app whose pubspec (the
 workspace root's, for a workspace member) sets
-`hooks: user_defines: flutter_edge_ai_litertlm: qualcomm_npu: true` (the flag
+`hooks: user_defines: litertlm_dart: qualcomm_npu: true` (the flag
 the LLM NPU path uses), loaded with `preferredBackend: PreferredBackend.npu`:
 
 ```dart
@@ -494,7 +494,7 @@ final npuIndex = await rag.open(
   `…_Google_Tensor_G5.litertlm` / `…_Google_Tensor_G6.litertlm` (270m, 440m)
   load the same way with `preferredBackend: PreferredBackend.npu`, in an app
   whose pubspec (the workspace root's, for a workspace member) sets
-  `hooks: user_defines: flutter_edge_ai_litertlm: google_tensor_npu: true` (the
+  `hooks: user_defines: litertlm_dart: google_tensor_npu: true` (the
   flag the LLM path uses), on
   a Pixel with that Tensor generation and Android 16 or later, not a BP2A
   build. Profile id: the CPU text id plus the SoC, e.g. `-npu-tensor_g6`,
@@ -504,7 +504,7 @@ final npuIndex = await rag.open(
   `…_MediaTek_MT6991.litertlm` / `…_MediaTek_MT6993.litertlm` are accepted the
   same way with `preferredBackend: PreferredBackend.npu`, in an app whose pubspec
   (the workspace root's, for a workspace member) sets
-  `hooks: user_defines: flutter_edge_ai_litertlm: mediatek_npu: true`, on a phone with that SoC, Android 12 or later, whose
+  `hooks: user_defines: litertlm_dart: mediatek_npu: true`, on a phone with that SoC, Android 12 or later, whose
   vendor exposes NeuroPilot to apps. Profile id: the CPU text id plus the SoC,
   e.g. `-npu-mt6991`. Not run on an MT6991/MT6993 phone yet; the LLM path
   runs on an MT6989.
@@ -765,6 +765,44 @@ chunk or query is never truncated: `add` and `search` throw
 `EmbeddingInputTooLongException`, whose `maxInputTokens` and `actualTokens`
 say by how much. A null `maxInputTokens` means the loaded pass cannot establish
 an effective limit, not that input is unlimited.
+
+## Text and hybrid search (`flutter_edge_ai_rag` 1.2.0, `flutter_edge_ai_sqlite` 2.2.0)
+
+```dart
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+
+final rag = FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider()],
+);
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: 'notes.db', // as in "Index and search": a full path on native
+    enableTextSearch: true, // text documents only
+  ),
+  embedder: FlutterEdgeAiActiveEmbedder.forActiveModel(namespace: 'knowledge'),
+);
+final byWords = await index.searchText(text: 'invoice 2024-117');
+final hybrid = await index.searchHybrid(text: 'unpaid invoice'); // RRF, k 60
+```
+
+- Only stores whose `supportsTextSearch` is true can open with the flag:
+  SQLite (FTS5, all six platforms) can, qdrant cannot and fails the open with
+  `VectorStoreException`. Never fall back to vector-only search silently.
+- `text` is plain user text. `TextSearchResult.relevanceScore` (SQLite:
+  `-bm25()`) is higher-is-better and comparable within one call only; never
+  compare it with cosine `similarity`. No `threshold` on text or hybrid search.
+- `HybridSearchResult`: `rrfScore`, `vectorSimilarity`/`vectorRank`,
+  `relevanceScore`/`textRank`; a null leg field = outside that leg's
+  candidates (`max(4 × topK, 20)` each), not "no match". The vector leg keeps
+  negative similarities. `searchHybridVector` for `openVectors` indexes.
+- `filter` applies to both legs. The SQLite tokenizer is
+  `SqliteVectorStoreProvider(textTokenizer: SqliteTextTokenizer.unicode61 |
+  porter | trigram)`, fixed when the index is created; `null` uses the stored
+  one.
+- Once a location has a text index, every open keeps it in step (with or
+  without the flag) and repairs writes made without it.
 
 ## Image and audio documents
 

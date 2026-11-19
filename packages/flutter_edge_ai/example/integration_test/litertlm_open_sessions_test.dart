@@ -43,9 +43,9 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 // ignore: implementation_imports — the open-session backing the load chose
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 // ignore: implementation_imports — the open-session backing the load chose
-import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 

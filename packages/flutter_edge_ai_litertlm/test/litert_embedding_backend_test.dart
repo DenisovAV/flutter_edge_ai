@@ -10,17 +10,17 @@ import 'package:flutter/foundation.dart' show DebugPrintCallback, debugPrint;
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_cache_dir.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
-import 'package:flutter_edge_ai_litertlm/src/native_hosts.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuStack;
+import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
+import 'package:litertlm_dart/common.dart';
 
 EmbeddingModelSpec _tflite({String model = 'gemma.tflite'}) =>
     EmbeddingModelSpec(
@@ -201,6 +201,19 @@ void main() {
       },
     );
 
+    test('the cache base is under the injected cache directory', () async {
+      liteRtEmbeddingCacheDirectory = () async => '/injected';
+      addTearDown(
+        () => liteRtEmbeddingCacheDirectory = applicationCacheDirectoryPath,
+      );
+      final descriptor = await backend.describe(
+        _bundle(),
+        _config('$bundles/eg2.litertlm'),
+      );
+      final config = descriptor.config as LiteRtLmEmbeddingConfig;
+      expect(config.cacheBase, '/injected/flutter_edge_ai/emb');
+    });
+
     test('never asks the tokenizer registry', () async {
       await backend.describe(_bundle(), _config('$bundles/eg2.litertlm'));
       expect(tokenizers.asked, 0);
@@ -215,7 +228,7 @@ void main() {
           _config('$bundles/eg2.litertlm', supportImage: true),
         );
         final config = descriptor.config as LiteRtLmEmbeddingConfig;
-        expect(config.declaredMedia, {EmbeddingModality.image});
+        expect(config.declaredMedia, {EmbedderModality.image});
         expect(config.visionTokensPerImage, 140);
         expect(descriptor.activeBackend, PreferredBackend.cpu);
         expect(tokenizers.asked, 0);
@@ -309,7 +322,7 @@ void main() {
       'is declared; a bundle without one names none, and vision never',
       () async {
         liteRtLmNpuHost = _QualcommAndroid();
-        addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+        addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
         for (final (model, audio, tower) in [
           ('eg2_npu_audio.litertlm', false, true),
           ('eg2_npu_audio.litertlm', true, true),
@@ -346,7 +359,7 @@ void main() {
     test('an NPU load without declared audio is said; a CPU load, an NPU '
         'load with declared audio and the flag off say nothing', () async {
       liteRtLmNpuHost = _QualcommAndroid();
-      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
 
       await strict.describe(_bundle(), _config('$bundles/eg2.litertlm'));
       await describeNpu(
@@ -386,7 +399,7 @@ void main() {
       // Pinned: on a Windows or Linux x64 runner gpu goes to the GPU (the
       // GPU group below).
       liteRtLmNpuHost = _QualcommAndroid();
-      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
       for (final requested in [
         null,
         PreferredBackend.cpu,
@@ -400,7 +413,7 @@ void main() {
         final config = descriptor.config as LiteRtLmEmbeddingConfig;
         expect(config.npuTarget, isNull);
         expect(config.npuDispatchDir, isNull);
-        expect(config.backend, PreferredBackend.cpu);
+        expect(config.backend, Backend.cpu);
       }
     });
 
@@ -465,7 +478,7 @@ void main() {
                 Abi.current() == Abi.windowsX64
                     ? 'runs Intel NPU bundles only'
                     : 'Qualcomm Android and Qualcomm Linux arm64, and on Google '
-                          'Tensor G5/G6 Android devices, and on Intel NPUs with '
+                          'Tensor G5/G6 Android devices, and on MediaTek Dimensity Android devices, and on Intel NPUs with '
                           'Windows x64, only',
               ),
               contains('${Abi.current()}'),
@@ -481,7 +494,7 @@ void main() {
     test('a per-SoC bundle with npu where the NPU can run it hands the pass '
         'its target and dispatch directory, and declares npu', () async {
       liteRtLmNpuHost = _QualcommAndroid();
-      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
       final descriptor = await backend.describe(
         _bundle(model: 'eg2_npu.litertlm'),
         _config(
@@ -494,18 +507,18 @@ void main() {
       final config = descriptor.config as LiteRtLmEmbeddingConfig;
       expect(
         config.npuTarget,
-        const LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850'),
+        const NpuStamp(vendor: 'Qualcomm', soc: 'SM8850'),
       );
       expect(config.npuDispatchDir, '/data/app/npu');
-      expect(config.backend, PreferredBackend.npu);
-      expect(config.declaredMedia, {EmbeddingModality.image});
+      expect(config.backend, Backend.npu);
+      expect(config.declaredMedia, {EmbedderModality.image});
       expect(config.cacheBase, '/cache/flutter_edge_ai/emb');
     });
 
     test('an Intel per-SoC bundle with npu on Windows x64 hands the pass its '
         'target and the directory beside the executable', () async {
       liteRtLmNpuHost = _IntelWindows();
-      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
       final descriptor = await backend.describe(
         _bundle(model: 'eg2_ptl.litertlm'),
         _config(
@@ -517,17 +530,17 @@ void main() {
       final config = descriptor.config as LiteRtLmEmbeddingConfig;
       expect(
         config.npuTarget,
-        const LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL'),
+        const NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL'),
       );
       expect(config.npuDispatchDir, r'C:\Apps\demo');
-      expect(config.backend, PreferredBackend.npu);
+      expect(config.backend, Backend.npu);
     });
 
     test('an Intel per-SoC bundle with npu on Qualcomm Android is refused '
         'before the Qualcomm stack is prepared', () async {
       final host = _QualcommAndroid();
       liteRtLmNpuHost = host;
-      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
       await expectLater(
         backend.describe(
           _bundle(model: 'eg2_ptl.litertlm'),
@@ -620,8 +633,8 @@ void main() {
         );
         final config = descriptor.config as LiteRtLmEmbeddingConfig;
         expect(config.declaredMedia, {
-          EmbeddingModality.audio,
-          if (image) EmbeddingModality.image,
+          EmbedderModality.audio,
+          if (image) EmbedderModality.image,
         });
         expect(descriptor.activeBackend, PreferredBackend.cpu);
       }
@@ -650,10 +663,10 @@ void main() {
 
     test('on the real bundles\' headers the audio check reads the 740m as '
         'having an audio encoder and the 270m and the 440m as not', () {
-      requireLiteRtLmAudioEncoder(_header740m);
+      requireLiteRtLmAudioEncoderForCore(_header740m);
       for (final header in [_header270m, _header440m]) {
         expect(
-          () => requireLiteRtLmAudioEncoder(header),
+          () => requireLiteRtLmAudioEncoderForCore(header),
           throwsA(
             isA<EmbeddingLoadException>().having(
               (e) => e.message,
@@ -733,7 +746,7 @@ void main() {
     () {
       void hostIs(LiteRtLmNpuHost host) {
         liteRtLmNpuHost = host;
-        addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+        addTearDown(() => liteRtLmNpuHost = flutterNpuHost);
       }
 
       // eg2_text.litertlm is the 270m's shape: text encoder and embedder only.
@@ -931,7 +944,7 @@ void main() {
           throwsA(isA<EmbeddingLoadException>()),
         );
         expect(
-          () => readLiteRtLmMediaTowers('$bundles/garbage.litertlm'),
+          () => readLiteRtLmMediaTowersForCore('$bundles/garbage.litertlm'),
           throwsA(
             isA<EmbeddingLoadException>().having(
               (e) => e.message,

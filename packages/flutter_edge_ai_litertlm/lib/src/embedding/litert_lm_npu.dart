@@ -27,15 +27,12 @@
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
-import '../bundle/litertlm_bundle_info.dart' show npuVendorOf;
-import '../ffi/litert_lm_client.dart' show NpuDispatchUnavailableException;
-import '../ffi/npu_vendor_host.dart';
-import '../native_hosts.dart';
-import '../npu_stacks.dart';
+import '../flutter_npu_platform.dart';
+import 'package:litertlm_dart/common.dart';
 import 'litert_lm_embedding_common.dart';
-import 'litertlm_npu_target.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 
-export '../native_hosts.dart'
+export 'package:litertlm_dart/common.dart'
     show liteRtLmEmbeddingGpuAbis, liteRtLmEmbeddingGpuRefusedAbis;
 
 /// Where the pass will run a bundle: [backend] `cpu` for a generic bundle
@@ -44,7 +41,7 @@ export '../native_hosts.dart'
 /// vendor's dispatch from.
 typedef LiteRtLmEmbeddingPlacement = ({
   PreferredBackend backend,
-  LiteRtLmNpuTarget? target,
+  NpuStamp? target,
   String? dispatchDir,
 });
 
@@ -52,7 +49,7 @@ typedef LiteRtLmEmbeddingPlacement = ({
 /// `LiteRtEmbeddingBackend.describe()` passes none. Replaced only by tests,
 /// which describe on a host with no NPU.
 @visibleForTesting
-LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
+LiteRtLmNpuHost liteRtLmNpuHost = flutterNpuHost;
 
 /// Where each build has run, per platform and backend: the model registry's
 /// page, generated from its recorded runs. A list in an error message goes
@@ -95,12 +92,11 @@ bool liteRtLmEmbeddingGpuRefusedHost() =>
 /// stack, the device, then the dispatch directory (Android extracts the
 /// libraries out of the APK there). Where EmbeddingGemma 2 runs on an NPU is
 /// [NpuStack.abis]: Qualcomm on Android arm64 and Linux arm64, Google Tensor
-/// on Android arm64, Intel on Windows x64; a MediaTek bundle is refused in
-/// this release ([mediatekNpuRefused]). Which builds have run where is
-/// [liteRtLmRegistryUrl].
+/// and MediaTek on Android arm64, Intel on Windows x64; which builds have run
+/// where is [liteRtLmRegistryUrl].
 Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
   required String file,
-  required LiteRtLmNpuTarget? target,
+  required NpuStamp? target,
   required PreferredBackend? requested,
   LiteRtLmNpuHost? host,
 }) async {
@@ -139,13 +135,7 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
     _refuse(
       '$file is compiled for a ${target.vendor} NPU (${target.soc}). '
       'flutter_edge_ai_litertlm runs EmbeddingGemma 2 NPU bundles on '
-      '${npuSentenceList(offeredNpuStacks.map((v) => v.label))} NPUs only. '
-      'Install the generic EmbeddingGemma 2 bundle to embed on CPU.',
-    );
-  }
-  if (vendor == NpuStack.mediatek && mediatekNpuRefused) {
-    _refuse(
-      '$file is compiled for the $target NPU: $mediatekNpuRefusedReason. '
+      '${npuSentenceList(NpuStack.values.map((v) => v.label))} NPUs only. '
       'Install the generic EmbeddingGemma 2 bundle to embed on CPU.',
     );
   }
@@ -153,7 +143,7 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
     _refuse(
       '$file is compiled for the $target NPU, and on ${host.operatingSystem} '
       '(${host.abi}) flutter_edge_ai_litertlm runs '
-      '${npuSentenceList(hostVendors.where(offeredNpuStacks.contains).map((v) => v.label))} '
+      '${npuSentenceList(hostVendors.map((v) => v.label))} '
       'NPU bundles only; '
       '${vendor.label} ones run on ${npuSentenceList(vendor.abis)}. Install the '
       'generic EmbeddingGemma 2 bundle to embed here on CPU.',
@@ -190,7 +180,7 @@ String liteRtLmGenericOnNpuRefusal(String file) =>
     '$file is the generic EmbeddingGemma 2 bundle: it has no NPU graph and '
     'runs on CPU only. To embed on the NPU, install the bundle compiled for '
     "this device's SoC (litert-community publishes "
-    '${npuSentenceList(offeredNpuStacks.map(_bundleNames))} '
+    '${npuSentenceList(NpuStack.values.map(_bundleNames))} '
     'beside it; which have run on which device: $liteRtLmRegistryUrl) and load '
     'it with PreferredBackend.npu. To run this bundle, omit preferredBackend.';
 
@@ -203,10 +193,7 @@ String _bundleNames(NpuStack vendor) => switch (vendor) {
 };
 
 /// A per-SoC bundle asked to run anywhere but the NPU.
-String liteRtLmNpuBundleWithoutNpuRefusal(
-  String file,
-  LiteRtLmNpuTarget target,
-) =>
+String liteRtLmNpuBundleWithoutNpuRefusal(String file, NpuStamp target) =>
     '$file is compiled for the $target NPU and runs only there: load it with '
     'getActiveEmbedder(preferredBackend: PreferredBackend.npu) on a '
     '${target.soc} device, or install the generic EmbeddingGemma 2 bundle to '

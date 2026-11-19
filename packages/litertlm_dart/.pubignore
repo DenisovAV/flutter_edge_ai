@@ -1,0 +1,6 @@
+# The package's tests and their fixtures: nothing published reads them.
+/test/
+# A maintainer's local native build (native/litert_lm/build_*.sh); the hook
+# fetches the release archives instead.
+native/litert_lm/prebuilt/
+native/litert_lm/__pycache__/

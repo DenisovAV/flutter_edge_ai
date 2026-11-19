@@ -77,6 +77,15 @@ const List<CompatStore> compatStores = [
   ),
 ];
 
+/// SQLite stores the train writes with a text index
+/// (`VectorStoreSpec.enableTextSearch`), which the published releases then
+/// write to without one: `edit` takes an upsert, a remove and an add, `clear`
+/// a clear and a re-add of the same ids and count with new content.
+const textSearchStores = ['edit', 'clear'];
+
+String textSearchLocation(String root, String name) =>
+    p.join(root, 'sqlite_text_search_$name.db');
+
 /// sqlite: a database file; qdrant: a directory.
 String locationOf(String root, CompatStore store) => store.backend == 'sqlite'
     ? p.join(root, 'sqlite_${store.name}.db')

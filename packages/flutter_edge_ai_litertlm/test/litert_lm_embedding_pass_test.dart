@@ -22,12 +22,12 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtEmbedders;
 import 'package:flutter_edge_ai_litertlm/src/catalog/litert_catalog.dart'
     show debugLiteRtCatalogHost;
-import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_parts.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_container_io.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_embedding_bindings.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
+// ignore: implementation_imports — the fake LiteRT-LM implements the generated EmbeddingEngine bindings class
+import 'package:litertlm_dart/src/ffi/litert_lm_embedding_bindings.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/common.dart';
 
 const _file = 'eg2.litertlm';
 const _noAudioEncoder =
@@ -36,8 +36,8 @@ const _allSignatures = [128, 256, 512, 1024, 2048, 8192];
 
 /// What a per-SoC bundle declares (measured: 128-1024, no 2048/8192).
 const _npuSignatures = [128, 256, 512, 1024];
-const _sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
-const _ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
+const _sm8850 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8850');
+const _ptl = NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL');
 const _dispatchDir = '/data/app/code_cache/litert_npu';
 
 /// What LiteRT-LM's stb decoder handles (X3, measured on our dylib).
@@ -104,7 +104,7 @@ void main() {
     bool requireWeightCache = false,
     LiteRtLmEmbeddingBindings Function()? openBindings,
     DateTime Function()? clock,
-    LiteRtLmNpuTarget? npuTarget,
+    NpuStamp? npuTarget,
     String npuDispatchDir = _dispatchDir,
     bool gpu = false,
     bool visionTowerOnCpu = false,
@@ -113,7 +113,7 @@ void main() {
     LiteRtLmEmbeddingConfig(
       modelPath: modelPath,
       cacheBase: cacheBase,
-      declaredMedia: declaredMedia,
+      declaredMedia: {for (final m in declaredMedia) embedderModalityOf(m)},
       numThreads: numThreads,
       visionTokensPerImage: visionTokensPerImage,
       requireWeightCache: requireWeightCache,
@@ -1781,8 +1781,10 @@ void main() {
       final second = Uint8List.fromList([2]);
       final clip = Uint8List.fromList([3]);
       final parts = embeddingParts(
-        EmbeddingInput(audio: clip, images: [first, second], text: 'hi'),
-        TaskType.retrievalQuery,
+        embedderInputOf(
+          EmbeddingInput(audio: clip, images: [first, second], text: 'hi'),
+          TaskType.retrievalQuery,
+        ),
       );
       expect(
         [for (final part in parts) part.kind],
@@ -1805,7 +1807,9 @@ void main() {
 
     test('a text input is one text part: the task prefix, then the text', () {
       for (final taskType in TaskType.values) {
-        final parts = embeddingParts(EmbeddingInput.text('héllo'), taskType);
+        final parts = embeddingParts(
+          embedderInputOf(EmbeddingInput.text('héllo'), taskType),
+        );
         expect(parts, hasLength(1));
         expect(parts.single.kind, EmbeddingPartKind.text);
         expect(utf8.decode(parts.single.bytes), '${taskType.prefix}héllo');
@@ -1814,7 +1818,9 @@ void main() {
 
     test('an image input is one image part with its bytes: no prefix', () {
       for (final taskType in TaskType.values) {
-        final parts = embeddingParts(EmbeddingInput.image(_png), taskType);
+        final parts = embeddingParts(
+          embedderInputOf(EmbeddingInput.image(_png), taskType),
+        );
         expect(parts, hasLength(1));
         expect(parts.single.kind, EmbeddingPartKind.image);
         expect(parts.single.bytes, _png);
@@ -1824,8 +1830,7 @@ void main() {
     test('an audio input is one audio part with its bytes: no prefix', () {
       final clip = Uint8List.fromList([82, 73, 70, 70]);
       final parts = embeddingParts(
-        EmbeddingInput.audio(clip),
-        TaskType.retrievalQuery,
+        embedderInputOf(EmbeddingInput.audio(clip), TaskType.retrievalQuery),
       );
       expect(parts.single.kind, EmbeddingPartKind.audio);
       expect(parts.single.bytes, clip);
@@ -1857,17 +1862,15 @@ void main() {
           library: 'libLiteRtLm.so',
         ),
         throwsA(
-          isA<EmbeddingLoadException>()
-              .having((e) => e.engine, 'engine', 'LiteRT-LM')
-              .having(
-                (e) => e.message,
-                'message',
-                allOf(
-                  contains('libLiteRtLm.so'),
-                  contains('litert_lm_embedding_engine_create'),
-                  contains('native-v0.19.0-a'),
-                ),
-              ),
+          isA<EmbedderLoadException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('libLiteRtLm.so'),
+              contains('litert_lm_embedding_engine_create'),
+              contains('native-v0.19.0-a'),
+            ),
+          ),
         ),
       );
     });
@@ -3103,7 +3106,7 @@ void main() {
     // native/litert_lm/check_embedding_exports.py refuses to publish a
     // tarball whose libLiteRtLm lacks one; it must ask for the same list.
     final script = File(
-      'native/litert_lm/check_embedding_exports.py',
+      '../litertlm_dart/native/litert_lm/check_embedding_exports.py',
     ).readAsStringSync();
     final list = RegExp(
       r'REQUIRED = \[(.*?)\]',
@@ -3117,7 +3120,7 @@ void main() {
 
   test('the bindings do not bind what D23 rules out', () {
     final source = File(
-      'lib/src/ffi/litert_lm_embedding_bindings.dart',
+      '../litertlm_dart/lib/src/ffi/litert_lm_embedding_bindings.dart',
     ).readAsStringSync();
     for (final symbol in [
       'litert_lm_loaded_file_supports_input_modality',

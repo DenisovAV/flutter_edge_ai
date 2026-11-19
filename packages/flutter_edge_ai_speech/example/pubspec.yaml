@@ -42,6 +42,8 @@ dependency_overrides:
     path: ../../flutter_edge_ai
   flutter_edge_ai_litertlm:
     path: ../../flutter_edge_ai_litertlm
+  litertlm_dart:
+    path: ../../litertlm_dart
   flutter_edge_ai_embeddings:
     path: ../../flutter_edge_ai_embeddings
 

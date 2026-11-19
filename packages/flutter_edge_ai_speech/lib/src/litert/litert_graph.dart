@@ -29,7 +29,7 @@ import 'package:meta/meta.dart' show visibleForTesting;
 // Public, native-only bindings library (not the package barrel) — see the
 // equivalent comment in `tts_core.dart`/`stt_core.dart` for why this import
 // (not the `if (dart.library.ffi)` barrel) is correct in a native-only file.
-import 'package:flutter_edge_ai_litertlm/litert_bindings.dart';
+import 'package:litertlm_dart/litert_bindings.dart';
 
 /// Maps the public [PreferredBackend] to the LiteRT hardware-accelerator
 /// constant. Shared by every speech core (`SttCore`, `TtsCore`,

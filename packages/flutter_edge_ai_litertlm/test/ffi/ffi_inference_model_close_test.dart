@@ -4,7 +4,7 @@
 // -to-end by the 23-FFI integration gate; constructing a real FfiInferenceModel
 // here needs a live native client, so this test pins the type-level contract.
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

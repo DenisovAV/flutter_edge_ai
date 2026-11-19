@@ -8,10 +8,9 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'package:litertlm_dart/bindings.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

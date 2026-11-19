@@ -1,0 +1,114 @@
+{
+  "format": "flutter_edge_ai.transcript",
+  "version": 1,
+  "messages": [
+    {
+      "type": "text",
+      "isUser": true,
+      "text": "What is the weather in Pune?",
+      "imageBytes": null,
+      "images": [],
+      "audioBytes": null,
+      "toolName": null,
+      "toolCalls": [],
+      "toolCallId": null
+    },
+    {
+      "type": "text",
+      "isUser": true,
+      "text": "and this photo",
+      "imageBytes": {
+        "ref": "messages[1].imageBytes"
+      },
+      "images": [
+        {
+          "ref": "messages[1].imageBytes"
+        }
+      ],
+      "audioBytes": null,
+      "toolName": null,
+      "toolCalls": [],
+      "toolCallId": null
+    },
+    {
+      "type": "thinking",
+      "isUser": false,
+      "text": "Need the weather tool.",
+      "imageBytes": null,
+      "images": [],
+      "audioBytes": null,
+      "toolName": null,
+      "toolCalls": [],
+      "toolCallId": null
+    },
+    {
+      "type": "toolCall",
+      "isUser": false,
+      "text": "{\"tool_calls\":[{\"id\":\"c1\",\"name\":\"get_weather\",\"arguments\":{\"city\":\"Pune\",\"days\":2,\"units\":[\"c\"]}}]}",
+      "imageBytes": null,
+      "images": [],
+      "audioBytes": null,
+      "toolName": null,
+      "toolCalls": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "Pune",
+            "days": 2,
+            "units": [
+              "c"
+            ]
+          },
+          "id": "c1"
+        }
+      ],
+      "toolCallId": null
+    },
+    {
+      "type": "systemInfo",
+      "isUser": false,
+      "text": "Calling get_weather",
+      "imageBytes": null,
+      "images": [],
+      "audioBytes": null,
+      "toolName": "tool",
+      "toolCalls": [],
+      "toolCallId": null
+    },
+    {
+      "type": "toolResponse",
+      "isUser": true,
+      "text": "{\"temp\":21}",
+      "imageBytes": null,
+      "images": [],
+      "audioBytes": null,
+      "toolName": "get_weather",
+      "toolCalls": [],
+      "toolCallId": "c1"
+    },
+    {
+      "type": "text",
+      "isUser": true,
+      "text": "",
+      "imageBytes": null,
+      "images": [],
+      "audioBytes": {
+        "ref": "messages[6].audioBytes"
+      },
+      "toolName": null,
+      "toolCalls": [],
+      "toolCallId": null
+    },
+    {
+      "type": "text",
+      "isUser": false,
+      "text": "It is 21 degrees.",
+      "imageBytes": null,
+      "images": [],
+      "audioBytes": null,
+      "toolName": null,
+      "toolCalls": [],
+      "toolCallId": null
+    }
+  ]
+}

@@ -596,7 +596,7 @@ on the device. An app that wants the Qualcomm NPU asks for it:
 ```yaml
 hooks:
   user_defines:
-    flutter_edge_ai_litertlm:
+    litertlm_dart:
       qualcomm_npu: true
 ```
 

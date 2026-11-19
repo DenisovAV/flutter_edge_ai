@@ -207,7 +207,7 @@ Upgrading from 2.3: see [Migration](/docs/migration).
   (breaking); `ModelRuntimeDefaults.isThinking` is
   `thinkingDeclared`. New `ModelType.qwen35`. See [Migration](/docs/migration).
 - **Qualcomm NPU is opt-in** (`flutter_edge_ai_litertlm` 1.10.0): set
-  `qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:`,
+  `qualcomm_npu: true` under `hooks: user_defines: litertlm_dart:`,
   and the build hook fetches Qualcomm's QNN runtime. The same flag now covers
   **Qualcomm Linux arm64** boards. See [LiteRT-LM](/docs/litertlm).
 - **LiteRT-LM v0.18.0** (`native-v0.18.0-d`). Apple's Metal accelerator ships as
@@ -619,6 +619,41 @@ A reported close keeps partial text, then a plain core-managed chat throws
 `StateError`. A structured session reports every non-`endOfSequence` end with
 `IncompleteStructuredOutputException`, including `outputLimit`, a clean
 `contextLimit`, `stopped`, and `closed`.
+
+### Saving a conversation
+
+`MessageTranscriptCodec` writes a list of messages, such as `chat.fullHistory`,
+as versioned JSON and reads it back; a decoded message is `==` to the one saved
+when its tool-call arguments are JSON values. It saves the messages only, not
+the chat's system instruction, tools or response format: open the chat with
+your own configuration and replay the messages. The model's context is rebuilt
+from them, not restored.
+
+```dart
+import 'dart:convert';
+
+const codec = MessageTranscriptCodec();
+final json = jsonEncode(await codec.encode(chat.fullHistory));
+// later, on a chat opened with the same system instruction and tools:
+final messages = await codec.decode(jsonDecode(json));
+await chat.clearHistory(replayHistory: messages);
+```
+
+Replay what `fullHistory` returned, not a display list: `systemInfo` and
+`thinking` messages are not model input, and the llama engine refuses
+`systemInfo`. Numbers come back as JSON numbers: compiled to JavaScript, `1.0`
+reads as `1`, and integers past 2^53 lose precision. `encode` throws
+`ArgumentError` for a tool-call argument JSON cannot hold (a `BigInt`, a
+`DateTime`, NaN, a non-string key, a cycle).
+
+Media is written inline as base64, which makes the JSON about a third larger
+than the media. Pass `writeMedia` to store each buffer yourself and return a
+reference, and `readMedia` to resolve it on decode. The writer gets the media
+type and the field's path, such as `messages[3].images[0]`; the path changes
+when a message is deleted, so build the reference from a content hash of the
+bytes such as SHA-256 (not `bytes.hashCode`, which hashes the object), or the
+path plus an id new for each save. Decoding is strict: another format version,
+a missing or an extra key is a `FormatException`.
 
 ## Managing Installed Models
 

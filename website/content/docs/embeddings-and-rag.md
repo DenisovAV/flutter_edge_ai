@@ -479,7 +479,7 @@ print(embedder.activeBackend); // PreferredBackend.npu
 ```
 
 - **The app opts in to Qualcomm's stack** with the flag the LLM NPU path uses,
-  **qualcomm_npu: true** under **hooks: user_defines: flutter_edge_ai_litertlm:**
+  **qualcomm_npu: true** under **hooks: user_defines: litertlm_dart:**
   ([LiteRT-LM](/docs/litertlm)).
 - **Use the bundle for the device's SoC.** Run on device: SM8850
   (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
@@ -523,7 +523,7 @@ Google's `…_Google_Tensor_G5.litertlm` and `…_Google_Tensor_G6.litertlm`
 bundles (270m, 440m, 740m) load from flutter_edge_ai_litertlm 1.15.0 on a **Pixel with
 that Tensor generation and Android 16 or later** (not a BP2A build), with
 **PreferredBackend.npu**, in an app whose pubspec sets **google_tensor_npu:
-true** under **hooks: user_defines: flutter_edge_ai_litertlm:**
+true** under **hooks: user_defines: litertlm_dart:**
 ([LiteRT-LM](/docs/litertlm)). Install the bundle from its model's repository at
 the revision the [Model Registry](/docs/registry) pins (each size has its own),
 and load it as above.
@@ -886,6 +886,43 @@ match ^[A-Za-z][A-Za-z0-9_]*$ and cannot reuse **id**, **embedding**,
 **content**, **metadata**, **distance**, or **k**; this narrower set is portable
 to Qdrant.
 
+## Text and hybrid search
+
+A text index ranks documents by the words they contain, which finds names,
+codes and rare terms an embedding can miss. Open a text location with
+**enableTextSearch: true**; SQLite supports it with FTS5 on all six platforms,
+and a provider without text search (qdrant) fails the open instead of falling
+back to vector-only search:
+
+```dart
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: 'sqlite',
+    location: location,
+    enableTextSearch: true,
+  ),
+  embedder: embedder,
+);
+
+final byWords = await index.searchText(text: 'invoice 2024-117');
+final hits = await index.searchHybrid(text: 'unpaid invoice from March');
+```
+
+- **searchText** ranks by the store's text relevance (**relevanceScore**,
+  SQLite: BM25), higher first. The text is plain user text, never a query
+  syntax.
+- **searchHybrid** runs a vector search and a text search and fuses them with
+  Reciprocal Rank Fusion (**RrfFusion(k: 60)**). Each result carries
+  **rrfScore**, plus **vectorSimilarity**/**vectorRank** and
+  **relevanceScore**/**textRank**; a null leg field means the document was
+  outside that leg's candidates. **searchHybridVector** takes a precomputed
+  vector.
+- Scores do not mix: there is no **threshold** on text or hybrid search.
+- **filter** applies to both legs, and both legs see the same documents.
+- Text documents only. The SQLite tokenizer (**SqliteTextTokenizer.unicode61**,
+  **porter**, **trigram**) is set on **SqliteVectorStoreProvider** and fixed
+  when the index is created.
+
 ## Ownership and durability
 
 **RagIndex** owns its vector store and must be disposed. It borrows its embedder.
@@ -911,6 +948,7 @@ the binding.
 |---|---|---|
 | Platforms | Android, iOS, macOS, Linux, Windows | Android, iOS, Web, macOS, Linux, Windows |
 | Search | HNSW approximate | Exact KNN inside SQLite |
+| Text search | — | FTS5 (BM25), hybrid with RRF |
 | Best fit | Native throughput at larger scale | Web, portability, deterministic exact results |
 | Provider ID | qdrant | sqlite |
 

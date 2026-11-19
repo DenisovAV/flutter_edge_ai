@@ -6,13 +6,13 @@ import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/structured_output_support.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'package:litertlm_dart/bindings.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/structured_output_support.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
+import 'package:litertlm_dart/common.dart';
 
 void main() {
   test('the generated C API 1.0 bindings pass both constraint setters', () {
@@ -224,14 +224,14 @@ void main() {
         schema,
         'Failed to create LLGuidance constraint: unsupported schema',
       ),
-      isA<ResponseFormatUnsupportedException>(),
+      isA<ConstraintUnsupportedException>(),
     );
     expect(
       liteRtLmConstraintFailure(
         schema,
         'INTERNAL: Failed to create LLGuidance constraint: incompatible types',
       ),
-      isA<ResponseFormatUnsupportedException>(),
+      isA<ConstraintUnsupportedException>(),
     );
     expect(
       liteRtLmConstraintFailure(null, 'Failed to create LLGuidance constraint'),
@@ -315,7 +315,7 @@ void main() {
     final sampling = SamplingParams.resolve(
       const SamplingParams(),
       modelType: ModelType.gemmaIt,
-    );
+    ).toRuntime;
     final structured = Object();
     final plain = Object();
 
@@ -411,7 +411,7 @@ void main() {
         sends.add(send);
         return send;
       }
-      ..metricsForTest = (_) => SessionMetrics(tokensPerSecond: 51);
+      ..metricsForTest = (_) => const TurnMetrics(tokensPerSecond: 51);
     final model = FfiInferenceModel(
       ffiClient: client,
       maxTokens: 1024,
@@ -636,7 +636,7 @@ _ConstraintRecorder _installConstraintRecorder(LiteRtLmFfiClient client) {
   final recorder = _ConstraintRecorder();
   client
     ..bindingsForTest = recorder.bindings
-    ..metricsForTest = (_) => SessionMetrics();
+    ..metricsForTest = (_) => const TurnMetrics();
   addTearDown(recorder.close);
   return recorder;
 }

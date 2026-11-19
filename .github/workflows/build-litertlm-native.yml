@@ -85,7 +85,7 @@ jobs:
       - name: Patch C API
         env:
           LITERTLM_SKIP_PATH_WEIGHTS: ${{ inputs.skip_path_weights && '1' || '0' }}
-        run: bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
+        run: bash packages/litertlm_dart/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
 
       - name: Build libLiteRtLm.so
         run: |
@@ -104,7 +104,7 @@ jobs:
       - name: Build libStreamProxy.so
         run: |
           gcc -shared -fPIC -o /tmp/libStreamProxy.so \
-            packages/flutter_edge_ai_litertlm/native/litert_lm/stream_proxy.c
+            packages/litertlm_dart/native/litert_lm/stream_proxy.c
 
       - name: Collect artifacts
         run: |
@@ -223,7 +223,7 @@ jobs:
       - name: Patch C API
         env:
           LITERTLM_SKIP_PATH_WEIGHTS: ${{ inputs.skip_path_weights && '1' || '0' }}
-        run: bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
+        run: bash packages/litertlm_dart/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
 
       - name: Build libLiteRtLm.so
         run: |
@@ -282,7 +282,7 @@ jobs:
       - name: Build libStreamProxy.so
         run: |
           gcc -shared -fPIC -o /tmp/libStreamProxy.so \
-            packages/flutter_edge_ai_litertlm/native/litert_lm/stream_proxy.c
+            packages/litertlm_dart/native/litert_lm/stream_proxy.c
 
       - name: Collect artifacts
         run: |
@@ -426,7 +426,7 @@ jobs:
         shell: bash
         env:
           LITERTLM_SKIP_PATH_WEIGHTS: ${{ inputs.skip_path_weights && '1' || '0' }}
-        run: bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh C:/LiteRT-LM
+        run: bash packages/litertlm_dart/native/litert_lm/patch_c_api.sh C:/LiteRT-LM
 
       - name: Build LiteRtLm.dll
         # litert_runtime_link_mode=dynamic keeps the LiteRt C API OUT of
@@ -513,7 +513,7 @@ jobs:
 
       - name: Build StreamProxy.dll
         run: |
-          cl /LD /Fe:StreamProxy.dll packages\flutter_edge_ai_litertlm\native\litert_lm\stream_proxy.c
+          cl /LD /Fe:StreamProxy.dll packages\litertlm_dart\native\litert_lm\stream_proxy.c
 
       - name: Download DirectXShaderCompiler runtime
         # WebGPU/DX12 backend on Windows requires dxil.dll + dxcompiler.dll
@@ -849,18 +849,18 @@ jobs:
           clang-17 --version
 
       - name: Fetch the QAIRT headers
-        run: python3 packages/flutter_edge_ai_litertlm/native/litert_lm/fetch_qairt_sdk_slim.py /tmp/qairt-slim
+        run: python3 packages/litertlm_dart/native/litert_lm/fetch_qairt_sdk_slim.py /tmp/qairt-slim
 
       - name: Build dispatch and libcdsprpc shim
         run: |
           TARGET=linux_arm64 LITERTLM_REF="$LITERTLM_VERSION" \
           CC=clang-17 CXX=clang++-17 LITERT_QAIRT_SDK=/tmp/qairt-slim \
-            bash packages/flutter_edge_ai_litertlm/native/litert_lm/build_qualcomm_dispatch.sh
+            bash packages/litertlm_dart/native/litert_lm/build_qualcomm_dispatch.sh
 
       - uses: actions/upload-artifact@v4
         with:
           name: qualcomm-dispatch-linux_arm64
-          path: packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/linux_arm64/
+          path: packages/litertlm_dart/native/litert_lm/prebuilt/linux_arm64/
           if-no-files-found: error
 
   publish-release:

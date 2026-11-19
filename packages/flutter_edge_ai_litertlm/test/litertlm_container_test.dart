@@ -4,9 +4,7 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_container_io.dart';
-import 'package:flutter_edge_ai_litertlm/src/litertlm_flatbuffer.dart'
-    show litertlmHeaderEnd;
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'web/eg2_header_fixtures.dart';

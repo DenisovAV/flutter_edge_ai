@@ -4,17 +4,17 @@
 import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
-import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_sampler.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/common.dart';
 
 /// Records what reaches the native layer, then stops: no engine is loaded.
 class _CapturingClient extends LiteRtLmFfiClient {
   _CapturingClient(this._bundle);
 
   final SamplingParams _bundle;
-  ResolvedSampling? sampling;
+  Sampler? sampling;
   bool? samplingExplicit;
 
   /// Whether the virtual turn was sent with thinking on, which decides if it
@@ -22,19 +22,25 @@ class _CapturingClient extends LiteRtLmFfiClient {
   bool? thinking;
 
   @override
-  SamplingParams get bundleSampler => _bundle;
+  BundleSampler get bundleSampler => BundleSampler(
+    temperature: _bundle.temperature,
+    topK: _bundle.topK,
+    topP: _bundle.topP,
+    randomSeed: _bundle.randomSeed,
+  );
 
   @override
   Future<LiteRtLmConversationHandle> createConversationHandle({
     String? systemMessage,
     String? toolsJson,
     String? messagesJson,
-    required ResolvedSampling sampling,
+    required Sampler sampling,
     required bool samplingExplicit,
     int? maxOutputTokens,
-    required MultimodalOrder multimodalOrder,
+    required MediaOrder multimodalOrder,
     String? jsonSchema,
     required bool filterChannelContent,
+    bool freshConversation = false,
   }) {
     this.sampling = sampling;
     this.samplingExplicit = samplingExplicit;
@@ -48,13 +54,14 @@ class _CapturingClient extends LiteRtLmFfiClient {
     required List<Map<String, Object?>> history,
     String? systemMessage,
     String? toolsJson,
-    required ResolvedSampling sampling,
+    required Sampler sampling,
     required bool samplingExplicit,
     String? extraContext,
     required bool thinking,
     int? maxOutputTokens,
     String? jsonSchema,
     required bool filterChannelContent,
+    bool freshConversation = false,
   }) {
     this.sampling = sampling;
     this.samplingExplicit = samplingExplicit;
@@ -88,12 +95,7 @@ void main() {
       );
       expect(
         client.sampling,
-        const ResolvedSampling(
-          temperature: 0.6,
-          topK: 20,
-          topP: 0.95,
-          randomSeed: 1,
-        ),
+        const Sampler(temperature: 0.6, topK: 20, topP: 0.95, randomSeed: 1),
       );
       expect(client.samplingExplicit, isFalse);
     });
@@ -106,12 +108,7 @@ void main() {
       );
       expect(
         client.sampling,
-        const ResolvedSampling(
-          temperature: 1.0,
-          topK: 64,
-          topP: 0.95,
-          randomSeed: 1,
-        ),
+        const Sampler(temperature: 1.0, topK: 64, topP: 0.95, randomSeed: 1),
       );
     });
 
@@ -123,12 +120,7 @@ void main() {
       );
       expect(
         client.sampling,
-        const ResolvedSampling(
-          temperature: 0.1,
-          topK: 20,
-          topP: 0.95,
-          randomSeed: 1,
-        ),
+        const Sampler(temperature: 0.1, topK: 20, topP: 0.95, randomSeed: 1),
       );
       expect(client.samplingExplicit, isTrue);
     });
@@ -141,12 +133,7 @@ void main() {
       );
       expect(
         client.sampling,
-        const ResolvedSampling(
-          temperature: 0.9,
-          topK: 64,
-          topP: 0.95,
-          randomSeed: 1,
-        ),
+        const Sampler(temperature: 0.9, topK: 64, topP: 0.95, randomSeed: 1),
       );
     });
 
@@ -177,12 +164,7 @@ void main() {
     await expectLater(session.getResponse(), throwsA(isA<_Captured>()));
     expect(
       client.sampling,
-      const ResolvedSampling(
-        temperature: 0.6,
-        topK: 1,
-        topP: 0.95,
-        randomSeed: 1,
-      ),
+      const Sampler(temperature: 0.6, topK: 1, topP: 0.95, randomSeed: 1),
     );
     expect(client.samplingExplicit, isTrue);
   });
@@ -212,21 +194,21 @@ void main() {
     test('a greedy bundle becomes topK 1', () {
       expect(
         bundleSamplerFrom(type: 3, temperature: 0, topK: 0, topP: 0),
-        const SamplingParams(topK: 1),
+        const BundleSampler(topK: 1),
       );
     });
 
     test('zero fields, which proto3 does not store, stay unset', () {
       expect(
         bundleSamplerFrom(type: 2, temperature: 0.6, topK: 0, topP: 0.95),
-        const SamplingParams(temperature: 0.6, topP: 0.95),
+        const BundleSampler(temperature: 0.6, topP: 0.95),
       );
     });
 
     test('a TOP_K bundle keeps its values and gets no nucleus cut', () {
       expect(
         bundleSamplerFrom(type: 1, temperature: 1.0, topK: 40, topP: 0),
-        const SamplingParams(temperature: 1.0, topK: 40, topP: 1.0),
+        const BundleSampler(temperature: 1.0, topK: 40, topP: 1.0),
       );
     });
   });
@@ -255,7 +237,7 @@ void main() {
 
     test('a read sampler is kept until shutdown', () async {
       final client = LiteRtLmFfiClient();
-      const sampler = SamplingParams(temperature: 0.6, topP: 0.95);
+      const sampler = BundleSampler(temperature: 0.6, topP: 0.95);
       client.acceptBundleSamplerRead(const BundleSamplerRead(sampler));
       expect(client.bundleSampler, sampler);
       expect(client.bundleSamplerError, isNull);

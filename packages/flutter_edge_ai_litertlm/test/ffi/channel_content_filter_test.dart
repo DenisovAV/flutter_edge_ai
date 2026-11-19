@@ -8,12 +8,12 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'package:litertlm_dart/bindings.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/common.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
 
 void main() {
   group('filterChannelContent', () {
@@ -90,7 +90,7 @@ void main() {
             sends.add(send);
             return send;
           }
-          ..metricsForTest = (_) => SessionMetrics();
+          ..metricsForTest = (_) => const TurnMetrics();
         final model = _model(
           client,
           backend: backend,
@@ -120,7 +120,7 @@ void main() {
     final sampling = SamplingParams.resolve(
       const SamplingParams(),
       modelType: ModelType.gemmaIt,
-    );
+    ).toRuntime;
     for (final (backend, Future<bool> Function(String) read, calls) in [
       ('npu', (_) async => false, [false]),
       ('cpu', (_) async => true, [false]),

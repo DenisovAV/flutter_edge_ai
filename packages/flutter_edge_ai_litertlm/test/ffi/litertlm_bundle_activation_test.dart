@@ -3,7 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_activation.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/gpu_activation.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Real bundle headers, see fixtures/README.md. Only FunctionGemma and Gemma 4

@@ -12,10 +12,13 @@ import 'dart:io';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_io.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_bindings.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_runtime_check.dart';
+import 'package:litertlm_dart/litert_bindings.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/common.dart';
+import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
+import 'package:flutter_edge_ai_litertlm/src/adapter/backend_fallback.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
 
 const _iosPath = '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm';
 
@@ -24,8 +27,7 @@ const _iosPath = '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm';
 bool _foreign(String symbol) => symbol != liteRtLmOwnBuildSymbol;
 
 String? _hostDylib() => firstExistingPath(
-  hostNativeLibraryCandidates(
-    libFileName: hostNativeLibraryFileName('LiteRtLm'),
+  liteRtLmHostLibraryCandidates(
     envOverride: Platform.environment['LITERTLM_DYLIB'],
   ),
 );
@@ -117,7 +119,7 @@ void main() {
 
     test('the major is the one the vendored headers declare', () {
       final header = File(
-        'native/litert_lm/include/c/engine.h',
+        '../litertlm_dart/native/litert_lm/include/c/engine.h',
       ).readAsStringSync();
       expect(
         header,
@@ -190,7 +192,7 @@ void main() {
 
     test('requireOwnLiteRtLmBuild runs it', () {
       final source = File(
-        'lib/src/ffi/litert_lm_runtime_check.dart',
+        '../litertlm_dart/lib/src/ffi/litert_lm_runtime_check.dart',
       ).readAsStringSync();
       final body = source.substring(
         source.indexOf('DynamicLibrary requireOwnLiteRtLmBuild('),
@@ -255,7 +257,7 @@ void main() {
     test('is an Error: the backend fallback loop stops at the first backend '
         'instead of retrying the same library on the next', () async {
       final backends = ffiBackendFallbackOrder(
-        PreferredBackend.gpu,
+        Backend.gpu,
         npuAvailable: false,
       );
       expect(
@@ -267,7 +269,7 @@ void main() {
       await expectLater(
         initializeFfiRuntime<Object>(
           preferredBackend: PreferredBackend.gpu,
-          backends: backends,
+          backends: [for (final b in backends) b.toCore],
           logTag: '[Test]',
           createClient: Object.new,
           initializeClient: (_, backend) async {
@@ -295,7 +297,9 @@ void main() {
       // section 14 getters) and replaced at every pin bump, so this fails the
       // bump that makes the sentinel upstream's.
       final headers = [
-        for (final f in Directory('native/litert_lm/include/c').listSync())
+        for (final f in Directory(
+          '../litertlm_dart/native/litert_lm/include/c',
+        ).listSync())
           if (f is File && f.path.endsWith('.h')) f,
       ];
       expect(
@@ -310,7 +314,9 @@ void main() {
         );
       }
 
-      final patch = File('native/litert_lm/patch_c_api.sh').readAsStringSync();
+      final patch = File(
+        '../litertlm_dart/native/litert_lm/patch_c_api.sh',
+      ).readAsStringSync();
       expect(
         patch,
         // C API 1.0 (LiteRT-LM v0.19.0): every setter returns a status.
@@ -328,7 +334,7 @@ void main() {
       // check_embedding_exports.py runs on each of the seven tarballs
       // (verify_tarball_manifest.sh); the host test below sees one of them.
       final gate = File(
-        'native/litert_lm/check_embedding_exports.py',
+        '../litertlm_dart/native/litert_lm/check_embedding_exports.py',
       ).readAsStringSync();
       final listed = RegExp(
         r'OWN_BUILD_SYMBOLS = \[(.*?)\]',
@@ -378,9 +384,9 @@ void main() {
         .join('\n');
 
     for (final (file, count) in const [
-      ('lib/src/ffi/litert_lm_library.dart', 5),
-      ('lib/src/ffi/litert_lm_client.dart', 5),
-      ('lib/src/ffi/litert_bindings.dart', 3),
+      ('../litertlm_dart/lib/src/ffi/litert_lm_library.dart', 5),
+      ('../litertlm_dart/lib/src/ffi/litert_lm_client.dart', 5),
+      ('../litertlm_dart/lib/src/ffi/litert_bindings.dart', 3),
     ]) {
       test(file, () {
         final source = code(file);
@@ -396,7 +402,7 @@ void main() {
     test('a macOS dev copy that is not ours, or not on C API 1.x, is '
         'skipped, not returned', () {
       expect(
-        code('lib/src/ffi/litert_bindings.dart'),
+        code('../litertlm_dart/lib/src/ffi/litert_bindings.dart'),
         contains('isOwnBuild: isUsableLiteRtLmBuild,'),
       );
     });
@@ -407,9 +413,9 @@ void main() {
         r'''[^'"]*LiteRtLm[.'"/]''',
       );
       final checked = {
-        'lib/src/ffi/litert_lm_library.dart',
-        'lib/src/ffi/litert_lm_client.dart',
-        'lib/src/ffi/litert_bindings.dart',
+        '../litertlm_dart/lib/src/ffi/litert_lm_library.dart',
+        '../litertlm_dart/lib/src/ffi/litert_lm_client.dart',
+        '../litertlm_dart/lib/src/ffi/litert_bindings.dart',
       };
       final offenders = [
         for (final dir in Directory('..').listSync().whereType<Directory>())

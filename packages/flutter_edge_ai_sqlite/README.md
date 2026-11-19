@@ -174,6 +174,48 @@ a no-op, and with no `filterSchema` it ignores filters entirely.
 Supported operators: `=`, `!=`, `>`, `>=`, `<`, `<=`, `BETWEEN`, `IN`
 (`FieldEquals`, `FieldRange`, `FieldMatchAny`); max 16 declared columns.
 
+## Text search (FTS5)
+
+`VectorStoreSpec(enableTextSearch: true)` adds an SQLite
+[FTS5](https://sqlite.org/fts5.html) index beside `vec0`, so
+`RagIndex.searchText` ranks documents by BM25 and `RagIndex.searchHybrid` fuses
+it with the vector search (see the
+[flutter_edge_ai_rag README](https://pub.dev/packages/flutter_edge_ai_rag#text-and-hybrid-search)).
+It runs on all six platforms: FTS5 is compiled into package:sqlite3's bundled
+SQLite and into this package's `web/rag/sqlite3.wasm`.
+
+```dart
+final rag = FlutterEdgeAiRag(
+  providers: [
+    // Optional: the tokenizer a new text index is created with.
+    const SqliteVectorStoreProvider(textTokenizer: SqliteTextTokenizer.porter),
+  ],
+);
+```
+
+| `SqliteTextTokenizer` | Matches |
+|---|---|
+| `unicode61` (default) | words, case- and diacritic-insensitive (`café` = `cafe`), no stemming; any language with spaces between words |
+| `porter` | as `unicode61`, plus English stemming (`runs` = `running`) |
+| `trigram` | substrings, and languages written without spaces (Chinese, Japanese); a term under three characters matches nothing |
+
+- What is indexed: the document `content`. The query matches documents with
+  any of its words; quotes and FTS5 operators in it are plain text.
+- `relevanceScore` is `-bm25()`: higher is better, comparable within one
+  search only.
+- The tokenizer is fixed when the text index is created. A different
+  `textTokenizer` for an existing index fails the open; `null` (the default)
+  uses the stored one.
+- Every write updates `vec0` and the text index in one transaction.
+- The text index is created on the first open with the flag, from the
+  documents already stored. Every later open, with or without the flag,
+  checks it against `vec0` (id, content, metadata) and repairs what differs,
+  so writes made by a release without text search are picked up. Measured on
+  an M-series Mac: 31 ms at 10,000 documents, 151 ms at 50,000.
+- A `sqlite3` build chosen through `hooks: user_defines: sqlite3: source:`
+  (system SQLite, SQLCipher) may lack FTS5; the open then fails with
+  `VectorStoreException`.
+
 ## Upgrading from 1.0.x (as `flutter_gemma_rag_sqlite`)
 
 **1.1.0 does not read an index written by 1.0.x.** The switch to in-SQLite

@@ -3,12 +3,11 @@ import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'package:litertlm_dart/bindings.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/common.dart';
 
 void main() {
   test('a plain virtual session stopped during slow prefill cancels native '
@@ -88,7 +87,7 @@ void main() {
       }
       ..virtualRewindForTest = ((_, _, _) async =>
           StoppedTurnRewind.unsupported)
-      ..metricsForTest = ((_) => SessionMetrics())
+      ..metricsForTest = ((_) => TurnMetrics())
       ..spawnedSendPrefillDelayForTest = const Duration(milliseconds: 600);
     client.streamForTest(
       createProxy: (dartCallback, _, _, _, _, outProxyFn) {
@@ -186,7 +185,7 @@ void main() {
         }
         return send;
       }
-      ..metricsForTest = (_) => SessionMetrics(tokensPerSecond: 42);
+      ..metricsForTest = (_) => TurnMetrics(tokensPerSecond: 42);
     final model = FfiInferenceModel(
       ffiClient: client,
       maxTokens: 1024,
@@ -241,7 +240,7 @@ void main() {
         if (isFollowUp) scheduleMicrotask(send.finished);
         return send;
       }
-      ..metricsForTest = (_) => SessionMetrics(tokensPerSecond: 42);
+      ..metricsForTest = (_) => TurnMetrics(tokensPerSecond: 42);
     final model = FfiInferenceModel(
       ffiClient: client,
       maxTokens: 1024,

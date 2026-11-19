@@ -8,9 +8,11 @@
 library;
 
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
-import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/common.dart';
 
 void main() {
   group('clampLitertlmContextTokens (#318)', () {
@@ -102,12 +104,12 @@ void main() {
           // and applied to whatever follows it, which needs a three-backend
           // chain regardless of whether the test host ships an NPU dispatch.
           for (final backend in ffiBackendFallbackOrder(
-            PreferredBackend.npu,
+            Backend.npu,
             npuAvailable: true,
           ))
-            backend: clampLitertlmContextTokens(
+            backend.toCore: clampLitertlmContextTokens(
               requested,
-              preferredBackend: backend,
+              preferredBackend: backend.toCore,
             ),
         };
 

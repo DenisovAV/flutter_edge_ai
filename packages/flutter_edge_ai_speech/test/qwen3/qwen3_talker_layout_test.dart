@@ -20,7 +20,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter_edge_ai_litertlm/litert_bindings.dart';
+import 'package:litertlm_dart/litert_bindings.dart';
 import 'package:flutter_edge_ai_speech/src/litert/litert_graph.dart';
 import 'package:flutter_edge_ai_speech/src/qwen3/qwen3_talker_layout.dart';
 import 'package:flutter_test/flutter_test.dart';

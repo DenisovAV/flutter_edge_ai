@@ -47,9 +47,9 @@ void main() {
       }
     });
 
-    test('the native hosts are flutter_edge_ai_litertlm\'s', () {
+    test('the native hosts are litertlm_dart\'s', () {
       final source = File(
-        '../flutter_edge_ai_litertlm/lib/src/native_hosts.dart',
+        '../litertlm_dart/lib/src/runtime/native_hosts.dart',
       ).readAsStringSync();
       final table = RegExp(
         r'const liteRtLmNativeAbis = \{([^}]*)\}',

@@ -9,19 +9,16 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_common.dart'
     show liteRtLmWebNpuRefusal;
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
-    show NpuDispatchUnavailableException;
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/common.dart';
 
 const _file = 'embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm';
-const _sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
+const _sm8850 = NpuStamp(vendor: 'Qualcomm', soc: 'SM8850');
 
 /// What Google's `…_Intel_PTL.litertlm` bundles are stamped with.
-const _ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
+const _ptl = NpuStamp(vendor: 'IntelOpenVINO', soc: 'PTL');
 
 Matcher _refusal(Object message) => throwsA(
   isA<EmbeddingLoadException>()
@@ -35,7 +32,7 @@ void main() {
   setUp(() => host = _FakeHost());
 
   Future<LiteRtLmEmbeddingPlacement> place({
-    LiteRtLmNpuTarget? target = _sm8850,
+    NpuStamp? target = _sm8850,
     PreferredBackend? requested = PreferredBackend.npu,
   }) => placeLiteRtLmEmbedder(
     file: _file,
@@ -210,7 +207,8 @@ void main() {
               allOf(
                 contains(
                   'Qualcomm Android and Qualcomm Linux arm64, and on Google '
-                  'Tensor G5/G6 Android devices, and on Intel NPUs with '
+                  'Tensor G5/G6 Android devices, and on MediaTek Dimensity '
+                  'Android devices, and on Intel NPUs with '
                   'Windows x64, only',
                 ),
                 contains('this is $os ($abi)'),
@@ -234,16 +232,18 @@ void main() {
           ..operatingSystem = os
           ..abi = abi;
         for (final target in const [
-          LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955'),
+          NpuStamp(vendor: 'Samsung', soc: 'E9955'),
           // Only LiteRT's OpenVINO stamp is an Intel bundle this runs.
-          LiteRtLmNpuTarget(vendor: 'Intel', soc: 'PTL'),
+          NpuStamp(vendor: 'Intel', soc: 'PTL'),
         ]) {
           await expectLater(
             place(target: target),
             _refusal(
               allOf(
                 contains('compiled for a ${target.vendor} NPU (${target.soc})'),
-                contains('Qualcomm, Google Tensor and Intel NPUs only'),
+                contains(
+                  'Qualcomm, Google Tensor, MediaTek and Intel NPUs only',
+                ),
               ),
             ),
             reason: '$abi $target',
@@ -254,7 +254,7 @@ void main() {
     });
 
     test('a Google Tensor bundle selects only the Google dispatch', () async {
-      const tensor = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5');
+      const tensor = NpuStamp(vendor: 'Google', soc: 'Tensor_G5');
       final placement = await place(target: tensor);
       expect(placement.backend, PreferredBackend.npu);
       expect(placement.target, tensor);
@@ -262,22 +262,13 @@ void main() {
       expect(host.vendors, {NpuStack.googleTensor});
     });
 
-    test('a MediaTek bundle is refused before anything is asked, naming why '
-        'and the release that runs it (decision K)', () async {
-      const mediatek = LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6991');
-      await expectLater(
-        place(target: mediatek),
-        _refusal(
-          allOf(
-            contains('compiled for the MediaTek mt6991 NPU'),
-            contains(mediatekNpuRefusedReason),
-            contains('1.19.x'),
-            contains('#4256'),
-            contains('generic EmbeddingGemma 2 bundle'),
-          ),
-        ),
-      );
-      expect(host.asked, isEmpty);
+    test('a MediaTek bundle selects only the MediaTek dispatch', () async {
+      const mediatek = NpuStamp(vendor: 'MediaTek', soc: 'mt6991');
+      final placement = await place(target: mediatek);
+      expect(placement.backend, PreferredBackend.npu);
+      expect(placement.target, mediatek);
+      expect(host.asked, ['stack:mediatek', 'reaches', 'dispatchDir']);
+      expect(host.vendors, {NpuStack.mediatek});
     });
 
     test('compiled for Qualcomm is refused on Windows x64, which runs Intel '
@@ -417,7 +408,7 @@ void main() {
               contains('compiled for the IntelOpenVINO PTL NPU'),
               contains(
                 'on $os ($abi) flutter_edge_ai_litertlm runs '
-                '${os == 'android' ? 'Qualcomm and Google Tensor' : 'Qualcomm'} '
+                '${os == 'android' ? 'Qualcomm, Google Tensor and MediaTek' : 'Qualcomm'} '
                 'NPU bundles only; Intel ones run on windows_x64',
               ),
             ),
@@ -458,8 +449,8 @@ void main() {
     expect(
       liteRtLmWebNpuRefusal,
       'EmbeddingGemma 2 runs on the NPU on Qualcomm Android and Qualcomm Linux '
-      'arm64, and on Google Tensor G5/G6 Android devices, and on Intel NPUs '
-      'with Windows x64, only, '
+      'arm64, and on Google Tensor G5/G6 Android devices, and on MediaTek '
+      'Dimensity Android devices, and on Intel NPUs with Windows x64, only, '
       'not on the web. Omit preferredBackend here.',
     );
   });
@@ -511,17 +502,21 @@ void main() {
 
     test('the platform host looks beside the running executable', () async {
       final exeDir = File(Platform.resolvedExecutable).parent.path;
-      expect(windowsNpuDispatchDir, exeDir);
+      expect(const FlutterNpuPlatform().executableDir, exeDir);
       // No test runner ships LiteRtDispatch.dll beside itself.
-      final check = await const LiteRtLmPlatformNpuHost().stack(NpuStack.intel);
+      final check = await flutterNpuHost.stack(NpuStack.intel);
       expect(check.bundled, isFalse);
       expect(check.reason, contains('($exeDir)'));
     });
 
     test('Windows hands LiteRT the executable\'s directory', () async {
       expect(
-        await prepareNpuDispatchDir(NpuStack.intel, operatingSystem: 'windows'),
-        windowsNpuDispatchDir,
+        await prepareNpuDispatchDir(
+          NpuStack.intel,
+          const FlutterNpuPlatform(),
+          operatingSystem: 'windows',
+        ),
+        File(Platform.resolvedExecutable).parent.path,
       );
     });
   });

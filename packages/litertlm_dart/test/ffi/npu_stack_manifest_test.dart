@@ -1,0 +1,209 @@
+import 'dart:convert';
+
+import 'package:litertlm_dart/src/ffi/npu_stack_manifest.dart';
+import 'package:litertlm_dart/src/runtime/npu_stacks.dart';
+import 'package:test/test.dart';
+
+/// A NativeAssetsManifest.json in the shape flutter_tools writes (format
+/// 1.0.0, assets keyed by ABI then by asset id).
+String _manifest(Map<String, Iterable<String>> idsByAbi) => jsonEncode({
+  'format-version': [1, 0, 0],
+  'native-assets': {
+    for (final e in idsByAbi.entries)
+      e.key: {
+        for (final id in e.value) id: ['absolute', id.split('/').last],
+      },
+  },
+});
+
+final _base = [nativeAssetId('LiteRtLm'), nativeAssetId('StreamProxy')];
+final _stack = [for (final n in qualcommNpuLibs) nativeAssetId(n)];
+final _googleStack = [for (final n in googleTensorNpuLibs) nativeAssetId(n)];
+final _mediatekStack = [for (final n in mediatekNpuLibs) nativeAssetId(n)];
+
+final _linuxStack = [for (final n in qualcommNpuLibsLinux) nativeAssetId(n)];
+
+Future<NpuStackCheck> _check(
+  String text, {
+  String abi = 'android_arm64',
+  String os = 'android',
+}) => checkNpuStackInManifest(
+  NpuStack.qualcomm,
+  read: () async => text,
+  abi: abi,
+  operatingSystem: os,
+);
+
+void main() {
+  test('every library registered: bundled', () async {
+    final r = await _check(
+      _manifest({
+        'android_arm64': [..._base, ..._stack],
+      }),
+    );
+    expect(r.bundled, isTrue);
+    expect(r.known, isTrue);
+    expect(r.reason, isNull);
+  });
+
+  test('none registered: the opt-in reason with the pubspec snippet', () async {
+    final r = await _check(_manifest({'android_arm64': _base}));
+    expect(r.bundled, isFalse);
+    expect(r.known, isTrue, reason: 'a definite no skips npu');
+    expect(r.reason, qualcommNpuNotEnabledReason);
+    expect(r.reason, contains('qualcomm_npu: true'));
+    expect(r.reason, contains('workspace root'));
+  });
+
+  test('a partial stack names what is missing', () async {
+    final r = await _check(
+      _manifest({
+        'android_arm64': [
+          ..._base,
+          ..._stack.where((id) => !id.endsWith('V79Skel')),
+        ],
+      }),
+    );
+    expect(r.bundled, isFalse);
+    expect(r.reason, contains('libQnnHtpV79Skel.so'));
+    expect(r.reason, isNot(contains('libQnnHtp.so,')));
+  });
+
+  test('Google Tensor is opt-in: a build without it names its own flag, '
+      'not Qualcomm\'s', () async {
+    final bundled = await checkNpuStackInManifest(
+      NpuStack.googleTensor,
+      read: () async => _manifest({
+        'android_arm64': [..._base, ..._googleStack],
+      }),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(bundled.bundled, isTrue);
+
+    final missing = await checkNpuStackInManifest(
+      NpuStack.googleTensor,
+      read: () async => _manifest({'android_arm64': _base}),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(missing.bundled, isFalse);
+    expect(missing.reason, contains('google_tensor_npu: true'));
+    expect(missing.reason, isNot(contains('qualcomm_npu')));
+  });
+
+  test('MediaTek is opt-in: a build without it names its own flag, not '
+      'Qualcomm\'s', () async {
+    final bundled = await checkNpuStackInManifest(
+      NpuStack.mediatek,
+      read: () async => _manifest({
+        'android_arm64': [..._base, ..._mediatekStack],
+      }),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(bundled.bundled, isTrue);
+
+    final missing = await checkNpuStackInManifest(
+      NpuStack.mediatek,
+      read: () async => _manifest({'android_arm64': _base}),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(missing.bundled, isFalse);
+    expect(missing.reason, contains('mediatek_npu: true'));
+    expect(missing.reason, isNot(contains('qualcomm_npu')));
+  });
+
+  test('the stack under another ABI does not count', () async {
+    final r = await _check(
+      _manifest({
+        'android_x64': [..._base, ..._stack],
+      }),
+    );
+    expect(r.bundled, isFalse);
+    expect(r.reason, qualcommNpuNotEnabledReason);
+  });
+
+  test('an unreadable manifest is unknown, not "not enabled"', () async {
+    // What rootBundle throws in a background isolate with no binding.
+    final r = await checkNpuStackInManifest(
+      NpuStack.qualcomm,
+      read: () async =>
+          throw StateError('Binding has not yet been initialized'),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(r.bundled, isFalse);
+    expect(r.known, isFalse, reason: 'the platform side decides instead');
+    expect(r.reason, contains('could not be read'));
+    expect(r.reason, isNot(contains('qualcomm_npu: true')));
+  });
+
+  test(
+    'a manifest in an unknown shape is not reported as "not enabled"',
+    () async {
+      final r = await _check('[1, 2, 3]');
+      expect(r.bundled, isFalse);
+      expect(r.known, isFalse);
+      expect(r.reason, contains('not in a format'));
+    },
+  );
+
+  group('linux_arm64', () {
+    test('every library registered: bundled', () async {
+      final r = await _check(
+        _manifest({
+          'linux_arm64': [..._base, ..._linuxStack],
+        }),
+        abi: 'linux_arm64',
+        os: 'linux',
+      );
+      expect(r.bundled, isTrue);
+    });
+
+    test('the Android set is not the Linux stack', () async {
+      final r = await _check(
+        _manifest({
+          'linux_arm64': [..._base, ..._stack],
+        }),
+        abi: 'linux_arm64',
+        os: 'linux',
+      );
+      expect(r.bundled, isFalse);
+      expect(r.reason, contains('libcdsprpc.so'));
+      expect(r.reason, contains('libQnnHtpV68Skel.so'));
+    });
+
+    test('none registered: the same opt-in reason as Android', () async {
+      final r = await _check(
+        _manifest({'linux_arm64': _base}),
+        abi: 'linux_arm64',
+        os: 'linux',
+      );
+      expect(r.known, isTrue);
+      expect(r.reason, qualcommNpuNotEnabledReason);
+    });
+  });
+
+  test('asking about a host the vendor has no stack for is a programming '
+      'error: chooseNpuVendor never asks it', () async {
+    await expectLater(
+      _check(
+        _manifest({'macos_arm64': _base}),
+        abi: 'macos_arm64',
+        os: 'macos',
+      ),
+      throwsArgumentError,
+    );
+  });
+
+  test('ids match what the hook registers', () {
+    expect(
+      nativeAssetId(qualcommDispatchLib),
+      'package:litertlm_dart/src/native/LiteRtDispatch_Qualcomm',
+    );
+    expect(qualcommNpuLibs, hasLength(11));
+    expect(androidLibFileName('QnnHtp'), 'libQnnHtp.so');
+  });
+}

@@ -5,9 +5,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/common.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/runtime_mapping.dart';
 
 final _image1 = Uint8List.fromList([1, 1]);
 final _image2 = Uint8List.fromList([2, 2]);
@@ -31,7 +33,7 @@ List<String> _parts(
           text,
           imagesBytes: images,
           audioBytes: audio,
-          order: order,
+          order: order.toRuntime,
         );
   final message = jsonDecode(json) as Map<String, Object?>;
   expect(message['role'], 'user');
@@ -56,20 +58,20 @@ List<String> _parts(
 /// Records the order the model asks the conversation for, then stops: no
 /// engine is loaded.
 class _CapturingClient extends LiteRtLmFfiClient {
-  MultimodalOrder? multimodalOrder;
+  MediaOrder? multimodalOrder;
 
   @override
-  SamplingParams get bundleSampler => const SamplingParams();
+  BundleSampler get bundleSampler => const BundleSampler();
 
   @override
   Future<LiteRtLmConversationHandle> createConversationHandle({
     String? systemMessage,
     String? toolsJson,
     String? messagesJson,
-    required ResolvedSampling sampling,
+    required Sampler sampling,
     required bool samplingExplicit,
     int? maxOutputTokens,
-    required MultimodalOrder multimodalOrder,
+    required MediaOrder multimodalOrder,
     String? jsonSchema,
     required bool filterChannelContent,
   }) {
@@ -178,7 +180,7 @@ void main() {
   });
 
   group('FfiInferenceModel', () {
-    Future<MultimodalOrder?> orderAskedFor(
+    Future<MediaOrder?> orderAskedFor(
       ModelType type, {
       MultimodalOrder? multimodalOrder,
     }) async {
@@ -196,13 +198,19 @@ void main() {
     }
 
     test('a conversation gets the order of the model type', () async {
-      expect(await orderAskedFor(ModelType.gemma4), ta);
-      expect(await orderAskedFor(ModelType.gemmaIt), at);
+      expect(await orderAskedFor(ModelType.gemma4), ta.toRuntime);
+      expect(await orderAskedFor(ModelType.gemmaIt), at.toRuntime);
     });
 
     test('an order given to the model wins over its type', () async {
-      expect(await orderAskedFor(ModelType.gemma4, multimodalOrder: at), at);
-      expect(await orderAskedFor(ModelType.general, multimodalOrder: ta), ta);
+      expect(
+        await orderAskedFor(ModelType.gemma4, multimodalOrder: at),
+        at.toRuntime,
+      );
+      expect(
+        await orderAskedFor(ModelType.general, multimodalOrder: ta),
+        ta.toRuntime,
+      );
     });
   });
 }

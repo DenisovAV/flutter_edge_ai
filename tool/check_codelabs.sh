@@ -47,6 +47,14 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if [ "${CODELAB_USE_LOCAL_PACKAGES:-0}" = "1" ]; then
+  WORKSPACE_PUBSPECS=()
+  while IFS= read -r line; do
+    WORKSPACE_PUBSPECS+=("$line")
+  done < <(find packages -mindepth 2 -maxdepth 2 -name pubspec.yaml -print | sort)
+  if [ "${#WORKSPACE_PUBSPECS[@]}" -eq 0 ]; then
+    echo "::error::no packages found under packages/ — discovery is broken"
+    exit 1
+  fi
   for pubspec in "${APPS[@]}"; do
     app="$(dirname "$pubspec")"
     override="$app/pubspec_overrides.yaml"
@@ -55,37 +63,23 @@ if [ "${CODELAB_USE_LOCAL_PACKAGES:-0}" = "1" ]; then
       exit 1
     fi
     LOCAL_OVERRIDE_FILES+=("$override")
-    cat > "$override" <<'YAML'
-dependency_overrides:
-  flutter_edge_ai:
-    path: ../../../packages/flutter_edge_ai
-  flutter_edge_ai_agent:
-    path: ../../../packages/flutter_edge_ai_agent
-  flutter_edge_ai_builtin_ai:
-    path: ../../../packages/flutter_edge_ai_builtin_ai
-  flutter_edge_ai_diagnostics:
-    path: ../../../packages/flutter_edge_ai_diagnostics
-  flutter_edge_ai_embeddings:
-    path: ../../../packages/flutter_edge_ai_embeddings
-  flutter_edge_ai_litertlm:
-    path: ../../../packages/flutter_edge_ai_litertlm
-  flutter_edge_ai_mediapipe:
-    path: ../../../packages/flutter_edge_ai_mediapipe
-  flutter_edge_ai_onnx:
-    path: ../../../packages/flutter_edge_ai_onnx
-  flutter_edge_ai_qdrant:
-    path: ../../../packages/flutter_edge_ai_qdrant
-  flutter_edge_ai_rag:
-    path: ../../../packages/flutter_edge_ai_rag
-  flutter_edge_ai_speech:
-    path: ../../../packages/flutter_edge_ai_speech
-  flutter_edge_ai_sqlite:
-    path: ../../../packages/flutter_edge_ai_sqlite
-  genkit_flutter_edge_ai:
-    path: ../../../packages/genkit_flutter_edge_ai
-  genkit_hybrid:
-    path: ../../../packages/genkit_hybrid
-YAML
+    # Every package of the workspace, read from packages/*/pubspec.yaml, so
+    # a new package (litertlm_dart, which speech and litertlm depend on) is
+    # overridden without an edit here. An override of a package an app does
+    # not use changes nothing.
+    {
+      echo "dependency_overrides:"
+      for package_pubspec in "${WORKSPACE_PUBSPECS[@]}"; do
+        dir="$(dirname "$package_pubspec")"
+        name="$(sed -n 's/^name:[[:space:]]*\([A-Za-z0-9_]*\).*/\1/p' "$package_pubspec" | head -n 1)"
+        if [ -z "$name" ]; then
+          echo "::error::$package_pubspec has no name" >&2
+          exit 1
+        fi
+        echo "  $name:"
+        echo "    path: ../../../$dir"
+      done
+    } > "$override"
   done
 fi
 

@@ -167,7 +167,10 @@ and at half precision the rotary positions past about 2,048 tokens stop being
 distinct ([LiteRT-LM #4001](https://github.com/google-ai-edge/LiteRT-LM/issues/4001)).
 Since `flutter_edge_ai_litertlm` 1.20.1 a Gemma 4 model loaded with `maxTokens`
 above 2,048 and no `activationDataType` gets full precision on its GPU attempt
-by itself; with an older version, or a smaller `maxTokens`, ask for it:
+by itself, except on Android (litertlm 1.21.0 keeps half precision there and
+prints a WARNING). With an older version, or a smaller `maxTokens`, ask for
+it, but not on an Adreno 8xx GPU (a Galaxy S25, for one): with the current
+native build float32 fails there at the first token, at any `maxTokens`:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(

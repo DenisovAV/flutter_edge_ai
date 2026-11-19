@@ -1,4 +1,5 @@
 ## Unreleased
+- Android GPU keeps Gemma 4 at FP16 above 2,048 tokens; FP32 fails on Adreno 8xx.
 - A stopped, paused turn that ends after the next one no longer reorders replayed history.
 - The runtime and the native build hook move to `litertlm_dart`; `user_defines` key is now `litertlm_dart:`.
 - `LitertlmManifestResolver` declares the `inference` role and returns `family`.

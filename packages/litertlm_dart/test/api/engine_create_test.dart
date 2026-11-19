@@ -292,6 +292,51 @@ void main() {
     }
   });
 
+  test('on an Android GPU, Gemma 4 above 2,048 tokens keeps the bundle\'s '
+      'float16 and says so once, in release builds too; float32 asked for is '
+      'honoured', () async {
+    host = _Host(abiName: 'android_arm64');
+    debugEngineHost = host;
+    resetAndroidGemma4Float16Note();
+    addTearDown(resetAndroidGemma4Float16Note);
+    // runtimeLog is silent in release builds: the note must not go through it.
+    final logged = <String>[];
+    runtimeLogSink = (message, {verbose = false}) => logged.add(message);
+    addTearDown(resetRuntimeLogSink);
+    final path = write('g4.litertlm', _bundle(family: 8));
+    final printed = <String>[];
+    final engines = await runZoned(
+      () async => [
+        await create(path, backend: const Backend.gpu(), maxNumTokens: 4096),
+        await create(path, backend: const Backend.gpu(), maxNumTokens: 8192),
+        await create(
+          path,
+          backend: const Backend.gpu(),
+          maxNumTokens: 4096,
+          activation: ActivationDataType.float32,
+        ),
+      ],
+      zoneSpecification: ZoneSpecification(
+        print: (_, _, _, line) => printed.add(line),
+      ),
+    );
+    expect(host.creates.map((c) => c.activationDataType), [null, null, 0]);
+    expect(
+      host.creates.first.gpuActivationReason,
+      GpuActivationReason.gemma4LongContextAndroid,
+    );
+    expect(host.creates.last.gpuActivationReason, isNull);
+    final notes = printed.where((l) => l.contains('#4001')).toList();
+    expect(notes, hasLength(1), reason: printed.join('\n'));
+    expect(notes.single, contains('WARNING'));
+    expect(notes.single, contains('maxTokens 4096'));
+    expect(notes.single, contains('ActivationDataType.float32'));
+    expect(logged.where((l) => l.contains('#4001')), isEmpty);
+    for (final e in engines) {
+      await e.close();
+    }
+  });
+
   test('a FunctionGemma bundle without a declared type runs float32 on the '
       'GPU; a bundle naming no family is left alone', () async {
     final fg = write('fg.litertlm', _bundle(family: 3));

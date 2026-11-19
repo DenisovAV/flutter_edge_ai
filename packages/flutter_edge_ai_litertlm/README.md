@@ -1538,6 +1538,16 @@ changes. FP32 costs first-token time (1.5 s against 3.8 s on that Intel
 prompt) and GPU memory; on older versions pass
 `activationDataType: ActivationDataType.float32` to `getActiveModel` yourself.
 
+On Android this package does not switch Gemma 4 to float32 by itself (since
+1.21.0; the FunctionGemma rule above still applies):
+with the current native build, float32 fails at the first token on Adreno 8xx
+GPUs (a Galaxy S25 Ultra: `Invalid work group size` in the native log), at
+any `maxTokens`, so a Gemma 4 GPU load above 2,048 tokens keeps the file's
+float16 and prints one WARNING line, in release builds too. `activationDataType:
+ActivationDataType.float32` still asks for it, but do not ask on an Adreno 8xx
+GPU; if a turn then fails with `Stream error: INTERNAL`, the error names
+float32 as the likely cause.
+
 ### `Qwen3-0.6B.litertlm` fails to load
 
 Symptom: the engine fails to create for `Qwen3-0.6B.litertlm` from

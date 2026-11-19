@@ -1,7 +1,9 @@
 import 'dart:async';
+
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
+
 import 'dart:js_interop';
-import 'package:flutter/foundation.dart';
+
 import 'package:flutter_edge_ai/src/domain/download_exception.dart';
 import 'package:flutter_edge_ai/src/domain/download_error.dart';
 import 'package:flutter_edge_ai/src/domain/web_storage_mode.dart';
@@ -267,6 +269,29 @@ class WebDownloadService implements DownloadService {
     }
   }
 
+  /// A cancel that lands after the body was read (while the cache stores it
+  /// or its blob URL is made) aborts nothing: the install registered the
+  /// model. Undo that, putting back the URL [targetPath] had before
+  /// ([previousUrl]: a model this install was replacing), and report the
+  /// cancel.
+  Future<void> _unregisterIfCancelled(
+    String targetPath,
+    String? previousUrl,
+    CancelToken? cancelToken,
+  ) async {
+    if (!(cancelToken?.isCancelled ?? false)) return;
+    final url = _fileSystem.getUrl(targetPath);
+    if (url != previousUrl) {
+      if (previousUrl != null) {
+        _fileSystem.registerUrl(targetPath, previousUrl);
+      } else {
+        await _fileSystem.deleteFile(targetPath);
+      }
+      if (url != null) _blobUrlManager.cleanupByUrl(url);
+    }
+    cancelToken!.throwIfCancelled();
+  }
+
   /// Download public model (no auth) and cache
   Stream<int> _downloadPublic(
     String url,
@@ -277,6 +302,8 @@ class WebDownloadService implements DownloadService {
     try {
       cancelToken?.throwIfCancelled();
 
+      final previousUrl = _fileSystem.getUrl(targetPath);
+
       // Use unified caching helper with progress
       yield* cacheService.getOrCacheAndRegisterWithProgress(
         cacheKey: normalizedUrl,
@@ -285,18 +312,16 @@ class WebDownloadService implements DownloadService {
 
           edgeAiLog('[WebDownloadService] 📥 Downloading public model: $url');
 
-          // Note: fetchFile doesn't support progress callbacks yet
-          final response = await _jsInterop.fetchFile(url);
-
-          edgeAiLog(
-            '[WebDownloadService] ✅ Downloaded: ${response.data.length} bytes',
+          // The cache reads the body; progress comes as it does.
+          return _jsInterop.fetchBody(
+            url,
+            onProgress: onProgress,
+            cancelled: cancelToken?.whenCancelled,
           );
-          onProgress(1.0);
-
-          return response.data;
         },
         targetPath: targetPath,
       );
+      await _unregisterIfCancelled(targetPath, previousUrl, cancelToken);
 
       // Track blob URL for cleanup (works with or without cache)
       final blobUrl = _fileSystem.getUrl(targetPath);
@@ -307,7 +332,11 @@ class WebDownloadService implements DownloadService {
       edgeAiLog('[WebDownloadService] ✅ Public model downloaded and cached');
     } on DownloadCancelledException {
       rethrow;
-    } catch (e) {
+    } catch (e, st) {
+      // A cancel aborts the fetch; the reader then fails with an AbortError.
+      if (cancelToken?.isCancelled ?? false) {
+        throw DownloadCancelledException('Download cancelled: $url', st);
+      }
       edgeAiLog('[WebDownloadService] ❌ Public download failed: $e');
       throw DownloadException(
         DownloadError.unknown('Failed to download public model: $e'),
@@ -329,6 +358,8 @@ class WebDownloadService implements DownloadService {
         'WebDownloadService: Starting authenticated download for $targetPath',
       );
 
+      final previousUrl = _fileSystem.getUrl(targetPath);
+
       // Use unified caching helper with auth download
       yield* cacheService.getOrCacheAndRegisterWithProgress(
         cacheKey: normalizedUrl,
@@ -339,30 +370,16 @@ class WebDownloadService implements DownloadService {
             '[WebDownloadService] 📥 Downloading authenticated model: $url',
           );
 
-          // Create completer for async result
-          final completer = Completer<Uint8List>();
-
-          // Start download with streaming progress
-          _jsInterop
-              .fetchWithAuth(
-                url,
-                authToken,
-                onProgress: onProgress, // Pass progress callback directly
-              )
-              .then((response) {
-                edgeAiLog(
-                  '[WebDownloadService] ✅ Downloaded: ${response.data.length} bytes',
-                );
-                completer.complete(response.data);
-              })
-              .catchError((error) {
-                completer.completeError(error);
-              });
-
-          return await completer.future;
+          return _jsInterop.fetchBody(
+            url,
+            authToken: authToken,
+            onProgress: onProgress, // Pass progress callback directly
+            cancelled: cancelToken?.whenCancelled,
+          );
         },
         targetPath: targetPath,
       );
+      await _unregisterIfCancelled(targetPath, previousUrl, cancelToken);
 
       // Track blob URL for cleanup (works with or without cache)
       final blobUrl = _fileSystem.getUrl(targetPath);
@@ -376,7 +393,11 @@ class WebDownloadService implements DownloadService {
     } on DownloadCancelledException {
       edgeAiLog('WebDownloadService: Download cancelled for $targetPath');
       rethrow;
-    } catch (e) {
+    } catch (e, st) {
+      // A cancel aborts the fetch; the reader then fails with an AbortError.
+      if (cancelToken?.isCancelled ?? false) {
+        throw DownloadCancelledException('Download cancelled: $url', st);
+      }
       edgeAiLog('[WebDownloadService] ❌ Authenticated download failed: $e');
       throw DownloadException(
         DownloadError.unknown('Failed to download authenticated model: $e'),

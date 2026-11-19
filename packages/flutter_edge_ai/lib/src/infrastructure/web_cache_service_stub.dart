@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:typed_data';
+
 import 'package:flutter_edge_ai/src/infrastructure/web_cache_interop_stub.dart';
 
 /// Stub implementation for non-web platforms
@@ -21,7 +21,7 @@ class WebCacheService {
     throw UnsupportedError('WebCacheService is only available on web platform');
   }
 
-  Future<void> cacheModel(String url, Uint8List data) {
+  Future<void> cacheModel(String url, WebModelBody data) {
     throw UnsupportedError('WebCacheService is only available on web platform');
   }
 
@@ -43,7 +43,7 @@ class WebCacheService {
 
   Stream<int> getOrCacheAndRegisterWithProgress({
     required String cacheKey,
-    required Future<Uint8List> Function(void Function(double) onProgress)
+    required Future<WebModelBody> Function(void Function(double) onProgress)
     loader,
     required String targetPath,
   }) {
@@ -52,7 +52,7 @@ class WebCacheService {
 
   Future<String> getOrCacheAndRegister({
     required String cacheKey,
-    required Future<Uint8List> Function() loader,
+    required Future<WebModelBody> Function() loader,
     required String targetPath,
   }) {
     throw UnsupportedError('WebCacheService is only available on web platform');

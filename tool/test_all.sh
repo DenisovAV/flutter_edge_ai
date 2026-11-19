@@ -99,6 +99,11 @@ fi
 fail=0 tested=0 untested=0 total=0
 summary=""
 
+# Packages whose browser suites run a second time under --wasm (see the
+# browser step below). Space-separated; add a package once its suites pass
+# under dart2wasm.
+wasm_browser_packages="flutter_edge_ai"
+
 # The public-surface guard first: seconds, no Flutter, and a red test further
 # down cannot hide it. It fails on deep imports of core internals and on
 # unannotated cross-package src/ imports (see the script's header).
@@ -215,6 +220,26 @@ for dir in packages/*/ packages/*/example/; do
     else
       summary="${summary}  FAILED  ${pkg} (chrome)"$'\n'
       fail=1
+    fi
+
+    # The same files again under dart2wasm, for the packages in
+    # wasm_browser_packages. Code that is right under dart2js can still fail
+    # there: a Dart Uint8List is a WasmGC array that V8 caps at 2^30 - 20
+    # bytes with a trap no `catch` sees, which kept web installs over 1 GiB
+    # from ever completing under --wasm (#854,
+    # test/web/web_model_body_test.dart). Core's set takes about 20 s.
+    if [[ " $wasm_browser_packages " == *" $pkg "* ]]; then
+      echo "::group::flutter test --platform chrome --wasm — $pkg"
+      # shellcheck disable=SC2086  # word splitting is the point
+      (cd "$dir" && flutter test --platform chrome --wasm --exclude-tags slow $browser_files)
+      rc=$?
+      echo "::endgroup::"
+      if [[ $rc -eq 0 ]]; then
+        summary="${summary}  ok  ${pkg} (chrome, wasm)"$'\n'
+      else
+        summary="${summary}  FAILED  ${pkg} (chrome, wasm)"$'\n'
+        fail=1
+      fi
     fi
   fi
 done

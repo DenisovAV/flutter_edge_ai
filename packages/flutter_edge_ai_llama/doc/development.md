@@ -59,7 +59,8 @@ and device jobs, which additionally run nightly and on dispatch.
 
 Web artifact validation uses `dart run llamadart:web_setup --check --no-index-html --web-dir`
 against the consuming app's resolved SDK and Node.js to check that the copied helper
-exposes callable functions and the bootstrap actually selects the local pinned assets.
+exposes callable functions and the bootstrap selects the local pinned assets with
+`?v=<tag>` matching `webgpu_bridge/manifest.json` (rejecting stale or mixed versions).
 The iOS CI lane streams the JSON report, bounds each attempt to ten minutes,
 and reboots/retries only a pre-test startup failure once. Both attempts retain
 failure output, and a recovered launch emits a CI warning; the passing attempt must execute the required model test.

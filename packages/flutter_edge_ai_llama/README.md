@@ -277,14 +277,22 @@ Web files. Find its `rootUri` in your app's `.dart_tool/package_config.json`
 (resolve it relative to that file). Copy `example/web/cache_api.js`,
 `cache_api.LICENSE` and `_headers` into your app's `web/` directory, and load
 `cache_api.js` inside the `<head>` of `web/index.html`. Hosts that ignore
-`_headers` need equivalent server configuration. Use the module bootstrap in
-`example/web/index.html`: it loads the local bridge, sets its worker/core/Wasm
-URLs before Flutter starts, and reports load errors.
+`_headers` need equivalent server configuration. Use the module bootstrap in `example/web/index.html`: after confirming
+`window.crossOriginIsolated` (failing closed otherwise), it fetches
+`webgpu_bridge/manifest.json` with `cache: 'no-store'`, reads the staged
+`release_tag`, and appends `?v=<tag>` to the module import and every configured
+module, core, worker, Wasm, and mem64 URL before Flutter starts. Reading the
+staged manifest keeps the bootstrap compatible across `llamadart` SDK patch
+updates without mixing cached old and new runtime files.
 The validator checks the built `webgpu_bridge` bytes against your app's resolved
 `llamadart` SDK via `dart run llamadart:web_setup --check --no-index-html --web-dir`,
-and permits extra headers while checking the required wildcard isolation rules,
-storage helper interface and license. A customized storage helper also needs
-browser tests; static interface checks do not prove its behavior.
+verifies in Node.js that the bootstrap fetches the local manifest with
+`cache: 'no-store'` and appends `?v=<tag>` matching `manifest.json` to the
+module import and all configured runtime URLs (rejecting stale or mixed
+versions), and permits extra headers while checking the required wildcard
+isolation rules, storage helper interface and license. A customized storage
+helper also needs browser tests; static interface checks do not prove its
+behavior.
 Release validation requires Dart and Node.js. Build with
 `flutter build web --wasm`, then run from your app:
 

@@ -12,9 +12,6 @@ import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
 import 'package:flutter_edge_ai/src/infrastructure/web_file_system_service.dart';
 import 'package:flutter_edge_ai/src/infrastructure/web_js_interop.dart';
 import 'package:flutter_edge_ai/src/infrastructure/blob_url_manager.dart';
-import 'package:flutter_edge_ai/src/infrastructure/web_cache_interop_stub.dart'
-    if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_cache_interop.dart'
-    show WebModelBody;
 import 'package:flutter_edge_ai/src/infrastructure/web_cache_service.dart';
 import 'package:flutter_edge_ai/src/infrastructure/web_opfs_interop_stub.dart'
     if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_opfs_service.dart';
@@ -272,17 +269,18 @@ class WebDownloadService implements DownloadService {
     }
   }
 
-  /// Aborts [body]'s download when [cancelToken] is cancelled, so a
-  /// cancelled install stops instead of finishing into the cache.
-  WebModelBody _abortOnCancel(WebModelBody body, CancelToken? cancelToken) {
-    if (cancelToken != null) {
-      if (cancelToken.isCancelled) {
-        body.abort();
-      } else {
-        unawaited(cancelToken.whenCancelled.then((_) => body.abort()));
-      }
-    }
-    return body;
+  /// A cancel that lands after the body was read (while the cache stores it
+  /// or its blob URL is made) aborts nothing: the install registered the
+  /// model. Undo that and report the cancel.
+  Future<void> _unregisterIfCancelled(
+    String targetPath,
+    CancelToken? cancelToken,
+  ) async {
+    if (!(cancelToken?.isCancelled ?? false)) return;
+    final url = _fileSystem.getUrl(targetPath);
+    await _fileSystem.deleteFile(targetPath);
+    if (url != null) _blobUrlManager.cleanupByUrl(url);
+    cancelToken!.throwIfCancelled();
   }
 
   /// Download public model (no auth) and cache
@@ -304,13 +302,15 @@ class WebDownloadService implements DownloadService {
           edgeAiLog('[WebDownloadService] 📥 Downloading public model: $url');
 
           // The cache reads the body; progress comes as it does.
-          return _abortOnCancel(
-            await _jsInterop.fetchBody(url, onProgress: onProgress),
-            cancelToken,
+          return _jsInterop.fetchBody(
+            url,
+            onProgress: onProgress,
+            cancelled: cancelToken?.whenCancelled,
           );
         },
         targetPath: targetPath,
       );
+      await _unregisterIfCancelled(targetPath, cancelToken);
 
       // Track blob URL for cleanup (works with or without cache)
       final blobUrl = _fileSystem.getUrl(targetPath);
@@ -357,17 +357,16 @@ class WebDownloadService implements DownloadService {
             '[WebDownloadService] 📥 Downloading authenticated model: $url',
           );
 
-          return _abortOnCancel(
-            await _jsInterop.fetchBody(
-              url,
-              authToken: authToken,
-              onProgress: onProgress, // Pass progress callback directly
-            ),
-            cancelToken,
+          return _jsInterop.fetchBody(
+            url,
+            authToken: authToken,
+            onProgress: onProgress, // Pass progress callback directly
+            cancelled: cancelToken?.whenCancelled,
           );
         },
         targetPath: targetPath,
       );
+      await _unregisterIfCancelled(targetPath, cancelToken);
 
       // Track blob URL for cleanup (works with or without cache)
       final blobUrl = _fileSystem.getUrl(targetPath);

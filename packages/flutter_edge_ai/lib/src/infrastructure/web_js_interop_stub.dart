@@ -13,6 +13,7 @@ class WebJsInterop {
     String url, {
     String? authToken,
     void Function(double progress)? onProgress,
+    Future<void>? cancelled,
   }) {
     throw UnsupportedError('WebJsInterop is only available on web platform');
   }

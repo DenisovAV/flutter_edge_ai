@@ -171,6 +171,16 @@ void main() {
       );
     });
 
+    test('a cancel before the response aborts the request', () async {
+      await expectLater(
+        WebJsInterop().fetchBody(
+          _serve([_pattern(4096)]),
+          cancelled: Future<void>.value(),
+        ),
+        throwsA(isA<JsInteropException>()),
+      );
+    });
+
     test('abort makes the reader fail instead of finishing', () async {
       final body = await WebJsInterop().fetchBody(_serve([_pattern(4096)]));
 

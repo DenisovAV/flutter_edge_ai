@@ -24,13 +24,18 @@ class WebJsInterop {
   /// Throws [JsInteropException] when the request fails or the server
   /// answers with an error status; a failure while the body is read is the
   /// reader's error.
+  ///
+  /// When [cancelled] completes the download is aborted, from the request on
+  /// (before the response headers too) to the last byte of the body.
   Future<WebModelBody> fetchBody(
     String url, {
     String? authToken,
     void Function(double progress)? onProgress,
+    Future<void>? cancelled,
   }) async {
     try {
       final abortController = _AbortController();
+      cancelled?.then((_) => abortController.abort()).ignore();
       final response = await _fetch(
         url,
         _fetchOptions(authToken, abortController.signal),

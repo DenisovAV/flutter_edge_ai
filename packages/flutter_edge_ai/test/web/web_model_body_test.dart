@@ -85,6 +85,25 @@ extension type _ReadResult._(JSObject _) implements JSObject {
 extension type _StreamController._(JSObject _) implements JSObject {
   external void enqueue(JSUint8Array chunk);
   external void close();
+  external void error(JSAny reason);
+}
+
+/// A stream that gives [chunks] and then fails, or (when [fail] is false)
+/// stays open forever.
+_ReadableStream _stream(List<Uint8List> chunks, {bool fail = true}) {
+  var next = 0;
+  return _ReadableStream(
+    JSObject()..setProperty(
+      'pull'.toJS,
+      ((_StreamController controller) {
+        if (next < chunks.length) {
+          controller.enqueue(chunks[next++].toJS);
+        } else if (fail) {
+          controller.error('network error'.toJS);
+        }
+      }).toJS,
+    ),
+  );
 }
 
 /// Byte `i` of a test body: `i * 7 + (i >> 16)` mod 256, so a chunk that is
@@ -150,6 +169,14 @@ void main() {
         WebJsInterop().fetchBody(url),
         throwsA(isA<JsInteropException>()),
       );
+    });
+
+    test('abort makes the reader fail instead of finishing', () async {
+      final body = await WebJsInterop().fetchBody(_serve([_pattern(4096)]));
+
+      body.abort();
+
+      await expectLater(_readAll(body), throwsA(anything));
     });
 
     test(
@@ -247,6 +274,43 @@ void main() {
       final entry = await cached();
       expect(entry, isNotNull);
       expect((await entry!.arrayBuffer().toDart).toDart.asUint8List(), bytes);
+    });
+
+    test('a body that fails part-way leaves nothing in the cache', () async {
+      final (cacheService, _) = await service(enableCache: true);
+      final body = WebJsInterop().bodyOfResponse(
+        _Response(_stream([_pattern(4096), _pattern(4096)])),
+      );
+
+      await expectLater(
+        cacheService.cacheModel(cacheKey, body),
+        throwsA(anything),
+      );
+      // It failed after reading some of the body (an error drops queued
+      // chunks, so how much is not fixed).
+      expect(body.size, greaterThan(0));
+      expect(await cached(), isNull);
+      expect(await cacheService.getCachedUrls(), isEmpty);
+    });
+
+    test('cancelling the install stream aborts the download', () async {
+      final (cacheService, fileSystem) = await service(enableCache: false);
+      var aborted = false;
+      final events = cacheService.getOrCacheAndRegisterWithProgress(
+        cacheKey: cacheKey,
+        loader: (onProgress) async => WebJsInterop().bodyOfResponse(
+          _Response(_stream([_pattern(1024)], fail: false)),
+          onProgress: onProgress,
+          abort: () => aborted = true,
+        ),
+        targetPath: 'web-model-body-test.bin',
+      );
+
+      // The first progress event, then the listener leaves.
+      await events.first;
+
+      expect(aborted, isTrue);
+      expect(fileSystem.getUrl('web-model-body-test.bin'), isNull);
     });
 
     test('without the cache it registers a blob URL of the body', () async {

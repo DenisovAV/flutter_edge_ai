@@ -23,7 +23,14 @@ import '../utils/edge_ai_log.dart';
 /// [body] is what `new Response(body)` takes: a `ReadableStream` that reads a
 /// download as it arrives (read once), or a `Blob`.
 class WebModelBody {
-  WebModelBody(this.body, {required this.bytesRead, this.replayable = false});
+  WebModelBody(
+    this.body, {
+    required this.bytesRead,
+    this.replayable = false,
+    void Function()? abort,
+  }) : abort = abort ?? _noAbort;
+
+  static void _noAbort() {}
 
   /// A body over [bytes], for data that is already in Dart memory.
   factory WebModelBody.ofBytes(Uint8List bytes) {
@@ -42,6 +49,10 @@ class WebModelBody {
   /// Whether [body] can be read more than once (a `Blob`); a download can
   /// not.
   final bool replayable;
+
+  /// Stops a download: the fetch is aborted and whoever reads [body] gets
+  /// an `AbortError`. A no-op for a body that is not a download.
+  final void Function() abort;
 
   /// The bytes the body has given so far: its size once it has been read to
   /// its end.

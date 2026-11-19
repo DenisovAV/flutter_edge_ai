@@ -1,6 +1,7 @@
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:flutter_edge_ai/src/infrastructure/web_cache_interop_stub.dart'
@@ -29,14 +30,20 @@ class WebJsInterop {
     void Function(double progress)? onProgress,
   }) async {
     try {
+      final abortController = _AbortController();
       final response = await _fetch(
         url,
-        authToken == null ? JSObject() : _createFetchOptions(authToken),
+        _fetchOptions(authToken, abortController.signal),
       );
       if (!response.isOk) {
+        abortController.abort();
         throw _httpError(response, authenticated: authToken != null);
       }
-      return bodyOfResponse(response, onProgress: onProgress);
+      return bodyOfResponse(
+        response,
+        onProgress: onProgress,
+        abort: () => abortController.abort(),
+      );
     } catch (e) {
       if (e is JsInteropException) rethrow;
       throw JsInteropException('Failed to fetch file: $e');
@@ -50,6 +57,7 @@ class WebJsInterop {
   WebModelBody bodyOfResponse(
     JSObject response, {
     void Function(double progress)? onProgress,
+    void Function()? abort,
   }) {
     final r = response as _Response;
     final contentLength = _getContentLength(r);
@@ -72,7 +80,11 @@ class WebJsInterop {
         flush: ((_TransformController _) => report(1.0)).toJS,
       ),
     );
-    return WebModelBody(r.body.pipeThrough(counter), bytesRead: () => received);
+    return WebModelBody(
+      r.body.pipeThrough(counter),
+      bytesRead: () => received,
+      abort: abort,
+    );
   }
 
   JsInteropException _httpError(
@@ -123,12 +135,18 @@ class WebJsInterop {
 
   // ===== Private Helper Methods =====
 
-  JSAny _createFetchOptions(String authToken) {
-    final headersMap = {'Authorization': 'Bearer $authToken'};
-
-    final optionsMap = {'headers': headersMap, 'method': 'GET'};
-
-    return optionsMap.jsify()!;
+  JSObject _fetchOptions(String? authToken, JSObject signal) {
+    final options =
+        (authToken == null
+                    ? <String, Object>{'method': 'GET'}
+                    : {
+                        'headers': {'Authorization': 'Bearer $authToken'},
+                        'method': 'GET',
+                      })
+                .jsify()!
+            as JSObject;
+    options['signal'] = signal;
+    return options;
   }
 
   Future<_Response> _fetch(String url, JSAny options) async {
@@ -190,6 +208,13 @@ extension type _Headers._(JSObject _) implements JSObject {
 
 extension type _Body._(JSObject _) implements JSObject {
   external JSObject pipeThrough(_TransformStream transform);
+}
+
+@JS('AbortController')
+extension type _AbortController._(JSObject _) implements JSObject {
+  external factory _AbortController();
+  external JSObject get signal;
+  external void abort();
 }
 
 @JS('TransformStream')

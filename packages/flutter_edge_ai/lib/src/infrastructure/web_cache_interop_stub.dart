@@ -5,7 +5,14 @@ import 'dart:typed_data';
 
 /// Stub of the web model body for non-web platforms.
 class WebModelBody {
-  WebModelBody(this.body, {required this.bytesRead, this.replayable = false});
+  WebModelBody(
+    this.body, {
+    required this.bytesRead,
+    this.replayable = false,
+    void Function()? abort,
+  }) : abort = abort ?? _noAbort;
+
+  static void _noAbort() {}
 
   factory WebModelBody.ofBytes(Uint8List bytes) {
     throw UnsupportedError('WebModelBody is only available on web platform');
@@ -14,6 +21,7 @@ class WebModelBody {
   final Object body;
   final int Function() bytesRead;
   final bool replayable;
+  final void Function() abort;
 
   int get size => bytesRead();
 }

@@ -12,6 +12,9 @@ import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
 import 'package:flutter_edge_ai/src/infrastructure/web_file_system_service.dart';
 import 'package:flutter_edge_ai/src/infrastructure/web_js_interop.dart';
 import 'package:flutter_edge_ai/src/infrastructure/blob_url_manager.dart';
+import 'package:flutter_edge_ai/src/infrastructure/web_cache_interop_stub.dart'
+    if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_cache_interop.dart'
+    show WebModelBody;
 import 'package:flutter_edge_ai/src/infrastructure/web_cache_service.dart';
 import 'package:flutter_edge_ai/src/infrastructure/web_opfs_interop_stub.dart'
     if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_opfs_service.dart';
@@ -269,6 +272,19 @@ class WebDownloadService implements DownloadService {
     }
   }
 
+  /// Aborts [body]'s download when [cancelToken] is cancelled, so a
+  /// cancelled install stops instead of finishing into the cache.
+  WebModelBody _abortOnCancel(WebModelBody body, CancelToken? cancelToken) {
+    if (cancelToken != null) {
+      if (cancelToken.isCancelled) {
+        body.abort();
+      } else {
+        unawaited(cancelToken.whenCancelled.then((_) => body.abort()));
+      }
+    }
+    return body;
+  }
+
   /// Download public model (no auth) and cache
   Stream<int> _downloadPublic(
     String url,
@@ -288,7 +304,10 @@ class WebDownloadService implements DownloadService {
           edgeAiLog('[WebDownloadService] 📥 Downloading public model: $url');
 
           // The cache reads the body; progress comes as it does.
-          return _jsInterop.fetchBody(url, onProgress: onProgress);
+          return _abortOnCancel(
+            await _jsInterop.fetchBody(url, onProgress: onProgress),
+            cancelToken,
+          );
         },
         targetPath: targetPath,
       );
@@ -302,7 +321,11 @@ class WebDownloadService implements DownloadService {
       edgeAiLog('[WebDownloadService] ✅ Public model downloaded and cached');
     } on DownloadCancelledException {
       rethrow;
-    } catch (e) {
+    } catch (e, st) {
+      // A cancel aborts the fetch; the reader then fails with an AbortError.
+      if (cancelToken?.isCancelled ?? false) {
+        throw DownloadCancelledException('Download cancelled: $url', st);
+      }
       edgeAiLog('[WebDownloadService] ❌ Public download failed: $e');
       throw DownloadException(
         DownloadError.unknown('Failed to download public model: $e'),
@@ -334,10 +357,13 @@ class WebDownloadService implements DownloadService {
             '[WebDownloadService] 📥 Downloading authenticated model: $url',
           );
 
-          return _jsInterop.fetchBody(
-            url,
-            authToken: authToken,
-            onProgress: onProgress, // Pass progress callback directly
+          return _abortOnCancel(
+            await _jsInterop.fetchBody(
+              url,
+              authToken: authToken,
+              onProgress: onProgress, // Pass progress callback directly
+            ),
+            cancelToken,
           );
         },
         targetPath: targetPath,
@@ -355,7 +381,11 @@ class WebDownloadService implements DownloadService {
     } on DownloadCancelledException {
       edgeAiLog('WebDownloadService: Download cancelled for $targetPath');
       rethrow;
-    } catch (e) {
+    } catch (e, st) {
+      // A cancel aborts the fetch; the reader then fails with an AbortError.
+      if (cancelToken?.isCancelled ?? false) {
+        throw DownloadCancelledException('Download cancelled: $url', st);
+      }
       edgeAiLog('[WebDownloadService] ❌ Authenticated download failed: $e');
       throw DownloadException(
         DownloadError.unknown('Failed to download authenticated model: $e'),

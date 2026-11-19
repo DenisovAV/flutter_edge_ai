@@ -497,9 +497,13 @@ void main() {
     );
     expect(worstGolden, greaterThanOrEqualTo(_vsNativeCpu));
     expect(worstSt, greaterThanOrEqualTo(0.97));
-    for (var i = 0; i < 6; i++) {
+    // The web golden holds five query/document pairs since #792.
+    final pairs = _golden.where((item) => item.id.startsWith('q')).length;
+    expect(pairs, greaterThan(0));
+    for (var i = 0; i < pairs; i++) {
       final scores = [
-        for (var j = 0; j < 6; j++) cosine(vectors['q$i']!, vectors['d$j']!),
+        for (var j = 0; j < pairs; j++)
+          cosine(vectors['q$i']!, vectors['d$j']!),
       ];
       expect(scores.indexOf(scores.reduce(math.max)), i, reason: '$scores');
     }

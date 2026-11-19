@@ -75,11 +75,9 @@ String engineCreateFailureMessage({
 }
 
 /// A turn that failed inside the compiled model: LiteRT-LM's `INTERNAL`
-/// status, or its "Failed to invoke the compiled model" text.
-final _compiledModelFailure = RegExp(
-  r'\bINTERNAL\b|failed\s+to\s+invoke\s+the\s+compiled\s+model',
-  caseSensitive: false,
-);
+/// status, which leads its error text ("INTERNAL: … Failed to invoke the
+/// compiled model"). Another status is not this failure, whatever it says.
+final _compiledModelFailure = RegExp(r'^\s*INTERNAL\b');
 
 /// The message of a streamed turn that failed with [nativeError].
 ///
@@ -88,22 +86,32 @@ final _compiledModelFailure = RegExp(
 /// (Adreno 8xx with this native build fails at the first token with
 /// "Invalid work group size"), with how to load at float16 or on the CPU.
 /// [gpuActivationReason] is why the engine chose float32, null when the caller
-/// asked for it.
+/// asked for it. On [android], such a failure at any other activation type is
+/// named as LiteRT's GPU kernels exceeding the work-group limits of some
+/// Adreno GPUs (Adreno 610 at float16, LiteRT #12075), with the CPU as the
+/// way out.
 String streamFailureMessage({
   required String nativeError,
   required String? backend,
   required int? activationDataType,
   required GpuActivationReason? gpuActivationReason,
+  required bool android,
 }) {
   final message = 'Stream error: $nativeError';
-  if (backend != 'gpu' ||
-      activationDataType != 0 ||
-      !_compiledModelFailure.hasMatch(nativeError)) {
+  if (backend != 'gpu' || !_compiledModelFailure.hasMatch(nativeError)) {
     return message;
   }
   const cpu =
       'on the CPU (Backend.cpu(); in flutter_edge_ai, '
       'PreferredBackend.cpu)';
+  if (activationDataType != 0) {
+    if (!android) return message;
+    return '$message (the GPU turn failed inside LiteRT. A known cause on '
+        "some Adreno GPUs: LiteRT's GPU kernels exceed the device's "
+        'work-group limits with this native build, "Invalid work group size" '
+        'in the native log (Adreno 610, LiteRT #12075), which a future native '
+        'build is expected to fix. Load $cpu)';
+  }
   final why = switch (gpuActivationReason) {
     // Never float32; named like a caller's.
     null || GpuActivationReason.gemma4LongContextAndroid =>

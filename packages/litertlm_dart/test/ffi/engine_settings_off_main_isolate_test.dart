@@ -89,8 +89,12 @@ void main() {
   test('a failed turn names float32 only on an engine created on the GPU at '
       'float32', () async {
     const s25 = 'INTERNAL: Failed to invoke the compiled model';
-    Future<String> failureOn(String backend, int? activation) async {
-      final client = clientWithoutNativeLibrary();
+    Future<String> failureOn(
+      String backend,
+      int? activation, {
+      bool android = false,
+    }) async {
+      final client = clientWithoutNativeLibrary()..androidForTest = android;
       await quietly(
         () => client.initialize(
           modelPath: '/models/gemma.litertlm',
@@ -118,6 +122,13 @@ void main() {
         reason: '$backend at $activation',
       );
     }
+    final android = await failureOn('gpu', 1, android: true);
+    expect(android, contains('LiteRT #12075'));
+    expect(
+      await failureOn('cpu', null, android: true),
+      'Stream error: $s25',
+      reason: 'the CPU on Android',
+    );
     expect(
       LiteRtLmFfiClient().streamFailureFor(s25),
       'Stream error: $s25',

@@ -3,6 +3,7 @@
 - `Message.hashCode` hashes media by content like `==`, which now compares `images` by content too (#823).
 - Qwen3's ` /no_think` stays out of `fullHistory`; a replayed chat sends it once per turn.
 - `MessageTranscriptCodec` saves a list of `Message`s as versioned JSON and reads it back (#824).
+- Web: downloads stream into the Cache API; `--wasm` installs models over 1 GiB.
 
 ## 2.6.0
 - `createSession`, `createChat`, `session` and `chat` are deprecated until 3.0.0.

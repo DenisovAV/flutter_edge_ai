@@ -25,12 +25,12 @@
 // Every timing/stop-flag decision below assumes that.
 //
 // iOS shape (verified via otool -L / nm -gU on the extracted xcframework
-// slice, see `hook/build.dart`'s iOS branch doc): Microsoft ships ONE image,
-// `onnxruntime-genai.framework/onnxruntime-genai`, that STATICALLY links ORT
-// and DYNAMICALLY EXPORTS BOTH APIs (`Oga*` here + `OrtGetApiBase` for the
-// plain-ORT embedding arm in `ort_ffi_client.dart`). So [_openGenAiLibraries]
-// opens a single library on iOS and returns it as both halves of its tuple —
-// see that function's iOS branch.
+// slice, see `hook/build.dart`'s iOS branch doc): Microsoft's
+// `onnxruntime-genai.framework/onnxruntime-genai` links ORT STATICALLY and,
+// since ORT-GenAI 0.18.0, exports only `Oga*` (its ORT stays private). So
+// [_openGenAiLibraries] opens that one library on iOS and returns it as both
+// halves of its tuple; the plain-ORT embedding arm (`ort_ffi_client.dart`)
+// opens the separate `onnxruntime.framework` instead.
 import 'dart:async';
 import 'dart:collection' show Queue;
 import 'dart:convert';
@@ -48,6 +48,7 @@ import 'gen_ai_protocol.dart';
 import 'gen_ai_turns.dart';
 import 'gen_ai_worker.dart';
 import 'ort_genai_bindings.g.dart';
+import 'ort_telemetry.dart';
 
 /// Env var override for host tests / macOS dev: a directory containing both
 /// `libonnxruntime` and `libonnxruntime-genai` (platform-specific names) —
@@ -936,7 +937,7 @@ String genAiGuidanceSchema(JsonSchemaResponseFormat format) => jsonEncode({
   },
 });
 
-/// Whether ORT-GenAI 0.17.0's archive for [abi], as `hook/build.dart` bundles
+/// Whether ORT-GenAI 0.20.0's archive for [abi], as `hook/build.dart` bundles
 /// it, was built with guidance (llguidance). Read from the archives
 /// themselves: Microsoft's macOS arm64, Linux x64, Windows x64 and Windows
 /// ARM64 builds link llguidance in (its symbols and `GuidanceLogitsProcessor`
@@ -956,9 +957,11 @@ bool genAiArchiveHasGuidance(ffi.Abi abi) => const {
 /// whose archive has guidance stays refused, naming the missing run, until it
 /// is here (design 2.6.0 §5.1: a backend is enabled after its run).
 /// - macOS arm64: Mac mini, Phi-3.5-mini cpu-int4, 2026-11-04, 4/4.
-/// Still to run: Linux x64 (CI or the T4 VM), Windows x64 (`intel-ptl`),
-/// Windows ARM64 (the GitHub-hosted Windows 11 ARM64 runner).
-const _verifiedGuidanceAbis = {ffi.Abi.macosArm64};
+/// - Windows x64: `intel-ptl` (Core Ultra X7 358H), Phi-3.5-mini cpu-int4-awq,
+///   ORT-GenAI 0.20.0 + ONNX Runtime 1.32.0, 2026-11-17, 8/8.
+/// Still to run: Linux x64 (CI or the T4 VM), Windows ARM64 (the
+/// GitHub-hosted Windows 11 ARM64 runner).
+const _verifiedGuidanceAbis = {ffi.Abi.macosArm64, ffi.Abi.windowsX64};
 
 /// Replaces [_verifiedGuidanceAbis] in tests: the fake-worker tests drive the
 /// guided path on any host, and the host smoke is the run that verifies one.
@@ -978,7 +981,7 @@ String? guidanceRefusalOf(GenAiClient client, {ffi.Abi? abi}) {
   }
   final host = abi ?? ffi.Abi.current();
   if (!genAiArchiveHasGuidance(host)) {
-    return 'The ORT-GenAI 0.17.0 runtime bundled for $host is built without '
+    return 'The ORT-GenAI runtime bundled for $host is built without '
         'guidance (llguidance), so a format cannot be enforced there. It is '
         'enforced on macOS arm64.';
   }
@@ -1026,9 +1029,10 @@ String? guidanceRefusalOf(GenAiClient client, {ffi.Abi? abi}) {
 /// names alone" reasoning) for `LiteRtLm.framework`/`StreamProxy.framework`.
 /// A bare leaf name here would dlopen-fail on every real iPhone (and the
 /// simulator — verified: unanchored fails there too). This list is only ever
-/// consulted for `'onnxruntime-genai'` on iOS — the platform ships one image
-/// serving both APIs (see [_openGenAiLibraries]'s iOS branch), so
-/// `'onnxruntime'` is never opened there.
+/// consulted for `'onnxruntime-genai'` on iOS — genai links its own ORT
+/// statically (see [_openGenAiLibraries]'s iOS branch), so the generation
+/// client never opens `'onnxruntime'` there; the bundled
+/// `onnxruntime.framework` is the embedding client's.
 List<String> _candidateNames(String libraryName) {
   if (Platform.isIOS) {
     return [
@@ -1123,87 +1127,17 @@ void _exportOrtLibPath(ffi.DynamicLibrary ortLib) {
   }
 }
 
-typedef _GetenvNative =
-    ffi.Pointer<ffi.Void> Function(ffi.Pointer<pkg_ffi.Utf8>);
-typedef _GetenvDart = ffi.Pointer<ffi.Void> Function(ffi.Pointer<pkg_ffi.Utf8>);
-typedef _WputenvSNative =
-    ffi.Int32 Function(ffi.Pointer<pkg_ffi.Utf16>, ffi.Pointer<pkg_ffi.Utf16>);
-typedef _WputenvSDart =
-    int Function(ffi.Pointer<pkg_ffi.Utf16>, ffi.Pointer<pkg_ffi.Utf16>);
-typedef _WgetenvNative =
-    ffi.Pointer<ffi.Void> Function(ffi.Pointer<pkg_ffi.Utf16>);
-typedef _WgetenvDart =
-    ffi.Pointer<ffi.Void> Function(ffi.Pointer<pkg_ffi.Utf16>);
-
-/// The variable ORT-GenAI 0.17.0 reads to turn its Microsoft 1DS telemetry off.
-const _telemetryVariable = 'ORT_DISABLE_TELEMETRY';
-
-/// Turns ORT-GenAI's telemetry off before its library is opened, unless the
-/// app already set [_telemetryVariable] to something (its value is kept).
-///
-/// 0.17.0 ships Microsoft's 1DS telemetry on every host, on by default and with
-/// the OneCollector endpoint compiled in; 0.14.0 had none. For an on-device
-/// package it is off here, and the variable has to be set in the process
-/// environment the C runtime sees: `setenv` on POSIX and, on Windows,
-/// `_wputenv_s` from the UCRT, since genai reads it through the CRT and Dart's
-/// own environment view is not that copy. `OgaSetTelemetryEnabled(false)` alone
-/// is not enough (see the header).
-@visibleForTesting
-void disableGenAiTelemetry() {
-  try {
-    if (Platform.isWindows) {
-      final ucrt = ffi.DynamicLibrary.open('ucrtbase.dll');
-      final wgetenv = ucrt.lookupFunction<_WgetenvNative, _WgetenvDart>(
-        '_wgetenv',
-      );
-      final wputenvS = ucrt.lookupFunction<_WputenvSNative, _WputenvSDart>(
-        '_wputenv_s',
-      );
-      final name = _telemetryVariable.toNativeUtf16();
-      final value = '1'.toNativeUtf16();
-      try {
-        if (wgetenv(name) == ffi.nullptr) wputenvS(name, value);
-      } finally {
-        pkg_ffi.calloc.free(name);
-        pkg_ffi.calloc.free(value);
-      }
-      return;
-    }
-    final proc = ffi.DynamicLibrary.process();
-    final getenv = proc.lookupFunction<_GetenvNative, _GetenvDart>('getenv');
-    final setenv = proc.lookupFunction<_SetenvNative, _SetenvDart>('setenv');
-    final name = _telemetryVariable.toNativeUtf8();
-    final value = '1'.toNativeUtf8();
-    try {
-      if (getenv(name) == ffi.nullptr) setenv(name, value, 0);
-    } finally {
-      pkg_ffi.calloc.free(name);
-      pkg_ffi.calloc.free(value);
-    }
-  } catch (e) {
-    // Printed, not logged: a release build is where a telemetry that stayed
-    // on gets reported, and edgeAiLog is silent there.
-    // ignore: avoid_print
-    print(
-      '[flutter_edge_ai_onnx] Could not set $_telemetryVariable ($e); '
-      'ORT-GenAI telemetry may stay on. Set the variable yourself before '
-      'the first model loads.',
-    );
-  }
-}
-
 (ffi.DynamicLibrary, ffi.DynamicLibrary) _openGenAiLibraries(String? libsDir) {
-  disableGenAiTelemetry();
+  disableOrtTelemetry();
   if (Platform.isIOS && libsDir == null) {
-    // iOS ships ONE self-contained framework: onnxruntime-genai statically
-    // links ORT and exports both APIs (`Oga*` + `OrtGetApiBase`) from the
-    // same binary — verified via `otool -L` (zero LC_LOAD_DYLIB on
-    // onnxruntime) and `nm -gU` (both symbol sets present) on the extracted
-    // xcframework slice. See `hook/build.dart`'s iOS branch (single
-    // CodeAsset, `ort: null`) and this file's top doc. Skip the two-library
-    // open/`ORT_LIB_PATH` dance entirely: there is no separate onnxruntime
-    // dylib to co-locate with, and genai does no runtime dlopen of ORT on
-    // iOS (a static build, unlike macOS's `MACOS_USE_DLOPEN` path) — calling
+    // On iOS onnxruntime-genai statically links its own ORT — verified via
+    // `otool -L` (zero LC_LOAD_DYLIB on onnxruntime) on the extracted
+    // xcframework slice; since 0.18.0 that ORT is private (only `Oga*` is
+    // exported). The `onnxruntime.framework` the hook also bundles on iOS is
+    // the embedding arm's, not genai's; see this file's top doc. Skip the
+    // two-library open/`ORT_LIB_PATH` dance entirely: genai does no runtime
+    // dlopen of ORT on iOS (a static build, unlike macOS's
+    // `MACOS_USE_DLOPEN` path), so there is nothing to co-locate — calling
     // `_exportOrtLibPath` here would be a harmless no-op (its own
     // `Platform.isIOS` gate stays for that reason) but an explicit skip is
     // cleaner than relying on it.

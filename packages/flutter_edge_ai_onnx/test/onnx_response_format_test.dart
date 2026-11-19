@@ -125,7 +125,7 @@ void main() {
   }
 
   group('which hosts take a format', () {
-    test('ORT-GenAI 0.17.0 archives with guidance: the four Microsoft '
+    test('ORT-GenAI 0.20.0 archives with guidance: the four Microsoft '
         'desktop builds, not iOS or our Android build', () {
       for (final abi in [
         Abi.macosArm64,
@@ -146,11 +146,17 @@ void main() {
     });
 
     test('a host whose archive has guidance is refused until its run has '
-        'passed: only macOS arm64 so far', () async {
+        'passed: macOS arm64 and Windows x64 so far', () async {
       debugVerifiedGuidanceAbis = null;
       final (model, _) = await loaded('run_gate');
-      expect(guidanceRefusalOf(model.client, abi: Abi.macosArm64), isNull);
-      for (final abi in [Abi.linuxX64, Abi.windowsX64, Abi.windowsArm64]) {
+      for (final abi in [Abi.macosArm64, Abi.windowsX64]) {
+        expect(
+          guidanceRefusalOf(model.client, abi: abi),
+          isNull,
+          reason: '$abi',
+        );
+      }
+      for (final abi in [Abi.linuxX64, Abi.windowsArm64]) {
         expect(
           guidanceRefusalOf(model.client, abi: abi),
           allOf(contains('$abi'), contains('has not been run')),

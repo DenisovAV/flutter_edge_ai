@@ -14,7 +14,8 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_edge_ai/src/domain/cache_metadata.dart';
 import 'package:flutter_edge_ai/src/infrastructure/web_cache_interop_stub.dart'
@@ -119,17 +120,19 @@ class WebCacheService {
 
   /// Cache a model
   ///
-  /// Stores binary data in Cache API and metadata in SharedPreferences.
-  /// Uses URL normalization.
+  /// Stores [data] in Cache API, reading it to its end, and metadata in
+  /// SharedPreferences. Uses URL normalization.
   ///
-  /// Throws if storage quota exceeded or other error.
-  Future<void> cacheModel(String url, Uint8List data) async {
+  /// Throws if storage quota exceeded or other error. Over quota, entries
+  /// older than [maxCacheAge] are deleted and the put retried, but only for a
+  /// body that can be read again; a download (read once) gets the error.
+  Future<void> cacheModel(String url, WebModelBody data) async {
     try {
       final normalizedUrl = UrlUtils.normalizeUrl(url);
 
       if (kDebugMode) {
         edgeAiLog(
-          'WebCacheService: cacheModel($url) size: ${data.length} bytes, normalized: $normalizedUrl',
+          'WebCacheService: cacheModel($url) normalized: $normalizedUrl',
         );
       }
 
@@ -140,7 +143,7 @@ class WebCacheService {
       await _saveMetadata(
         CacheMetadata(
           url: url,
-          sizeInBytes: data.length,
+          sizeInBytes: data.size,
           timestamp: DateTime.now(),
           cacheKey: normalizedUrl,
         ),
@@ -153,27 +156,30 @@ class WebCacheService {
       edgeAiLog('[WebCacheService] ❌ cacheModel failed for $url: $e');
 
       // Handle QuotaExceededError
-      if (e.toString().contains('quota')) {
+      if (e.toString().toLowerCase().contains('quota')) {
         edgeAiLog(
           '[WebCacheService] ⚠️  Storage quota exceeded, attempting cleanup',
         );
-        await _cleanupOldEntries();
-        // Retry once after cleanup
-        try {
-          final normalizedUrl = UrlUtils.normalizeUrl(url);
-          await _cacheInterop.put(cacheName, normalizedUrl, data);
-          await _saveMetadata(
-            CacheMetadata(
-              url: url,
-              sizeInBytes: data.length,
-              timestamp: DateTime.now(),
-              cacheKey: normalizedUrl,
-            ),
-          );
-          edgeAiLog('[WebCacheService] ✅ Cached after cleanup: $url');
-          return;
-        } catch (retryError) {
-          edgeAiLog('[WebCacheService] ❌ Retry failed: $retryError');
+        // A download is read once: it cannot be retried, so old entries are
+        // kept rather than deleted for nothing; the error goes to the caller.
+        if (data.replayable) {
+          await _cleanupOldEntries();
+          try {
+            final normalizedUrl = UrlUtils.normalizeUrl(url);
+            await _cacheInterop.put(cacheName, normalizedUrl, data);
+            await _saveMetadata(
+              CacheMetadata(
+                url: url,
+                sizeInBytes: data.size,
+                timestamp: DateTime.now(),
+                cacheKey: normalizedUrl,
+              ),
+            );
+            edgeAiLog('[WebCacheService] ✅ Cached after cleanup: $url');
+            return;
+          } catch (retryError) {
+            edgeAiLog('[WebCacheService] ❌ Retry failed: $retryError');
+          }
         }
       }
 
@@ -401,13 +407,18 @@ class WebCacheService {
   /// Yields progress as int percentage (0-100).
   ///
   /// [cacheKey] - Key for Cache API storage
-  /// [loader] - Async function that loads data and reports progress via callback
+  /// [loader] - Async function that opens the data and reports progress via
+  /// callback. It returns a [WebModelBody], which the Cache API (or a `Blob`
+  /// without the cache) reads to its end, so a download streams into the
+  /// cache and its bytes never reach a Dart typed array.
   /// [targetPath] - Path to register in WebFileSystemService
+  ///
+  /// An empty body is refused with [StateError] (and not left in the cache).
   ///
   /// Returns: Stream of progress percentages (0-100)
   Stream<int> getOrCacheAndRegisterWithProgress({
     required String cacheKey,
-    required Future<Uint8List> Function(void Function(double) onProgress)
+    required Future<WebModelBody> Function(void Function(double) onProgress)
     loader,
     required String targetPath,
   }) async* {
@@ -428,25 +439,71 @@ class WebCacheService {
         '[WebCacheService] 📥 Loading: $cacheKey (cache: ${enableCache ? "enabled" : "disabled"})',
       );
 
-      final controller = StreamController<int>();
-      Uint8List? loadedData;
+      WebModelBody? opened;
+      var cancelled = false;
+      final controller = StreamController<int>(
+        // The listener left (the install was cancelled): stop the download
+        // rather than finish it into the cache and an unregistered blob URL.
+        onCancel: () {
+          cancelled = true;
+          opened?.abort();
+        },
+      );
+      String? blobUrl;
+      var lastPercent = -1;
 
-      // Start loading in background with progress callback
-      loader((progress) {
-            final percent = (progress * 100).clamp(0, 99).toInt();
-            if (!controller.isClosed) {
-              controller.add(percent);
+      // Open the body, then read it into the cache or a Blob, in the
+      // background: the body reports progress while it is read.
+      () async {
+            final body = await loader((progress) {
+              final percent = (progress * 100).clamp(0, 99).toInt();
+              // One event per percent, not per network chunk.
+              if (percent != lastPercent && !controller.isClosed) {
+                lastPercent = percent;
+                controller.add(percent);
+              }
+            });
+            opened = body;
+            if (cancelled) body.abort();
+            if (enableCache) {
+              await cacheModel(cacheKey, body);
+              if (body.size == 0) {
+                final deleted = await _cacheInterop.delete(
+                  cacheName,
+                  UrlUtils.normalizeUrl(cacheKey),
+                );
+                await _deleteMetadata(cacheKey);
+                throw StateError(
+                  deleted
+                      ? _emptyBody(cacheKey)
+                      : '${_emptyBody(cacheKey)} Its empty cache entry could '
+                            'not be deleted; clear the cache before retrying.',
+                );
+              }
+              if (cancelled) return;
+              blobUrl = await getCachedBlobUrl(cacheKey);
+              if (blobUrl == null) {
+                throw Exception('Failed to create blob URL for: $cacheKey');
+              }
+            } else {
+              // Temporary blob URL without caching
+              final url = await _cacheInterop.createBlobUrl(body);
+              if (cancelled || body.size == 0) {
+                _cacheInterop.revokeBlobUrl(url);
+                if (cancelled) return;
+                throw StateError(_emptyBody(cacheKey));
+              }
+              blobUrl = url;
             }
-          })
-          .then((data) {
-            loadedData = data;
+          }()
+          .then((_) {
             if (!controller.isClosed) {
               controller.close();
             }
           })
-          .catchError((error) {
+          .catchError((Object error, StackTrace stackTrace) {
             if (!controller.isClosed) {
-              controller.addError(error);
+              controller.addError(error, stackTrace);
               controller.close();
             }
           });
@@ -456,31 +513,11 @@ class WebCacheService {
         yield progress;
       }
 
-      if (loadedData == null) {
-        throw Exception('Failed to load data for: $cacheKey');
-      }
-
-      // 3. Cache the data (only if caching enabled)
-      if (enableCache) {
-        await cacheModel(cacheKey, loadedData!);
-
-        // 4. Create blob URL from cache
-        final blobUrl = await getCachedBlobUrl(cacheKey);
-        if (blobUrl == null) {
-          throw Exception('Failed to create blob URL for: $cacheKey');
-        }
-
-        // 5. Register in file system
-        _fileSystem.registerUrl(targetPath, blobUrl);
-
-        edgeAiLog('[WebCacheService] ✅ Cached and registered: $cacheKey');
-      } else {
-        // Create temporary blob URL without caching
-        final blobUrl = _cacheInterop.createBlobUrl(loadedData!);
-        _fileSystem.registerUrl(targetPath, blobUrl);
-
-        edgeAiLog('[WebCacheService] ✅ Registered (no cache): $cacheKey');
-      }
+      // 3. Register in file system
+      _fileSystem.registerUrl(targetPath, blobUrl!);
+      edgeAiLog(
+        '[WebCacheService] ✅ ${enableCache ? "Cached and registered" : "Registered (no cache)"}: $cacheKey',
+      );
 
       yield 100; // Final completion
     } catch (e) {
@@ -491,13 +528,17 @@ class WebCacheService {
     }
   }
 
+  static String _emptyBody(String cacheKey) =>
+      'Model file is empty: $cacheKey. '
+      'Check that the file exists and is served with its content.';
+
   /// Simple version without progress tracking
   ///
   /// Use this for instant loads (assets, bundled) where progress isn't needed.
   /// Delegates to getOrCacheAndRegisterWithProgress and ignores progress events.
   Future<String> getOrCacheAndRegister({
     required String cacheKey,
-    required Future<Uint8List> Function() loader,
+    required Future<WebModelBody> Function() loader,
     required String targetPath,
   }) async {
     // Delegate to progress version, ignore progress events

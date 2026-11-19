@@ -228,12 +228,17 @@ void main() {
       );
       expect(stopEnd, TurnEnd.stopped);
       // Kept, the model quotes what it had started ("Once upon"); with the
-      // turn dropped it has no story to quote. Measured the same as the
-      // conversation with the partial reply written in as text (the rebuild
-      // path). That is not token-identical — ORT-GenAI never computes a
-      // finished turn's EOS (AppendTokens does not feed the pending token),
-      // and the template writes "\n" after each <|end|> — so a long
-      // continuation can drift; this short answer does not.
+      // turn dropped it has no story to quote. The conversation with the
+      // partial reply written in as text (the rebuild path) quotes it too,
+      // but not word for word: the two are not token-identical — ORT-GenAI
+      // never computes a finished turn's EOS (AppendTokens does not feed the
+      // pending token), and the template writes "\n" after each <|end|> —
+      // and the continuation after the quote depends on the CPU kernels.
+      // Measured 2026-11-15: the kept session answers "Once upon", the
+      // rebuilt one "Once upon a time," on macOS arm64 with ONNX Runtime
+      // 1.32.0 and on Linux x64 with 1.27.0 and 1.32.0; both answered
+      // "Once upon" on macOS arm64 with 1.27.0. So both are held to quoting
+      // the streamed text, not to each other.
       const quote =
           'What were the first words of the story you started? Quote them.';
       final (quoted, _) = await turn(100, quote, cap: 24);
@@ -251,7 +256,11 @@ void main() {
         cap: 24,
         seedHistory: seed([fact, ok]),
       );
-      expect(quoted, written, reason: 'unguided: context after the stop');
+      expect(
+        written.toLowerCase(),
+        contains(partial.trim().toLowerCase()),
+        reason: 'unguided: the rebuilt session quotes the streamed text too',
+      );
       expect(quoted.toLowerCase(), contains(partial.trim().toLowerCase()));
       expect(dropped, isNot(quoted));
       final (afterStop, _) = await turn(100, question, cap: 12);

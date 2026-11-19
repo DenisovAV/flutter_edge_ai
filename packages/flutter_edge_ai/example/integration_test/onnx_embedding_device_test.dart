@@ -7,11 +7,11 @@
 //
 // One body, every platform: `OrtFfiClient`'s loader resolves the right native
 // ORT per host — a standalone `libonnxruntime` on macOS/Linux/Windows/Android
-// (from the onnxruntime prebuilt / onnxruntime-android AAR), and the ORT
-// statically linked inside `onnxruntime-genai.framework` on iOS (which is
-// OLDER than 1.27, so `OrtFfiClient` probes `GetApi` down from
-// ORT_API_VERSION to the version that framework accepts — see
-// `ort_ffi_client.dart`). Drives `OnnxEmbeddingPass` DIRECTLY (bypasses the
+// (from the onnxruntime prebuilt / onnxruntime-android AAR), and
+// `onnxruntime.framework` on iOS (Microsoft's static ORT linked by
+// `native/build_ort_ios.sh`; the ORT inside `onnxruntime-genai.framework` is
+// private since ORT-GenAI 0.18.0 — see `ort_ffi_client.dart`). Drives
+// `OnnxEmbeddingPass` DIRECTLY (bypasses the
 // registry/install plumbing — the native ORT path is the thing under test).
 //
 // Model: Xenova/all-MiniLM-L6-v2 (WordPiece `tokenizer.json`, single-file

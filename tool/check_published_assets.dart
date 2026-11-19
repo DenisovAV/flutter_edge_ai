@@ -50,9 +50,8 @@ const publishedTrees = {
   'packages/litertlm_dart': ['tool/stage_macos_companions.sh'],
   // Apps copy the vec0-enabled sqlite3.wasm into their web root.
   'packages/flutter_edge_ai_sqlite': ['web'],
-  // GGUF consumers copy the bootstrap/helper and run both shipped asset tools.
+  // GGUF consumers copy the bootstrap/helper and run the shipped build validator.
   'packages/flutter_edge_ai_llama': [
-    'tool/fetch_web_assets.py',
     'tool/validate_web_build.py',
     'example/web',
   ],

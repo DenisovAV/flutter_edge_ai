@@ -122,19 +122,49 @@ const data = JSON.parse(fs.readFileSync(0, 'utf8'));
   for (const name of required) {
     if (typeof helper.window[name] !== 'function') throw Error('Storage helper is missing ' + name);
   }
+  const expectedTag = data.tag;
+  const expectedUrlFor = (file) => {
+    const url = new URL('https://app.invalid/webgpu_bridge/' + file);
+    url.searchParams.set('v', expectedTag);
+    return url.href;
+  };
   const imported = [];
   const violations = [];
-  const context = vm.createContext({URL, navigator:{hardwareConcurrency:4},
+  async function loadManifest(resource, init = {}) {
+    const rawUrl = typeof resource === 'string'
+      ? resource
+      : (resource && typeof resource.url === 'string' ? resource.url : String(resource));
+    const resolvedUrl = new URL(rawUrl, 'https://app.invalid/');
+    if (resolvedUrl.href !== 'https://app.invalid/webgpu_bridge/manifest.json') {
+      violations.push(resolvedUrl.href);
+      throw Error('Bootstrap must only fetch the local pinned manifest: ' + resolvedUrl.href);
+    }
+    if (init?.cache !== 'no-store') {
+      throw Error('Bootstrap must fetch webgpu_bridge/manifest.json with cache: "no-store"');
+    }
+    return {
+      ok: true,
+      status: 200,
+      async json() { return JSON.parse(data.manifestText); },
+      async text() { return data.manifestText; },
+    };
+  }
+  const context = vm.createContext({URL, fetch: loadManifest, navigator:{hardwareConcurrency:4},
     crossOriginIsolated:true,console:{error(){},log(){}},
     document:{baseURI:'https://app.invalid/',createElement(){return {};},body:{appendChild(){}}}
   }, {codeGeneration:{strings:false,wasm:false}});
   context.window = context;
   async function loadModule(address, referencingModule) {
-    const resolved = new URL(address, referencingModule.identifier).href;
+    const resolvedUrl = new URL(address, referencingModule.identifier);
+    const resolved = resolvedUrl.href;
     imported.push(resolved);
-    if (resolved !== 'https://app.invalid/webgpu_bridge/llama_webgpu_bridge.js') {
+    if (resolvedUrl.origin + resolvedUrl.pathname !== 'https://app.invalid/webgpu_bridge/llama_webgpu_bridge.js') {
       violations.push(resolved);
       throw Error('Bootstrap must load the local pinned bridge: ' + resolved);
+    }
+    const expectedModule = expectedUrlFor('llama_webgpu_bridge.js');
+    if (resolved !== expectedModule) {
+      throw Error('Bootstrap bridge import version must match manifest (' + expectedTag + '): ' + resolved);
     }
     const module = new vm.SyntheticModule(['LlamaWebGpuBridge'], function() {
       this.setExport('LlamaWebGpuBridge', function(){});
@@ -156,6 +186,9 @@ const data = JSON.parse(fs.readFileSync(0, 'utf8'));
   }
   if (violations.length) throw Error('Bootstrap must use local pinned assets; attempted nonlocal runtime imports: ' + violations.join(', '));
   const window = context;
+  if (window.__llamadartBridgeLoadError) {
+    throw Error('Bootstrap failed closed: ' + window.__llamadartBridgeLoadError);
+  }
   const bindings = {
     __llamadartBridgeModuleUrl:'llama_webgpu_bridge.js',
     __llamadartBridgeCoreModuleUrl:'llama_webgpu_core.js',
@@ -168,8 +201,22 @@ const data = JSON.parse(fs.readFileSync(0, 'utf8'));
     throw Error('Bootstrap must load the local pinned bridge');
   }
   for (const [name,file] of Object.entries(bindings)) {
-    if (window[name] !== 'https://app.invalid/webgpu_bridge/' + file) {
+    const actual = window[name];
+    if (typeof actual !== 'string') {
       throw Error('Bootstrap must select the local pinned asset: ' + name);
+    }
+    let parsed;
+    try {
+      parsed = new URL(actual);
+    } catch {
+      throw Error('Bootstrap must select the local pinned asset: ' + name);
+    }
+    if (parsed.origin + parsed.pathname !== 'https://app.invalid/webgpu_bridge/' + file) {
+      throw Error('Bootstrap must select the local pinned asset: ' + name);
+    }
+    const expected = expectedUrlFor(file);
+    if (actual !== expected) {
+      throw Error('Bootstrap asset version mismatch for ' + name + ': expected ' + expected + ', got ' + actual);
     }
   }
   console.log('WEB_STATIC_CHECKS_PASS');
@@ -177,7 +224,34 @@ const data = JSON.parse(fs.readFileSync(0, 'utf8'));
 """
 
 
+def read_manifest_tag(directory):
+    manifest_path = Path(directory) / "webgpu_bridge/manifest.json"
+    if not manifest_path.is_file():
+        raise RuntimeError("Release artifact is missing webgpu_bridge/manifest.json")
+    manifest_text = manifest_path.read_text()
+    try:
+        manifest = json.loads(manifest_text)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"webgpu_bridge/manifest.json is not valid JSON: {error}") from error
+    if not isinstance(manifest, dict):
+        raise RuntimeError("webgpu_bridge/manifest.json must be a JSON object")
+    release_tag = manifest.get("release_tag")
+    bridge_tag = manifest.get("bridge_assets_tag")
+    if release_tag is not None and (not isinstance(release_tag, str) or not release_tag.strip()):
+        raise RuntimeError("webgpu_bridge/manifest.json has invalid release_tag")
+    if bridge_tag is not None and (not isinstance(bridge_tag, str) or not bridge_tag.strip()):
+        raise RuntimeError("webgpu_bridge/manifest.json has invalid bridge_assets_tag")
+    if release_tag and bridge_tag and release_tag.strip() != bridge_tag.strip():
+        raise RuntimeError(f"webgpu_bridge/manifest.json has mismatched tags: {release_tag!r} vs {bridge_tag!r}")
+    tag = (release_tag or bridge_tag or "").strip()
+    if not tag:
+        raise RuntimeError("webgpu_bridge/manifest.json is missing release_tag")
+    return manifest_text, tag
+
+
 def validate_javascript(directory):
+    directory = Path(directory)
+    manifest_text, tag = read_manifest_tag(directory)
     scripts = BootstrapScripts()
     scripts.feed((directory / "index.html").read_text())
     if urlparse(scripts.base).scheme or urlparse(scripts.base).netloc:
@@ -187,6 +261,8 @@ def validate_javascript(directory):
     result = subprocess.run(["node", "--experimental-vm-modules", "-e", JS_CHECK], input=json.dumps({
         "helper": (directory / "cache_api.js").read_text(),
         "modules": [source for source in scripts.modules if "LlamaWebGpuBridge" in source or "__llamadartBridge" in source],
+        "manifestText": manifest_text,
+        "tag": tag,
     }), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
     if result.returncode or result.stdout.strip() != "WEB_STATIC_CHECKS_PASS":
         raise RuntimeError(result.stderr.strip() or "Local pinned bootstrap validation did not complete")

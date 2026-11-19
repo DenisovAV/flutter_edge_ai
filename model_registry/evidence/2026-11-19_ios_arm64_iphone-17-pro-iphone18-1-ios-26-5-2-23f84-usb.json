@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-19",
+  "host": "ios_arm64",
+  "device": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB",
+  "commit": "f62579824ef0b4d1c2c8a91fe1f30ea1d98dd896",
+  "packages": {
+    "flutter_edge_ai": "2.7.0",
+    "flutter_edge_ai_litertlm": "1.21.0",
+    "flutter_edge_ai_speech": "0.6.2"
+  },
+  "native": "b477c3fad86dcfaab62ea87e327556fdfb2f4b61ce03351d71828b9e9f8f848f",
+  "log_sha256": "01f9af60d7e7c20d82a1e6944cc7b4d246860390e8cbeacaf4908b8dd6389d66",
+  "log_url": null,
+  "cells": {
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "audio",
+        "text",
+        "vision"
+      ],
+      "gpu": [
+        "text"
+      ]
+    }
+  }
+}

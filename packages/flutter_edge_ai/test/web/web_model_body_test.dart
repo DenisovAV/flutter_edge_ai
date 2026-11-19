@@ -20,8 +20,10 @@
 // `cacheModel`. Run under both compilers:
 //   flutter test test/web/web_model_body_test.dart --platform chrome
 //   flutter test test/web/web_model_body_test.dart --platform chrome --wasm
-// The body over the dart2wasm limit is tagged `slow` (it moves 1.1 GiB through
-// the browser); `tool/test_all.sh` excludes it, a plain run includes it.
+// The body over the dart2wasm limit moves 1.1 GiB through the browser: about
+// 5 s under dart2wasm, where it guards the fix and `tool/test_all.sh` runs it,
+// and about 30 s under dart2js (DDC), where it is tagged `slow` and the
+// script leaves it out.
 @TestOn('browser')
 library;
 
@@ -29,6 +31,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWasm;
 import 'package:flutter_edge_ai/src/infrastructure/web_cache_interop_stub.dart'
     if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_cache_interop.dart';
 import 'package:flutter_edge_ai/src/infrastructure/web_cache_service.dart';
@@ -244,7 +247,7 @@ void main() {
         // No Content-Length on a generated stream: indeterminate, then done.
         expect(progress.last, 1.0);
       },
-      tags: 'slow',
+      tags: kIsWasm ? null : 'slow',
       timeout: const Timeout(Duration(minutes: 5)),
     );
   });

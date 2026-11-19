@@ -292,6 +292,7 @@ def main():
             run([flutter, "test", "test/native_smoke_test.dart", fixture, "--reporter", "json"], smoke="published facade installs GGUF")
     elif args.lane == "web":
         run([sys.executable, "tool/fetch_web_assets.py"])
+        run([dart, "run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html", "--check"])
         command = [sys.executable, "tool/run_web_smoke.py", "--flutter", flutter, "--model-url", args.model_url]
         if args.storage_helper_url:
             command += ["--storage-helper-url", args.storage_helper_url]
@@ -354,6 +355,7 @@ def main():
             command += ["--no-codesign"]
         elif args.platform == "web":
             run([sys.executable, "tool/fetch_web_assets.py"])
+            run([dart, "run", "llamadart:web_setup", "--web-dir", "example/web", "--no-index-html", "--check"])
             command += ["--wasm"]
         run(command, PACKAGE / "example")
         if args.platform == "android":

@@ -23,6 +23,8 @@ import 'package:flutter_edge_ai_llama/src/llama_tool.dart'
 // ignore: implementation_imports — verifies the pinned SDK grammar used in production.
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 // ignore: implementation_imports — verifies the pinned shared XML grammar.
+import 'package:llamadart/src/core/template/handlers/minimax_m2_handler.dart';
+// ignore: implementation_imports — verifies the pinned schema-aware XML grammar.
 import 'package:llamadart/src/core/template/handlers/qwen3_coder_xml_handler.dart';
 
 import 'host_abi_stub.dart' if (dart.library.ffi) 'host_abi_native.dart';
@@ -3352,8 +3354,11 @@ void main() {
     await model.openChat(tools: [tool, nullableTool]);
     final definitions = engine.lastTemplateTools;
     expect(definitions.every((t) => t.parameters.isEmpty), isTrue);
-    final grammar = Qwen3CoderXmlHandler().buildGrammar(definitions)!;
-    expect(grammar, contains('param-name ::= identifier'));
+    final qwenGrammar = Qwen3CoderXmlHandler().buildGrammar(definitions)!;
+    expect(qwenGrammar, contains('<parameter=q>'));
+    expect(qwenGrammar, contains('<parameter=date>'));
+    final sharedXmlGrammar = MinimaxM2Handler().buildGrammar(definitions)!;
+    expect(sharedXmlGrammar, contains('param-name ::= identifier'));
     expect(definitions.last.toJsonSchema(), nullableTool.parameters);
     // A fully typed set still retains its optimized argument names.
     await model.openChat(tools: [tool]);

@@ -24,7 +24,7 @@ Core accepts self-contained `.gguf` files without a separate tokenizer. When
 backends are registered, installation checks that one can serve the file; with
 none registered, installation can still proceed. The opt-in
 `LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.1.0 (backend added in 0.0.3;
-llamadart 0.17.5 since 0.0.6) runs native EmbeddingGemma 2 GGUF text embeddings
+llamadart 0.17.5 in 0.0.6/0.1.0, `^0.20.1` on source) runs native EmbeddingGemma 2 GGUF text embeddings
 with core 2.6.0+ (`flutter_edge_ai: ^2.6.0`). The 0.0.x releases are the
 historical core 2.5.x line. Register it in
 `FlutterEdgeAi.initialize(embeddingBackends:)`; GGUF needs

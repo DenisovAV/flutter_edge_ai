@@ -64,7 +64,7 @@ Thinking deltas become `ThinkingResponse` only when `enableThinking` is true.
 String session methods omit typed reasoning with either flag value; use chat
 `generateChatResponseAsync()` for typed thinking and tools. With thinking off,
 the connector hides SDK reasoning-channel deltas. From 0.0.6
-(llamadart 0.17.5), the SDK can classify new `<think>` blocks as content after a
+(llamadart 0.17.5+), the SDK can classify new `<think>` blocks as content after a
 prompt-ending empty thought. For affected Hermes, DeepSeek V3 and Qwen3 Coder XML
 templates, the adapter also hides consecutive leading thought blocks across
 stream chunks, preserving the earlier thinking-off behavior. Templates without
@@ -90,7 +90,7 @@ Elsewhere, and on a model whose device the runtime does not report,
 `structuredOutputSupport` is `none` and `openSession` throws
 `ResponseFormatUnsupportedException`.
 
-Within core's dialect, llamadart 0.17.5's converter refuses `minimum`/`maximum`
+Within core's dialect, llamadart's converter refuses `minimum`/`maximum`
 on a `number`, a one-sided integer bound it cannot build (`minimum: 105`), a
 length or item bound above 2000, an `enum` or `const` beside another assertion,
 and an `enum`/`const` value of another type than `type`. `refusalFor` returns
@@ -230,7 +230,7 @@ replacement cancels that turn; an invalid tool declaration leaves it usable. GLM
 subset; schemas requiring richer constraints fail explicitly for those grammars.
 Other formats retain the full schema. If any tool cannot be represented as typed
 parameters, the entire set omits that typed view so shared XML grammars do not
-lose argument names. The adapter keeps its schema bridge: llamadart 0.17.5's
+lose argument names. The adapter keeps its schema bridge: llamadart's
 `ToolDefinition.fromJsonSchema` supports a narrower set of formats and rejects
 formats such as Qwen3 Coder XML. XML nullable-string decoding is a separate SDK
 limitation; nullable string arguments can come back as text instead of calls.

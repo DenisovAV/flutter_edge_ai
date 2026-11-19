@@ -5,7 +5,8 @@ That release requires core 2.5.0 and llamadart
 0.15.1 with typed native overflow reporting. The core foundation is
 [flutter_edge_ai #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685);
 the typed SDK error is [llamadart #1201](https://github.com/leehack/llamadart/pull/1201).
-Version 0.0.6 bounds the SDK to `>=0.17.5 <0.17.6`.
+Version 0.0.6 bounded the SDK to `>=0.17.5 <0.17.6` (kept in 0.1.0); source now
+targets `^0.20.1` (tested with `0.20.1` / Apple companion `0.20.1`).
 Full platform qualification of that update is pending.
 Source qualification does not replace standalone hosted qualification. Do not
 use a dependency override in production.

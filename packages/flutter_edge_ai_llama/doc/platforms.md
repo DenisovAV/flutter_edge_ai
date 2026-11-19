@@ -34,7 +34,7 @@ memory. Other SDK failures map to `StateError`; wrappers retain the cause and st
 
 ## Consumer setup
 
-This section describes 0.0.6; the hosted dependencies are in the
+This section describes the source checkout. See the
 [README recipe](../README.md#add-it-to-your-app).
 
 Declare `ModelFileType.gguf` and register `LlamaEngineProvider`. Put this selection
@@ -47,15 +47,15 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Keep this explicit selection as defence in depth. llamadart 0.17.5 automatically
+Keep this explicit selection as defence in depth. llamadart 0.20.1 automatically
 omits its LiteRT-LM when this connector or `flutter_edge_ai_litertlm` is present;
 explicitly selecting both LiteRT-LM owners fails the native build. Core itself includes no inference
-runtime. With llamadart 0.17.5, Vulkan is included by default on supported Android,
+runtime. With llamadart 0.20.1, Vulkan is included by default on supported Android,
 Linux and Windows targets. Android auto selection uses CPU; Linux/Windows use
 Vulkan where available. The demo explicitly selects CPU-only bundles on those
 platforms; apps choose backend packaging in their own hook settings.
 
-Apple applications add `llamadart_llama_cpp_flutter: 0.17.3` directly and enable
+Apple applications add `llamadart_llama_cpp_flutter: 0.20.1` directly and enable
 Flutter SwiftPM. Use iOS 16.4+ and macOS 14+. iOS applications enable the
 extended-virtual-addressing and increased-memory-limit entitlements; the example
 includes both. Do not apply those kernel entitlements on macOS. From
@@ -90,11 +90,11 @@ CUDA sidecar only when `cuda` is selected. A CPU-only SDK download is about
 
 ## Apple workspaces
 
-With llamadart 0.17.5, the hook discovers the Flutter app member and validates its
+With llamadart 0.20.1, the hook discovers the Flutter app member and validates its
 Apple companion. The old workspace-root discovery problem is fixed; the hook
 uses the SwiftPM runtime rather than embedding another llama.cpp framework.
 
-1. Add `llamadart_llama_cpp_flutter: 0.17.3` directly to the app member's
+1. Add `llamadart_llama_cpp_flutter: 0.20.1` directly to the app member's
    `dependencies`, alongside this connector.
 2. Set `llamadart_native_runtimes: [llama_cpp]` under `hooks.user_defines.llamadart`
    in the workspace root. Enable Flutter SwiftPM and keep the deployment targets
@@ -110,7 +110,7 @@ configuration consistent or split the workspaces.
 Qualification uses a workspace containing core, this connector and one app
 member, with root hook settings and a companion declared only in the app.
 The historically tested SDK/companion pair is **0.15.1 / 0.15.0**.
-The current **0.17.5 / 0.17.3** pair awaits qualification of this workspace-member
+The current **0.20.1 / 0.20.1** pair awaits qualification of this workspace-member
 setup. Source qualification and hosted consumer qualification remain independent gates.
 This does not qualify App Store submission, physical iOS devices, oldest OS
 versions or mixed LiteRT-LM/CocoaPods packaging.
@@ -141,13 +141,22 @@ qualify every device, model or accelerator.
 | Web | Wasm build and real worker/Wasm generation | Hardware WebGPU, advanced model/browser combinations |
 
 CI uses pinned Flutter 3.47.1 for reproducible checks; that is a test SDK, not the
-package minimum. Version 0.0.6 selects llamadart `>=0.17.5 <0.17.6` / Apple
-companion 0.17.3, with native artifacts v0.8.0-1 and connector-pinned Web assets
-v0.1.79. Full platform qualification of these pins is pending. Historical
-0.15.1/0.15.0 evidence and the inference baselines above cover selected fixtures;
-they do not qualify the updated pair. Validate each
-SDK upgrade with the selected companion; its patch version may differ. Web
-assets are checksum-verified. llamadart verifies llama.cpp archive SHA-256
+package minimum. The source constraint is `llamadart: ^0.20.1`. The local
+macOS arm64 checks used SDK **0.20.1**, Apple companion **0.20.1**
+(native **v1.0.0-2**), and Web bridge **v0.1.86**. The packaged macOS CPU chat smoke passed three lifecycle cycles. EmbeddingGemma 2
+passed on macOS CPU and Metal, and Chrome on macOS passed the dart2wasm WebGPU
+structured-output test.
+The Linux, Windows and minimum-SDK source checks run in GGUF source qualification.
+
+The example pins the Apple companion exactly. Its published dependency permits
+`>=0.20.1 <0.21.0`; the SDK build hook checks the selected SwiftPM runtime.
+For Web, the connector verifies the bridge manifest and each asset. After
+resolving a newer SDK patch, run `dart run llamadart:web_setup --no-index-html --check`
+from the app to check those bytes against the **resolved SDK's** manifest.
+If its pin changes, update the staged bridge and rerun Web qualification.
+The previously shipped SDK 0.17.5 used Apple companion 0.17.3 and bridge v0.1.79.
+
+llamadart verifies llama.cpp archive SHA-256
 digests before extraction
 ([#1039](https://github.com/leehack/llamadart/pull/1039)); SwiftPM verifies its
 companion archives. Existing extracted native caches and explicit local runtime
@@ -165,7 +174,7 @@ or absent model execution fails. Optional capability fixtures have their own
 ### Embedding qualification by platform
 
 The following historical results use the pinned EmbeddingGemma 2 Q8_0 fixture
-and predate the current SDK update; they do not qualify SDK 0.17.5. Inference
+and predate the current SDK update; they do not qualify SDK 0.20.1. Inference
 qualification does not qualify embeddings or other EG2 quantizations. Source
 checks and standalone hosted-consumer checks remain separate gates.
 

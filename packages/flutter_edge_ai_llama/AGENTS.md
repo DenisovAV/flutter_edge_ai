@@ -1,7 +1,8 @@
 # llama.cpp adapter maintenance
 
-Version 0.1.0 requires core 2.6.0+ through public engine libraries and llamadart
-0.17.5. 0.0.3 to 0.0.5 used SDK 0.15.1 / companion 0.15.0. Keep source qualification
+Version 0.1.0 requires core 2.6.0+ through public engine libraries; source
+targets llamadart ^0.20.1 (0.1.0 shipped on 0.17.5; 0.0.3 to 0.0.5 used SDK
+0.15.1 / companion 0.15.0). Keep source qualification
 separate from hosted consumer qualification. Inference routes by declared type.
 LlamaEmbeddingBackend registers self-contained GGUF through core's embedding SPI; see doc/embeddings.md.
 
@@ -18,21 +19,21 @@ LlamaEmbeddingBackend registers self-contained GGUF through core's embedding SPI
   enumeration with `GGML_METAL_DEVICES=0`; this is not GPU qualification.
 - Native source ownership stays in llamadart-native; Web assets in llama-web-bridge-assets.
   Do not patch downloaded SDKs, runtimes or models to pass tests.
-- Consumers retain `[llama_cpp]` in root hooks as defence in depth. SDK 0.17.5
+- Consumers retain `[llama_cpp]` in root hooks as defence in depth. SDK ^0.20.1
   chooses it automatically for this graph and rejects explicit LiteRT-LM collisions.
   Settings do not propagate. Apple workspace apps declare the companion directly
   in the app and hooks in the root; inconsistent companion choices remain unqualified.
 - Keep [platforms.md](doc/platforms.md) current; qualification history belongs in the PR.
 - Publication, ownership, copyright and bundle IDs require maintainer decisions.
 
-- The SDK constraint targets one published patch (`>=0.17.5 <0.17.6`); the Apple
-  companion is exact (`0.17.3`). Every SDK upgrade requires a coordinated
-  connector release and qualification of the selected companion and Web bridge.
-  Companion patches are independent; 0.17.3 accepts SDK `>=0.17.1 <0.18.0`.
-  Full platform qualification of the new pair is pending; preserve historical
-  0.15.1 / 0.15.0 evidence without relabeling it.
-  Pub enforces the companion/core minor pairing, backed by Apple build guards; SDK 0.17.5 also constrains workspace
-  hooks/code_assets below 3.0. Never silently widen these constraints.
+- The SDK constraint is `^0.20.1` (`>=0.20.1 <0.21.0`); the Apple companion
+  is exact (`0.20.1`, native `v1.0.0-2`). Pub enforces the companion's
+  SDK constraint (`>=0.20.1 <0.21.0`), and the Apple hook validates its
+  SwiftPM package. The Web verification lanes compare the staged bridge
+  (currently `v0.1.86`) against the resolved SDK's checksums. Preserve historical
+  0.15.1 / 0.15.0 and 0.17.5 / 0.17.3 evidence without relabeling it.
+  SDK 0.20.1 constrains workspace hooks/code_assets below 3.0. Never silently
+  widen these constraints.
   On an SDK upgrade, recheck that llamadart's automatic CPU targets
   (`resolvePreferredBackendForLoad`) still equal `nativeEmbeddingAutoUsesCpu`:
   the automatic-CPU warning is silenced on exactly that set.

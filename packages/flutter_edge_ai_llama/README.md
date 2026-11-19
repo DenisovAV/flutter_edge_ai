@@ -11,14 +11,17 @@ compatible models and runtimes. See [advanced usage](doc/advanced_usage.md) and 
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
 Version 0.0.3 adds native text embeddings with llamadart 0.15.1.
-Version 0.0.6 moved to llamadart 0.17.5; 0.1.0 keeps that runtime pair and adds core 2.6 sessions and response formats.
+Version 0.0.6 moved to llamadart 0.17.5; 0.1.0 added core 2.6 sessions and response formats on that pair.
+Source now targets llamadart `^0.20.1` with exact Apple companion `0.20.1` and Web bridge `v0.1.86`.
 
 The minimum is Flutter **3.44 / Dart 3.12**, with core **2.6.0+**.
-Version 0.1.0 uses llamadart **0.17.5** with typed overflow reporting
-and Apple companion **0.17.3** (0.0.3 to 0.0.5 used 0.15.1 / 0.15.0). Connector CI uses Flutter
+Version 0.1.0 shipped on llamadart **0.17.5** with typed overflow reporting
+and Apple companion **0.17.3** (0.0.3 to 0.0.5 used 0.15.1 / 0.15.0); the
+current source line updates the SDK constraint to **^0.20.1** (tested on SDK
+**0.20.1**, Apple companion **0.20.1**, and Web bridge **v0.1.86**). Connector CI uses Flutter
 3.47.1 / Dart 3.13.1 for reproducible checks. Native EmbeddingGemma 2 text embeddings are described in
-[the embedding guide](doc/embeddings.md). macOS CPU/Metal (llamadart 0.15.1 and
-0.17.5, #764) and Linux/Windows CPU (0.15.1) have been measured; Android has a
+[the embedding guide](doc/embeddings.md). macOS CPU/Metal (llamadart 0.15.1,
+0.17.5 (#764), and 0.20.1) and Linux/Windows CPU (0.15.1) have been measured; Android has a
 maintainer Pixel 8a diagnostic (0.15.1) and iOS remains unqualified. See the [per-platform evidence](doc/platforms.md#embedding-qualification-by-platform).
 Explicit GPU embeddings on Android (every device) and on iOS simulators fall
 back to CPU by default; `backendFallback: false` refuses those requests before
@@ -102,17 +105,18 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-Version 0.1.0 requires core 2.6.0+ and llamadart 0.17.5.
-Use these hosted dependencies:
+The current source line requires core 2.6.0+ and llamadart `^0.20.1`.
+The hosted 0.1.0 release uses Apple companion 0.17.3. This example uses the updated connector from a local checkout:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
   flutter_edge_ai: ^2.6.0
-  flutter_edge_ai_llama: ^0.1.0
+  flutter_edge_ai_llama:
+    path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
   # Add directly for iOS/macOS SwiftPM linkage:
-  llamadart_llama_cpp_flutter: 0.17.3
+  llamadart_llama_cpp_flutter: 0.20.1
 
 hooks:
   user_defines:
@@ -121,16 +125,17 @@ hooks:
 ```
 
 Merge the hook settings into your **application's** pubspec, or its workspace
-root. Dependency settings do not propagate. llamadart 0.17.5 omits its LiteRT-LM
+root. Dependency settings do not propagate. llamadart `^0.20.1` omits its LiteRT-LM
 when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph.
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
 actionable collision error. On Apple the llama.cpp companion is required too.
-Version 0.1.0 bounds llamadart to `>=0.17.5 <0.17.6` and selects exact
-Apple companion `0.17.3`, native artifacts `v0.8.0-1` and Web bridge `v0.1.79`.
-Full platform qualification of this pair is pending (see the
-[platform matrix](doc/platforms.md)); historical 0.15.1/0.15.0 evidence does not qualify it. Companion patches are versioned independently;
-validate SDK upgrades with the selected companion and Web bridge.
+Source bounds llamadart to `^0.20.1` and selects exact Apple companion `0.20.1`
+(tested with SDK `0.20.1`, companion `0.20.1`, native artifacts `v1.0.0-2`, and
+Web bridge `v0.1.86`). Full platform qualification of this pair is pending (see the
+[platform matrix](doc/platforms.md)). The companion requires SDK `>=0.20.1 <0.21.0`.
+The Apple build hook validates its SwiftPM package, and the Web verification
+lanes check staged bridge assets against the resolved SDK.
 Android apps must exclude `armeabi-v7a`: llama.cpp supplies arm64-v8a and x86_64.
 For fat APKs and app bundles, clear inherited `ndk.abiFilters` before setting
 those two ABIs. With `--split-per-abi`, let Flutter own the filters and pass
@@ -150,21 +155,22 @@ On iOS enable `com.apple.developer.kernel.extended-virtual-addressing` and
 From `flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM keeps SwiftPM on as well, and
 both native libraries load in one app; running both engines' models in one app
 is not qualified.
-Companion 0.17.3 (native v0.8.0-1) includes the framework metadata fix from
-[llamadart-native #110](https://github.com/leehack/llamadart-native/issues/110);
+The Apple metadata fix from
+[llamadart-native #110](https://github.com/leehack/llamadart-native/issues/110)
+is carried forward from 0.17.3 (`v0.8.0-1`) into `0.20.1` (`v1.0.0-2`);
 App Store submission remains **unvalidated**.
 
 In an Apple workspace, declare
-`llamadart_llama_cpp_flutter: 0.17.3` directly in the **app member's** dependencies
+`llamadart_llama_cpp_flutter: 0.20.1` directly in the **app member's** dependencies
 and put the `hooks` selection in the **workspace root**. Run `flutter pub get`
 from the root, then build from the app directory. The SDK discovers the member
 and uses its SwiftPM companion instead of bundling a second runtime.
 All apps using llamadart in the workspace must select the same companions.
 If the hook warns that it cannot choose a consistent setup, fix those declarations or use
 separate workspaces. See the [tested workspace scope](doc/platforms.md#apple-workspaces).
-From 0.0.6, the verified native `v0.8.0-1` Windows x64
-archive includes app-local Visual C++ runtime DLLs; this evidence does not cover
-Windows arm64. Older/custom bundles follow the SDK's
+For the historical 0.0.6 release, the verified native `v0.8.0-1` Windows x64
+archive included app-local Visual C++ runtime DLLs; this evidence does not cover
+`v1.0.0-2` or Windows arm64. Older/custom bundles follow the SDK's
 redistributable diagnostics. See the [archive evidence and combined-app limitation](doc/platforms.md#consumer-setup).
 See [platform setup](doc/platforms.md#consumer-setup) for backend selection.
 
@@ -265,7 +271,7 @@ With Python 3 and curl installed, stage the checksum-verified bridge into your a
 python3 <package-root>/tool/fetch_web_assets.py --output <app-root>/web/webgpu_bridge
 ```
 
-Rerun this command after upgrading the package to refresh the staged assets.
+Rerun this command after upgrading the connector. After changing the resolved SDK, run `dart run llamadart:web_setup --no-index-html --check` from your app to verify the staged assets against that SDK.
 
 Copy `example/web/cache_api.js`, `cache_api.LICENSE` and `_headers` into your
 app's `web/` directory, and load `cache_api.js` inside the `<head>` of `web/index.html`. Hosts that ignore `_headers` need equivalent server configuration.

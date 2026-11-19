@@ -180,6 +180,15 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         'This model grammar cannot preserve the supplied JSON Schema constraints with the pinned llamadart version. Use simple typed properties or another model format.',
       );
     }
+    final refusal = toolPreflightRefusal(
+      _tools,
+      format: rendered.format,
+      toolChoice: toolChoice,
+      lfm2ForcesJson: _lfm2ForcesJsonTools(_history),
+    );
+    if (refusal != null) {
+      throw UnsupportedError(refusal);
+    }
   }
 
   String _nextCallId(Set<String> reserved) {
@@ -1258,6 +1267,16 @@ class _LeadingThoughtFilter {
     _pending = '';
     return visible;
   }
+}
+
+bool _lfm2ForcesJsonTools(List<llama.LlamaChatMessage> history) {
+  if (history.isEmpty) return false;
+  final first = history.first;
+  if (first.role != llama.LlamaChatRole.system) return false;
+  return RegExp(
+    r'force json schema\.',
+    caseSensitive: false,
+  ).hasMatch(first.content);
 }
 
 final _callIdPattern = RegExp(r'^[a-zA-Z0-9]{9}$');

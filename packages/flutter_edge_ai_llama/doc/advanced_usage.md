@@ -226,15 +226,38 @@ be reused. Core tool-result copies and equality retain `toolCallId`.
 
 Tool declarations are preflighted against cached template metadata before replacing
 an existing chat, without waiting for its running generation. A successful
-replacement cancels that turn; an invalid tool declaration leaves it usable. GLM-4.5, Laguna and Hunyuan-V3 accept the SDK's typed parameter
-subset; schemas requiring richer constraints fail explicitly for those grammars.
-Other formats retain the full schema. If any tool cannot be represented as typed
-parameters, the entire set omits that typed view so shared XML grammars do not
-lose argument names. The adapter keeps its schema bridge: llamadart's
-`ToolDefinition.fromJsonSchema` supports a narrower set of formats and rejects
-formats such as Qwen3 Coder XML. XML nullable-string decoding is a separate SDK
-limitation; nullable string arguments can come back as text instead of calls.
-Use scalar string properties for those models until the SDK parser is fixed.
+replacement cancels that turn; an invalid tool declaration leaves it usable,
+with unsupported tool constraints rejected before generation:
+
+- **GLM-4.5, Laguna, and Hunyuan-V3**: accept the SDK's typed parameter subset;
+  schemas requiring richer constraints fail explicitly for those grammars.
+- **Qwen3-Coder and Qwen3.5 (`qwen3CoderXml`)**: refuse constraints (such as
+  `enum`, `const`, `pattern`, `minLength`/`maxLength`, `format`, or `anyOf`) on
+  top-level string-capable argument values, while preserving ordinary string
+  arguments (including annotations), integer enums/bounds, and nested object or
+  array constraints (including nested `pattern` and `enum`).
+- **LFM2 (`lfm2`)**: `ToolChoice.auto` allows typed scalar properties, nested
+  objects and arrays, simple structural constraints (`properties`, `required`,
+  `additionalProperties`), and typed string enums (including nested), while
+  rejecting unsupported constraints such as `pattern`, `format`, numeric ranges,
+  length/item bounds, non-string enums, combinators, and union/missing types
+  (including nested). `ToolChoice.required` uses LFM2's JSON-list grammar and
+  preserves rich schemas.
+- **Seed-OSS (`seedOss`)**: rejects tools with `enum` or `pattern` constraints, including nested ones,
+  while preserving basic tool calls (`type`, `properties`, `required`, `items`,
+  `additionalProperties`). Because Seed-OSS's grammar only enforces tool and
+  parameter names, the application must validate argument `type` and `required`
+  fields itself.
+- **Other formats**: receive the full schema; enforcement depends on the template. `ToolChoice.none` disables
+  tool-call generation.
+
+If any tool cannot be represented as typed parameters, the entire set omits that
+typed view so shared XML grammars do not lose argument names. The adapter keeps
+its schema bridge: llamadart's `ToolDefinition.fromJsonSchema` supports a
+narrower set of formats and rejects formats such as Qwen3 Coder XML. XML
+nullable-string decoding is a separate SDK limitation; nullable string arguments
+can come back as text instead of calls. Use scalar string properties for those
+models until the SDK parser is fixed.
 
 The connector rejects a loaded context smaller than requested; request a smaller
 `maxTokens` explicitly rather than relying on a silent Web fallback. A fatal SDK

@@ -68,6 +68,14 @@ int contextTokensFor(int maxNumTokens, BackendKind backend) {
   return minCpuGpuContextTokens;
 }
 
+/// A GPU activation the caller decided by a rule of its own, for
+/// [createEngineWithBundle]: the type (null: the engine's default) and why it
+/// was chosen. Given, the engine does not apply [gpuActivationFor].
+typedef GpuActivationDecision = ({
+  ActivationDataType? type,
+  GpuActivationReason? reason,
+});
+
 /// The activation type a GPU load runs at when the caller set none: float32
 /// for Gemma 4 with a context above [gemma4Fp16MaxContextTokens] (its float16
 /// rotary positions stop being distinct there, LiteRT-LM #4001), and for a
@@ -308,6 +316,7 @@ final class Engine {
     LiteRtLmLogLevel? nativeLevel,
     EngineBundle? read, {
     ToolCallReader toolCallsOf = nativeToolCalls,
+    GpuActivationDecision? gpuActivation,
   }) async {
     if (config.backend case CpuBackend(
       :final threadCount?,
@@ -398,7 +407,14 @@ final class Engine {
     // the engine's rule for a GPU load.
     var activation = config.activationDataType;
     GpuActivationReason? reason;
-    if (activation == null && kind == BackendKind.gpu) {
+    if (activation == null &&
+        kind == BackendKind.gpu &&
+        gpuActivation != null) {
+      // The caller decided by its own rule (the Flutter adapter, by the model
+      // type the app declared): the bundle's model type is not consulted.
+      activation = gpuActivation.type;
+      reason = gpuActivation.reason;
+    } else if (activation == null && kind == BackendKind.gpu) {
       final family = await _readFamily(path);
       final declares = family == LlmModelFamily.functionGemma
           ? await _readActivationDeclaration(path)
@@ -410,27 +426,27 @@ final class Engine {
       );
       activation = chosen.type;
       reason = chosen.reason;
-      switch (reason) {
-        case GpuActivationReason.functionGemmaWithoutKey:
-          runtimeLog(
-            '[LiteRtLmEngine] this FunctionGemma bundle declares no '
-            'prefer_activation_type, and at the GPU default of float16 such '
-            'a bundle answers with <pad> only: a GPU attempt uses float32. '
-            'Pass activationDataType: ActivationDataType.float16 to keep the '
-            'default.',
-          );
-        case GpuActivationReason.gemma4LongContext:
-          runtimeLog(
-            '[LiteRtLmEngine] Gemma 4 with maxTokens $maxTokens, above '
-            '$gemma4Fp16MaxContextTokens: at float16 its rotary positions '
-            'past ~2,048 tokens stop being distinct and a long prompt '
-            'degrades (LiteRT-LM #4001), so a GPU attempt uses float32. Pass '
-            'activationDataType: ActivationDataType.float16 to keep the '
-            "bundle's float16.",
-          );
-        case null:
-          break;
-      }
+    }
+    switch (reason) {
+      case GpuActivationReason.functionGemmaWithoutKey:
+        runtimeLog(
+          '[LiteRtLmEngine] this FunctionGemma bundle declares no '
+          'prefer_activation_type, and at the GPU default of float16 such '
+          'a bundle answers with <pad> only: a GPU attempt uses float32. '
+          'Pass activationDataType: ActivationDataType.float16 to keep the '
+          'default.',
+        );
+      case GpuActivationReason.gemma4LongContext:
+        runtimeLog(
+          '[LiteRtLmEngine] Gemma 4 with maxTokens $maxTokens, above '
+          '$gemma4Fp16MaxContextTokens: at float16 its rotary positions '
+          'past ~2,048 tokens stop being distinct and a long prompt '
+          'degrades (LiteRT-LM #4001), so a GPU attempt uses float32. Pass '
+          'activationDataType: ActivationDataType.float16 to keep the '
+          "bundle's float16.",
+        );
+      case null:
+        break;
     }
     if (config.activationDataType != null && kind != BackendKind.gpu) {
       runtimeLog(
@@ -849,6 +865,7 @@ Future<Engine> createEngineWithBundle(
   EngineBundle bundle, {
   ToolCallReader toolCallsOf = nativeToolCalls,
   LiteRtLmLogLevel? nativeLevel,
+  GpuActivationDecision? gpuActivation,
 }) {
   if (bundle.path != config.modelPath) {
     throw ArgumentError.value(
@@ -860,8 +877,14 @@ Future<Engine> createEngineWithBundle(
   // The caller's level for this engine, else the one LiteRtLmLog set.
   final level = nativeLevel ?? liteRtLmNativeLogLevel;
   return Engine._oneCreateAtATime(
-    () =>
-        Engine._create(config, _host, level, bundle, toolCallsOf: toolCallsOf),
+    () => Engine._create(
+      config,
+      _host,
+      level,
+      bundle,
+      toolCallsOf: toolCallsOf,
+      gpuActivation: gpuActivation,
+    ),
   );
 }
 

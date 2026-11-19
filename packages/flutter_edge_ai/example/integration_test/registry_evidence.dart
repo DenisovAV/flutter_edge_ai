@@ -173,7 +173,11 @@ void _printEvidence(
 /// null on Android when the system properties cannot be read.
 final bool? _isSimulator = () {
   if (Platform.isIOS) {
-    return Platform.environment.containsKey('SIMULATOR_DEVICE_NAME');
+    // The iOS 27.1 simulator sets no SIMULATOR_* variable in the app's
+    // environment (measured 2026-11-19), but its executable still lives
+    // under CoreSimulator/Devices.
+    return Platform.environment.containsKey('SIMULATOR_DEVICE_NAME') ||
+        Platform.resolvedExecutable.contains('/CoreSimulator/Devices/');
   }
   if (!Platform.isAndroid) return false;
   return looksLikeAndroidEmulator(

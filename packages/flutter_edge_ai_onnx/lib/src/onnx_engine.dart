@@ -23,8 +23,8 @@ import 'onnx_inference_model.dart';
 /// go/no-go the gate waited on. iOS arm64 (device + Apple-Silicon simulator,
 /// same `Abi.iosArm64`) is wired and verified: the app builds, signs,
 /// installs and launches on a real iPhone, and generation runs — the
-/// `@executable_path`-anchored dlopen resolves both `Oga*` and `OrtGetApiBase`
-/// from the single self-contained genai xcframework, `OgaCreateModel` +
+/// `@executable_path`-anchored dlopen resolves `Oga*` from the genai
+/// xcframework (whose own ORT is private), `OgaCreateModel` +
 /// streamed generation succeed. Windows ARM64 also passed generation,
 /// embeddings, and an example build on a Windows 11 ARM64 runner (Azure
 /// Cobalt 100). See `hook/build.dart`'s platform table.

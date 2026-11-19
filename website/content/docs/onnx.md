@@ -42,9 +42,11 @@ and the example build were verified on a GitHub-hosted Windows 11 ARM64 runner
 > take over. Android needs **`minSdk 24`** (both ORT and ORT-GenAI AARs declare
 > `minSdkVersion=24`). The native library co-location — ORT loaded next to
 > ORT-GenAI — is handled for you: the build hook bundles the two libraries side
-> by side (on iOS it is one self-contained framework with ORT linked in), and
-> on macOS and Linux the package points ORT-GenAI at the bundled ORT at run
-> time. You don't configure anything.
+> by side (on iOS ORT-GenAI's framework keeps its own ORT private, and
+> embeddings use a separate `onnxruntime.framework`), and on macOS and Linux
+> the package points ORT-GenAI at the bundled ORT at run time. You don't
+> configure anything. On iOS the package needs a **15.1** deployment target:
+> Microsoft compiles ONNX Runtime for iOS 15.1.
 
 ## Setup
 

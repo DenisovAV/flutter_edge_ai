@@ -145,7 +145,9 @@ package minimum. The source constraint is `llamadart: ^0.20.1`. The local
 macOS arm64 checks used SDK **0.20.1**, Apple companion **0.20.1**
 (native **v1.0.0-2**), and Web bridge **v0.1.86**. The packaged macOS CPU chat smoke passed three lifecycle cycles. EmbeddingGemma 2
 passed on macOS CPU and Metal, and Chrome on macOS passed the dart2wasm WebGPU
-structured-output test.
+structured-output test. The Android 16 Pixel 9 Pro emulator completed three CPU chat
+cycles, selected CPU for automatic EmbeddingGemma 2 placement, and refused an
+explicit GPU embedding request.
 The Linux, Windows and minimum-SDK source checks run in GGUF source qualification.
 
 The example pins the Apple companion exactly. Its published dependency permits

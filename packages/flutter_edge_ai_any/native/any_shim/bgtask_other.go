@@ -10,3 +10,6 @@ func beginBackgroundTask(string) (end func()) { return func() {} }
 
 // backgroundTimeRemaining: only iOS bounds a suspend's time.
 func backgroundTimeRemaining() (time.Duration, bool) { return 0, false }
+
+// observeBackground: only iOS reports a background deadline.
+func observeBackground() {}

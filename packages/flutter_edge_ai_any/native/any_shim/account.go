@@ -149,9 +149,11 @@ type dirClaim struct {
 	token   string
 	holder  string // what holds it, for messages
 	closing atomic.Bool
-	// poisoned: the holder's close failed with the SDK or the database
+	// poisoned: the holder's close panicked with the SDK or the database
 	// possibly still open; the claim stays for the life of the process.
-	poisoned atomic.Bool
+	// poisonedBy is that panic, quoted in every refusal.
+	poisoned   atomic.Bool
+	poisonedBy atomic.Pointer[error]
 }
 
 var claims = struct {
@@ -184,7 +186,11 @@ func claim(token, holder string, keys ...string) ([]*dirClaim, error) {
 		what := strings.SplitN(k, ":", 2)
 		switch {
 		case c.poisoned.Load():
-			return nil, withCode(codeRefused, "%s %s: the previous instance failed to close; restart the app", what[0], what[1])
+			cause := "unknown"
+			if p := c.poisonedBy.Load(); p != nil {
+				cause = (*p).Error()
+			}
+			return nil, withCode(codeRefused, "%s %s: the previous instance failed to close; restart the app (cause: %s)", what[0], what[1], cause)
 		case c.closing.Load():
 			return nil, withCode(codeBusy, "%s %s is still closing (held by %s); retry", what[0], what[1], c.holder)
 		case c.token != token:
@@ -210,8 +216,9 @@ func markClosing(cs []*dirClaim) {
 
 // poison keeps the claims, refusing every later open of their
 // directories in this process (see dirClaim.poisoned).
-func poison(cs []*dirClaim) {
+func poison(cs []*dirClaim, cause error) {
 	for _, c := range cs {
+		c.poisonedBy.Store(&cause)
 		c.poisoned.Store(true)
 	}
 }
@@ -268,6 +275,7 @@ func prepareAccount(optsJSON string) (_ *pendingAccount, err error) {
 	if err := checkNetwork(o.NodeConfYAML); err != nil {
 		return nil, err
 	}
+	observeBackground()
 	dev, err := hex.DecodeString(o.DeviceKeyHex)
 	if err != nil || len(dev) == 0 {
 		return nil, invalid("deviceKeyHex must be the hex of a device key (any_shim_new_device_key)")
@@ -323,15 +331,26 @@ func (p *pendingAccount) open(opCtx context.Context) (_ *account, err error) {
 	// A success flag, not err: a panic (recovered by the op) leaves err
 	// nil and must release too, after closing an SDK it opened.
 	opened := false
+	// openCalled/openReturned: a panic inside the SDK's Open may leave
+	// files and goroutines of a half-open SDK behind, so the directory is
+	// poisoned (never a second writer), not released.
+	openCalled, openReturned := false, false
 	var sdk *anysyncsdk.SDK
 	defer func() {
 		if opened {
 			return
 		}
+		if openCalled && !openReturned {
+			poison(p.claims, errors.New("the SDK open panicked"))
+			return
+		}
 		if sdk != nil {
-			if closeSDK(sdk) != nil {
-				poison(p.claims) // possibly still open: no second writer
-				return
+			if cerr := closeSDK(sdk); cerr != nil {
+				err = errors.Join(err, cerr)
+				if codeOf(cerr) == codePanic {
+					poison(p.claims, cerr) // possibly still open: no second writer
+					return
+				}
 			}
 		}
 		p.release()
@@ -372,7 +391,9 @@ func (p *pendingAccount) open(opCtx context.Context) (_ *account, err error) {
 	// open only while it runs.
 	ctx, cancel := context.WithCancel(context.Background())
 	stop := context.AfterFunc(opCtx, cancel)
+	openCalled = true
 	s, err := openSDKHook(ctx, cfg, prov)
+	openReturned = true
 	cancelledByOp := !stop()
 	if err != nil {
 		cancel()
@@ -487,7 +508,7 @@ const maxWaitLoads = 25 * time.Second
 // The order is held by defers, so a panic anywhere cannot reorder it:
 // the body's panic is recovered first, then the SDK closes, then the
 // background task ends, then the lock and the claims go. If the SDK close
-// itself failed or panicked, the claims are poisoned and the lock kept:
+// itself panicked, the claims are poisoned and the lock kept:
 // a later open of the directory is refused rather than becoming a second
 // writer next to a half-closed SDK.
 // Runs once; later callers wait for the first and get its result.
@@ -496,10 +517,10 @@ func (a *account) finishClose(ctx context.Context, waitLoads time.Duration) erro
 		defer close(a.closeDone)
 		var errs []error
 		defer func() { a.closeErr = errors.Join(errs...) }()
-		sdkFailed := false
+		var sdkPanic error
 		defer func() {
-			if sdkFailed {
-				poison(a.claims)
+			if sdkPanic != nil {
+				poison(a.claims, sdkPanic)
 				return
 			}
 			errs = append(errs, unlockFile(a.lock))
@@ -511,8 +532,20 @@ func (a *account) finishClose(ctx context.Context, waitLoads time.Duration) erro
 			}
 		}()
 		defer func() {
+			// Cancel first (the body may have panicked before it did) and
+			// hold the call lock, so no call runs under the closing SDK.
+			// The body's own hold of it has ended by now (its defer runs
+			// first); closed is set, so no call takes it again.
+			a.cancel()
+			a.ops.Lock()
+			defer a.ops.Unlock()
+			// The SDK closes everything even when Close returns an error:
+			// an error is reported and the lock released; only a panic
+			// (the close stopped half way) poisons the directory.
 			if err := callRecovered("SDK close", func() error { return closeSDKHook(a.sdk) }); err != nil {
-				sdkFailed = true
+				if codeOf(err) == codePanic {
+					sdkPanic = err
+				}
 				errs = append(errs, err)
 			}
 		}()
@@ -529,7 +562,11 @@ func (a *account) finishClose(ctx context.Context, waitLoads time.Duration) erro
 		// A load that ignores its cancel gets 10 s after the cancel; 2 s
 		// when a load wait already ran.
 		after := 10 * time.Second
-		if waitLoads = boundLoadWait(waitLoads); waitLoads > 0 {
+		var iosBound bool
+		if waitLoads, iosBound = boundLoadWait(waitLoads); iosBound {
+			after = 2 * time.Second
+		}
+		if waitLoads > 0 {
 			t := time.NewTimer(waitLoads)
 			select {
 			case <-loadsDone:
@@ -564,14 +601,16 @@ func (a *account) finishClose(ctx context.Context, waitLoads time.Duration) erro
 	return a.closeErr
 }
 
-// boundLoadWait clamps a suspend's load wait to 0..25 s and, on iOS, to
-// the background time left minus 5 s.
-func boundLoadWait(d time.Duration) time.Duration {
+// boundLoadWait clamps a suspend's load wait to 0..25 s and, on iOS in
+// the background, to the background time left minus 5 s (bounded
+// reports that iOS bounded it: the follow-up wait is then 2 s at most).
+func boundLoadWait(d time.Duration) (_ time.Duration, bounded bool) {
 	d = max(0, min(d, maxWaitLoads))
 	if left, ok := backgroundTimeRemaining(); ok {
 		d = max(0, min(d, left-5*time.Second))
+		bounded = true
 	}
-	return d
+	return d, bounded
 }
 
 // closeSDKHook is closeSDK; a test replaces it to make the close panic.
@@ -722,9 +761,10 @@ func accountOpenStart(optsJSON string) (uint64, error) {
 }
 
 // releaseUndeliveredOpens closes accounts that a finished open op holds
-// for directories this open names, under another owner token: the
-// previous generation of a hot restart opened them and died before it
-// took the result, so nobody ever will. The new open then sees the
+// for directories this open names, under another owner token, when the
+// op is abandoned: it finished more than 5 s ago and nobody has called
+// op_wait on it since (the previous generation of a hot restart opened
+// them and died before it took the result, so nobody ever will). The new open then sees the
 // directories closing (BUSY) and its retry gets in.
 func releaseUndeliveredOpens(optsJSON string) {
 	var o struct {
@@ -746,7 +786,7 @@ func releaseUndeliveredOpens(optsJSON string) {
 	handles.mu.Lock()
 	for h, v := range handles.m {
 		o2, ok := v.(*op)
-		if !ok || o2.discard == nil || o2.finished.Load() == 0 || o2.err != nil {
+		if !ok || o2.discard == nil || !o2.abandoned() || o2.err != nil {
 			continue
 		}
 		m, _ := o2.result.(map[string]any)

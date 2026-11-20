@@ -216,8 +216,8 @@ func TestFailedSDKClosePoisonsClaim(t *testing.T) {
 		c := cfg
 		c.token = tok
 		_, err := accountOpenStart(acctOpts(t, c))
-		if codeOf(err) != codeRefused || !strings.Contains(err.Error(), "failed to close") {
-			t.Fatalf("token %s: %v, want REFUSED failed to close", tok, err)
+		if codeOf(err) != codeRefused || !strings.Contains(err.Error(), "failed to close") || !strings.Contains(err.Error(), "simulated close panic") {
+			t.Fatalf("token %s: %v, want REFUSED failed to close with the cause", tok, err)
 		}
 	}
 	if _, err := lockFile(filepath.Join(cfg.base, "data", dataDirLockName)); codeOf(err) != codeBusy {
@@ -233,18 +233,64 @@ func TestFailedIndexClosePoisonsClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	orig := closeDBHook
-	closeDBHook = func(db anystore.DB) error { _ = db.Close(); return errors.New("simulated close failure") }
+	closeDBHook = func(db anystore.DB) error { _ = db.Close(); panic("simulated db close panic") }
 	defer func() { closeDBHook = orig }()
-	if err := x.close(); err == nil {
-		t.Fatal("close reported no error")
+	if err := x.close(); codeOf(err) != codePanic {
+		t.Fatalf("close: %v", err)
 	}
-	if _, err := openIndex(idxOpts(path, "", "t2")); codeOf(err) != codeRefused || !strings.Contains(err.Error(), "failed to close") {
-		t.Fatalf("reopen: %v", err)
+	_, err = openIndex(idxOpts(path, "", "t2"))
+	if codeOf(err) != codeRefused || !strings.Contains(err.Error(), "failed to close") || !strings.Contains(err.Error(), "simulated db close panic") {
+		t.Fatalf("reopen: %v, want REFUSED with the cause", err)
 	}
 }
 
-// G-R2: a panic inside the open op releases the claims and the lock.
-func TestOpenPanicReleases(t *testing.T) {
+// G3-1: a database close that returns an error (any-store closed all it
+// could) reports it and releases the path.
+func TestIndexCloseErrorReleases(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "index.anystore")
+	x, err := openIndex(idxOpts(path, "", "t"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := closeDBHook
+	closeDBHook = func(db anystore.DB) error { _ = db.Close(); return errors.New("simulated close error") }
+	if err := x.close(); err == nil || !strings.Contains(err.Error(), "simulated close error") {
+		closeDBHook = orig
+		t.Fatalf("close: %v, want the error reported", err)
+	}
+	closeDBHook = orig
+	y, err := openIndex(idxOpts(path, "", "t2"))
+	if err != nil {
+		t.Fatalf("reopen after a close error: %v", err)
+	}
+	y.close()
+}
+
+// G3-1: an SDK close that returns an error reports it and releases the
+// directory.
+func TestSDKCloseErrorReleases(t *testing.T) {
+	cfg := acctCfg{base: t.TempDir(), mnemonic: newMnemonic(t), nodeConf: deadNodeConf(t), token: "e1"}
+	a, err := openAccount(acctOpts(t, cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := closeSDKHook
+	closeSDKHook = func(s *anysyncsdk.SDK) error { _ = closeSDK(s); return errors.New("simulated SDK close error") }
+	err = a.closeNow()
+	closeSDKHook = orig
+	if err == nil || !strings.Contains(err.Error(), "simulated SDK close error") {
+		t.Fatalf("close: %v", err)
+	}
+	if claimHeld(cfg.base) {
+		t.Fatal("claims kept after a close that returned an error")
+	}
+	cfg.token = "e2"
+	openAt(t, cfg)
+}
+
+// G-R2, G3-2: a panic inside the SDK's open poisons the directory (the SDK
+// may have opened files and goroutines); a panic before it releases.
+func TestOpenPanicPoisons(t *testing.T) {
 	cfg := acctCfg{base: t.TempDir(), mnemonic: newMnemonic(t), nodeConf: deadNodeConf(t)}
 	orig := openSDKHook
 	openSDKHook = func(context.Context, config.Config, auth.Provider) (*anysyncsdk.SDK, error) {
@@ -260,16 +306,18 @@ func TestOpenPanicReleases(t *testing.T) {
 	if codeOf(err) != codePanic {
 		t.Fatalf("open op: %v", err)
 	}
-	if claimHeld(cfg.base) {
-		t.Fatal("claims left after a panicking open")
+	if _, err := accountOpenStart(acctOpts(t, cfg)); codeOf(err) != codeRefused || !strings.Contains(err.Error(), "open panicked") {
+		t.Fatalf("reopen after a panicking SDK open: %v, want REFUSED", err)
 	}
-	openAt(t, cfg) // the directory opens again
 }
 
 // G-R3: op_cancel of the close op cuts the load wait short; the wait is
 // clamped.
 func TestCloseWaitCutByCancel(t *testing.T) {
-	if boundLoadWait(time.Hour) != maxWaitLoads || boundLoadWait(-time.Second) != 0 {
+	if d, _ := boundLoadWait(time.Hour); d != maxWaitLoads {
+		t.Fatal("boundLoadWait does not clamp")
+	}
+	if d, _ := boundLoadWait(-time.Second); d != 0 {
 		t.Fatal("boundLoadWait does not clamp")
 	}
 	a, err := openAccount(acctOpts(t, acctCfg{base: t.TempDir(), mnemonic: newMnemonic(t), nodeConf: deadNodeConf(t)}))
@@ -489,26 +537,28 @@ func TestIndexGcBounded(t *testing.T) {
 	if x.orphanCount() != 1 {
 		t.Fatalf("orphans %v", x.orphans)
 	}
+	// Bounded by rows per call, not wall time (the race detector and a
+	// loaded machine stretch the time, not the rule): a 20 ms call never
+	// drops the whole 3000-row generation.
 	calls := 0
 	for {
-		start := time.Now()
-		done, err := x.gc(0)
+		done, st, err := x.gcWithStats(20 * time.Millisecond)
 		if err != nil {
 			t.Fatal(err)
 		}
 		calls++
-		if took := time.Since(start); took > 250*time.Millisecond {
-			t.Fatalf("gc(0) took %v", took)
+		if st.rows >= 3000 {
+			t.Fatalf("one gc(20 ms) call deleted %d rows: not bounded", st.rows)
 		}
 		if done {
 			break
 		}
-		if calls > 1000 {
+		if calls > 5000 {
 			t.Fatal("gc never finished")
 		}
 	}
-	if calls < 3 {
-		t.Fatalf("gc(0) did 3000 rows in %d calls: not bounded", calls)
+	if calls < 2 {
+		t.Fatalf("gc(20 ms) did 3000 rows in %d call", calls)
 	}
 	names, _ := x.db.GetCollectionNames(bg)
 	if len(names) != 3 {

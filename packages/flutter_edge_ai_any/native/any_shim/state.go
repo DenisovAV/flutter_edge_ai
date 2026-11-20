@@ -95,23 +95,14 @@ func (s *accountState) update(spaceId string, sync bool, f func(st *spaceState))
 	}
 	dirty := s.version != s.saved
 	s.mu.Unlock()
-	if !changed && sync {
-		// Nothing new, but the caller needs the flag on disk: wait for
-		// saves in flight, and save again if the disk is still behind.
-		s.wg.Wait()
-		s.mu.Lock()
-		dirty = s.version != s.saved
-		s.mu.Unlock()
-		if !dirty {
-			return nil
-		}
-		return s.save()
+	if sync {
+		// The caller needs the flag on disk, changed now or not: save if
+		// the disk is behind. Serialised with saves in flight by saveMu
+		// (no WaitGroup wait here: Add and Wait must not race).
+		return s.saveIfDirty()
 	}
 	if !dirty {
 		return nil
-	}
-	if sync {
-		return s.save()
 	}
 	s.wg.Add(1)
 	go func() {
@@ -126,6 +117,24 @@ func (s *accountState) update(spaceId string, sync bool, f func(st *spaceState))
 func (s *accountState) save() error {
 	s.saveMu.Lock()
 	defer s.saveMu.Unlock()
+	return s.saveLocked()
+}
+
+// saveIfDirty saves unless the disk already holds the current version.
+func (s *accountState) saveIfDirty() error {
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
+	s.mu.Lock()
+	dirty := s.version != s.saved
+	s.mu.Unlock()
+	if !dirty {
+		return nil
+	}
+	return s.saveLocked()
+}
+
+// saveLocked is save with saveMu held.
+func (s *accountState) saveLocked() error {
 	s.mu.Lock()
 	b, err := json.Marshal(s.doc)
 	v := s.version
@@ -155,14 +164,7 @@ func (s *accountState) saveError() error {
 // background save failed), saves again; it reports that result.
 func (s *accountState) flush() error {
 	s.wg.Wait()
-	s.mu.Lock()
-	dirty := s.version != s.saved
-	err := s.err
-	s.mu.Unlock()
-	if dirty {
-		return s.save()
-	}
-	return err
+	return s.saveIfDirty()
 }
 
 // writeFileAtomic writes path through a temp file in its directory:

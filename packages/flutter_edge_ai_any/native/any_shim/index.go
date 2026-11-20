@@ -102,6 +102,10 @@ type localIndex struct {
 	// exclWanted counts exports waiting for the exclusive lock: new
 	// shared entries back off (PENDING) so the waiter is not starved.
 	exclWanted atomic.Int32
+	// exclWantedUntil (unix nanos): after an exclusive attempt timed out,
+	// readers keep backing off this long, so the caller's retry is not
+	// starved again.
+	exclWantedUntil atomic.Int64
 
 	meta        anystore.Collection
 	active      int
@@ -465,7 +469,7 @@ func (x *localIndex) enter() (func(), error) {
 	if x.closing.Load() {
 		return nil, errClosed
 	}
-	if x.exclWanted.Load() > 0 || !x.mu.TryRLock() {
+	if x.exclWanted.Load() > 0 || time.Now().UnixNano() < x.exclWantedUntil.Load() || !x.mu.TryRLock() {
 		if x.closing.Load() {
 			return nil, errClosed
 		}
@@ -491,6 +495,10 @@ func (x *localIndex) enterExclusive() (func(), error) {
 	return x.mu.Unlock, nil
 }
 
+// exclHold: readers back off this long after an exclusive attempt timed
+// out.
+const exclHold = 500 * time.Millisecond
+
 // enterExclusiveBounded is enterExclusive for an export: it tries for at
 // most maxWait (readers hold the shared lock only briefly), then answers
 // ANY_SHIM_ERR_PENDING.
@@ -510,6 +518,7 @@ func (x *localIndex) enterExclusiveBounded() (func(), error) {
 			return x.mu.Unlock, nil
 		}
 		if time.Now().After(deadline) {
+			x.exclWantedUntil.Store(time.Now().Add(exclHold).UnixNano())
 			return nil, errIndexBusy
 		}
 		time.Sleep(time.Millisecond)
@@ -534,13 +543,14 @@ func (x *localIndex) close() (err error) {
 	defer func() { err = errors.Join(errs...) }()
 	// The order is held by defers: a panic in a collection close is
 	// recovered, then the database closes, then the lock and the claim
-	// go. A database close that failed or panicked poisons the claim and
-	// keeps the lock: the file may still be open, so it gets no second
-	// writer in this process.
-	dbFailed := false
+	// go. any-store's Close closes everything even when it returns an
+	// error: an error is reported and the lock released. A close that
+	// panicked poisons the claim and keeps the lock: the file may still be
+	// open, so it gets no second writer in this process.
+	var dbPanic error
 	defer func() {
-		if dbFailed {
-			poison(x.claims)
+		if dbPanic != nil {
+			poison(x.claims, dbPanic)
 			return
 		}
 		errs = append(errs, unlockFile(x.lock))
@@ -548,7 +558,9 @@ func (x *localIndex) close() (err error) {
 	}()
 	defer func() {
 		if err := callRecovered("database close", func() error { return closeDBHook(x.db) }); err != nil {
-			dbFailed = true
+			if codeOf(err) == codePanic {
+				dbPanic = err
+			}
 			errs = append(errs, err)
 		}
 	}()
@@ -1294,7 +1306,17 @@ func (x *localIndex) gcWithStats(budget time.Duration) (bool, gcStats, error) {
 	start := time.Now()
 	deadline := start.Add(budget)
 	slice := max(budget/2, time.Millisecond)
-	for {
+	// A step starts only with at least minGcStep left (the first always
+	// runs) and never runs past the deadline.
+	const minGcStep = 5 * time.Millisecond
+	for first := true; ; first = false {
+		left := time.Until(deadline)
+		if !first && left < minGcStep {
+			x.orphMu.Lock()
+			done := len(x.orphans) == 0
+			x.orphMu.Unlock()
+			return done, st, nil
+		}
 		x.orphMu.Lock()
 		if len(x.orphans) == 0 {
 			x.orphMu.Unlock()
@@ -1302,7 +1324,7 @@ func (x *localIndex) gcWithStats(budget time.Duration) (bool, gcStats, error) {
 		}
 		g := x.orphans[0]
 		x.orphMu.Unlock()
-		emptied, n, err := x.gcStep(g, slice)
+		emptied, n, err := x.gcStep(g, max(min(slice, left), time.Millisecond))
 		st.steps++
 		st.rows += n
 		if err != nil {

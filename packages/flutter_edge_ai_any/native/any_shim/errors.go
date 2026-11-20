@@ -64,9 +64,12 @@ func invalid(format string, args ...any) error {
 
 var errClosed = withCode(codeClosed, "handle is closed or was never issued")
 
-// anystoreFullText is any-store's "database is full" error. Its sentinel
-// (btree.ErrFull) lives in an internal package, so the text is the only
-// handle; TestAnystoreFullTextIsCurrent pins it to the any-store source.
+// anystoreFullText is any-store v2.4.3's "database is full" error
+// (btree.ErrFull, internal/btree/errors.go). Its sentinel lives in an
+// internal package, so the text is the only handle. Matching it is a
+// cheap extra: nothing tests it against a real full database, and a
+// change of the text in a later any-store goes unnoticed (the errno path
+// covers a full disk).
 const anystoreFullText = "btree: database is full"
 
 // isIOErrno reports a file-system refusal the caller can fix or retry:
@@ -89,9 +92,10 @@ func isIOErrno(err error) bool {
 	return err != nil && strings.Contains(err.Error(), anystoreFullText)
 }
 
-// storeErr classifies a failure of the local index's database: a file
-// system refusal is ERR_IO, a damaged file ERR_CORRUPT, an error that
-// already carries a code keeps it, the rest INTERNAL.
+// storeErr classifies a failure of the local index's database: an error
+// that already carries a code keeps it; a file-system refusal (errno, as
+// isIOErrno) is ERR_IO; anystore.ErrCorrupt is ERR_CORRUPT; the rest
+// INTERNAL.
 func storeErr(err error) error {
 	if err == nil {
 		return nil

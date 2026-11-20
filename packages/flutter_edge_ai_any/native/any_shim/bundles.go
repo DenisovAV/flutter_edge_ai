@@ -130,7 +130,12 @@ func readBundleIds(ctx context.Context, sp space.Space, req space.EnsureBundleRe
 		defs := byX[d.XKey]
 		if len(defs) == 0 {
 			// The root has definitions, but not this one: it was removed
-			// (RemoveProperty), not "not synced yet".
+			// (RemoveProperty), not "not synced yet". Safe because a
+			// bundle's definitions arrive together: any-sync-sdk v0.7.4
+			// declares every missing one in ONE change (one localWrite of
+			// all records, internal/spaceimpl/bundles.go declareProperties,
+			// line 412, the write at line 457), so a device never holds
+			// some of them without the others. TestRagBundlesRemovedPropertyRefused.
 			return out, withCode(codeRefused, "bundle %s: property %q is declared by this build but missing from the root's definitions (removed)", req.Id, d.XKey)
 		}
 		// Two of one XKey only through AddProperty on another device;

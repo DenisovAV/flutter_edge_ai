@@ -38,6 +38,7 @@ type op struct {
 	result   any
 	err      error
 	finished atomic.Int64 // unix nanos when f returned; 0 while running
+	lastWait atomic.Int64 // unix nanos of the last op_wait on it
 
 	// discard frees what an undelivered result holds (an opened account):
 	// run once when the op is cancelled, dropped unread, or dropped with
@@ -68,6 +69,16 @@ func (o *op) abandon() {
 		o.runDiscard()
 	default: // the goroutine runs discard when f returns
 	}
+}
+
+// abandonedAfter: an open op counts as abandoned (its account released
+// for the next generation) only when it finished this long ago and
+// nobody has waited on it since.
+const abandonedAfter = 5 * time.Second
+
+func (o *op) abandoned() bool {
+	f := o.finished.Load()
+	return f != 0 && time.Since(time.Unix(0, f)) > abandonedAfter && o.lastWait.Load() < f
 }
 
 // staleOpAge: a finished op nobody waited for is dropped (and its result
@@ -133,6 +144,8 @@ func waitOp(h uint64, d time.Duration) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	o.lastWait.Store(time.Now().UnixNano())
+	defer func() { o.lastWait.Store(time.Now().UnixNano()) }()
 	if d > 0 {
 		t := time.NewTimer(d)
 		select {

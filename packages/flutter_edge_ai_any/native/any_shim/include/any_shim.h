@@ -146,10 +146,17 @@ any_shim_status any_shim_op_cancel(uint64_t op, char **out_error);
  *                    ANY_SHIM_ERR_BUSY at once; the caller retries. Held
  *                    by the same token (already open in this isolate
  *                    group): ANY_SHIM_ERR_REFUSED. A directory whose
- *                    previous instance failed to close (its SDK close
- *                    failed or panicked): ANY_SHIM_ERR_REFUSED "the
- *                    previous instance failed to close; restart the app",
- *                    for the life of the process (never a second writer).
+ *                    previous instance's SDK close (or open) panicked:
+ *                    ANY_SHIM_ERR_REFUSED "the previous instance failed
+ *                    to close; restart the app (cause: …)", for the life
+ *                    of the process (never a second writer). A close that
+ *                    returned an error still released the directory.
+ *                    An account a finished open op holds for these
+ *                    directories under another token, which nobody has
+ *                    op_waited on since it finished more than 5 s ago (a
+ *                    dead hot-restart generation), is closed by this
+ *                    start (which answers ANY_SHIM_ERR_BUSY until the
+ *                    close is done).
  *   mnemonic         string, required
  *   accountIndex     uint, optional
  *   deviceKeyHex     string, required
@@ -403,12 +410,15 @@ any_shim_status any_shim_file_read_start(uint64_t account, char *space_id,
  * Takes flock/LockFileEx on <path>.shimlock; held by another process:
  * ANY_SHIM_ERR_BUSY. The same path open under another ownerToken, or
  * closing: ANY_SHIM_ERR_BUSY; under the same token: ANY_SHIM_ERR_REFUSED;
- * after a close whose database close failed: ANY_SHIM_ERR_REFUSED "the
- * previous instance failed to close" (as for accounts).
+ * after a close whose database close panicked: ANY_SHIM_ERR_REFUSED "the
+ * previous instance failed to close" with its cause (as for accounts; a
+ * close that returned an error still released the path).
  * Index calls never wait behind a bind or a generation swap: while one
  * holds the index exclusively, the other index calls (apply, get, scan,
- * count, knn, text, flush, gc, info, bind_start) return
- * ANY_SHIM_ERR_PENDING ("index busy") at once; retry in slices.
+ * count, count_vectors, knn, text, flush, gc, info, bind_start) return
+ * ANY_SHIM_ERR_PENDING ("index busy") at once; retry in slices. An apply
+ * with shadowBegin or shadowSwap itself waits up to 250 ms for the
+ * exclusive lock, then returns ANY_SHIM_ERR_PENDING.
  * Orphan generation collections (an unswapped shadow included) are only
  * recorded; any_shim_index_gc drops them. */
 any_shim_status any_shim_index_open(char *opts_json, uint64_t *out_index,

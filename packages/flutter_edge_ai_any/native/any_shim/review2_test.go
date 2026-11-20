@@ -45,6 +45,15 @@ func TestIndexCallsPendingWhileExclusive(t *testing.T) {
 	}
 	handles.remove(h)
 	x.mu.Unlock()
+	// G3-6: after the timed-out swap, readers keep backing off for
+	// exclHold so the swap's retry gets the lock; then they go on.
+	if _, err := x.enter(); codeOf(err) != codePending {
+		t.Fatalf("reader right after a timed-out swap: %v, want PENDING", err)
+	}
+	if _, err := applyJSON(x, map[string]any{"ops": []any{map[string]any{"op": "shadowBegin"}}}, nil); err != nil {
+		t.Fatalf("the swap's retry: %v", err)
+	}
+	time.Sleep(exclHold)
 	if _, err := applyJSON(x, map[string]any{"ops": []any{map[string]any{"op": "upsert", "coll": "docs", "id": "a"}}}, nil); err != nil {
 		t.Fatalf("after the lock: %v", err)
 	}
@@ -181,6 +190,26 @@ func TestUndeliveredOpenReleased(t *testing.T) {
 	}
 	o, _ := lookup[*op](oh, "an op")
 	<-o.done
+	// Finished just now: not abandoned yet, whatever the token.
+	other := cfg
+	other.token = "new"
+	if _, err := accountOpenStart(acctOpts(t, other)); codeOf(err) != codeBusy {
+		t.Fatalf("a fresh undelivered open: %v, want BUSY", err)
+	}
+	if _, err := lookup[*op](oh, "an op"); err != nil {
+		t.Fatal("a fresh undelivered open was released")
+	}
+	// Finished 6 s ago, but waited on since: still not abandoned.
+	o.finished.Store(time.Now().Add(-6 * time.Second).UnixNano())
+	o.lastWait.Store(time.Now().UnixNano())
+	if _, err := accountOpenStart(acctOpts(t, other)); codeOf(err) != codeBusy {
+		t.Fatalf("a waited-on open: %v", err)
+	}
+	if _, err := lookup[*op](oh, "an op"); err != nil {
+		t.Fatal("an open someone waited on was released")
+	}
+	// Finished 6 s ago and nobody waited since: abandoned.
+	o.lastWait.Store(0)
 	same := cfg
 	if _, err := accountOpenStart(acctOpts(t, same)); codeOf(err) != codeRefused {
 		t.Fatalf("same token: %v", err)
@@ -214,4 +243,38 @@ func TestUndeliveredOpenReleased(t *testing.T) {
 	waitOpDone(t, c, 30*time.Second)
 	_ = json.Marshal
 	_ = context.Background
+}
+
+// G3-4: sync and background updates race freely (no WaitGroup Wait
+// against Add); the last state is on disk after a flush.
+func TestStateUpdatesConcurrently(t *testing.T) {
+	dir := t.TempDir()
+	st, err := loadAccountState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	for g := 0; g < 4; g++ {
+		go func(g int) {
+			defer func() { done <- struct{}{} }()
+			for i := 0; i < 50; i++ {
+				id := fmt.Sprintf("s%d-%d", g, i)
+				_ = st.update(id, i%2 == 0, func(s *spaceState) { s.EverPeerSynced = true })
+				_ = st.update(id, true, func(s *spaceState) { s.EverPeerSynced = true }) // nothing new
+			}
+		}(g)
+	}
+	for g := 0; g < 4; g++ {
+		<-done
+	}
+	if err := st.flush(); err != nil {
+		t.Fatal(err)
+	}
+	re, err := loadAccountState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(re.doc.Spaces) != 200 {
+		t.Fatalf("%d spaces on disk, want 200", len(re.doc.Spaces))
+	}
 }

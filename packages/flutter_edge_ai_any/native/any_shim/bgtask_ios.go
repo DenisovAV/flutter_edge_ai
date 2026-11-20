@@ -65,15 +65,37 @@ static any_shim_bg *any_shim_bg_begin(const char *name) {
 	}
 }
 
-// Seconds of background time left, or < 0 when unknown (no
-// UIApplication). In the foreground UIKit answers DBL_MAX.
+// When the app's background time runs out (CFAbsoluteTime), or < 0 when
+// unknown or in the foreground. Read on the main thread by the
+// notification observers (UIKit is main-thread only), stored atomically;
+// the close reads it from any thread without ever waiting for main.
+static _Atomic double any_shim_bg_deadline = -1;
+
+static void any_shim_bg_observe(void) {
+	static dispatch_once_t once;
+	dispatch_once(&once, ^{
+		NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+		[nc addObserverForName:@"UIApplicationDidEnterBackgroundNotification" object:nil
+		                 queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+			id app = any_shim_app();
+			SEL sel = sel_registerName("backgroundTimeRemaining");
+			if (app == nil || ![app respondsToSelector:sel]) return;
+			double r = ((double (*)(id, SEL))objc_msgSend)(app, sel);
+			if (r >= 0 && r < 1e6) atomic_store(&any_shim_bg_deadline, CFAbsoluteTimeGetCurrent() + r);
+		}];
+		[nc addObserverForName:@"UIApplicationWillEnterForegroundNotification" object:nil
+		                 queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+			atomic_store(&any_shim_bg_deadline, -1);
+		}];
+	});
+}
+
+// Seconds of background time left, or < 0 when unknown.
 static double any_shim_bg_remaining(void) {
-	@autoreleasepool {
-		id app = any_shim_app();
-		SEL sel = sel_registerName("backgroundTimeRemaining");
-		if (app == nil || ![app respondsToSelector:sel]) return -1;
-		return ((double (*)(id, SEL))objc_msgSend)(app, sel);
-	}
+	double d = atomic_load(&any_shim_bg_deadline);
+	if (d < 0) return -1;
+	double r = d - CFAbsoluteTimeGetCurrent();
+	return r < 0 ? 0 : r;
 }
 */
 import "C"
@@ -93,12 +115,17 @@ func beginBackgroundTask(name string) (end func()) {
 	return func() { C.any_shim_bg_finish(b) }
 }
 
-// backgroundTimeRemaining is UIApplication.backgroundTimeRemaining; ok is
-// false without a UIApplication or in the foreground (unbounded).
+// backgroundTimeRemaining is the background time left, from the value
+// UIKit reported (on the main thread) when the app entered the
+// background; ok is false in the foreground or before that report.
 func backgroundTimeRemaining() (time.Duration, bool) {
 	r := float64(C.any_shim_bg_remaining())
-	if r < 0 || r > 1e6 {
+	if r < 0 {
 		return 0, false
 	}
 	return time.Duration(r * float64(time.Second)), true
 }
+
+// observeBackground registers the observers that keep the background
+// deadline (once per process).
+func observeBackground() { C.any_shim_bg_observe() }

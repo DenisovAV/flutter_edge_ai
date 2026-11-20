@@ -96,6 +96,24 @@ void main() {
       expect(await _ids(index, 'cat dog'), unorderedEquals(['a', 'b', 'c']));
     });
 
+    test('punctuation splits words', () async {
+      final index = await _open(_tempLocation('qt_punct'));
+      await _add(index, 'a', 'hello, world');
+      expect(await _ids(index, 'hello'), ['a']);
+      expect(await _ids(index, 'world'), ['a']);
+    });
+
+    test('equal scores are ordered by id', () async {
+      final index = await _open(_tempLocation('qt_ties'));
+      final ids = ['d3', 'a1', 'f6', 'b2', 'e5', 'c4'];
+      for (final id in ids) {
+        await _add(index, id, 'same words');
+      }
+      expect(await _ids(index, 'same'), [...ids]..sort());
+      // Tied at the topK cut: the members are picked by id too, as in sqlite.
+      expect(await _ids(index, 'same', topK: 3), ([...ids]..sort()).take(3));
+    });
+
     test('topK caps the result', () async {
       final index = await _open(_tempLocation('qt_topk'));
       for (var i = 0; i < 5; i++) {

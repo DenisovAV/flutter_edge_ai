@@ -897,9 +897,10 @@ to Qdrant.
 
 A text index ranks documents by the words they contain, which finds names,
 codes and rare terms an embedding can miss. Open a text location with
-**enableTextSearch: true**; SQLite supports it with FTS5 on all six platforms,
-and a provider without text search (qdrant) fails the open instead of falling
-back to vector-only search:
+**enableTextSearch: true**; SQLite supports it with FTS5 on all six platforms
+and qdrant with its own BM25 index from `flutter_edge_ai_qdrant` 2.2.0, and a
+provider without text search fails the open instead of falling back to
+vector-only search:
 
 ```dart
 final index = await rag.open(

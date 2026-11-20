@@ -23,6 +23,7 @@ import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:qdrant_edge/qdrant_edge.dart' as qe;
 
 const _fixture = 'test/fixtures/v2_0_1/text_store.tar.gz';
 final _profile = EmbeddingProfile(id: 'fixture-text-v1', dimension: 4);
@@ -98,6 +99,16 @@ void main() {
 
     await expectUnchanged(location);
     expect(Directory(p.join(location, _bindingRecord)).existsSync(), isFalse);
+
+    // segments/ and wal/ are not compared, so check the one thing this
+    // package could still write into them: no open without enableTextSearch
+    // may give the shard a payload index.
+    final shard = qe.EdgeShard.load(
+      path: p.join(location, 'qdrant_edge_v1'),
+      config: null,
+    );
+    addTearDown(shard.unload);
+    expect(shard.info().payloadSchema, isEmpty);
   });
 
   test('refuses to reopen it for images or another profile', () async {

@@ -74,4 +74,33 @@ void main() {
       await index.dispose();
     }
   });
+
+  test(
+    'writes the qdrant stores the published release reads and writes',
+    () async {
+      final root = requireEnv('RAG_COMPAT_STORES');
+      final rag = FlutterEdgeAiRag(
+        providers: const [QdrantVectorStoreProvider()],
+      );
+      for (final name in qdrantDowngradeStores) {
+        final index = await rag.openVectors(
+          spec: VectorStoreSpec(
+            providerId: 'qdrant',
+            location: qdrantDowngradeLocation(root, name),
+            enableTextSearch: true,
+          ),
+          profile: compatProfile,
+        );
+        for (final (id, content, vector) in compatDocuments) {
+          await index.addVector(id: id, content: content, embedding: vector);
+        }
+        await index.flush();
+        expect(
+          [for (final h in await index.searchText(text: 'alpha')) h.id],
+          ['doc-a'],
+        );
+        await index.dispose();
+      }
+    },
+  );
 }

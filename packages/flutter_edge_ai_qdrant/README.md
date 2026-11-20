@@ -146,6 +146,10 @@ refuses; if a schema must work on both, keep it inside sqlite's narrower set.
 - Distance defaults to cosine.
 - Every location is durably bound to one `EmbeddingProfile` and one document
   modality.
+- **The move to `qdrant_edge` 0.9 is one-way.** Once this version has written
+  to a store, do not go back to 2.1.1 or earlier and write to it: both
+  versions then fail to read the shard. Reading it with the older version is
+  safe.
 
 ## Text search (BM25)
 
@@ -155,9 +159,14 @@ the document `content`, so `RagIndex.searchText` ranks documents by BM25 and
 [flutter_edge_ai_rag README](https://pub.dev/packages/flutter_edge_ai_rag#text-and-hybrid-search)).
 The index and the ranking are qdrant's own; nothing is computed in Dart.
 
-- Words split on Unicode word boundaries, case- and diacritic-insensitive
-  (`café` = `cafe`), no stemming. The query matches documents with any of its
-  words; quotes and operators in it are plain text.
+- Text splits at every character that is not a letter or digit, so `don't`
+  is `don` and `t`, and `2024-117` is `2024` and `117`. Terms are lowercased,
+  Latin letters are folded to ASCII (`café` = `cafe`, `ß` = `ss`), and there
+  is no stemming.
+- The query matches documents with any of its terms; quotes and operators in
+  it are plain text. This differs from the SQLite store, which matches each
+  whitespace-separated chunk of the query as a phrase (`2024-117` only where
+  the two terms are adjacent).
 - `relevanceScore` is the BM25 score: higher is better, comparable within one
   search only.
 - The index lives in the shard, so the engine updates it with every write and

@@ -87,6 +87,12 @@ class QdrantEdgeClient {
   final qe.EdgeShard _shard;
   bool _closed = false;
 
+  /// Fields [hasTextIndex] has seen indexed or [createTextIndex] indexed.
+  /// Nothing this package does removes an index, so a positive answer stays
+  /// true for the client's lifetime and spares [searchText] an `info()` call,
+  /// which walks every segment.
+  final _textIndexedFields = <String>{};
+
   QdrantEdgeClient._(this._shard);
 
   /// Open (or create) a shard on disk.
@@ -141,7 +147,13 @@ class QdrantEdgeClient {
     // looking for `edge_config.json` and parsing it. That guess reported a full
     // corpus as an empty store, because the engine reads a shard whose config
     // file is missing perfectly well. The heuristic is gone; the SDK is asked.
-    if (!Directory(path).existsSync()) return null;
+    try {
+      if (!Directory(path).existsSync()) return null;
+    } on FileSystemException catch (e) {
+      // Not total: dart:io throws when the path cannot be inspected, and that
+      // must reach the caller as this package's type, not escape unwrapped.
+      throw QdrantException('Cannot inspect $path: $e');
+    }
     final qe.EdgeShard shard;
     try {
       shard = qe.EdgeShard.load(path: path, config: null);
@@ -277,10 +289,13 @@ class QdrantEdgeClient {
   /// [searchText] needs the document lengths only a ranking index records.
   Future<bool> hasTextIndex(String field) async {
     _checkOpen();
+    if (_textIndexedFields.contains(field)) return true;
     try {
       final params = _shard.info().payloadSchema[field]?.params;
-      return params is qe.TextPayloadIndexParams &&
-          params.config.scoring != null;
+      final indexed =
+          params is qe.TextPayloadIndexParams && params.config.scoring != null;
+      if (indexed) _textIndexedFields.add(field);
+      return indexed;
     } catch (e) {
       _rethrow(e);
     }
@@ -289,8 +304,9 @@ class QdrantEdgeClient {
   /// Gives [field] a BM25-ranking full-text index, built over the points
   /// already stored and kept in step by the engine on every later write.
   ///
-  /// Words split on Unicode word boundaries, case- and diacritic-insensitive
-  /// (`café` matches `cafe`), no stemming.
+  /// Text splits at every character that is not a letter or digit (`don't`
+  /// is `don` and `t`), lowercased, with Latin letters folded to ASCII
+  /// (`café` matches `cafe`), and no stemming.
   Future<void> createTextIndex(String field) async {
     _checkOpen();
     try {
@@ -307,6 +323,7 @@ class QdrantEdgeClient {
           ),
         ),
       );
+      _textIndexedFields.add(field);
     } catch (e) {
       _rethrow(e);
     }
@@ -453,8 +470,9 @@ class QdrantEdgeClient {
     if (e is QdrantException) throw e;
     if (e is qe.ShardLockedEdgeException) {
       throw QdrantShardLockedException(
-        'The shard is already open elsewhere (its write-ahead log is held by '
-        'another handle). Close the other store, or wait for it to finish.',
+        'The shard is already open elsewhere (its directory is locked by '
+        'another handle, often one a hot restart left open). Close the other '
+        'store, or wait for it to finish.',
       );
     }
     if (e is qe.EdgeException) throw QdrantException(_flatten(e));

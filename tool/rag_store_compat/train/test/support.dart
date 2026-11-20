@@ -86,6 +86,15 @@ const textSearchStores = ['edit', 'clear'];
 String textSearchLocation(String root, String name) =>
     p.join(root, 'sqlite_text_search_$name.db');
 
+/// Qdrant stores the train writes with a text index. The published release
+/// (flutter_edge_ai_qdrant 2.0.1, engine 0.8) only reads `read` and writes to
+/// `write`. The move to qdrant_edge 0.9 is one-way: after a published write,
+/// the train must fail loudly on that store, not answer from it.
+const qdrantDowngradeStores = ['read', 'write'];
+
+String qdrantDowngradeLocation(String root, String name) =>
+    p.join(root, 'qdrant_text_search_$name');
+
 /// sqlite: a database file; qdrant: a directory.
 String locationOf(String root, CompatStore store) => store.backend == 'sqlite'
     ? p.join(root, 'sqlite_${store.name}.db')

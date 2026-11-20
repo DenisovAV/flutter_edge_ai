@@ -209,14 +209,14 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.20.2"
+    version: "1.21.0"
   flutter_edge_ai_speech:
     dependency: "direct main"
     description:
       path: ".."
       relative: true
     source: path
-    version: "0.6.1"
+    version: "0.6.2"
   flutter_inappwebview:
     dependency: transitive
     description:

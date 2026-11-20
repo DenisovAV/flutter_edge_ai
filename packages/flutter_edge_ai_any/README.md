@@ -96,8 +96,16 @@ Another device of the same account finds the space with
   keep working while suspended; anything that needs the SDK fails with
   `AnySyncSuspendedException` until `resume()`.
 - **Background sync errors** are reported, never thrown at you: see
-  `locationStatus().lastFollowerError` and the follower statuses on
-  `account.statusChanges()`; the follower retries with backoff.
+  `locationStatus().lastFollowerError` (and `lastFollowerErrorAt`) and the
+  `account.followerEvents()` stream (a failure, or `recovered` once a pull
+  succeeds again); the follower retries with backoff. A vector the index
+  refuses (`rejectedByIndex`) leaves only that document text-only.
+- **Old index generations** a rebuild leaves behind are dropped in the
+  background in bounded steps; `locationStatus().orphanGenerations` and
+  `lastGcError` say how that goes.
+- **Tombstones are never deleted.** Each remove of a key adds one rev to its
+  record (`$addToSet`); bundle v1 cannot compact them, so a key removed very
+  often grows its record by a number each time.
 
 ## Network
 
@@ -119,7 +127,9 @@ Its C API is `include/any_shim.h` (ABI 2); see
 registers a local build (`native/any_shim/prebuilt/<target>/`) or downloads
 the pinned release. **The pinned release, `native-any-v0.1.0`, is ABI 1: until
 `native-any-v0.2.0` is tagged, a local ABI-2 build is required**
-(`native/any_shim/build.sh <target>`).
+(`native/any_shim/build.sh <target>`). ABI 2 and the `/v1` bundles freeze at
+that tag: spaces written by dev builds before it (including LAN test
+spaces) must be discarded, not migrated.
 
 ## Testing
 

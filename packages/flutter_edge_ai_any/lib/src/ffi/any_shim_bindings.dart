@@ -190,21 +190,11 @@ external int any_shim_object_read(
   OutStr outError,
 );
 
-@Native<
-  Status Function(
-    Uint64,
-    Pointer<Utf8>,
-    Pointer<Utf8>,
-    Pointer<Utf8>,
-    OutStr,
-    OutStr,
-  )
->()
+@Native<Status Function(Uint64, Pointer<Utf8>, Pointer<Utf8>, OutStr, OutStr)>()
 external int any_shim_object_derive_id(
   int account,
   Pointer<Utf8> spaceId,
   Pointer<Utf8> seed,
-  Pointer<Utf8> typeId,
   OutStr outJson,
   OutStr outError,
 );

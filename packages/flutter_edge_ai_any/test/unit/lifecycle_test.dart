@@ -256,7 +256,8 @@ void main() {
     st = await a.locationStatus(loc);
     expect(st.dominatedObjects, 1);
     expect(st.pendingSupersedeDeletes, 1);
-    expect(st.blankBodies, 0);
+    // v1 keeps its mark: it may be the winner again (D-R12).
+    expect(st.blankBodies, 1);
     expect(await idsOf(i, [1, 0, 0, 0]), containsAll(['x', 'y', 'z']));
   });
 

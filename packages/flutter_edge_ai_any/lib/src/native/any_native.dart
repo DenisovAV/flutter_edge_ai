@@ -72,12 +72,8 @@ abstract interface class AnySdk implements OpWaiter {
   );
   void objectSetBody(String spaceId, String objectId, String text);
 
-  /// `{id}` of the object [seed] derives for [typeId], without a write.
-  Map<String, Object?> objectDeriveId(
-    String spaceId,
-    String seed,
-    String typeId,
-  );
+  /// `{id}` of the object [seed] derives, without a write.
+  Map<String, Object?> objectDeriveId(String spaceId, String seed);
   Map<String, Object?> objectRead(String spaceId, Map<String, Object?> request);
   void objectDelete(String spaceId, String objectId);
   Map<String, Object?> objectSyncState(String spaceId, String objectId);
@@ -253,6 +249,31 @@ Future<Map<String, Object?>?> awaitOp(
     final poll = sdk.opWait(op, wait);
     if (poll.done) return poll.result;
     await Future<void>.delayed(Duration.zero);
+  }
+}
+
+/// Runs [job] against [host]. An index call answering PENDING (a bind or a
+/// swap holds the index exclusively and readers are refused at once, not
+/// blocked) runs the whole job again after a 250 ms slice, for at most
+/// [max]. Index jobs commit once at their end, so a refused one changed
+/// nothing.
+Future<T> runIndexJob<T>(
+  IndexJob<T> job,
+  AnyIndexHost host, {
+  Duration max = const Duration(minutes: 10),
+}) async {
+  final end = DateTime.now().add(max);
+  while (true) {
+    try {
+      return await job(host);
+    } on AnyShimException catch (e) {
+      if (e.status != AnyShimStatus.pending ||
+          !e.operation.startsWith('any_shim_index_') ||
+          DateTime.now().isAfter(end)) {
+        rethrow;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
   }
 }
 

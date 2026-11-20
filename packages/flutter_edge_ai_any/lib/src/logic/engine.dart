@@ -540,6 +540,10 @@ final class PageOutcome {
   bool conflict = false;
   int cursorSeq = 0;
   bool firstPullDone = false;
+
+  /// Objects whose vector the index refused (INVALID_ARGUMENT), with the
+  /// native message; their rows were applied without it.
+  Map<String, String> rejected = const {};
 }
 
 /// Reads what a follower page must be read under: the cursor, the clear
@@ -560,23 +564,26 @@ const unindexableReasons = [
   'wrongDimension',
   'conflictingBinding',
   'revOutOfRange',
+  'rejectedByIndex',
 ];
 
 /// Applies [page] (design §3): tombstones and clear revs, then each change,
 /// then each affected key's row. Rows for winners this page did not carry
 /// are asked for in [PageOutcome.needObjects] and nothing is applied.
 ///
-/// A page the index refuses as malformed (INVALID_ARGUMENT, a vector the
-/// shim checks differently) is applied again without its vectors, the
-/// objects that carried one marked `badVector` (text-only rows), instead of
-/// stalling the follower on it.
+/// A page the index refuses (INVALID_ARGUMENT: a vector the shim checks
+/// differently) does not stall the follower: each vector row is probed
+/// alone, and the page is applied again with only the refused objects'
+/// vectors left out, those marked `rejectedByIndex` with the native message
+/// (text-only rows not offered to backfill: the same vector would be
+/// refused again) (D-R1).
 PageOutcome applyPage(
   AnyIndexApi idx,
   LocConfig cfg,
   Page page, {
   required int nowMs,
   bool shadow = false,
-  bool dropVectors = false,
+  Map<String, String> rejected = const {},
 }) {
   final out = PageOutcome();
   final tx = Tx(idx, shadow: shadow);
@@ -660,6 +667,14 @@ PageOutcome applyPage(
     if (tx.get('b/$id') != null) tx.set('b/$id', null);
   }
 
+  /// An object already mapped that now reads as not ours (malformed, no or
+  /// another `loc`, another type) leaves the key map, so a winner fallback
+  /// never waits for it (D-R3).
+  void forgetIfMapped(String id) {
+    if (_mutated('keepStaleMapping')) return;
+    if (tx.get('o/$id') != null) forget(id);
+  }
+
   for (final c in last.values) {
     if (c.objectId == cfg.manifestId) continue;
     final item = page.items[c.objectId];
@@ -668,7 +683,10 @@ PageOutcome applyPage(
       continue;
     }
     if (item == null) continue;
-    if (item.typeId.isNotEmpty && item.typeId != cfg.docRoot) continue;
+    if (item.typeId.isNotEmpty && item.typeId != cfg.docRoot) {
+      forgetIfMapped(c.objectId);
+      continue;
+    }
     final rawDoc = item.props['doc'];
     if (item.state == 'missing' || rawDoc == null) {
       // Our type, nothing readable yet (typed but not patched, or the
@@ -680,8 +698,11 @@ PageOutcome applyPage(
       continue;
     }
     final doc = DocValue.parse(rawDoc);
-    if (doc.loc == null) continue; // not readable as ours: absent
-    if (doc.loc != cfg.indexName) continue; // another location's document
+    if (doc.loc == null || doc.loc != cfg.indexName) {
+      // Not readable as ours, or another location's document: absent.
+      forgetIfMapped(c.objectId);
+      continue;
+    }
     if (tx.get('p/${c.objectId}') != null) {
       tx.set('p/${c.objectId}', null);
       out.pendingCleared++;
@@ -689,9 +710,11 @@ PageOutcome applyPage(
     final id = c.objectId;
     switch (doc.kind) {
       case DocKind.malformed:
+        forgetIfMapped(id);
         unindexable(id, 'malformed', key: doc.key, rev: doc.rev);
         continue;
       case DocKind.revOutOfRange:
+        forgetIfMapped(id);
         unindexable(id, 'revOutOfRange', key: doc.key);
         continue;
       case DocKind.newerFormat || DocKind.ok:
@@ -711,8 +734,9 @@ PageOutcome applyPage(
     if (leaf.kind == LeafKind.ok && leaf.ch != sha256Hex(doc.content ?? '')) {
       leaf = LeafValue(LeafKind.missing);
     }
-    if (dropVectors && leaf.kind == LeafKind.ok) {
-      leaf = LeafValue(LeafKind.badVector, ch: leaf.ch);
+    final refused = rejected[id];
+    if (refused != null && leaf.kind == LeafKind.ok) {
+      leaf = LeafValue(LeafKind.missing, ch: leaf.ch);
     }
     final String status;
     if (doc.kind == DocKind.newerFormat) {
@@ -727,6 +751,16 @@ PageOutcome applyPage(
         unindexable(id, 'badVector', key: key, rev: rev);
       } else if (leaf.kind == LeafKind.wrongDimension) {
         unindexable(id, 'wrongDimension', key: key, rev: rev);
+      } else if (refused != null) {
+        final had = tx.get('u/$id');
+        if (had == null) out.unindexableAdded++;
+        tx.setJson('u/$id', {
+          'r': 'rejectedByIndex',
+          'k': key,
+          'v': rev,
+          'msg': refused,
+          'at': nowMs,
+        });
       } else if (tx.get('u/$id') != null) {
         tx.set('u/$id', null);
       }
@@ -785,6 +819,7 @@ PageOutcome applyPage(
   }
 
   final needed = <String>[];
+  final vectorRows = <(String, String, String, String?, Float32List)>[];
   for (final key in affected) {
     final e = entryOf(key);
     if (e.objs.length > 1) out.duplicatesResolved++;
@@ -810,9 +845,12 @@ PageOutcome applyPage(
         meta: doc.meta,
         vector: vector,
       );
+      if (vector != null) {
+        vectorRows.add((w, key, doc.content!, doc.meta, vector));
+      }
       out.applied++;
       e.row = w;
-      if (vector == null) {
+      if (vector == null && !rejected.containsKey(w)) {
         tx.setJson('m/$key', {'id': w, 'c': e.objs[w]!.ch});
       } else if (tx.get('m/$key') != null) {
         tx.set('m/$key', null);
@@ -845,17 +883,60 @@ PageOutcome applyPage(
     if (e.status == AnyShimStatus.conflict && !shadow) {
       return PageOutcome()..casMiss = true;
     }
-    if (e.status == AnyShimStatus.invalidArgument && !dropVectors) {
-      return applyPage(
+    if (e.status == AnyShimStatus.invalidArgument &&
+        rejected.isEmpty &&
+        vectorRows.isNotEmpty) {
+      final found = _probeVectors(idx, cfg, vectorRows, shadow);
+      // No single row refused on its own: leave every vector of the page
+      // out rather than stall on it.
+      final refused = found.isNotEmpty
+          ? found
+          : {for (final r in vectorRows) r.$1: e.message};
+      final again = applyPage(
         idx,
         cfg,
         page,
         nowMs: nowMs,
         shadow: shadow,
-        dropVectors: true,
+        rejected: refused,
       );
+      again.rejected = refused;
+      return again;
     }
     rethrow;
+  }
+  return out;
+}
+
+/// Which of [rows] the index refuses alone, with its message. Each probe is
+/// an apply that cannot commit: index_apply validates every op before its
+/// compare-and-set, and the probe's CAS expects a value no key holds, so a
+/// refused row answers INVALID_ARGUMENT and an accepted one CONFLICT.
+Map<String, String> _probeVectors(
+  AnyIndexApi idx,
+  LocConfig cfg,
+  List<(String, String, String, String?, Float32List)> rows,
+  bool shadow,
+) {
+  final out = <String, String>{};
+  for (final (id, key, text, meta, vector) in rows) {
+    final probe = Tx(idx, shadow: shadow)..expect('\u0000probe', '\u0000never');
+    probe.upsertRow(
+      id: key,
+      text: text,
+      meta: meta,
+      f: const {},
+      vector: vector,
+    );
+    try {
+      probe.commit();
+    } on AnyShimException catch (e) {
+      if (e.status == AnyShimStatus.invalidArgument) out[id] = e.message;
+      if (e.status != AnyShimStatus.invalidArgument &&
+          e.status != AnyShimStatus.conflict) {
+        rethrow;
+      }
+    }
   }
   return out;
 }
@@ -1160,6 +1241,13 @@ int scanAll(
   return n;
 }
 
+/// The sum of the integer values under [prefix].
+int _sumValues(AnyIndexApi idx, String prefix) {
+  var n = 0;
+  scanAll(idx, prefix, (k, v) => n += int.tryParse(v) ?? 0);
+  return n;
+}
+
 /// The totals of locationStatus, as plain data.
 Map<String, Object?> readStatus(AnyIndexApi idx, {required int nowMs}) {
   final clear = int.tryParse(idx.getState('clear') ?? '') ?? 0;
@@ -1205,7 +1293,7 @@ Map<String, Object?> readStatus(AnyIndexApi idx, {required int nowMs}) {
     'conflict': conflict == null ? null : jsonDecode(conflict),
     'conflictingDocuments': conflictingDocs,
     'tombIgnored': int.tryParse(idx.getState('tombIgnored') ?? '') ?? 0,
-    'droppedFields': scanAll(idx, 'd/', null),
+    'droppedFields': _sumValues(idx, 'd/'),
     'firstPull': idx.getState('firstPull'),
   };
 }

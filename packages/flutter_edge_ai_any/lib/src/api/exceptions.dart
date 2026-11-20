@@ -73,6 +73,10 @@ enum AnySyncBusyReason {
 
   /// A previous instance (a hot restart) still holds or closes it.
   previousInstanceClosing,
+
+  /// The previous instance's native close failed: the directory stays
+  /// refused until the app restarts. Not retryable.
+  previousInstanceFailed,
 }
 
 /// The directory or the location is held by someone else.
@@ -81,7 +85,9 @@ final class AnySyncBusyException extends AnySyncException {
   AnySyncBusyException._(this.reason, String detail, {super.cause})
     : super(
         'Busy (${reason.name}): $detail',
-        retryable: reason != AnySyncBusyReason.alreadyOpenInProcess,
+        retryable:
+            reason != AnySyncBusyReason.alreadyOpenInProcess &&
+            reason != AnySyncBusyReason.previousInstanceFailed,
       );
 
   final AnySyncBusyReason reason;

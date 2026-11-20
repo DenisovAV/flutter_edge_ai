@@ -15,21 +15,36 @@ import 'reads.dart' as r;
 
 /// Starts the open (claims and lock now: BUSY / REFUSED at once) and waits
 /// for `anysyncsdk.Open` in slices. Returns the handle.
-SdkJob<int> openAccountJob(Map<String, Object?> options) => (s) async {
+SdkJob<int> openAccountJob(
+  Map<String, Object?> options, {
+  Duration max = const Duration(minutes: 2),
+}) => (s) async {
   final op = s.openAccountStart(options);
-  final r = await awaitOp(
-    s,
-    op,
-    deadline: DateTime.now().add(const Duration(minutes: 2)),
-  );
-  if (r == null) {
-    throw AnyShimException(
-      'any_shim_account_open_start',
-      AnyShimStatus.timeout.code,
-      'the SDK did not open within 2 min',
-    );
+  final end = DateTime.now().add(max);
+  while (DateTime.now().isBefore(end)) {
+    final p = s.opWait(op, 250);
+    if (p.done) return s.adoptAccount(p.result!);
+    await Future<void>.delayed(Duration.zero);
   }
-  return s.adoptAccount(r);
+  // The deadline passed. One last poll: an account the op opened in the
+  // meantime is closed again, never left open unowned (D-R9).
+  final last = s.opWait(op, 0);
+  if (last.done) {
+    s.adoptAccount(last.result!);
+    final close = s.closeAccountStart();
+    await awaitOp(
+      s,
+      close,
+      deadline: DateTime.now().add(const Duration(seconds: 15)),
+    );
+  } else {
+    s.opCancel(op);
+  }
+  throw AnyShimException(
+    'any_shim_account_open_start',
+    AnyShimStatus.timeout.code,
+    'the SDK did not open within ${max.inSeconds} s',
+  );
 };
 
 /// Starts the close and waits for it in slices, at most [waitLoadsMs] for
@@ -104,10 +119,8 @@ SdkJob<Map<String, Object?>> ragBundlesJob(String spaceId, bool ensure) =>
 
 /// The location's manifest object id, computed without a write (a reader
 /// may call it).
-SdkJob<String> manifestIdJob(String spaceId, String indexName, String root) =>
-    (s) =>
-        s.objectDeriveId(spaceId, manifestSeed(indexName), root)['id']!
-            as String;
+SdkJob<String> manifestIdJob(String spaceId, String indexName) =>
+    (s) => s.objectDeriveId(spaceId, manifestSeed(indexName))['id']! as String;
 
 SdkJob<ManifestRead> readManifestJob(String spaceId, String manifestId) =>
     (s) => r.readManifest(s, spaceId, manifestId);
@@ -284,11 +297,18 @@ IndexJob<int> indexOpenJob(Map<String, Object?> options) =>
 /// Starts the close and waits for it in slices.
 IndexJob<void> indexCloseJob(int handle) => (h) async {
   final op = h.index(handle).closeStart();
-  await awaitOp(
+  final r = await awaitOp(
     h,
     op,
     deadline: DateTime.now().add(const Duration(minutes: 1)),
   );
+  if (r == null) {
+    throw AnyShimException(
+      'any_shim_index_close_start',
+      AnyShimStatus.timeout.code,
+      'the index did not close within 1 min',
+    );
+  }
 };
 
 /// Binds (a growing bind backfills every row, so it is an op) and returns

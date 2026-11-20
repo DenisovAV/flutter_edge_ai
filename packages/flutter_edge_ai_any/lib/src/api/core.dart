@@ -38,21 +38,56 @@ final class _LocationCore {
 
   Future<T> _sdk<T>(SdkJob<T> job) => account._sdk(job, spaceId: spaceId);
 
-  /// An SDK write (object_patch, records_modify): NOT_FOUND there means the
-  /// bundle definitions have not synced to this device (D15).
+  /// An SDK write (object_patch, records_modify): a NOT_FOUND that names
+  /// definitions not synced here is retryable readiness (D15); another one
+  /// ("object … is not here") keeps its own mapping (D-R12).
   Future<T> _sdkWrite<T>(SdkJob<T> job) async {
     try {
       return await _sdk(job);
     } on AnySyncException catch (e) {
-      if (_isStatus(e, AnyShimStatus.notFound)) {
+      if (_isDefinitionsNotSynced(e)) {
         throw AnySyncNotReadyException._(
           spaceId,
           AnySyncNotReadyReason.definitionsNotSynced,
+          (e.cause as AnyShimException).message,
         );
       }
       rethrow;
     }
   }
+
+  static bool _isDefinitionsNotSynced(AnySyncException e) {
+    final c = e.cause;
+    return c is AnyShimException &&
+        c.status == AnyShimStatus.notFound &&
+        c.message.contains('have not synced');
+  }
+
+  /// Records a background failure and reports it on followerEvents.
+  void _recordError(String error) {
+    lastFollowerError = error;
+    lastFollowerErrorAt = DateTime.now();
+    account._emitFollower(this);
+  }
+
+  /// A pull that applied but had vectors refused keeps its error.
+  bool _rejectedInLastPull = false;
+
+  void _clearError() {
+    if (lastFollowerError == null || _rejectedInLastPull) return;
+    lastFollowerError = null;
+    lastFollowerErrorAt = null;
+    account._emitFollower(this);
+  }
+
+  /// Supersede deletes that failed with something other than gone.
+  int supersedeErrors = 0;
+
+  /// Generations a swap left that gc has not dropped yet (an estimate:
+  /// after an open, 1 until a gc round reports done).
+  int orphanGenerations = 1;
+  String? lastGcError;
+  bool _gcRunning = false;
 
   /// Reads the local binding. A binding without its config is a bind that
   /// did not finish: unbound (D6).
@@ -76,23 +111,37 @@ final class _LocationCore {
     _gc();
   }
 
-  /// Drops orphan generations in bounded rounds, in the background (H4).
+  /// Drops orphan generations in bounded rounds, in the background (H4):
+  /// after open, after every swap, after a rebuild that gave up (D-R5). A
+  /// failure is reported in locationStatus; none runs on a closed index.
   void _gc() {
+    if (_closed || _gcRunning) return;
+    _gcRunning = true;
     final h = handle;
-    Future<void> round() async {
-      for (var i = 0; i < 1000 && !_closed; i++) {
+    Future<void> rounds() async {
+      for (var i = 0; i < 10000; i++) {
+        if (_closed) return;
         final done = await account._rt.index(indexGcJob(h));
-        if (done) return;
+        if (done) {
+          orphanGenerations = 0;
+          lastGcError = null;
+          return;
+        }
         await Future<void>.delayed(Duration.zero);
       }
     }
 
-    round().catchError((Object e) {
-      developer.log(
-        'index gc of ${location.value} failed: $e',
-        name: 'flutter_edge_ai_any',
-      );
-    });
+    rounds()
+        .catchError((Object e) {
+          // A close racing the gc is not a gc failure.
+          if (_closed) return;
+          lastGcError = '$e';
+          developer.log(
+            'index gc of ${location.value} failed: $e',
+            name: 'flutter_edge_ai_any',
+          );
+        })
+        .whenComplete(() => _gcRunning = false);
   }
 
   Future<void> close() async {
@@ -154,44 +203,52 @@ final class _LocationCore {
     final grown = _schemaGrows(c.schema, schema);
     final pending = await _idx(getStateJob(handle, 'needsRebuild')) != null;
     await _lock.run(() async {
-      var next = c;
-      if (grown || (enableText && !textSearch)) {
-        final manifest = await _sdk(readManifestJob(spaceId, c.manifestId));
-        next = LocConfig.fromJson(c.toJson(), schema: _union(c.schema, schema));
-        // A field the location already has with another type is a
-        // conflict, here as at bind.
-        final refusal = manifestConflict(manifest, next, _bindingJson(b));
-        if (refusal != null) {
-          throw AnySyncConflictException._(
-            AnySyncManifest._fromJson(manifest.toJson()),
-            await _idx(conflictingDocumentsJob(handle)),
-            [for (final r in refusal['reasons']! as List) r as String],
-          );
-        }
-        await _bindIndex(next, enableText: enableText);
-        await _idx(
-          setStatesJob(handle, {
-            'cfg': jsonEncode(next.toJson()),
-            if (grown) 'needsRebuild': '1',
-          }),
+      final next = grown
+          ? LocConfig.fromJson(c.toJson(), schema: _union(c.schema, schema))
+          : c;
+      // Every open of a bound location compares the manifest with this
+      // binding and publishes what is missing, FIRST (idempotent), then
+      // index_bind, then one state commit: bind's order (D-R8).
+      final manifest = await _sdk(readManifestJob(spaceId, c.manifestId));
+      final refusal = manifestConflict(manifest, next, _bindingJson(b));
+      if (refusal != null) {
+        throw AnySyncConflictException._(
+          AnySyncManifest._fromJson(manifest.toJson()),
+          await _conflictingDocuments(),
+          [for (final r in refusal['reasons']! as List) r as String],
         );
-        cfg = next;
-        await _publishMissing(
-          next,
-          b,
-          manifest: manifest,
-          enableText: enableText,
-          readOnlyOk: true,
-        );
-      } else {
-        await _bindIndex(next, enableText: enableText);
       }
+      final published = await _publishMissing(
+        next,
+        b,
+        manifest: manifest,
+        enableText: enableText,
+        readOnlyOk: true,
+      );
+      await _bindIndex(next, enableText: enableText);
+      await _idx(
+        setStatesJob(handle, {
+          'cfg': jsonEncode(next.toJson()),
+          'manifest': jsonEncode(published.toJson()),
+          if (grown) 'needsRebuild': '1',
+        }),
+      );
+      cfg = next;
       // A grown schema's rows lack the new f.* values: rebuild, also when
       // a previous open was interrupted before its swap.
       if (grown || pending) await _rebuildLocked();
     });
     _startFollower();
     await _catchUp();
+  }
+
+  /// Never lets a failed count replace the conflict it describes (D-R12).
+  Future<int> _conflictingDocuments() async {
+    try {
+      return await account._rt.index(conflictingDocumentsJob(handle));
+    } on Object {
+      return 0;
+    }
   }
 
   static bool _schemaGrows(FilterSchema have, FilterSchema want) =>
@@ -266,9 +323,7 @@ final class _LocationCore {
       final doc = (bundles['document']! as Map).cast<String, Object?>();
       final locRoot = loc['rootId']! as String;
       // Computed, never written (D11): a reader may call it.
-      final manifestId = await _sdk(
-        manifestIdJob(spaceId, location.indexName, locRoot),
-      );
+      final manifestId = await _sdk(manifestIdJob(spaceId, location.indexName));
       final c = LocConfig(
         spaceId: spaceId,
         indexName: location.indexName,
@@ -290,7 +345,7 @@ final class _LocationCore {
         if (refusal != null) {
           throw AnySyncConflictException._(
             AnySyncManifest._fromJson(manifest.toJson()),
-            await _idx(conflictingDocumentsJob(handle)),
+            await _conflictingDocuments(),
             [for (final r in refusal['reasons']! as List) r as String],
           );
         }
@@ -455,7 +510,8 @@ final class _LocationCore {
 
   /// A change event: pull after 200 ms of quiet (design §4.1).
   void onChange() {
-    if (!_following || _closed) return;
+    // A failing follower waits for its backoff timer (D-R11).
+    if (!_following || _closed || _retry != null) return;
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 200), () {
       _debounce = null;
@@ -473,16 +529,10 @@ final class _LocationCore {
       _failures = 0;
       _retry?.cancel();
       _retry = null;
-      if (lastFollowerError != null) {
-        lastFollowerError = null;
-        lastFollowerErrorAt = null;
-        account._emitFollower(this);
-      }
+      _clearError();
     } catch (e) {
       _failures++;
-      lastFollowerError = '$e';
-      lastFollowerErrorAt = DateTime.now();
-      account._emitFollower(this);
+      _recordError('$e');
       final secs = _failures >= 7 ? 60 : 1 << (_failures - 1);
       _retry?.cancel();
       _retry = Timer(Duration(seconds: secs), () {
@@ -496,6 +546,17 @@ final class _LocationCore {
   /// open's (D2); it is recorded and retried.
   Future<void> _catchUp() => _background();
 
+  /// An app's pull (pull, syncNow): its error is the app's; its success
+  /// clears the follower's error and backoff (D-R11).
+  Future<AnySyncPull> manualPull() async {
+    final r = await pull();
+    _failures = 0;
+    _retry?.cancel();
+    _retry = null;
+    _clearError();
+    return r;
+  }
+
   /// One pull (design §3): follower pages until the feed is exhausted,
   /// rebuilding when the generation moved, then the supersede deletes that
   /// became safe.
@@ -503,6 +564,7 @@ final class _LocationCore {
     final c = cfg;
     if (c == null || binding == null || _closed) return AnySyncPull._();
     var result = AnySyncPull._();
+    _rejectedInLastPull = false;
     var readTombstones = true;
     var extra = <String>[];
     var rounds = 0;
@@ -542,6 +604,13 @@ final class _LocationCore {
         continue;
       }
       result = result._plus(o);
+      if (o.rejected.isNotEmpty) {
+        _rejectedInLastPull = true;
+        _recordError(
+          'the index refused vectors of ${o.rejected.length} object(s): '
+          '${o.rejected.values.first}',
+        );
+      }
       readTombstones = false;
       extra = [];
       if (!more) break;
@@ -569,6 +638,8 @@ final class _LocationCore {
         if (_isStatus(e, AnyShimStatus.deleted) ||
             _isStatus(e, AnyShimStatus.notFound)) {
           done.add('s/$old');
+        } else {
+          supersedeErrors++;
         }
       }
     }
@@ -593,6 +664,12 @@ final class _LocationCore {
         final p = await _sdk(
           rebuildPageJob(c, handle, after: after, nowMs: account._nowMs()),
         );
+        // A page that could not read the winners it needs: never swap with
+        // keys missing; this attempt starts again (D-R2).
+        if (p.outcome.needObjects.isNotEmpty) {
+          moved = true;
+          break;
+        }
         if (anchor == null) {
           gen = p.generation;
           anchor = p.anchor;
@@ -602,10 +679,10 @@ final class _LocationCore {
         }
         after = p.next;
       } while (after != null);
-      if (moved) continue;
+      if (moved || anchor == null) continue;
       final (hwGen, hw) = await _sdk(feedHeadJob(spaceId));
       if (hwGen != gen) continue;
-      var seq = anchor;
+      int seq = anchor;
       var extra = <String>[];
       while (seq < hw) {
         final s = await _sdk(
@@ -623,10 +700,8 @@ final class _LocationCore {
         }
         if (s.outcome.needObjects.isNotEmpty) {
           if (s.outcome.needObjects.every(extra.contains)) {
-            throw StateError(
-              '${location.value}: objects ${s.outcome.needObjects} cannot be '
-              'read',
-            );
+            moved = true; // restart the attempt (D-R2)
+            break;
           }
           extra = {...extra, ...s.outcome.needObjects}.toList();
           continue;
@@ -638,8 +713,13 @@ final class _LocationCore {
       if (moved) continue;
       await _idx(carryOwnJob(handle));
       await _idx(swapShadowJob(handle, gen, seq > hw ? seq : hw));
+      orphanGenerations++;
+      _gc();
       return AnySyncPull._()._rebuilt();
     }
+    // Each attempt began a shadow; they are orphans now.
+    orphanGenerations++;
+    _gc();
     throw AnySyncException(
       '${location.value}: the space generation kept moving during a rebuild',
       retryable: true,
@@ -775,9 +855,13 @@ final class _LocationCore {
     }
     try {
       await _sdk(setBodyJob(spaceId, id, content));
-    } on Object {
+    } on Object catch (e) {
       // Best effort, but recorded: compact() repairs what is marked, so a
       // mark that fails is reported, not dropped (D18).
+      developer.log(
+        'the editor body of $id ($key) was not written: $e',
+        name: 'flutter_edge_ai_any',
+      );
       try {
         await _idx(markBlankBodyJob(handle, id, key));
       } catch (e) {
@@ -964,6 +1048,9 @@ final class _LocationCore {
       now,
       followerError: lastFollowerError,
       followerErrorAt: lastFollowerErrorAt,
+      orphanGenerations: orphanGenerations,
+      lastGcError: lastGcError,
+      supersedeErrors: supersedeErrors,
     );
   }
 
@@ -995,8 +1082,8 @@ final class _LocationCore {
     final superseded = await _sweepSupersede(c);
     var repaired = 0;
     final fixed = <String>[];
-    // A superseded object gets no body: it is about to go.
-    fixed.addAll([for (final id in plan.blankStale) 'b/$id']);
+    // An object no row shows keeps its mark: it may be the winner again
+    // (D-R12); its mark goes with the object.
     for (final (id, key) in plan.blank) {
       final row = await _idx(getRowJob(handle, key));
       final content = row?['text'] as String?;

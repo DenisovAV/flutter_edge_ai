@@ -386,18 +386,13 @@ final class AnyShimAccount {
     ),
   );
 
-  /// `{id}` of the object [seed] derives for [typeId], without a write.
-  Map<String, Object?> objectDeriveId(
-    String spaceId,
-    String seed,
-    String typeId,
-  ) => _jsonMap(
+  /// `{id}` of the object [seed] derives, without a write.
+  Map<String, Object?> objectDeriveId(String spaceId, String seed) => _jsonMap(
     'any_shim_object_derive_id',
     (arena, out, err) => b.any_shim_object_derive_id(
       handle,
       _s(arena, spaceId),
       _s(arena, seed),
-      _s(arena, typeId),
       out,
       err,
     ),

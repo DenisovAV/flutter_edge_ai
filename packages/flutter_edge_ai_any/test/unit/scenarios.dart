@@ -184,7 +184,49 @@ Future<void> fallbackWinnerIsRead(World w) async {
   );
 }
 
+/// D-R3: an object that was the winner and now reads as malformed leaves
+/// the key map, so the older version takes the row again.
+Future<void> malformedWinnerIsForgotten(World w) async {
+  final p = await pair(w);
+  final h = leafKeyOf(profile4);
+  final n = p.loc.indexName;
+  craftDoc(
+    p.sa,
+    indexName: n,
+    key: 'k',
+    rev: 10,
+    content: 'old',
+    vecs: {
+      h: leafValue([1, 0, 0, 0], 'old'),
+    },
+  );
+  final fresh = craftDoc(
+    p.sa,
+    indexName: n,
+    key: 'k',
+    rev: 20,
+    content: 'new',
+    vecs: {
+      h: leafValue([1, 0, 0, 0], 'new'),
+    },
+  );
+  await p.a.pull(p.loc);
+  fresh.scalars['doc'] = FakeVal('{"fmt":1,"loc":"$n","key":"k"}');
+  p.sa.change(fresh.id);
+  try {
+    await p.a.pull(p.loc);
+  } catch (e) {
+    fail('the pull did not converge: $e');
+  }
+  final hits = await p.ia.searchVector(embedding: [1, 0, 0, 0], topK: 1);
+  expect(hits.single.content, 'old');
+}
+
 final scenarios = <String, (Scenario, String)>{
+  'D-R3: a winner that turns malformed leaves the key map': (
+    malformedWinnerIsForgotten,
+    'keepStaleMapping',
+  ),
   'D1: a deleted winner falls back to the object the page lacked': (
     fallbackWinnerIsRead,
     'extrasNotApplied',

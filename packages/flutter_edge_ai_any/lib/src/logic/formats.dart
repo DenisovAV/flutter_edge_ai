@@ -506,6 +506,7 @@ final class TombRecord {
         maxRev: max,
         valid: true,
         revs: revs,
+        badRevs: bad,
       );
     }
     final valid = key is String && sha256Hex(key) == id;

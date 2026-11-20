@@ -40,6 +40,7 @@ final class AnySyncAccount {
   final _closingCores = <String, Future<void>>{};
   final _watched = <String>{};
   final _status = StreamController<AnySyncStatus>.broadcast();
+  final _follower = StreamController<AnySyncFollowerEvent>.broadcast();
   StreamSubscription<Map<String, Object?>>? _events;
 
   /// Data and index directories open in this isolate.
@@ -181,6 +182,16 @@ final class AnySyncAccount {
         return await open();
       } on AnyShimException catch (e) {
         if (e.status == AnyShimStatus.refused &&
+            e.message.contains('failed to close')) {
+          // The previous instance's close failed natively: the directory
+          // is poisoned until the app restarts (never a second writer).
+          throw AnySyncBusyException._(
+            AnySyncBusyReason.previousInstanceFailed,
+            '$what: ${e.message}',
+            cause: e,
+          );
+        }
+        if (e.status == AnyShimStatus.refused &&
             (refusedMeansHeld || e.message.contains('already open'))) {
           throw AnySyncBusyException._(
             AnySyncBusyReason.alreadyOpenInProcess,
@@ -188,7 +199,9 @@ final class AnySyncAccount {
             cause: e,
           );
         }
-        if (e.status != AnyShimStatus.busy) throw _mapShim(e);
+        if (e.status != AnyShimStatus.busy) {
+          throw _mapShim(e, index: refusedMeansHeld);
+        }
         if (DateTime.now().isAfter(deadline)) {
           throw AnySyncBusyException._(
             _busyReason(e),
@@ -207,16 +220,11 @@ final class AnySyncAccount {
       DateTime.now().millisecondsSinceEpoch +
       (debugAccountClockSkewMs[_dataDirectory] ?? 0);
 
+  /// Starts the events poller and registers the watches of a fresh native
+  /// account (open or resume).
   void _startEvents(int handle) {
-    _events = _rt
-        .events(handle)
-        .listen(
-          _onEvent,
-          // The poller gave up after repeated failures: say so on the
-          // followers' status, and start a new one (D2).
-          onError: (Object e) => _eventsFailed(handle, e),
-          onDone: () => _eventsFailed(handle, null),
-        );
+    _pollerRestarts = 0;
+    _startPoller(handle);
     _rt.sdk(watchSyncStatusJob()).ignore();
     _watched.clear();
     for (final core in _cores.values) {
@@ -224,48 +232,101 @@ final class AnySyncAccount {
     }
   }
 
-  void _eventsFailed(int handle, Object? error) {
+  /// Only the poller: native watches belong to the account handle and
+  /// outlive a poller (D-R6).
+  void _startPoller(int handle) {
+    _events = _rt
+        .events(handle)
+        .listen(
+          _onEvent,
+          onError: (Object e) => _pollerEnded(handle, '$e'),
+          onDone: () => _pollerEnded(handle, 'the events poller ended'),
+        );
+  }
+
+  int _pollerRestarts = 0;
+  Timer? _pollerTimer;
+  static const _maxPollerRestarts = 10;
+
+  /// The one restart path of the poller (D-R6): at most one pending timer,
+  /// reported to the followers, and capped.
+  void _pollerEnded(int handle, String why) {
     if (_handle != handle || _state == AnySyncAccountState.closed) return;
-    if (error != null) {
-      for (final core in _cores.values) {
-        core.lastFollowerError = 'events: $error';
-        core.lastFollowerErrorAt = DateTime.now();
-        _emitFollower(core);
-      }
+    if (_pollerTimer != null) return;
+    final giveUp = ++_pollerRestarts > _maxPollerRestarts;
+    for (final core in _cores.values) {
+      core._recordError(
+        giveUp
+            ? 'events stopped after $_maxPollerRestarts restarts: $why'
+            : 'events: $why',
+      );
     }
-    Timer(const Duration(seconds: 1), () {
+    if (giveUp) return;
+    _pollerTimer = Timer(const Duration(seconds: 1), () {
+      _pollerTimer = null;
       if (_handle != handle || _state != AnySyncAccountState.open) return;
       _events?.cancel();
-      _startEvents(handle);
+      _startPoller(handle);
       for (final core in _cores.values) {
         core.onChange();
       }
     });
   }
 
-  /// A change watch for [spaceId]; a failed one is retried at the next
-  /// sync status event (D2). Needs the native account, not the open state,
-  /// so resume can register them before it reports open (D4).
+  final _watchRetries = <String, int>{};
+  final _watchTimers = <String, Timer>{};
+
+  /// A change watch for [spaceId]. Needs the native account, not the open
+  /// state, so resume can register them before it reports open (D4). A
+  /// failure is the affected followers' error, retried with backoff (D-R7).
   void _watch(String spaceId) {
     if (_handle == null || _state == AnySyncAccountState.closed) return;
     if (!_watched.add(spaceId)) return;
-    _rt.sdk(watchChangesJob(spaceId)).catchError((Object _) {
-      _watched.remove(spaceId);
-      return 0;
-    });
+    _rt
+        .sdk(watchChangesJob(spaceId))
+        .then((_) {
+          _watchRetries.remove(spaceId);
+          return 0;
+        })
+        .catchError((Object e) {
+          _watched.remove(spaceId);
+          if (_state == AnySyncAccountState.closed) return 0;
+          final n = (_watchRetries[spaceId] ?? 0) + 1;
+          _watchRetries[spaceId] = n;
+          for (final core in _cores.values) {
+            if (core.location.spaceId == spaceId) {
+              core._recordError('watching the space failed: $e');
+            }
+          }
+          _watchTimers[spaceId]?.cancel();
+          _watchTimers[spaceId] = Timer(
+            Duration(seconds: n >= 7 ? 60 : 1 << (n - 1)),
+            () {
+              _watchTimers.remove(spaceId);
+              _watch(spaceId);
+            },
+          );
+          return 0;
+        });
   }
 
-  /// Reports a follower's error (or its recovery) on statusChanges.
+  /// Reports a follower's error (or its recovery) on followerEvents.
   void _emitFollower(_LocationCore core) {
-    if (_status.isClosed) return;
-    _status.add(
-      AnySyncStatus._follower(
+    if (_follower.isClosed) return;
+    final error = core.lastFollowerError;
+    _follower.add(
+      AnySyncFollowerEvent._(
         core.location,
-        core.lastFollowerError,
-        core.lastFollowerErrorAt,
+        error,
+        core.lastFollowerErrorAt ?? DateTime.now(),
+        error == null,
       ),
     );
   }
+
+  /// Background follower failures and recoveries of this account's
+  /// locations (D-R10).
+  Stream<AnySyncFollowerEvent> followerEvents() => _follower.stream;
 
   void _onEvent(Map<String, Object?> e) {
     switch (e['kind']) {
@@ -333,6 +394,9 @@ final class AnySyncAccount {
   /// a local index, the only place `AnySyncLocalIndexException` fits (D15);
   /// the account's own state failing is a plain [AnySyncException].
   Object _mapShim(AnyShimException e, {String? spaceId, bool index = false}) {
+    // Classified by the native call that failed, not by the call site: an
+    // index error can surface through an SDK job (a follower page, D-R4).
+    index = index || e.operation.startsWith('any_shim_index_');
     if (!index &&
         (e.status == AnyShimStatus.io ||
             e.status == AnyShimStatus.corrupt ||
@@ -401,7 +465,11 @@ final class AnySyncAccount {
   /// Creates a space; this device is recorded as its creator.
   Future<AnySyncSpace> createSpace(String name) async {
     final r = await _sdk(spaceCreateJob(name));
-    return AnySyncSpace._(r['id']! as String, name);
+    return AnySyncSpace._(
+      r['id']! as String,
+      name,
+      r['stateSaveError'] as String?,
+    );
   }
 
   /// The spaces this account knows; with [sync], after asking reachable
@@ -462,7 +530,7 @@ final class AnySyncAccount {
 
   /// Applies what the space has that the location's local index does not.
   Future<AnySyncPull> pull(AnySyncLocation location) =>
-      _withCore(location, (core) => core.pull());
+      _withCore(location, (core) => core.manualPull());
 
   /// Pushes heads to reachable peers (bounded by [timeout]), then pulls.
   Future<AnySyncSyncResult> syncNow(
@@ -473,7 +541,7 @@ final class AnySyncAccount {
       syncHeadsJob(location.spaceId, _ms(timeout)),
       spaceId: location.spaceId,
     );
-    final pull = await core.pull();
+    final pull = await core.manualPull();
     return AnySyncSyncResult._(
       r['reachedPeer'] == true,
       r['timedOut'] == true,
@@ -616,6 +684,12 @@ final class AnySyncAccount {
     _epoch++;
     await _closeNative();
     await _status.close();
+    await _follower.close();
+    _pollerTimer?.cancel();
+    for (final t in _watchTimers.values) {
+      t.cancel();
+    }
+    _watchTimers.clear();
     _openDataDirs.remove(_dataDirectory);
     _openIndexDirs.remove(_indexDirectory);
     for (final core in [..._cores.values]) {
@@ -745,8 +819,13 @@ final class AnySyncAccount {
       // Do not leave the file held by a handle nobody owns (D16).
       try {
         await _rt.index(indexCloseJob(handle));
-      } on Object {
-        // The finalizer releases it.
+      } on Object catch (e) {
+        // The finalizer releases it; the failure is said.
+        developer.log(
+          'closing the index of ${location.value} after a failed attach '
+          'failed: $e',
+          name: 'flutter_edge_ai_any',
+        );
       }
       rethrow;
     }

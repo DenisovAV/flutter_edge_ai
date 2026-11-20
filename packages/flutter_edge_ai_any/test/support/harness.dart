@@ -5,6 +5,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_any/flutter_edge_ai_any.dart';
+import 'package:flutter_edge_ai_any/src/logic/engine.dart'
+    show debugEngineMutations;
 import 'package:flutter_edge_ai_any/src/logic/formats.dart';
 import 'package:flutter_edge_ai_any/src/native/any_native.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
@@ -31,6 +33,7 @@ final class World {
     String? mnemonic,
     Duration previousInstanceWait = const Duration(milliseconds: 300),
     Duration spaceOpenWait = const Duration(milliseconds: 300),
+    Uint8List? localEncryptionKey,
   }) async {
     debugAnyNativeOverride = net.native();
     final a = await AnySyncAccount.open(
@@ -41,6 +44,7 @@ final class World {
       nodeConfYaml: nodeConf,
       previousInstanceWait: previousInstanceWait,
       spaceOpenWait: spaceOpenWait,
+      localEncryptionKey: localEncryptionKey,
     );
     _accounts.add(a);
     return a;
@@ -62,7 +66,12 @@ final class World {
     }
     debugAnyNativeOverride = null;
     FakeIndex.failApply = null;
-    FakeIndex.refuseVectors = null;
+    FakeIndex.refuseVector = null;
+    FakeIndex.failApplyStatus = AnyShimStatus.io;
+    FakeIndexHost.bindSlices = 0;
+    FakeIndexHost.bindConflictInOp = false;
+    FakeIndex.gcError = null;
+    debugEngineMutations.clear();
     debugAccountClockSkewMs.clear();
     Directory(root).deleteSync(recursive: true);
   }

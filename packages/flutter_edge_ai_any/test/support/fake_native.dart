@@ -106,6 +106,9 @@ final class FakeDevice {
   bool isOpen = true;
   bool closing = false;
   bool readOnly = false;
+
+  /// The native close of a previous instance failed: opens are refused.
+  bool poisoned = false;
   final spaces = <String, FakeSpace>{};
   final events = StreamController<Map<String, Object?>>.broadcast();
 
@@ -196,6 +199,10 @@ final class FakeSpace {
 
   /// (objectId, collection) -> record id -> record.
   final records = <(String, String), Map<String, FakeRecord>>{};
+
+  /// Objects an id read answers `missing` for (a type page still lists
+  /// them).
+  final hiddenFromIdReads = <String>{};
 
   /// Called after each type page of object_read is read; tests insert
   /// there.
@@ -346,7 +353,7 @@ final class FakeRuntime implements AnyRuntime {
     if (fail != null && fail()) {
       throw _err('any_shim_index_apply', AnyShimStatus.io, 'injected');
     }
-    return _roundTrip(await j(indexHost));
+    return _roundTrip(await runIndexJob(j, indexHost));
   }
 
   @override
@@ -356,7 +363,26 @@ final class FakeRuntime implements AnyRuntime {
   Stream<Map<String, Object?>> events(int handle) {
     final d = sdkImpl.device;
     if (d == null) return const Stream.empty();
-    return d.events.stream;
+    final c = StreamController<Map<String, Object?>>();
+    final sub = d.events.stream.listen(c.add);
+    c.onCancel = sub.cancel;
+    _pollers.add(c);
+    pollersStarted++;
+    return c.stream;
+  }
+
+  final _pollers = <StreamController<Map<String, Object?>>>[];
+  int pollersStarted = 0;
+
+  /// The events poller gives up (as the FFI one does after 20 failures).
+  void failEvents(String why) {
+    for (final c in [..._pollers]) {
+      if (!c.isClosed) {
+        c.addError(StateError(why));
+        c.close();
+      }
+    }
+    _pollers.clear();
   }
 
   @override
@@ -434,6 +460,13 @@ final class FakeSdk implements AnySdk {
     final token = options['ownerToken']! as String;
     final existing = network.devices[dir];
     if (existing != null) {
+      if (existing.poisoned) {
+        throw _err(
+          op,
+          AnyShimStatus.refused,
+          'the previous instance failed to close; restart the app',
+        );
+      }
       if (existing.closing ||
           (existing.isOpen && existing.ownerToken != token)) {
         throw _err(op, AnyShimStatus.busy, 'held by a previous owner');
@@ -452,7 +485,10 @@ final class FakeSdk implements AnySdk {
       );
     }
     final h = ++_handles;
-    return _start(() => {'account': h, '_dir': dir});
+    return _start(
+      () => {'account': h, '_dir': dir},
+      ready: openReadyOnLastPoll ? () => _lastPollWait == 0 : null,
+    );
   }
 
   @override
@@ -481,13 +517,10 @@ final class FakeSdk implements AnySdk {
     }, ready: () => waitLoadsMs == 0 || d.loading.isEmpty);
   }
 
+  /// Computed: it needs no loaded space (D-R12), only the account.
   @override
-  Map<String, Object?> objectDeriveId(
-    String spaceId,
-    String seed,
-    String typeId,
-  ) {
-    _d.space(spaceId);
+  Map<String, Object?> objectDeriveId(String spaceId, String seed) {
+    _d;
     return {'id': derivedId(seed)};
   }
 
@@ -503,8 +536,11 @@ final class FakeSdk implements AnySdk {
     return id;
   }
 
+  int _lastPollWait = -1;
+
   @override
   OpPoll opWait(int op, int waitMs) {
+    _lastPollWait = waitMs;
     final o = _ops[op];
     if (o == null) throw _err('any_shim_op_wait', AnyShimStatus.closed, 'op');
     if (o.cancelled) {
@@ -531,7 +567,7 @@ final class FakeSdk implements AnySdk {
     final d = _d;
     final id = network.newSpaceId();
     d.spaces[id] = FakeSpace(id, d, name: name)..createdHere = true;
-    return {'id': id};
+    return {'id': id, 'stateSaveError': ?d.stateSaveError};
   }
 
   @override
@@ -664,7 +700,7 @@ final class FakeSdk implements AnySdk {
       }
     }
     if (failPatch != null && failPatch!(target, ops)) {
-      throw _err(op, failPatchStatus, 'injected');
+      throw _err(op, failPatchStatus, failPatchMessage);
     }
     if (ops.isNotEmpty && d.readOnly) {
       throw _err(op, AnyShimStatus.refused, 'read-only');
@@ -714,6 +750,7 @@ final class FakeSdk implements AnySdk {
   bool failBodies = false;
 
   AnyShimStatus failPatchStatus = AnyShimStatus.internal;
+  String failPatchMessage = 'injected';
 
   /// Refuses a patch the test names.
   bool Function(Map<String, Object?> target, List<Object?> ops)? failPatch;
@@ -725,8 +762,8 @@ final class FakeSdk implements AnySdk {
   ) {
     final s = _d.space(spaceId);
     final xkeys = (request['xkeys'] as List?)?.cast<String>();
-    Map<String, Object?> item(String id) {
-      final o = s.objects[id];
+    Map<String, Object?> item(String id, {bool byId = false}) {
+      final o = byId && s.hiddenFromIdReads.contains(id) ? null : s.objects[id];
       if (o == null) {
         return {'id': id, 'typeId': '', 'state': 'missing', 'props': {}};
       }
@@ -743,7 +780,8 @@ final class FakeSdk implements AnySdk {
       return {
         'anchor': anchor,
         'items': [
-          for (final id in (request['ids']! as List)) item(id as String),
+          for (final id in (request['ids']! as List))
+            item(id as String, byId: true),
         ],
         'next': null,
       };
@@ -789,6 +827,9 @@ final class FakeSdk implements AnySdk {
   Map<String, Object?> objectSyncState(String spaceId, String objectId) {
     final o = _d.space(spaceId).objects[objectId];
     if (o == null) throw _err('sync', AnyShimStatus.notFound, 'no object');
+    if (failSyncState) {
+      throw _err('any_shim_object_sync_state', AnyShimStatus.internal, 'x');
+    }
     return {'state': o.syncState};
   }
 
@@ -891,8 +932,20 @@ final class FakeSdk implements AnySdk {
 
   var _watches = 0;
 
+  /// Change watches that fail before one succeeds.
+  int failWatches = 0;
+
+  /// The open op finishes only at the poll that does not wait (the last
+  /// poll after a deadline).
+  bool openReadyOnLastPoll = false;
+  bool failSyncState = false;
+
   @override
   int watchChanges(String spaceId) {
+    if (failWatches > 0) {
+      failWatches--;
+      throw _err('any_shim_watch_changes', AnyShimStatus.internal, 'no watch');
+    }
     _d.space(spaceId);
     _d.watched.add(spaceId);
     return ++_watches;
@@ -917,6 +970,10 @@ final class FakeIndexFile {
   String? ownerToken;
   bool open = false;
   bool closing = false;
+
+  /// Op polls a running bind still answers pending; while it runs, every
+  /// other call on the index answers PENDING (G-R4).
+  int binding = 0;
 
   /// Orphan generations a swap left behind, dropped by gc.
   int orphans = 0;
@@ -948,10 +1005,16 @@ final class FakeIndexHost implements AnyIndexHost {
   final FakeNetwork network;
   final _open = <int, FakeIndexFile>{};
   static var _handles = 1000;
-  final _ops = <int, Map<String, Object?> Function()>{};
+  final _ops = <int, Map<String, Object?>? Function()>{};
   static var _opIds = 1;
 
-  int start(Map<String, Object?> Function() run) {
+  /// How many op polls a bind takes (0: done at the first wait).
+  static int bindSlices = 0;
+
+  /// The bind op answers CONFLICT, as natively under concurrent binds.
+  static bool bindConflictInOp = false;
+
+  int start(Map<String, Object?>? Function() run) {
     final id = _opIds++;
     _ops[id] = run;
     return id;
@@ -959,9 +1022,12 @@ final class FakeIndexHost implements AnyIndexHost {
 
   @override
   OpPoll opWait(int op, int waitMs) {
-    final run = _ops.remove(op);
+    final run = _ops[op];
     if (run == null) throw _err('any_shim_op_wait', AnyShimStatus.closed, 'op');
-    return OpPoll.done(run());
+    final r = run();
+    if (r == null) return const OpPoll.pending();
+    _ops.remove(op);
+    return OpPoll.done(r);
   }
 
   @override
@@ -1012,7 +1078,12 @@ final class FakeIndex implements AnyIndexApi {
 
   FakeIndexFile get _f {
     final f = host._open[handle];
-    if (f == null) throw _err('index', AnyShimStatus.closed, 'closed');
+    if (f == null) {
+      throw _err('any_shim_index_call', AnyShimStatus.closed, 'closed');
+    }
+    if (f.binding > 0) {
+      throw _err('any_shim_index_call', AnyShimStatus.pending, 'index busy');
+    }
     return f;
   }
 
@@ -1031,12 +1102,28 @@ final class FakeIndex implements AnyIndexApi {
   @override
   int bindStart(Map<String, Object?> config) {
     final r = bind(config);
-    return host.start(() => r);
+    final f = _f;
+    f.binding = FakeIndexHost.bindSlices;
+    return host.start(() {
+      if (f.binding > 0) {
+        f.binding--;
+        return null;
+      }
+      if (FakeIndexHost.bindConflictInOp) {
+        throw _err('any_shim_op_wait', AnyShimStatus.conflict, 'bind race');
+      }
+      return r;
+    });
   }
+
+  /// gc answers this error (an orphan it cannot drop).
+  static AnyShimException? gcError;
 
   @override
   Map<String, Object?> gc(int budgetMs) {
     final f = _f;
+    final e = gcError;
+    if (e != null) throw e;
     if (f.orphans > 0) f.orphans--;
     return {'done': f.orphans == 0};
   }
@@ -1081,9 +1168,13 @@ final class FakeIndex implements AnyIndexApi {
   /// Every apply goes through here; a test may refuse one.
   static bool Function(Map<String, Object?> ops)? failApply;
 
-  /// Refuses (INVALID_ARGUMENT) an apply carrying vectors, as the shim
-  /// does for a vector it checks differently than Dart.
-  static bool Function(Map<String, Object?> ops)? refuseVectors;
+  /// Refuses (INVALID_ARGUMENT, before the CAS like the shim's validation)
+  /// an apply carrying a vector this says no to: a vector the shim checks
+  /// differently than Dart.
+  static bool Function(Float32List vector)? refuseVector;
+
+  /// The status [failApply] answers with.
+  static AnyShimStatus failApplyStatus = AnyShimStatus.io;
 
   @override
   Map<String, Object?> apply(Map<String, Object?> ops, Float32List vectors) {
@@ -1112,6 +1203,11 @@ final class FakeIndex implements AnyIndexApi {
             throw _err(op, AnyShimStatus.invalidArgument, 'NaN');
           }
         }
+        final refuse = refuseVector;
+        if (refuse != null &&
+            refuse(Float32List.sublistView(vectors, offset, offset + dim))) {
+          throw _err(op, AnyShimStatus.invalidArgument, 'vector refused');
+        }
         at += dim;
       }
       if ((o['coll'] == 'shadow' || o['coll'] == 'shadowState') &&
@@ -1131,12 +1227,9 @@ final class FakeIndex implements AnyIndexApi {
     }
     final fail = failApply;
     if (fail != null && fail(ops)) {
-      throw _err(op, AnyShimStatus.io, 'injected');
+      throw _err(op, failApplyStatus, 'injected');
     }
-    final invalid = refuseVectors;
-    if (invalid != null && invalid(ops) && vectors.isNotEmpty) {
-      throw _err(op, AnyShimStatus.invalidArgument, 'vector refused');
-    }
+
     for (final o in list) {
       Map<String, FakeRow> rows() =>
           o['coll'] == 'shadow' ? f.shadow! : f.active;

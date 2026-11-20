@@ -203,11 +203,7 @@ void main() {
               as String;
       // H5: the same id without a write.
       expect(
-        a.objectDeriveId(
-          space,
-          'flutter_edge_ai.rag/manifest/n',
-          loc['rootId']! as String,
-        )['id'],
+        a.objectDeriveId(space, 'flutter_edge_ai.rag/manifest/n')['id'],
         manifest,
       );
       a.recordsModify(space, manifest, loc['tombstones']! as String, [
@@ -345,6 +341,34 @@ void main() {
         }, vec([double.nan, 0, 0])),
         throwsStatus(AnyShimStatus.invalidArgument),
       );
+      // The provider's probe (D-R1) relies on this order: ops are
+      // validated before the compare-and-set, so a refused vector answers
+      // INVALID_ARGUMENT and an accepted one CONFLICT, nothing applied.
+      Map<String, Object?> probe(double x) => {
+        'cas': [
+          {'key': '\u0000probe', 'expect': '\u0000never'},
+        ],
+        'ops': [
+          {
+            'op': 'upsert',
+            'coll': 'docs',
+            'id': 'p',
+            'text': '',
+            'meta': null,
+            'f': {},
+            'vector': {'offset': 0, 'dim': 3},
+          },
+        ],
+      };
+      expect(
+        () => x.apply(probe(0), vec([double.nan, 0, 0])),
+        throwsStatus(AnyShimStatus.invalidArgument),
+      );
+      expect(
+        () => x.apply(probe(0), vec([1, 0, 0])),
+        throwsStatus(AnyShimStatus.conflict),
+      );
+      expect(x.get('docs', 'p'), isNull);
       List<Object?> ids(Map<String, Object?> r) =>
           (r['results']! as List).map((m) => (m as Map)['id']).toList();
       expect(ids(x.knn(vec([1, 0, 0]), 5)), ['a', 'b']);

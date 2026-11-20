@@ -37,24 +37,25 @@ void main() {
     });
 
     test(
-      'a background failure reaches statusChanges; the retry clears it',
+      'a background failure reaches followerEvents; the retry clears it',
       () async {
         final p = await pair(w);
-        final events = <AnySyncStatus>[];
-        final sub = p.b.statusChanges().listen(events.add);
+        final events = <AnySyncFollowerEvent>[];
+        final sub = p.b.followerEvents().listen(events.add);
         addTearDown(sub.cancel);
         FakeIndex.failApply = hasPageApply;
         await p.ia.addVector(id: 'x', embedding: [1, 0, 0, 0], content: 'X');
         w.net.sync(p.da, p.db); // a change event wakes B's follower
         await Future<void>.delayed(const Duration(milliseconds: 600));
-        final failed = events.where((e) => e.followerError != null);
+        final failed = events.where((e) => !e.recovered);
         expect(failed, isNotEmpty);
         expect(failed.first.location, p.loc);
         expect((await p.b.locationStatus(p.loc)).lastFollowerError, isNotNull);
         FakeIndex.failApply = null;
         await Future<void>.delayed(const Duration(milliseconds: 1500));
         expect((await p.b.locationStatus(p.loc)).lastFollowerError, isNull);
-        expect(events.last.followerError, isNull);
+        expect(events.last.recovered, isTrue);
+        expect(events.last.error, isNull);
         expect(await idsOf(p.ib, [1, 0, 0, 0]), ['x']);
       },
     );
@@ -98,20 +99,27 @@ void main() {
       },
     );
 
-    test(
-      'a page the index refuses for its vectors is applied without them',
-      () async {
-        final p = await pair(w);
-        await p.ia.addVector(id: 'x', embedding: [1, 0, 0, 0], content: 'X');
-        FakeIndex.refuseVectors = hasPageApply;
-        await p.sync();
-        FakeIndex.refuseVectors = null;
-        final st = await p.b.locationStatus(p.loc);
-        expect(st.documents, 1);
-        expect(st.textOnly, 1);
-        expect(st.unindexable[AnySyncUnindexableReason.badVector], 1);
-      },
-    );
+    test('D-R1: in a page of 10, only the object whose vector the index '
+        'refuses loses it', () async {
+      final p = await pair(w);
+      for (var i = 0; i < 10; i++) {
+        await p.ia.addVector(
+          id: 'k$i',
+          embedding: [1, i.toDouble(), 0, i == 4 ? 7 : 0],
+          content: 'c$i',
+        );
+      }
+      FakeIndex.refuseVector = (v) => v[3] == 7;
+      await p.sync();
+      FakeIndex.refuseVector = null;
+      final st = await p.b.locationStatus(p.loc);
+      expect(st.documents, 10);
+      expect(st.vectors, 9);
+      expect(st.unindexable[AnySyncUnindexableReason.rejectedByIndex], 1);
+      expect(st.textOnly, 0, reason: 'not offered to backfill');
+      expect((await p.b.missingVectors(p.loc)).items, isEmpty);
+      expect(st.lastFollowerError, contains('refused'));
+    });
   });
 
   test('D4 resume registers the change watches again', () async {
@@ -400,6 +408,8 @@ void main() {
       final sdk = w.runtimeOf('a').sdkImpl;
       sdk.failPatch = (t, ops) => t['create'] != null;
       sdk.failPatchStatus = AnyShimStatus.notFound;
+      sdk.failPatchMessage =
+          'the definitions of type docroot have not synced here (property "doc")';
       await expectLater(
         i.addVector(id: 'x', embedding: [1, 0, 0, 0], content: 'X'),
         throwsA(
@@ -408,6 +418,16 @@ void main() {
             'reason',
             AnySyncNotReadyReason.definitionsNotSynced,
           ),
+        ),
+      );
+      // An object that is not here is not a readiness question (D-R12).
+      sdk.failPatchMessage = 'object docroot is not here';
+      await expectLater(
+        i.addVector(id: 'z', embedding: [1, 0, 0, 0], content: 'Z'),
+        throwsA(
+          isA<AnySyncException>()
+              .having((e) => e, 'type', isNot(isA<AnySyncNotReadyException>()))
+              .having((e) => e.cause, 'cause', isA<AnyShimException>()),
         ),
       );
       sdk.failPatchStatus = AnyShimStatus.io;

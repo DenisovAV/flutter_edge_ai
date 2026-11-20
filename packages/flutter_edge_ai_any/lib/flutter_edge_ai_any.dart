@@ -33,6 +33,7 @@ export 'src/api/any_sync.dart'
         AnySyncConflict,
         AnySyncConflictException,
         AnySyncException,
+        AnySyncFollowerEvent,
         AnySyncLocalIndexErrorKind,
         AnySyncLocalIndexException,
         AnySyncLocation,

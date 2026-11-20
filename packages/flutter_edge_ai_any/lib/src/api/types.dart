@@ -24,9 +24,13 @@ final class AnySyncP2p {
 /// A space this account created or knows.
 @experimental
 final class AnySyncSpace {
-  AnySyncSpace._(this.id, this.name);
+  AnySyncSpace._(this.id, this.name, [this.stateSaveError]);
   final String id;
   final String name;
+
+  /// `createSpace` only: the space exists, but recording it as created
+  /// here failed to save (the creator exception will not apply to it).
+  final String? stateSaveError;
 
   @override
   String toString() => 'AnySyncSpace($id, $name)';
@@ -62,26 +66,7 @@ final class AnySyncStatus {
     required this.everPeerSynced,
     required this.createdHere,
     this.stateSaveError,
-  }) : followerError = null,
-       followerErrorAt = null,
-       location = null;
-
-  /// A location's follower failed (or recovered: [followerError] null).
-  AnySyncStatus._follower(
-    AnySyncLocation this.location,
-    this.followerError,
-    this.followerErrorAt,
-  ) : spaceId = location.spaceId,
-      state = AnySyncSpaceState.unknown,
-      rawState = 'follower',
-      p2p = null,
-      localPeers = 0,
-      networkPeers = 0,
-      globalPeers = 0,
-      lastSyncedAt = null,
-      everPeerSynced = false,
-      createdHere = false,
-      stateSaveError = null;
+  });
 
   final String spaceId;
   final AnySyncSpaceState state;
@@ -103,15 +88,6 @@ final class AnySyncStatus {
 
   /// The account state (everPeerSynced, the creator mark) failed to save.
   final String? stateSaveError;
-
-  /// Set on a status a location's follower reports: its last background
-  /// failure, null once a pull succeeded again. The space fields are then
-  /// not meaningful ([rawState] is `follower`).
-  final String? followerError;
-  final DateTime? followerErrorAt;
-
-  /// The location a follower status is about.
-  final AnySyncLocation? location;
 
   static AnySyncStatus _fromJson(Map<String, Object?> j) {
     final loading = j['loading'] == true;
@@ -144,6 +120,26 @@ final class AnySyncStatus {
 }
 
 int _int(Object? v) => v is int ? v : 0;
+
+/// A location's follower failed in the background, or recovered.
+@experimental
+final class AnySyncFollowerEvent {
+  AnySyncFollowerEvent._(this.location, this.error, this.at, this.recovered);
+
+  final AnySyncLocation location;
+
+  /// The failure; null when [recovered].
+  final String? error;
+  final DateTime at;
+
+  /// A pull succeeded after a failure.
+  final bool recovered;
+
+  @override
+  String toString() => recovered
+      ? 'AnySyncFollowerEvent($location recovered)'
+      : 'AnySyncFollowerEvent($location: $error)';
+}
 
 /// What one pull applied: deltas, never totals.
 @experimental
@@ -308,6 +304,10 @@ enum AnySyncUnindexableReason {
   wrongDimension,
   conflictingBinding,
   revOutOfRange,
+
+  /// The index refused the object's vector (its message is in the native
+  /// log); the row is text-only and not offered to backfill.
+  rejectedByIndex,
   unknown,
 }
 
@@ -407,6 +407,9 @@ final class AnySyncLocationStatus {
     required this.droppedFilterValues,
     required this.lastFollowerError,
     required this.lastFollowerErrorAt,
+    required this.orphanGenerations,
+    required this.lastGcError,
+    required this.supersedeErrors,
   });
 
   /// Rows in the local index.
@@ -454,10 +457,19 @@ final class AnySyncLocationStatus {
   /// ignored.
   final int ignoredTombstones;
 
-  /// Rows whose metadata carried a declared filter field with a value of
-  /// another type (or was not a JSON object): those values match no
-  /// filter.
+  /// Filter values the rows' metadata carried with another type than the
+  /// field declares (or metadata that was not a JSON object, once per
+  /// row): they match no filter.
   final int droppedFilterValues;
+
+  /// Index generations a rebuild left that gc has not dropped yet (an
+  /// estimate: after an open, 1 until the first gc round finishes).
+  final int orphanGenerations;
+  final String? lastGcError;
+
+  /// Supersede deletes that failed with something other than "gone" in
+  /// this process.
+  final int supersedeErrors;
 
   /// The follower's last background failure, until a pull succeeds.
   final String? lastFollowerError;
@@ -468,6 +480,9 @@ final class AnySyncLocationStatus {
     int nowMs, {
     String? followerError,
     DateTime? followerErrorAt,
+    int orphanGenerations = 0,
+    String? lastGcError,
+    int supersedeErrors = 0,
   }) {
     final raw = ((j['unindexable'] as Map?) ?? const {}).cast<String, int>();
     final typed = <AnySyncUnindexableReason, int>{};
@@ -517,6 +532,9 @@ final class AnySyncLocationStatus {
       droppedFilterValues: j['droppedFields'] as int? ?? 0,
       lastFollowerError: followerError,
       lastFollowerErrorAt: followerErrorAt,
+      orphanGenerations: orphanGenerations,
+      lastGcError: lastGcError,
+      supersedeErrors: supersedeErrors,
     );
   }
 }

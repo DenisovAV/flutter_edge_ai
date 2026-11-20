@@ -137,7 +137,7 @@ FutureOr<Object?> Function(Object) _sdkJob<T>(SdkJob<T> job) =>
     (ctx) => job(ctx as AnySdk);
 
 FutureOr<Object?> Function(Object) _indexJob<T>(IndexJob<T> job) =>
-    (ctx) => job(ctx as AnyIndexHost);
+    (ctx) => runIndexJob(job, ctx as AnyIndexHost);
 
 // ------------------------------------------------------------ the workers
 
@@ -375,11 +375,8 @@ final class FfiSdk implements AnySdk {
   ) => _a.objectRead(spaceId, request);
 
   @override
-  Map<String, Object?> objectDeriveId(
-    String spaceId,
-    String seed,
-    String typeId,
-  ) => _a.objectDeriveId(spaceId, seed, typeId);
+  Map<String, Object?> objectDeriveId(String spaceId, String seed) =>
+      _a.objectDeriveId(spaceId, seed);
 
   @override
   void objectDelete(String spaceId, String objectId) =>

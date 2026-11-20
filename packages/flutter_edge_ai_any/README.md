@@ -94,7 +94,11 @@ Another device of the same account finds the space with
   keep the data and index directories out of an App Group container: a
   process suspended holding a lock there is killed (`0xdead10cc`). Searches
   keep working while suspended; anything that needs the SDK fails with
-  `AnySyncSuspendedException` until `resume()`.
+  `AnySyncSuspendedException` until `resume()`. On iOS a suspend waits for a
+  space load in flight for at most 25 s, less when iOS reports less
+  background time (read after the close's own background task began). Not
+  yet measured on a device: the iOS simulator reports unlimited background
+  time, so there only the 25 s cap applies.
 - **Background sync errors** are reported, never thrown at you: see
   `locationStatus().lastFollowerError` (and `lastFollowerErrorAt`) and the
   `account.followerEvents()` stream (a failure, or `recovered` once a pull

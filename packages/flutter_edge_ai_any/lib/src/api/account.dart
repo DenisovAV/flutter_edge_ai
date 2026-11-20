@@ -116,6 +116,7 @@ final class AnySyncAccount {
       'deviceKeyHex': deviceKey,
       'nodeConfYaml': nodeConfYaml,
       'p2p': p2p._toJson(),
+      if (debugNativeLogLevel != null) 'logLevel': debugNativeLogLevel,
     };
     _openDataDirs.add(data);
     _openIndexDirs.add(index);

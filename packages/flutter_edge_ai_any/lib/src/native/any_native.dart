@@ -297,6 +297,13 @@ const writePendingMax = Duration(minutes: 10);
 /// 60 s). Not exported.
 Duration debugEventsBackoffBase = const Duration(seconds: 1);
 
+/// Debug seam: the native log level ("debug", "info", "warn", "error")
+/// accounts are opened with; null keeps the shim's default ("error").
+/// Process-wide in the shim, applied by the first open. "debug" also logs
+/// the iOS suspend load-wait decision (any_shim: suspend load wait …).
+/// Not exported.
+String? debugNativeLogLevel;
+
 /// Test seam: a clock skew per data directory (absolute path), in ms, added
 /// to the time an account allocates revs with. Not exported.
 final Map<String, int> debugAccountClockSkewMs = {};

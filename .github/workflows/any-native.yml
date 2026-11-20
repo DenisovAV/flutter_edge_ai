@@ -162,8 +162,18 @@ jobs:
       - name: Manifest and verify
         run: |
           version="$(sed -n "s/^const _bundleVersion = '\(.*\)';/\1/p" ../../hook/build.dart)"
-          python release.py manifest "$RUNNER_TEMP/release" "$version"
-          python release.py verify "$RUNNER_TEMP/release" "$version" --hook ../../hook/build.dart
+          shim="$(sed -n 's/^const shimVersion = "\(.*\)"$/\1/p' shim.go)"
+          if [ "$shim" = "$version" ]; then
+            # The release commit: shim.go and the hook agree; compare the pins.
+            python release.py manifest "$RUNNER_TEMP/release" "$version"
+            python release.py verify "$RUNNER_TEMP/release" "$version" --hook ../../hook/build.dart
+          else
+            # Between releases the hook still pins native-any-v$version; check
+            # the layout of this tree under its own -dev version.
+            echo "::notice::shim.go is $shim, the hook pins $version: hook pins not compared"
+            python release.py manifest "$RUNNER_TEMP/release" "$shim"
+            python release.py verify "$RUNNER_TEMP/release" "$shim" --dev
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: any-shim-release-layout

@@ -12,7 +12,7 @@
       `shasum -a 256 -c` reads) and manifest.json (per target: archive,
       archive size and sha256, library name, size and sha256).
 
-  release.py verify <release_dir> <version> [--hook <hook/build.dart>] [--partial]
+  release.py verify <release_dir> <version> [--hook <hook/build.dart>] [--partial] [--dev]
       Every archive matches checksums_any_shim.txt and manifest.json, holds
       exactly its library under the expected name, and that library passes
       check_exports.py for its target. With --hook, the hook's _bundleVersion
@@ -22,7 +22,8 @@
       --partial (a local check of the targets one machine can build).
       shim.go must say shimVersion = <version> (a -dev build is never a
       release) and abiVersion = the header's ANY_SHIM_ABI_VERSION; the
-      manifest records the ABI.
+      manifest records the ABI. --dev (CI between releases) checks a -dev
+      tree's layout under its own -dev version and never compares hook pins.
 
 The published tag must never change: a rebuild goes out under a new
 version with a letter suffix (0.1.0-a), never by re-uploading assets.
@@ -141,21 +142,27 @@ def shim_versions():
     return shim.group(1), int(abi.group(1)), int(hdr.group(1))
 
 
-def check_shim_versions(version):
+def check_shim_versions(version, dev=False):
     """The tag native-any-v<version> must be built from a shim.go that says
     shimVersion = <version> (so a -dev build is never released), with
     abiVersion equal to the header's ANY_SHIM_ABI_VERSION."""
     problems = []
     shim, abi, hdr = shim_versions()
-    if shim != version:
+    if dev:
+        # CI between releases: the layout of a -dev tree, never a release.
+        if not shim.endswith("-dev") or shim != version:
+            problems.append(f"--dev needs the tree's -dev version {shim!r}, got {version!r}")
+    elif shim != version:
         problems.append(f"shim.go says shimVersion {shim!r}, the release is {version!r}")
     if abi != hdr:
         problems.append(f"shim.go abiVersion {abi} differs from the header's ANY_SHIM_ABI_VERSION {hdr}")
     return problems
 
 
-def verify(release_dir, version, hook=None, partial=False):
-    problems = check_shim_versions(version)
+def verify(release_dir, version, hook=None, partial=False, dev=False):
+    if dev and hook:
+        raise SystemExit("FAIL --dev checks a development tree; it never compares hook pins")
+    problems = check_shim_versions(version, dev)
     sums = {}
     for line in open(os.path.join(release_dir, CHECKSUMS)):
         digest, name = line.split()
@@ -221,6 +228,8 @@ def main(argv):
     v.add_argument("version")
     v.add_argument("--hook")
     v.add_argument("--partial", action="store_true")
+    v.add_argument("--dev", action="store_true",
+                   help="CI between releases: a -dev tree, no hook comparison")
     a = ap.parse_args(argv[1:])
     if a.cmd == "pack":
         pack(a.out_dir, a.release_dir, a.targets)
@@ -228,7 +237,7 @@ def main(argv):
     if a.cmd == "manifest":
         manifest(a.release_dir, a.version, a.partial)
         return 0
-    return verify(a.release_dir, a.version, a.hook, a.partial)
+    return verify(a.release_dir, a.version, a.hook, a.partial, a.dev)
 
 
 if __name__ == "__main__":

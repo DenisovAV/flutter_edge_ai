@@ -292,7 +292,9 @@ final eg2Index = await rag.open(
   270m, 440m and 740m; Windows x64 for the 270m; macOS arm64 for the 270m and
   740m. Other bundle combinations on those GPU hosts throw
   `EmbeddingLoadException` as unmeasured. The Linux rows were measured on an
-  NVIDIA L4, 2026-10-26 ([PR #714](https://github.com/DenisovAV/flutter_edge_ai/pull/714));
+  NVIDIA L4, 2026-10-26 (text 13–14 ms on the GPU vs 84–91 ms on the CPU, min
+  cosine 0.99709) and on a Tesla T4 (32–64 ms vs 232–308 ms, cosine 0.99691),
+  both in [PR #714](https://github.com/DenisovAV/flutter_edge_ai/pull/714);
   the Windows 270m passed on Panther Lake Arc B390 and Lunar Lake Arc 140V,
   2026-11-04
   ([0.19 paid-run report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-l1-paid-runs.md));

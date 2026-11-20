@@ -539,7 +539,7 @@ session.
 ### Run it
 
 Index once, then search for **something warm with beans**. Ribollita comes
-first, at around 0.6 — and the word "warm" appears nowhere in it. That is the
+first (in example output at a score around 0.6; your numbers will differ) — and the word "warm" appears nowhere in it. That is the
 difference between semantic search and `LIKE '%warm%'`.
 
 Now kill the app and reopen the recipes page. The header still says

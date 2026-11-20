@@ -109,7 +109,7 @@ final chat = await model.openChat(maxOutputTokens: 100);        // reply cap
 | Browser | Max Model Size | Notes |
 |---|---|---|
 | **Chrome/Firefox** | ~2 GB | ArrayBuffer limit |
-| **Safari** | ~50 MB | ⚠️ Not suitable |
+| **Safari** | — | ⚠️ Not suitable |
 
 - **Large models (>2GB):** use `WebStorageMode.streaming` (OPFS) to bypass the ~2 GB blob limit. Check support with `await FlutterEdgeAi.isStreamingSupported()`. See [Installation → web storage](/docs/installation#2-initialize-flutter-edge-ai).
 - **Storage modes:** `cacheApi` (default, persists across restarts, <2GB), `streaming` (OPFS, large models, requires Chrome 86+/Edge 86+/Safari 15.2+), `none` (ephemeral, testing only).

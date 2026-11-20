@@ -1864,7 +1864,7 @@ In `chat_screen.dart`:
 
 ### Test it
 
-Try these queries:
+Try these queries (example output; your percentages will differ):
 - "What should I eat in Tokyo?" → sources: Tokyo (92%)
 - "Best European city for history?" → sources: Prague (78%), Istanbul (71%)
 - "Tell me about the Eiffel Tower" → sources: Paris (95%)

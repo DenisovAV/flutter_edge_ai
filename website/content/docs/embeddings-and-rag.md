@@ -160,6 +160,8 @@ final vector = await embedder.embed(
   - The Linux rows were measured on an NVIDIA L4, 2026-10-26; the three text
     towers took 13–14 ms on the GPU versus 84–91 ms on its CPU, with minimum
     cosine 0.99709 to the CPU vectors ([PR #714](https://github.com/DenisovAV/flutter_edge_ai/pull/714)).
+    The same PR records a Tesla T4 run: 32–64 ms on the GPU versus 232–308 ms
+    on its CPU, cosine 0.99691.
     The 270m also passed on a GCE Tesla T4, 2026-11-04
     ([0.19 paid-run report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-l1-paid-runs.md)).
   - The Windows 270m passed on a Panther Lake Arc B390 and a Lunar Lake Arc

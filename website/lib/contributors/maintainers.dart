@@ -112,8 +112,8 @@ const maintainers = <Maintainer>[
     about: 'India · software engineer',
     blurb:
         'Measures how much memory a model really takes, read from the OS on '
-        'Android, iOS, macOS, Linux and Windows, and records it next to the '
-        'timings in the benchmark. Also fixed LiteRT-LM on the GPU and on Windows ARM64.',
+        'Android, iOS and macOS, and records it next to the timings in the '
+        'benchmark. Also fixed LiteRT-LM on the GPU and on Windows ARM64.',
     website: 'https://samarth-vala-portfolio.vercel.app',
   ),
   Maintainer(

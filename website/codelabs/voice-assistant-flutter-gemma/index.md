@@ -508,8 +508,9 @@ With `streamAudio`, the session synthesizes the reply clause by clause as the
 tokens arrive. You get several `VoiceReplyAudioEvent`s with `isFinal: false`,
 then one empty one with `isFinal: true` that only says "that was all".
 
-On an M4 Pro the first audio arrived about **0.6 s** after the question
-finished — before the model had written its second sentence.
+As an example, on an M4 Pro the first audio arrived about **0.6 s** after the
+question finished — before the model had written its second sentence. Your
+timing will differ.
 
 ### Play clips in order
 

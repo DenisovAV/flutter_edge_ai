@@ -37,6 +37,9 @@ void main() {
       debugEventsBackoffBase = const Duration(milliseconds: 1);
       final p = await pair(w);
       final rt = w.runtimeOf('b');
+      // Pollers that never poll successfully: only a delivered event says
+      // events flow again.
+      rt.pollerReady = false;
       final events = <AnySyncFollowerEvent>[];
       final sub = p.b.followerEvents().listen(events.add);
       addTearDown(sub.cancel);
@@ -81,6 +84,49 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 700));
         expect(rt.pollersStarted, started + 1, reason: 'the old timer is gone');
       },
+    );
+  });
+
+  test('a restarted poller that polls successfully clears eventsDown, '
+      'without any event', () async {
+    debugEventsBackoffBase = const Duration(milliseconds: 1);
+    final p = await pair(w);
+    final rt = w.runtimeOf('b');
+    final events = <AnySyncFollowerEvent>[];
+    final sub = p.b.followerEvents().listen(events.add);
+    addTearDown(sub.cancel);
+    final started = rt.pollersStarted;
+    rt.failEvents('poll failed');
+    await until(() => rt.pollersStarted > started);
+    await until(
+      () =>
+          events.isNotEmpty &&
+          events.last.location == null &&
+          events.last.recovered,
+    );
+    expect(
+      events.where((e) => e.location == null && !e.recovered),
+      hasLength(1),
+    );
+    expect((await p.b.locationStatus(p.loc)).eventsDownSince, isNull);
+  });
+
+  test('a failed conflict count never replaces the conflict', () async {
+    final p = await pair(w);
+    final manifest = p.sa.objects.values.firstWhere((o) => o.typeId == locRoot);
+    manifest.leaves['core']!['image'] = FakeVal({'fmt': 1});
+    p.sa.change(manifest.id);
+    await p.a.pull(p.loc);
+    FakeIndex.failScanPrefix = 'u/';
+    await expectLater(
+      p.ia.addVector(id: 'x', embedding: [1, 0, 0, 0], content: 'X'),
+      throwsA(
+        isA<AnySyncConflictException>().having(
+          (e) => e.conflictingDocuments,
+          'conflictingDocuments',
+          0,
+        ),
+      ),
     );
   });
 

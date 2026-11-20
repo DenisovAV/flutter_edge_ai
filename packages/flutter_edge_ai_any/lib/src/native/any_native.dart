@@ -280,6 +280,10 @@ Future<T> runIndexJob<T>(
   }
 }
 
+/// The event a poller emits once after its first successful poll: it
+/// works, even if nothing happens. Not an any_shim.h event.
+const Map<String, Object?> pollerReadyEvent = {'kind': 'pollerReady'};
+
 /// [job], retrying index PENDING answers for at most [max].
 IndexJob<T> pendingRetrying<T>(IndexJob<T> job, Duration max) =>
     (h) => runIndexJob(job, h, max: max);

@@ -795,9 +795,8 @@ final class _LocationCore {
       );
     }
     final j = (jsonDecode(w.detail ?? '{}') as Map).cast<String, Object?>();
-    final conflicting = await account._rt.index(
-      conflictingDocumentsJob(handle),
-    );
+    // As everywhere: a failed count never replaces the conflict.
+    final conflicting = await _conflictingDocuments();
     Error.throwWithStackTrace(
       AnySyncConflictException._(
         AnySyncManifest._fromJson({...j, 'present': true}),

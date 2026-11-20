@@ -622,6 +622,10 @@ final class _EventsPoller {
         stop();
         return;
       }
+      if (msg == true) {
+        _controller.add(pollerReadyEvent);
+        return;
+      }
       for (final e in (msg as List)) {
         _controller.add((e as Map).cast<String, Object?>());
       }
@@ -653,10 +657,17 @@ void _eventsMain(List<Object?> args) {
   final out = args[0]! as SendPort;
   final account = AnyShimAccount.fromHandle(args[1]! as int);
   var failures = 0;
+  var ready = false;
   while (true) {
     try {
       final events = account.pollEvents(maxEvents: 256, timeoutMs: 250);
       failures = 0;
+      // Once, after the first successful poll: the poller works even when
+      // nothing happens, so the account's events are up again.
+      if (!ready) {
+        ready = true;
+        out.send(true);
+      }
       if (events.isNotEmpty) out.send(events);
     } on AnyShimException catch (e) {
       if (e.status == AnyShimStatus.closed) {

@@ -75,6 +75,7 @@ final class World {
     FakeIndexHost.bindConflictInOp = false;
     FakeIndex.gcError = null;
     FakeIndex.failClose = false;
+    FakeIndex.failScanPrefix = null;
     readPendingMax = const Duration(seconds: 10);
     debugEngineMutations.clear();
     debugAccountClockSkewMs.clear();

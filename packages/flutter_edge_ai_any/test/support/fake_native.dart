@@ -368,8 +368,13 @@ final class FakeRuntime implements AnyRuntime {
     c.onCancel = sub.cancel;
     _pollers.add(c);
     pollersStarted++;
+    // As the FFI poller after its first successful poll.
+    if (pollerReady) scheduleMicrotask(() => c.add(pollerReadyEvent));
     return c.stream;
   }
+
+  /// Whether a new poller reports ready (a successful first poll).
+  bool pollerReady = true;
 
   final _pollers = <StreamController<Map<String, Object?>>>[];
   int pollersStarted = 0;
@@ -1120,6 +1125,9 @@ final class FakeIndex implements AnyIndexApi {
   /// The index's native close answers an error (it still ends).
   static bool failClose = false;
 
+  /// A state scan of this prefix answers IO.
+  static String? failScanPrefix;
+
   @override
   int bindStart(Map<String, Object?> config) {
     final r = bind(config);
@@ -1315,6 +1323,10 @@ final class FakeIndex implements AnyIndexApi {
     int limit = 0,
     bool shadow = false,
   }) {
+    final failing = failScanPrefix;
+    if (failing != null && prefix == failing) {
+      throw _err('any_shim_index_scan', AnyShimStatus.io, 'scan refused');
+    }
     final st = (shadow ? _f.shadowState : _f.state) ?? const {};
     final n = limit <= 0 ? 500 : limit;
     final keys =

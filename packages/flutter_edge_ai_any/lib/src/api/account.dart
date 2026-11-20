@@ -243,8 +243,11 @@ final class AnySyncAccount {
         .events(handle)
         .listen(
           (e) {
-            // A poller that delivers is up again (D3-1).
-            _pollerFailures = 0;
+            // A poller that polled successfully (its one-time ready
+            // message) or delivers is up again (D3-1). Only a delivered
+            // event resets the restart backoff: a poller that is ready and
+            // then fails at once keeps backing off.
+            if (e['kind'] != pollerReadyEvent['kind']) _pollerFailures = 0;
             if (_pollerDown) {
               _pollerDown = false;
               _maybeEventsUp();

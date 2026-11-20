@@ -192,7 +192,7 @@ Current support: LiteRT-LM enforces the whole dialect on macOS and iOS arm64
 CPU/Metal, Linux x64 CPU/Vulkan, Windows x64 CPU/D3D12, and Android arm64 CPU
 plus Adreno/Mali/PowerVR GPU. Every NPU, Web, and unlisted row is refused.
 MediaPipe refuses every format. ONNX accepts
-native macOS arm64 and Windows x64 with `tokenizer.json`; a qualified GGUF runtime accepts
+native macOS arm64, Linux x64 and Windows x64 with `tokenizer.json`; a qualified GGUF runtime accepts
 macOS arm64 CPU/Metal and Chrome on macOS with dart2wasm + WebGPU, subject to
 `refusalFor`; built-in AI has no qualified platform yet.
 

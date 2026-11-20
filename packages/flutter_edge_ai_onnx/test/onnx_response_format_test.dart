@@ -146,17 +146,17 @@ void main() {
     });
 
     test('a host whose archive has guidance is refused until its run has '
-        'passed: macOS arm64 and Windows x64 so far', () async {
+        'passed: macOS arm64, Linux x64 and Windows x64 so far', () async {
       debugVerifiedGuidanceAbis = null;
       final (model, _) = await loaded('run_gate');
-      for (final abi in [Abi.macosArm64, Abi.windowsX64]) {
+      for (final abi in [Abi.macosArm64, Abi.linuxX64, Abi.windowsX64]) {
         expect(
           guidanceRefusalOf(model.client, abi: abi),
           isNull,
           reason: '$abi',
         );
       }
-      for (final abi in [Abi.linuxX64, Abi.windowsArm64]) {
+      for (final abi in [Abi.windowsArm64]) {
         expect(
           guidanceRefusalOf(model.client, abi: abi),
           allOf(contains('$abi'), contains('has not been run')),

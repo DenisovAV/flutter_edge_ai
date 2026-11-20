@@ -1,4 +1,4 @@
-## Unreleased
+## 1.2.0
 - Text and hybrid (RRF) search: `searchText`, `searchHybrid`, `VectorStoreSpec.enableTextSearch`.
 
 ## 1.1.2

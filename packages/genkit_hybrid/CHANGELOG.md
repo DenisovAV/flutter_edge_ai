@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+- README links the full documentation; the showcase link is in the core README only.
+
 ## 0.5.0
 
 - Remove the deprecated composite-model API and `RoutingStrategy` family.

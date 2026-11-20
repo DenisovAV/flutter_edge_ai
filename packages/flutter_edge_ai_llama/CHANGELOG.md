@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Update llamadart to ^0.20.1 with compatible Apple and Web runtimes.
+- README links the full documentation; the showcase link is in the core README only.
 
 ## 0.1.0
 

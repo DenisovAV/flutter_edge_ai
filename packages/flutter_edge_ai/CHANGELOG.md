@@ -1,4 +1,4 @@
-## Unreleased
+## 2.7.0
 - Hugging Face resolvers per role: `type`, `family`, `tokenizerFile`, `installEmbedder().fromHuggingFace`, runtime defaults for every role.
 - `Message.hashCode` hashes media by content like `==`, which now compares `images` by content too (#823).
 - Qwen3's ` /no_think` stays out of `fullHistory`; a replayed chat sends it once per turn.

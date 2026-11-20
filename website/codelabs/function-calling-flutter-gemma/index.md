@@ -599,10 +599,10 @@ It takes a Hugging Face checkpoint through LoRA fine-tuning, merges, exports to
 `.litertlm`, and bundles the result with metadata — five commands, because each
 stage fails differently and a single `run` would hide which one you are in.
 
-The commands below are checked against **litetune 0.7.2**: run end to end on
-2026-10-12 with 0.4.1, and every option and value they use is accepted by 0.7.2
-(checked against its `--help` on 2026-10-31). It pins LiteRT-LM 0.18.0 for
-verification and the matching 0.18.0 builder for conversion. The source is
+The commands below are checked against **litetune 0.9.1**: run end to end on
+2026-10-12 with 0.4.1, and every option and value they use is accepted by 0.9.1
+(checked against its argument parser at the v0.9.1 tag on 2026-11-19). It pins
+LiteRT-LM 0.19.1 for verification and the 0.18.0 builder for conversion. The source is
 available on [GitHub](https://github.com/DenisovAV/litetune).
 
 This verification pipeline deliberately stays on litetune's measured LiteRT-LM

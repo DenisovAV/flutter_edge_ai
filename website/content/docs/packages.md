@@ -15,8 +15,8 @@ depend on it. Apps ship only the runtimes and vector stores they use.
 
 | Package | What it does | Platforms |
 |---|---|---|
-| **`flutter_edge_ai`** | Core — registry, contracts, model management, sessions, chat. No engine on its own. **Required by every package except `flutter_edge_ai_diagnostics` and `genkit_hybrid`.** | All |
-| **`flutter_edge_ai_litertlm`** | `.litertlm` inference via `dart:ffi` (LiteRT-LM C API), plus `LiteRtEmbeddingBackend` for `.tflite` and EmbeddingGemma 2 embeddings. Owns the shared native library. | Mobile + Desktop + Web |
+| **`flutter_edge_ai`** | Core — registry, contracts, model management, sessions, chat. No engine on its own. **Required by every package except `flutter_edge_ai_diagnostics`, `genkit_hybrid` and `litertlm_dart`.** | All |
+| **`flutter_edge_ai_litertlm`** | `.litertlm` inference via `dart:ffi` (LiteRT-LM C API), plus `LiteRtEmbeddingBackend` for `.tflite` and EmbeddingGemma 2 embeddings. Built on `litertlm_dart`, which owns the shared native library (from 1.21.0). | Mobile + Desktop + Web |
 | **`flutter_edge_ai_mediapipe`** | `.task` / `.bin` inference via MediaPipe. Google's LLM Inference API is maintenance-only — new apps should use `.litertlm`. | Mobile + Web |
 | **`flutter_edge_ai_builtin_ai`** | System OS models — Gemini Nano (Android / AICore), Apple Foundation Models (iOS 26+/macOS 26+), Windows AI Foundry (Phi Silica), and the browser Prompt API (Web — Gemini Nano in Chrome, Phi-4-mini in Edge). No model file to bundle or download. A thin adapter over [`flutter_local_ai`](https://pub.dev/packages/flutter_local_ai), which owns the native layer — not a plugin itself. | Android + iOS + macOS + Windows + Web |
 | **`flutter_edge_ai_llama`** | [GGUF inference](/docs/llama) and native EmbeddingGemma 2 text embeddings (`LlamaEmbeddingBackend`) through llamadart. Native artifacts and the Web bridge remain owned by llamadart. | Android, iOS, macOS, Windows, Linux + Web; see qualification matrix |
@@ -47,8 +47,8 @@ is on the [Capabilities](/docs/capabilities) page.
 - **One app can run both formats.** Register both `LiteRtLmEngine()` and
   `MediaPipeEngine()`, and the registry routes each model to the engine that
   handles its declared `ModelFileType` — not its file extension.
-- **Shared native library.** `litertlm_dart`, the pure-Dart LiteRT-LM runtime
-  under `flutter_edge_ai_litertlm` (from 1.21.0), owns the native LiteRT library
+- **Shared native library.** [`litertlm_dart`](https://pub.dev/packages/litertlm_dart),
+  the pure-Dart LiteRT-LM runtime under `flutter_edge_ai_litertlm` (from 1.21.0), owns the native LiteRT library
   (fetched at build time via its Native-Assets hook);
   `flutter_edge_ai_litertlm` and `flutter_edge_ai_speech` have no hook of their
   own and consume that bundle through it. `flutter_edge_ai_embeddings` touches no native library at all. `flutter_edge_ai_onnx` owns its own separate ORT / ORT-GenAI

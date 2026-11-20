@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-rag
-description: Use when adding or debugging on-device RAG, semantic search, embeddings (EmbeddingGemma 2 .litertlm or .gguf through flutter_edge_ai_llama, EmbeddingGemma 1 or Gecko .tflite, ONNX models such as MiniLM), metadata filters, embedding profiles, image or audio document indexes, or pluggable sqlite-vec/qdrant-edge storage in a flutter_edge_ai app with flutter_edge_ai_rag, flutter_edge_ai_sqlite or flutter_edge_ai_qdrant. Also use when moving RAG code to flutter_edge_ai 2.0 or to flutter_edge_ai_rag 1.1 — FlutterEdgeAi.rag is undefined, initialize(vectorStore:) was removed, addText/searchText/activeEmbedderProfileId are undefined, or open() throws "No vector-store provider can handle providerId" or "is bound to" — and when QdrantLegacyStoreException or an embedding-profile mismatch is thrown.
+description: Use when adding or debugging on-device RAG, semantic search, embeddings (EmbeddingGemma 2 .litertlm or .gguf through flutter_edge_ai_llama, EmbeddingGemma 1 or Gecko .tflite, ONNX models such as MiniLM), metadata filters, embedding profiles, image or audio document indexes, or pluggable sqlite-vec/qdrant-edge storage in a flutter_edge_ai app with flutter_edge_ai_rag, flutter_edge_ai_sqlite or flutter_edge_ai_qdrant. Also use when moving RAG code to flutter_edge_ai 2.0 or to flutter_edge_ai_rag 1.1 — FlutterEdgeAi.rag is undefined, initialize(vectorStore:) was removed, addText/activeEmbedderProfileId are undefined or searchText(query:) no longer compiles, or open() throws "No vector-store provider can handle providerId" or "is bound to" — and when QdrantLegacyStoreException or an embedding-profile mismatch is thrown.
 ---
 
 # On-device RAG with Flutter Edge AI
@@ -418,7 +418,7 @@ The same repos hold each bundle compiled for one SoC's NPU
 Qualcomm Android (arm64) and Qualcomm Linux arm64, in an app whose pubspec (the
 workspace root's, for a workspace member) sets
 `hooks: user_defines: litertlm_dart: qualcomm_npu: true` (the flag
-the LLM NPU path uses), loaded with `preferredBackend: PreferredBackend.npu`:
+the LLM NPU path uses; `flutter_edge_ai_litertlm:` before 1.21.0), loaded with `preferredBackend: PreferredBackend.npu`:
 
 ```dart
 const eg2Revision = '9be6e8b90982095dc05c2bd162e4b954ee4dbac7';
@@ -1076,14 +1076,14 @@ await FlutterEdgeAi.dispose(); // resets core's registries; closes no model
 | `open(spec:, embeddingProfile: p)` (vectors only) | `openVectors(spec:, profile: p)` |
 | `open()` bound the profile on the first text operation | `open()` resolves the profile and binds the location at once; install the embedder first |
 | `index.addText(id:, content: c)` | `index.add(id:, document: EmbeddingInput.text(c))` |
-| `index.searchText(query: q)` | `index.search(query: EmbeddingInput.text(q))` |
+| `index.searchText(query: q)` | `index.search(query: EmbeddingInput.text(q))` — `searchText(text:)` in rag 1.2 is a different method, keyword (FTS5/BM25) search; see Text and hybrid search |
 | `index.embeddingProfile` could be null | never null; `index.documents` names the modality |
 | `RagEmbedder` with a `profile` getter, `embedDocument(String)`, `embedQuery(String)` | `resolveProfile()`, `modalities`, `embedDocument(EmbeddingInput)`, `embedQuery(EmbeddingInput, documentModality:)` |
 | a filter on an undeclared field was ignored | `ArgumentError` |
 | `VectorStoreRepository` (`implements`), `readEmbeddingProfile`/`bindEmbeddingProfile` | `abstract base class` (`extends`), `readBinding()`/`bind(VectorStoreBinding)` |
 
 Upgrade every flutter_edge_ai package together: the stores of this release
-need flutter_edge_ai_rag 1.1.
+need flutter_edge_ai_rag 1.1 (`flutter_edge_ai_sqlite` 2.2 needs 1.2).
 
 ## Moving from 1.x core RAG to 2.0
 

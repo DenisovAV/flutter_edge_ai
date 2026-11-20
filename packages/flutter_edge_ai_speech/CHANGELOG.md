@@ -1,4 +1,4 @@
-## Unreleased
+## 0.6.2
 - LiteRT bindings come from `litertlm_dart`.
 
 ## 0.6.1

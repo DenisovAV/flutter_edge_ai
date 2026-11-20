@@ -1,4 +1,4 @@
-## Unreleased
+## 2.2.0
 - Text search with SQLite FTS5 (BM25) on every platform.
 
 ## 2.1.1

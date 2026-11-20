@@ -812,11 +812,14 @@ void main() {
         // bundle from the same repo. LiteRT refuses it on another Tensor.
         if (Platform.isAndroid)
           '$_androidDir/gemma-4-E2B-it_Google_Tensor_G6.litertlm',
-        // Windows (Intel NPU): Google's Lunar Lake bundle from the same repo
-        // first — the registry build, so the run counts as its evidence —
-        // then a locally compiled one.
+        // Windows (Intel NPU): Google's Lunar Lake and Panther Lake bundles
+        // from the same repo first — registry builds, so the run counts as
+        // their evidence; stage only this machine's — then a locally
+        // compiled one.
         if (Platform.isWindows)
           '$_windowsDir\\gemma-4-E2B-it_intel_LNL.litertlm',
+        if (Platform.isWindows)
+          '$_windowsDir\\gemma-4-E2B-it_intel_PTL.litertlm',
         if (Platform.isWindows)
           '${Platform.environment['USERPROFILE']}\\dev-gemma4-2b-lnl\\gemma4_2b_lnl.litertlm',
         // Linux arm64 (Qualcomm QNN): the SoC's bundle staged in ~/models.

@@ -9,10 +9,10 @@ tools.json    the four declarations, the same ones lib/tools.dart holds
 raw.jsonl     90 prompt -> tool-call rows to train and score on
 ```
 
-The commands below are checked against **litetune 0.7.2**: run end to end on
-2026-10-12 with 0.4.1, and every option and value they use is accepted by 0.7.2
-(checked against its `--help` on 2026-10-31). It pins LiteRT-LM 0.18.0 for
-verification and the matching 0.18.0 builder for conversion. The project source
+The commands below are checked against **litetune 0.9.1**: run end to end on
+2026-10-12 with 0.4.1, and every option and value they use is accepted by 0.9.1
+(checked against its argument parser at the v0.9.1 tag on 2026-11-19). It pins
+LiteRT-LM 0.19.1 for verification and the 0.18.0 builder for conversion. The project source
 is also available on [GitHub](https://github.com/DenisovAV/litetune).
 
 This verification pipeline deliberately stays on litetune's measured LiteRT-LM

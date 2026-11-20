@@ -1,3 +1,6 @@
+## 2.3.3
+- README: the shared native cache is `litertlm_dart`'s since core 2.7.0.
+
 ## 2.3.2
 - README: the current embedding backend SPI.
 

@@ -14,6 +14,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_any/src/native/any_native.dart';
+import 'package:flutter_edge_ai_any/src/native/fs.dart' show absolutePath;
 
 AnyShimException _err(String op, AnyShimStatus s, String msg) =>
     AnyShimException(op, s.code, msg);
@@ -56,7 +57,9 @@ final class FakeNetwork {
         _links.contains(_pair(d.dataDir, o.dataDir)),
   );
 
-  FakeDevice device(String dataDir) => devices[dataDir]!;
+  /// [dataDir] in any spelling: looked up by the absolute form the account
+  /// passes natively (on Windows, backslashes and a drive letter).
+  FakeDevice device(String dataDir) => devices[absolutePath(dataDir)]!;
 
   String newObjectId() => 'obj${(++_objectCounter).toString().padLeft(8, '0')}';
 

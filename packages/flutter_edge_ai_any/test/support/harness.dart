@@ -10,6 +10,7 @@ import 'package:flutter_edge_ai_any/src/logic/engine.dart'
 import 'package:flutter_edge_ai_any/src/logic/formats.dart';
 import 'package:flutter_edge_ai_any/src/native/any_native.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_any/src/native/fs.dart' show absolutePath;
 
 import 'fake_native.dart';
 
@@ -56,7 +57,7 @@ final class World {
   FakeDevice device(String name) => net.device('$root/$name/sdk');
 
   FakeRuntime runtimeOf(String name) => net.runtimes.lastWhere(
-    (r) => r.sdkImpl.device?.dataDir == '$root/$name/sdk',
+    (r) => r.sdkImpl.device?.dataDir == absolutePath('$root/$name/sdk'),
   );
 
   Future<void> dispose() async {

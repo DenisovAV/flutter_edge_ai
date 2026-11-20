@@ -17,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_edge_ai_any/src/native/any_native.dart'
     show debugAccountClockSkewMs;
+import 'package:flutter_edge_ai_any/src/native/fs.dart' show absolutePath;
 
 import '../support/native_library.dart';
 
@@ -155,7 +156,7 @@ void main() {
 
       // A clock 10 min ahead on B: A counts the lead, and A's next write
       // still wins (its HLC took in B's rev).
-      debugAccountClockSkewMs['$dir/b/sdk'] = 10 * 60 * 1000;
+      debugAccountClockSkewMs[absolutePath('$dir/b/sdk')] = 10 * 60 * 1000;
       await ib.addVector(id: 'z', embedding: [0, 0, 0, 1], content: 'b ahead');
       debugAccountClockSkewMs.clear();
       await until(() async {

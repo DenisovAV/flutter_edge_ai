@@ -128,6 +128,13 @@ jobs:
             exit 1
           fi
 
+      # Two accounts in one process through RagIndex, over LAN p2p.
+      - name: Provider LAN sync test
+        if: matrix.test && matrix.target == 'linux_x86_64'
+        run: |
+          cd ../.. && flutter test --no-pub -t lan --run-skipped --reporter expanded test/lan 2>&1 | tee "$RUNNER_TEMP/lan_dart.log" | grep -vE "subscribeclient|net\.transport"
+          grep -qE "\+[1-9][0-9]*: All tests passed" "$RUNNER_TEMP/lan_dart.log" || { echo "::error::the provider LAN test did not pass"; exit 1; }
+
       - name: Package the release archive
         run: python release.py pack "$RUNNER_TEMP/out" "$RUNNER_TEMP/release" ${{ matrix.target }}
 

@@ -140,7 +140,11 @@ abstract final class Models {
     // for such a FunctionGemma file on its own, so the value is redundant
     // there; it stays because it still works and older versions need it. A
     // model you re-convert in Step 4 carries the key, so `fromDisk` keeps the
-    // defaults.
+    // defaults. On Adreno 8xx GPUs the native build in
+    // flutter_edge_ai_litertlm 1.21.0 fails Gemma 4 E2B at float32 at the
+    // first token, and FunctionGemma at float32 there is unmeasured: if a turn
+    // fails and its error names float32, set
+    // `preferredBackend: PreferredBackend.cpu` here.
     maxTokens: 1024,
     activationDataType: ActivationDataType.float32,
   );

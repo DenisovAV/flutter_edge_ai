@@ -15,11 +15,11 @@ The commands below are checked against **litetune 0.9.1**: run end to end on
 LiteRT-LM 0.19.1 for verification and the 0.18.0 builder for conversion. The project source
 is also available on [GitHub](https://github.com/DenisovAV/litetune).
 
-This verification pipeline deliberately stays on litetune's measured LiteRT-LM
-0.18 verifier and matching builder. The completed Flutter app uses
-`flutter_edge_ai_litertlm` 1.20.0 and runs LiteRT-LM 0.19; the verifier
-version is not the app runtime. Do not change the commands to 0.19 without
-re-running and replacing the measurements below.
+The measurements below were taken with litetune 0.4.1, whose verifier ran
+LiteRT-LM 0.18; litetune 0.9.1 verifies on LiteRT-LM 0.19.1, and its changelog
+reports the same numbers on 0.18.0 and 0.19.1 for every family it measured. The
+completed Flutter app uses `flutter_edge_ai_litertlm` 1.21.0 and runs LiteRT-LM
+0.19.1 through `litertlm_dart`; the verifier version is not the app runtime.
 
 Converted with litetune 0.3.0 on Python 3.10 or 3.11? Convert again: with a
 relative `--output-dir`, as below, that version wrote a bundle without its GPU

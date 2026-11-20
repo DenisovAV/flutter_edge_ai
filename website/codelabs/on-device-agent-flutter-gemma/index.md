@@ -111,6 +111,13 @@ final chat = await inference.openChat(
 the length of the answer. 4096 leaves room for what an agent adds to the
 conversation in the next steps.
 
+On a GPU, Gemma 4 with a context above 2,048 tokens runs float32 activations
+on iOS, macOS, Windows and Linux, because at float16 its positions stop being
+distinct past about 2,048 tokens (LiteRT-LM #4001). Android keeps the bundle's
+float16, since float32 fails on Adreno 8xx GPUs with the native build in
+`flutter_edge_ai_litertlm` 1.21.0, and prints one WARNING line saying so. An
+explicit `activationDataType` always wins.
+
 Now ask it two things:
 
 ```text

@@ -88,9 +88,10 @@ each.
   storage quota refuses the write rather than slowing down. Every step uses
   the same file there, but each step app downloads it again on the web; Step 3
   says why
-* Android (an **arm64** device or emulator — `flutter_edge_ai_litertlm` ships an
-  arm64 library and nothing else, so a 32-bit or x86_64 image has no runtime to
-  load), a real iPhone or iPad, macOS, Windows or Linux for the full thing.
+* Android (an **arm64** device or emulator — `flutter_edge_ai_litertlm`'s
+  runtime package, `litertlm_dart`, ships an arm64 library and nothing else, so
+  a 32-bit or x86_64 image has no runtime to load), a real iPhone or iPad,
+  macOS, Windows or Linux for the full thing.
   The web and the iOS Simulator both run this app; Step 4 covers what they do
   instead
 
@@ -427,6 +428,13 @@ charges a message carrying an image a flat **257 tokens** against `maxTokens`
 in its own bookkeeping (`lib/src/chat.dart`), and trims the oldest history
 when the total gets close. That is the SDK's accounting, not a measurement of
 the model.
+
+On a GPU, Gemma 4 with a context above 2,048 tokens runs float32 activations
+on iOS, macOS, Windows and Linux, because at float16 its positions stop being
+distinct past about 2,048 tokens (LiteRT-LM #4001). Android keeps the bundle's
+float16, since float32 fails on Adreno 8xx GPUs with the native build in
+`flutter_edge_ai_litertlm` 1.21.0, and prints one WARNING line saying so. An
+explicit `activationDataType` always wins.
 
 ### Pick the image
 

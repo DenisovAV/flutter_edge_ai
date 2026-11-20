@@ -360,6 +360,15 @@ same on GPU as on CPU and runs about 1.5× faster — which is a fair summary of
 what the fine-tuning step buys you even before you change a single training
 row.
 
+On Android, float32 for FunctionGemma is measured on one GPU: a fine-tuned
+FunctionGemma on a Galaxy S24 (Adreno 750) flooded 14 of 20 prompts with
+`<pad>` at float16 and none at float32, at 1.4 s per prompt against 2.5 s on
+the CPU. On Adreno 8xx GPUs the native build in `flutter_edge_ai_litertlm`
+1.21.0 fails Gemma 4 E2B at float32 at the first token (measured on a Galaxy
+S25 Ultra, Adreno 830), and FunctionGemma at float32 there is unmeasured. If a
+turn fails and the stream error names float32, open the model with
+`preferredBackend: PreferredBackend.cpu`.
+
 What changes with tools is not the number but what has to fit under it: the
 declarations are rendered into the prompt once — by the runtime — and stay in
 the history for the rest of the conversation, and every call and every tool response is another
@@ -605,11 +614,11 @@ The commands below are checked against **litetune 0.9.1**: run end to end on
 LiteRT-LM 0.19.1 for verification and the 0.18.0 builder for conversion. The source is
 available on [GitHub](https://github.com/DenisovAV/litetune).
 
-This verification pipeline deliberately stays on litetune's measured LiteRT-LM
-0.18 verifier and matching builder. The completed Flutter app uses
-`flutter_edge_ai_litertlm` 1.20.0 and runs LiteRT-LM 0.19; the verifier
-version is not the app runtime. Do not change the commands to 0.19 without
-re-running and replacing the measurements below.
+The measurements below were taken with litetune 0.4.1, whose verifier ran
+LiteRT-LM 0.18; litetune 0.9.1 verifies on LiteRT-LM 0.19.1, and its changelog
+reports the same numbers on 0.18.0 and 0.19.1 for every family it measured. The
+completed Flutter app uses `flutter_edge_ai_litertlm` 1.21.0 and runs LiteRT-LM
+0.19.1 through `litertlm_dart`; the verifier version is not the app runtime.
 
 Converted with litetune 0.3.0 on Python 3.10 or 3.11? Convert again: with a
 relative `--output-dir`, as below, that version wrote a bundle without its GPU
@@ -1131,6 +1140,14 @@ defaults:
         activationDataType: widget.model.activationDataType,
       );
 ```
+
+For Gemma 4 that default depends on the context. Above 2,048 tokens its GPU
+attempt runs float32 activations on iOS, macOS, Windows and Linux, because at
+float16 its positions stop being distinct past about 2,048 tokens
+(LiteRT-LM #4001). Android keeps the bundle's float16, since float32 fails on
+Adreno 8xx GPUs with the native build in `flutter_edge_ai_litertlm` 1.21.0, and
+prints one WARNING line saying so. An explicit `activationDataType` always
+wins.
 
 ### Where this runs
 

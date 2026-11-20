@@ -41,9 +41,10 @@ By the end you will have:
   Cursor, GitHub Copilot, Cline or OpenCode. Step 2 covers each of them, and
   Antigravity and Claude Code in detail
 * Any one of Flutter's six platforms to run the result on. On **Android** it has
-  to be an arm64 device or emulator: `flutter_edge_ai_litertlm` ships an arm64
-  library and nothing else, so a 32-bit or x86_64 image has no runtime to load
-  (an Apple-silicon Mac's emulator is arm64)
+  to be an arm64 device or emulator: `flutter_edge_ai_litertlm`'s runtime
+  package, `litertlm_dart`, ships an arm64 library and nothing else, so a
+  32-bit or x86_64 image has no runtime to load (an Apple-silicon Mac's
+  emulator is arm64)
 * About 3.5 GB of free space: Gemma 4 E2B is 2.6 GB on a device and 2.0 GB on
   the web, and neither a phone nor a browser near its storage limit takes a
   write that only just fits, so leave headroom

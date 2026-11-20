@@ -57,9 +57,10 @@ point.
   downloaded-model fallback even though `flutter_edge_ai_builtin_ai` itself
   supports Windows. One of the implemented four lets you watch both engines
   answer
-* On **Android**, an arm64 device or emulator: `flutter_edge_ai_litertlm` ships an
-  arm64 library and nothing else, so a 32-bit or x86_64 image has no runtime to
-  load. An Apple-silicon Mac's emulator is arm64
+* On **Android**, an arm64 device or emulator: `flutter_edge_ai_litertlm`'s
+  runtime package, `litertlm_dart`, ships an arm64 library and nothing else, so
+  a 32-bit or x86_64 image has no runtime to load. An Apple-silicon Mac's
+  emulator is arm64
 * Chrome has a hardware floor for its copy of Nano that the flag does not lift.
   `flutter_edge_ai_builtin_ai` states it as **~22 GB of free disk and a GPU with
   more than 4 GB of VRAM**, or a CPU-only path on a machine with 16 GB of RAM.
@@ -673,9 +674,12 @@ extends further than these two engines:
   iOS and the web
 * **ONNX Runtime** (`flutter_edge_ai_onnx`) opens ONNX model directories on
   macOS, Linux, Windows, Android and iOS, and runs on the web through
-  Transformers.js
+  Transformers.js; on iOS it needs a 15.1 deployment target
 * **llama.cpp** (`flutter_edge_ai_llama`) opens `.gguf` files on Android, iOS,
-  macOS, Windows, Linux and the web
+  macOS, Windows, Linux and the web; it needs iOS 16.4 and macOS 14, and the
+  web needs the setup in its README
+  (`dart run llamadart:web_setup --no-index-html`, a bootstrap script and
+  cross-origin isolation headers)
 * **LiteRT-LM** — the engine you already registered — has a **web** arm too,
   running `.litertlm` in the browser through `@litert-lm/core`, which is what
   makes this app's fallback work in Chrome as well. It only runs a `.litertlm`

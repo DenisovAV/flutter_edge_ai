@@ -21,11 +21,20 @@ package main
 // returned the id: it then only marks the task expired, and the begin
 // side ends it once the id is stored. "ended" makes the end happen once,
 // whichever side gets there. The struct is never freed: after an end the
-// handler may still be running; it is a few bytes per close.
+// handler (or the refresh below) may still run; it is a few bytes per
+// close.
+//
+// After the task has begun, its own read of backgroundTimeRemaining runs
+// on the main queue (UIKit is main-thread only): the time the task buys
+// is only visible from then on. "refreshed" says that read happened;
+// "remaining" is its value (< 0: in the foreground, no bound).
 typedef struct {
 	atomic_ulong task; // UIBackgroundTaskInvalid is 0
 	atomic_int expired;
 	atomic_int ended;
+	atomic_int refreshed;
+	_Atomic double remaining; // seconds, at refreshed_at
+	_Atomic double refreshed_at; // CFAbsoluteTime of the read
 } any_shim_bg;
 
 static id any_shim_app(void) {
@@ -33,6 +42,16 @@ static id any_shim_app(void) {
 	SEL shared = sel_registerName("sharedApplication");
 	if (cls == nil || ![cls respondsToSelector:shared]) return nil;
 	return ((id (*)(id, SEL))objc_msgSend)((id)cls, shared);
+}
+
+// backgroundTimeRemaining on the main thread; < 0 in the foreground
+// (UIKit answers DBL_MAX there) or without a UIApplication.
+static double any_shim_bg_read_main(void) {
+	id app = any_shim_app();
+	SEL sel = sel_registerName("backgroundTimeRemaining");
+	if (app == nil || ![app respondsToSelector:sel]) return -1;
+	double r = ((double (*)(id, SEL))objc_msgSend)(app, sel);
+	return (r >= 0 && r < 1e6) ? r : -1;
 }
 
 static void any_shim_bg_finish(any_shim_bg *b) {
@@ -53,6 +72,7 @@ static any_shim_bg *any_shim_bg_begin(const char *name) {
 		if (app == nil || ![app respondsToSelector:begin]) return NULL;
 		any_shim_bg *b = calloc(1, sizeof(any_shim_bg));
 		if (b == NULL) return NULL;
+		atomic_store(&b->remaining, -1);
 		NSString *n = [NSString stringWithUTF8String:name];
 		unsigned long t = ((unsigned long (*)(id, SEL, id, void (^)(void)))objc_msgSend)(app, begin, n, ^{
 			// Out of time: the close goes on, iOS may suspend it.
@@ -61,15 +81,40 @@ static any_shim_bg *any_shim_bg_begin(const char *name) {
 		});
 		atomic_store(&b->task, t);
 		if (atomic_load(&b->expired)) any_shim_bg_finish(b);
+		dispatch_async(dispatch_get_main_queue(), ^{
+			double r = any_shim_bg_read_main();
+			atomic_store(&b->remaining, r);
+			atomic_store(&b->refreshed_at, CFAbsoluteTimeGetCurrent());
+			atomic_store(&b->refreshed, 1);
+		});
 		return b;
 	}
 }
 
-// When the app's background time runs out (CFAbsoluteTime), or < 0 when
-// unknown or in the foreground. Read on the main thread by the
-// notification observers (UIKit is main-thread only), stored atomically;
-// the close reads it from any thread without ever waiting for main.
+// The task's post-begin read: 1 when it has happened, with the seconds
+// left now in *left (< 0: foreground, no bound).
+static int any_shim_bg_refreshed(any_shim_bg *b, double *left) {
+	if (b == NULL || !atomic_load(&b->refreshed)) return 0;
+	double r = atomic_load(&b->remaining);
+	if (r < 0) {
+		*left = -1;
+	} else {
+		double l = r - (CFAbsoluteTimeGetCurrent() - atomic_load(&b->refreshed_at));
+		*left = l < 0 ? 0 : l;
+	}
+	return 1;
+}
+
+// The observers' sample (DidEnterBackground, or the seed at registration
+// when the process is already in the background): kept for the debug
+// log only. It is read BEFORE a close's task begins, so it never sees
+// the time the task buys; the bound comes from the post-begin read.
 static _Atomic double any_shim_bg_deadline = -1;
+
+static void any_shim_bg_sample(void) {
+	double r = any_shim_bg_read_main();
+	atomic_store(&any_shim_bg_deadline, r < 0 ? -1 : CFAbsoluteTimeGetCurrent() + r);
+}
 
 static void any_shim_bg_observe(void) {
 	static dispatch_once_t once;
@@ -77,25 +122,35 @@ static void any_shim_bg_observe(void) {
 		NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
 		[nc addObserverForName:@"UIApplicationDidEnterBackgroundNotification" object:nil
 		                 queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
-			id app = any_shim_app();
-			SEL sel = sel_registerName("backgroundTimeRemaining");
-			if (app == nil || ![app respondsToSelector:sel]) return;
-			double r = ((double (*)(id, SEL))objc_msgSend)(app, sel);
-			if (r >= 0 && r < 1e6) atomic_store(&any_shim_bg_deadline, CFAbsoluteTimeGetCurrent() + r);
+			any_shim_bg_sample();
 		}];
 		[nc addObserverForName:@"UIApplicationWillEnterForegroundNotification" object:nil
 		                 queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
 			atomic_store(&any_shim_bg_deadline, -1);
 		}];
+		// A process whose first open happens in the background: seed from
+		// applicationState (UIApplicationStateBackground is 2).
+		dispatch_async(dispatch_get_main_queue(), ^{
+			id app = any_shim_app();
+			SEL st = sel_registerName("applicationState");
+			if (app != nil && [app respondsToSelector:st] &&
+			    ((long (*)(id, SEL))objc_msgSend)(app, st) == 2) {
+				any_shim_bg_sample();
+			}
+		});
 	});
 }
 
-// Seconds of background time left, or < 0 when unknown.
-static double any_shim_bg_remaining(void) {
+// The observers' sample: seconds left now, or < 0 when unknown.
+static double any_shim_bg_observed(void) {
 	double d = atomic_load(&any_shim_bg_deadline);
 	if (d < 0) return -1;
 	double r = d - CFAbsoluteTimeGetCurrent();
 	return r < 0 ? 0 : r;
+}
+
+static void any_shim_bg_log(const char *msg) {
+	NSLog(@"%s", msg);
 }
 */
 import "C"
@@ -105,27 +160,63 @@ import (
 	"unsafe"
 )
 
-// beginBackgroundTask asks iOS for time to finish name; the returned
-// func ends the task. Without a UIApplication (an extension, a test
-// host) both are no-ops.
-func beginBackgroundTask(name string) (end func()) {
+// bgTask is an iOS background task around a close. Without a
+// UIApplication (an extension, a test host) every method is a no-op.
+type bgTask struct{ b *C.any_shim_bg }
+
+// beginBackgroundTask asks iOS for time to finish name.
+func beginBackgroundTask(name string) *bgTask {
 	cs := C.CString(name)
 	defer C.free(unsafe.Pointer(cs))
-	b := C.any_shim_bg_begin(cs)
-	return func() { C.any_shim_bg_finish(b) }
+	return &bgTask{b: C.any_shim_bg_begin(cs)}
 }
 
-// backgroundTimeRemaining is the background time left, from the value
-// UIKit reported (on the main thread) when the app entered the
-// background; ok is false in the foreground or before that report.
-func backgroundTimeRemaining() (time.Duration, bool) {
-	r := float64(C.any_shim_bg_remaining())
+func (t *bgTask) end() {
+	if t != nil {
+		C.any_shim_bg_finish(t.b)
+	}
+}
+
+// remaining waits up to wait for the task's post-begin read of the
+// background time. refreshed is false when there is no task or the read
+// did not come in time (the main thread is busy): the caller then does
+// not bound by iOS. ok is false in the foreground (no bound either).
+func (t *bgTask) remaining(wait time.Duration) (left time.Duration, ok, refreshed bool) {
+	if t == nil || t.b == nil {
+		return 0, false, false
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		var l C.double
+		if C.any_shim_bg_refreshed(t.b, &l) != 0 {
+			if l < 0 {
+				return 0, false, true
+			}
+			return time.Duration(float64(l) * float64(time.Second)), true, true
+		}
+		if time.Now().After(deadline) {
+			return 0, false, false
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// observedRemaining is the observers' sample (for the debug log): the
+// background time left as seen at DidEnterBackground, ok false if none.
+func observedRemaining() (time.Duration, bool) {
+	r := float64(C.any_shim_bg_observed())
 	if r < 0 {
 		return 0, false
 	}
 	return time.Duration(r * float64(time.Second)), true
 }
 
-// observeBackground registers the observers that keep the background
-// deadline (once per process).
+// observeBackground registers the background observers (once per process).
 func observeBackground() { C.any_shim_bg_observe() }
+
+// platformLog writes a debug line where an iOS developer sees it.
+func platformLog(msg string) {
+	cs := C.CString(msg)
+	defer C.free(unsafe.Pointer(cs))
+	C.any_shim_bg_log(cs)
+}

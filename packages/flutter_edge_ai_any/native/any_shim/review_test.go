@@ -314,10 +314,18 @@ func TestOpenPanicPoisons(t *testing.T) {
 // G-R3: op_cancel of the close op cuts the load wait short; the wait is
 // clamped.
 func TestCloseWaitCutByCancel(t *testing.T) {
-	if d, _ := boundLoadWait(time.Hour); d != maxWaitLoads {
+	if d, b := boundLoadWait(time.Hour, 0, false); d != maxWaitLoads || b {
 		t.Fatal("boundLoadWait does not clamp")
 	}
-	if d, _ := boundLoadWait(-time.Second); d != 0 {
+	// iOS reported 12 s left after the task began: 7 s, and bounded.
+	if d, b := boundLoadWait(25*time.Second, 12*time.Second, true); d != 7*time.Second || !b {
+		t.Fatalf("iOS bound: %v %v", d, b)
+	}
+	if d, b := boundLoadWait(25*time.Second, 3*time.Second, true); d != 0 || !b {
+		t.Fatalf("iOS bound below 5 s: %v %v", d, b)
+	}
+	// No post-begin read (foreground, or main busy): the clamp only.
+	if d, _ := boundLoadWait(-time.Second, 0, false); d != 0 {
 		t.Fatal("boundLoadWait does not clamp")
 	}
 	a, err := openAccount(acctOpts(t, acctCfg{base: t.TempDir(), mnemonic: newMnemonic(t), nodeConf: deadNodeConf(t)}))

@@ -2,14 +2,27 @@
 
 package main
 
-import "time"
+import (
+	"fmt"
+	"os"
+	"time"
+)
 
-// beginBackgroundTask is iOS-only (bgtask_ios.go); elsewhere a process
-// is not frozen right after it leaves the foreground.
-func beginBackgroundTask(string) (end func()) { return func() {} }
+// bgTask: only iOS freezes a process right after it leaves the
+// foreground; elsewhere the background task is a no-op.
+type bgTask struct{}
 
-// backgroundTimeRemaining: only iOS bounds a suspend's time.
-func backgroundTimeRemaining() (time.Duration, bool) { return 0, false }
+func beginBackgroundTask(string) *bgTask { return nil }
 
-// observeBackground: only iOS reports a background deadline.
+func (t *bgTask) end() {}
+
+// remaining: no background time bound outside iOS.
+func (t *bgTask) remaining(time.Duration) (left time.Duration, ok, refreshed bool) {
+	return 0, false, false
+}
+
+func observedRemaining() (time.Duration, bool) { return 0, false }
+
 func observeBackground() {}
+
+func platformLog(msg string) { fmt.Fprintln(os.Stderr, msg) }

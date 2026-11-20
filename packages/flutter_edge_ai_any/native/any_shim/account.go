@@ -97,7 +97,7 @@ type account struct {
 	closeOnce sync.Once
 	closeDone chan struct{}
 	closeErr  error
-	bgEnd     func()
+	bg        *bgTask
 }
 
 var loggerOnce sync.Once
@@ -356,6 +356,9 @@ func (p *pendingAccount) open(opCtx context.Context) (_ *account, err error) {
 		p.release()
 	}()
 	o := p.o
+	if o.LogLevel == "debug" {
+		debugLogging.Store(true)
+	}
 	loggerOnce.Do(func() {
 		lvl := o.LogLevel
 		if lvl == "" {
@@ -487,7 +490,7 @@ func (a *account) beginClose(cancelNow bool) bool {
 	if a.closed.Swap(true) {
 		return false
 	}
-	a.bgEnd = beginBackgroundTask("flutter_edge_ai_any account close")
+	a.bg = beginBackgroundTask("flutter_edge_ai_any account close")
 	markClosing(a.claims)
 	if cancelNow {
 		a.cancel()
@@ -527,9 +530,7 @@ func (a *account) finishClose(ctx context.Context, waitLoads time.Duration) erro
 			unclaim(a.claims)
 		}()
 		defer func() {
-			if a.bgEnd != nil {
-				a.bgEnd()
-			}
+			a.bg.end()
 		}()
 		defer func() {
 			// Cancel first (the body may have panicked before it did) and
@@ -562,9 +563,22 @@ func (a *account) finishClose(ctx context.Context, waitLoads time.Duration) erro
 		// A load that ignores its cancel gets 10 s after the cancel; 2 s
 		// when a load wait already ran.
 		after := 10 * time.Second
-		var iosBound bool
-		if waitLoads, iosBound = boundLoadWait(waitLoads); iosBound {
-			after = 2 * time.Second
+		if waitLoads > 0 {
+			// iOS: the time the close's background task buys shows only in
+			// the task's own read of backgroundTimeRemaining (on the main
+			// queue, after the begin); wait for it at most 250 ms. Without
+			// it, only the 25 s clamp applies, never an older sample.
+			left, known, refreshed := a.bg.remaining(maxWait)
+			var iosBound bool
+			waitLoads, iosBound = boundLoadWait(waitLoads, left, known && refreshed)
+			if iosBound {
+				after = 2 * time.Second
+			}
+			if debugLogging.Load() {
+				obs, obsOK := observedRemaining()
+				platformLog(fmt.Sprintf("any_shim: suspend load wait %v: background time at DidEnterBackground %s, after the close task began %s",
+					waitLoads, durOrNone(obs, obsOK), postBeginText(left, known, refreshed)))
+			}
 		}
 		if waitLoads > 0 {
 			t := time.NewTimer(waitLoads)
@@ -601,16 +615,36 @@ func (a *account) finishClose(ctx context.Context, waitLoads time.Duration) erro
 	return a.closeErr
 }
 
-// boundLoadWait clamps a suspend's load wait to 0..25 s and, on iOS in
-// the background, to the background time left minus 5 s (bounded
-// reports that iOS bounded it: the follow-up wait is then 2 s at most).
-func boundLoadWait(d time.Duration) (_ time.Duration, bounded bool) {
+// boundLoadWait clamps a suspend's load wait to 0..25 s and, when iOS
+// reported the background time left (haveLeft), to that minus 5 s
+// (bounded reports it: the follow-up wait is then 2 s at most).
+func boundLoadWait(d, left time.Duration, haveLeft bool) (_ time.Duration, bounded bool) {
 	d = max(0, min(d, maxWaitLoads))
-	if left, ok := backgroundTimeRemaining(); ok {
+	if haveLeft {
 		d = max(0, min(d, left-5*time.Second))
 		bounded = true
 	}
 	return d, bounded
+}
+
+// debugLogging: an account was opened with logLevel "debug".
+var debugLogging atomic.Bool
+
+func durOrNone(d time.Duration, ok bool) string {
+	if !ok {
+		return "none (foreground or not reported)"
+	}
+	return d.Round(time.Millisecond).String()
+}
+
+func postBeginText(left time.Duration, known, refreshed bool) string {
+	switch {
+	case !refreshed:
+		return "not read within 250 ms (25 s clamp only)"
+	case !known:
+		return "unbounded (foreground)"
+	}
+	return left.Round(time.Millisecond).String()
 }
 
 // closeSDKHook is closeSDK; a test replaces it to make the close panic.

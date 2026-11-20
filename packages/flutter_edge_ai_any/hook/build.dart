@@ -43,7 +43,22 @@ const _releaseBase =
 /// SHA256 of each published archive (`checksums_any_shim.txt` on the
 /// release carries the same). A registered checksum promises the platform:
 /// a missing or mismatching archive then fails the build.
-const Map<String, String> _checksums = {};
+const Map<String, String> _checksums = {
+  'any-shim-android_arm64.tar.gz':
+      '85f14efc7ba6e04d07d35fde9e50d73b77a6ef11a0dab68f50829738e051cb20',
+  'any-shim-ios_arm64.tar.gz':
+      'b46cf3df72feea63f6e467161868105078892060c4621e39519bcbd392f5d8c5',
+  'any-shim-ios_sim_arm64.tar.gz':
+      'a80f2368349046b3647593d1988f5bbff92ce2e9605693bb3ca4d6e26e33bd24',
+  'any-shim-linux_arm64.tar.gz':
+      'bdd4292695c15b99b0cf3ccb3e42115b1e311f55191037585899c2c6065a120f',
+  'any-shim-linux_x86_64.tar.gz':
+      '58f76797b87dd1bbb1e77677cc1a19f1be12c09f1d0553832faadaadf3b794f1',
+  'any-shim-macos_arm64.tar.gz':
+      '60b7893d3f083c4e79de6ff2c4fb0c56d7559147932517721f9ef0411769a257',
+  'any-shim-windows_x86_64.tar.gz':
+      'ccdd3a523fcc5053b983a3aea7fe15422b45fe51c7aec02ec08c247e26ca9f85',
+};
 
 String _archiveName(String dirName) => 'any-shim-$dirName.tar.gz';
 

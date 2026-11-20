@@ -74,7 +74,21 @@ jobs:
 
       - name: Go tests
         if: matrix.test
-        run: go test -count=1 ./...
+        run: go test -count=1 -skip '^TestTwoDevicesOverLAN$' ./...
+
+      # The two-device sync test on its own, verbose, so the log says whether
+      # it ran or was skipped (and why). Linux x86_64 must run it for real.
+      # The SDK logs every reconnect, so only the test's own lines are kept.
+      - name: Two-device LAN sync test
+        if: matrix.test
+        env:
+          ANY_REQUIRE_LAN: ${{ matrix.target == 'linux_x86_64' && '1' || '' }}
+        run: |
+          set +o pipefail
+          go test -count=1 -v -run '^TestTwoDevicesOverLAN$' . > "$RUNNER_TEMP/lan_test.log" 2>&1
+          status=$?
+          grep -E '^(=== RUN|--- (PASS|FAIL|SKIP)|ok|FAIL|PASS)|net_test\.go:' "$RUNNER_TEMP/lan_test.log"
+          exit $status
 
       - name: Build ${{ matrix.target }}
         run: ./build.sh ${{ matrix.target }} "$RUNNER_TEMP/out"

@@ -251,7 +251,9 @@ func requireLANPeer(t *testing.T, a, b *account) {
 	for !(sees(a, b) && sees(b, a)) {
 		if time.Since(start) > 90*time.Second {
 			msg := fmt.Sprintf("no LAN peer discovered in 90 s (A sees B: %v, B sees A: %v): mDNS does not work on this host", sees(a, b), sees(b, a))
-			if os.Getenv("CI") != "" {
+			// ANY_REQUIRE_LAN=1 (set by CI on the targets where the sync test
+			// must run) turns the skip into a failure.
+			if os.Getenv("CI") != "" && os.Getenv("ANY_REQUIRE_LAN") == "" {
 				t.Skip(msg + "; skipped on CI, where runners may block multicast")
 			}
 			t.Fatal(msg)

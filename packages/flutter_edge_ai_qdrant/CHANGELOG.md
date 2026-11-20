@@ -1,4 +1,5 @@
 ## Unreleased
+- Requires `qdrant_edge` ^0.9.0: the Qdrant Edge 0.9 engine (fixes `query` offset, WAL truncation and replay on load), typed shard-open errors and engine-side shard locking. The engine upgrades an older shard's layout when it opens it.
 - Text and hybrid search: `VectorStoreSpec.enableTextSearch` gives the shard a BM25 full-text index on the document content (`searchText`, `searchHybrid`).
 
 ## 2.1.1

@@ -308,7 +308,7 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.21.0"
+    version: "1.20.2"
   flutter_edge_ai_mediapipe:
     dependency: "direct main"
     description:
@@ -343,7 +343,7 @@ packages:
       path: "../../flutter_edge_ai_speech"
       relative: true
     source: path
-    version: "0.6.2"
+    version: "0.6.1"
   flutter_edge_ai_sqlite:
     dependency: "direct main"
     description:
@@ -1024,10 +1024,10 @@ packages:
     dependency: transitive
     description:
       name: qdrant_edge
-      sha256: "4cc2407a056e9436827e8921d07f26fc41bdc99d6fa9202107deed077bb77fcd"
+      sha256: "2f95e033d069732d1a82d3267b6f21efdabe51cd0c552e4784875b3011705d5a"
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.0-dev.5"
+    version: "0.9.0"
   rational:
     dependency: transitive
     description:

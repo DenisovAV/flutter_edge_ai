@@ -151,11 +151,10 @@ markers itself.
 **Response formats.** `openSession` / `openChat(responseFormat:)` are enforced
 by ORT-GenAI's guidance (llguidance): the session's JSON schema is set on its
 own generator, so every complete reply is a value of the format, and core
-checks each one. The whole `ResponseFormat.dialect` is enforced on macOS arm64 and Windows
-x64, for a model directory with a `tokenizer.json` (guidance reads it). Linux
-x64 and Windows ARM64 also ship an ORT-GenAI 0.20.0 build with guidance, and
-each is enabled once its run has passed; until then they refuse a format,
-saying so. Android (this repository's ORT-GenAI build), iOS
+checks each one. The whole `ResponseFormat.dialect` is enforced on macOS arm64, Linux x64 and
+Windows x64, for a model directory with a `tokenizer.json` (guidance reads it).
+Windows ARM64 also ships an ORT-GenAI 0.20.0 build with guidance, and is
+enabled once its run has passed; until then it refuses a format, saying so. Android (this repository's ORT-GenAI build), iOS
 (Microsoft's) and the web have no guidance and refuse it with
 `ResponseFormatUnsupportedException`; read
 `model.structuredOutputSupport` first.

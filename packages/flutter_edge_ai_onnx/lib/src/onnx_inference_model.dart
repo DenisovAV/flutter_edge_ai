@@ -200,9 +200,9 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
 
   /// The whole dialect, through ORT-GenAI's guidance (llguidance, a
   /// `json_schema` on each open session's own generator), on a
-  /// [GenAiFfiClient] on macOS arm64 with `tokenizer.json` in the model
-  /// directory. Refused elsewhere, with the reason: Linux x64, Windows x64
-  /// and Windows ARM64, whose archives include guidance, until each has
+  /// [GenAiFfiClient] on macOS arm64, Linux x64 and Windows x64 with
+  /// `tokenizer.json` in the model directory. Refused elsewhere, with the
+  /// reason: Windows ARM64, whose archive includes guidance, until it has
   /// passed its run; Android and iOS, whose ORT-GenAI builds have none; any
   /// other [GenAiClient]. `createSession` never takes a format.
   @override

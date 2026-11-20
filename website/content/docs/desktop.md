@@ -512,7 +512,7 @@ delegate can't prepare the vision encoder's ops); set
 only where the section allows it
 (`(await readLiteRtLmBundleInfo(path)).audioEncoder?.backendConstraint`).
 
-- **Linux and Windows** — CPU. From `native-v0.19.0-a` no GPU sampler ships there (the fused WebGPU sampler crashed GPU engine create), so LiteRT-LM samples on the CPU while the logits stay on the GPU.
+- **Linux and Windows** — CPU. From `native-v0.19.0-a` no GPU sampler ships there (our build of the fused WebGPU sampler crashed the first GPU decode), so LiteRT-LM samples on the CPU while the logits stay on the GPU.
 - **macOS** — LiteRT-LM's samplers are linked into `libLiteRtLm` (from `native-v0.19.0-a`).
 
 ### `randomSeed` / `temperature` / `topK` / `topP` — only the first session's values apply

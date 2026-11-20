@@ -134,8 +134,8 @@ final session = await AgentSession.fromModel(
 a deployment that does not serve `assets/packages/flutter_edge_ai_agent/` causes it.
 
 The package also ships an adaptive UI: `AgentChatView`, `SkillManagerView`,
-`McpManagerView`, `SecretEditorDialog`, and `SkillTesterView`. In an app built
-on `package:material_ui` (0.4.3), put `MaterialUiCompatibilityBridge` in
+`McpManagerView`, `SecretEditorDialog`, and `SkillTesterView`. From `flutter_edge_ai_agent`
+0.4.3, in an app built on `package:material_ui`, put `MaterialUiCompatibilityBridge` in
 `MaterialApp.builder`, above the Navigator:
 `builder: (context, child) => MaterialUiCompatibilityBridge(child: child!)`.
 

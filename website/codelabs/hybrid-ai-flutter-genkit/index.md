@@ -448,8 +448,9 @@ window.litertLmReady = (async () => {
 
 `cache_api.js` and `opfs_helper.js` are copied byte-for-byte from the
 `flutter_edge_ai` package's own `web/` directory — `installModel()` (and, in
-general, `installEmbedder()`) call into them (via `window.cachePut` and
-friends) to put model bytes into browser storage. Without them a web model
+general, `installEmbedder()`) call into them to find
+and load model bytes in browser storage (since core 2.7.0 a download streams
+straight into the Cache API). Without them a web model
 install fails. Copy both files into your app's `web/` directory alongside
 `index.html`. Browser storage is not a permanent install, though: the bytes
 survive a reload, the app's in-memory handle on them does not, so a reloaded
@@ -1623,8 +1624,8 @@ smaller `seq256` build would refuse every one of them.
 
 There's no second `Genkit` to build — `AiEngine` already declared the embedder
 back in Step 4, right next to the on-device model in the *same*
-`GenkitFlutterEdgeAiPlugin`, gated by the `embedders` flag `initialize()` passes
-as `embeddingsSupported` (`_ai = appGenkit(embedders: embeddingsSupported);`):
+`GenkitFlutterEdgeAiPlugin`, gated by `embeddingsSupported`, which `initialize()`
+passes as `embedders` (`_ai = appGenkit(embedders: embeddingsSupported);`):
 
 ```dart
 static Genkit appGenkit({required bool embedders}) => Genkit(

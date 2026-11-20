@@ -811,7 +811,7 @@ declares `require-secret: true` under `metadata`. The app stores the key with
 `set(skillName, key)` on a `SecretStore` (`SecretEditorDialog` asks the user
 for it) and passes that store to `AgentSession.fromModel(secretStore: ...)`;
 the agent hands the key to your function as `secret`. It never goes into the
-prompt. In 0.4.3 it does go into the page the loopback server sends to
+prompt. Through 0.4.3 it does go into the page the loopback server sends to
 the webview, and that server does not check who asks while the skill runs:
 treat such a key as one another app on the same device could read.
 

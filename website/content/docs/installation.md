@@ -160,7 +160,9 @@ model to the engine that handles its file type. For RAG, register
 - `huggingFaceToken`: authentication token for gated models (Gemma3n, Gemma 3 1B / 270M, EmbeddingGemma 1).
 - `maxDownloadRetries`: number of retry attempts for failed downloads (default: 10).
 - `webStorageMode` **(Web only)**: storage strategy for model files (default: `cacheApi`).
-  - `WebStorageMode.cacheApi`: Cache API with Blob URLs (for models <2GB).
+  - `WebStorageMode.cacheApi`: Cache API with Blob URLs (for models <2GB). Since
+    core 2.7.0 a download streams into the Cache API without a Dart copy, so
+    a `--wasm` build installs files over 1 GiB too.
   - `WebStorageMode.streaming`: OPFS streaming (for large models >2GB like E4B, 7B).
   - `WebStorageMode.none`: no caching (ephemeral mode for testing). Restore
     notices about model files that are gone stay in the debug log in this
@@ -605,8 +607,9 @@ with a typed error.
 ¹ MediaPipe text inference also works on Android `x86_64` / `armeabi-v7a` (see
 the Android section above).
 
-`flutter_edge_ai_onnx` also runs on Windows ARM64, and `flutter_edge_ai_llama`
-follows llamadart (Android `x86_64`, macOS `x86_64` on the CPU) — see
+`flutter_edge_ai_onnx` also runs on Windows ARM64 (and has no Linux arm64
+build), and `flutter_edge_ai_llama` follows llamadart's targets (its Android
+build includes `x86_64`) — see
 [ONNX](/docs/onnx) and [llama.cpp](/docs/llama).
 
 For development, prefer an Apple Silicon Mac — the Android emulator runs

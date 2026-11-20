@@ -60,7 +60,9 @@ only the engines, stores and features your app uses — see
 - **`litertlm_dart`** (`flutter_edge_ai_litertlm` 1.21.0): the LiteRT-LM
   runtime and its native build hook moved to this package, so NPU flags go
   under `hooks: user_defines: litertlm_dart:`. On Android, Gemma 4 on the GPU
-  stays at FP16 above 2,048 tokens. See [Migration](/docs/migration).
+  stays at FP16 above 2,048 tokens, and a GPU turn that fails names the CPU
+  (see [Troubleshooting](/docs/troubleshooting#android)). See
+  [Migration](/docs/migration).
 - **ONNX response formats on Windows x64** (`flutter_edge_ai_onnx` 0.10.0, on
   ORT-GenAI 0.20.0). See [ONNX](/docs/onnx).
 - **llama.cpp** (`flutter_edge_ai_llama` 0.2.0): llamadart `^0.20.1` with

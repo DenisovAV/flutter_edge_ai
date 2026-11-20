@@ -84,7 +84,7 @@ await recognizer.close();
 ```
 
 A catalog build installs the model and its tokenizer pinned to a Hugging Face
-commit (`LiteRtSpeechModels`, with `flutter_edge_ai` 2.5.5):
+commit (`LiteRtSpeechModels`, from `flutter_edge_ai_speech` 0.5.13):
 
 ```dart
 await FlutterEdgeAi.installStt()

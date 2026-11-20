@@ -584,8 +584,9 @@ level), and an embedding decider for many options by topic.
 that this LiteRT-LM scores right after a prefill with the whole prompt
 (LiteRT-LM #3561, fixed in 0.19) and refuses an engine whose scores do not
 repeat bit for bit or change after a rewind. A release build does not run it;
-the pinned native build passed it on every engine measured (LiteRT-LM 0.19 on
-the CPU, Apple Metal, Adreno 830, a Tesla T4 and an Arc B390), so the first
+the pinned native build passed the self-check on every engine it ran on
+(LiteRT-LM 0.19 on the CPU, Apple Metal, Adreno 830, a Tesla T4 and an Arc
+B390; the decision measurements below do not cover the last two), so the first
 decision does not pay for it. Run the decider once
 in debug on the hardware you ship to, above all on a GPU nobody measured: a
 refusal there is one a release build would not report.
@@ -611,7 +612,7 @@ CPU both phones chose what the Mac chose on every row. Every row is a Noul
 question, which never abstains: a threshold fitted on the CPU (a Choice
 decider's `abstainBelow`) is not checked against GPU probabilities.
 
-Not measured: Mali GPUs (Android's other GPU path), Linux GPUs (Vulkan),
+Not measured as decisions: Mali GPUs (Android's other GPU path), Linux GPUs (Vulkan),
 Windows GPUs (DirectX 12), Linux and Windows CPUs, the NPU (refused), memory
 and battery. The GPU is not limited to the GPUs above: a decider scores on
 any GPU the model loaded on, and a model loaded without `preferredBackend`

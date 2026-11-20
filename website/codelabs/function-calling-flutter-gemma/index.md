@@ -128,9 +128,9 @@ before the first frame is guarded:
   try {
     await FlutterEdgeAi.initialize(
       inferenceEngines: [LiteRtLmEngine()],
-      // OPFS streaming: on web a `.litertlm` this size does not fit the blob
-      // the default `cacheApi` mode would have to buffer it into. Every other
-      // platform ignores this.
+      // OPFS streaming: on web the `.litertlm` engine reads the model as a
+      // stream instead of one blob, as the docs recommend for `.litertlm`.
+      // Every other platform ignores this.
       webStorageMode: WebStorageMode.streaming,
     );
   } catch (error) {
@@ -544,7 +544,7 @@ refuses instead of producing a silent no-op.
 ### What you got that you did not write
 
 The happy path in Step 2 was correct. Three others were not there at all, and
-each of them is a committed call that would have been left dangling:
+each of them could leave a committed call without an answer:
 
 * **the turn was cancelled** — the loop answers every collected call with
   `{'status': 'cancelled'}` before returning, so the history is balanced and

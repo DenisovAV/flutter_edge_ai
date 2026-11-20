@@ -789,13 +789,13 @@ dependencies:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.6.0                 # core — always required
+  flutter_edge_ai: ^2.7.0                 # core — always required
   flutter_edge_ai_litertlm: ^1.21.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
-  flutter_edge_ai_mediapipe: ^1.3.0       # add if you run .task / .bin models
-  flutter_edge_ai_embeddings: ^2.3.2      # add if you compute embeddings with a tokenizer file (needs a backend, see above)
-  flutter_edge_ai_rag: ^1.1.2             # add for on-device RAG (RagIndex) + one store below
+  flutter_edge_ai_mediapipe: ^1.3.1       # add if you run .task / .bin models
+  flutter_edge_ai_embeddings: ^2.3.3      # add if you compute embeddings with a tokenizer file (needs a backend, see above)
+  flutter_edge_ai_rag: ^1.2.0             # add for on-device RAG (RagIndex) + one store below
   flutter_edge_ai_qdrant: ^2.1.1          # native on-device RAG store (qdrant)
-  flutter_edge_ai_sqlite: ^2.1.1          # RAG store (sqlite-vec; all platforms incl. web) — needs Flutter 3.47
+  flutter_edge_ai_sqlite: ^2.2.0          # RAG store (sqlite-vec; all platforms incl. web) — needs Flutter 3.47
 ```
 
 Pick by what you actually used in 0.16.x:

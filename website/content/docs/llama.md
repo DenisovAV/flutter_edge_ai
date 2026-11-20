@@ -132,7 +132,7 @@ change only the docs; 0.0.6 moves to llamadart 0.17.5; 0.1.0 adopts core 2.6;
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai: ^2.7.0
   flutter_edge_ai_llama: ^0.2.0
 ```
 

@@ -1,0 +1,51 @@
+name: flutter_edge_ai_any
+description: "A flutter_edge_ai_rag vector-store provider over any-sync: documents sync end-to-end encrypted between a user's devices, each device keeps a local vector + BM25 index."
+version: 0.1.0-dev
+homepage: https://flutteredge.ai
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_any
+# Not published: the network is not decided yet (see README.md). Remove only
+# together with that decision.
+publish_to: none
+
+# Native platforms only. The web has neither the transports (QUIC, TCP,
+# mDNS) nor a wasm build of any-sync's tree storage.
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+  windows:
+
+resolution: workspace
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+
+# lib/lifecycle.dart is the only library of this package that imports
+# Flutter, and the barrel never exports it. lib/src/ffi imports nothing but
+# dart:ffi and package:ffi, so the bindings stay usable from a plain Dart
+# process (each device of the two-device LAN test is one).
+dependencies:
+  flutter:
+    sdk: flutter
+  # Not yet the floor this source needs: it builds against the unreleased
+  # flutter_edge_ai_rag 1.2.0 in this workspace (text search: `searchText`,
+  # `supportsTextSearch`, `VectorStoreSpec.enableTextSearch`), as
+  # flutter_edge_ai_sqlite does; the release that publishes this package
+  # raises it to ^1.2.0.
+  flutter_edge_ai_rag: ^1.1.0
+  # @experimental on every public type, @visibleForTesting seams.
+  meta: ^1.15.0
+  ffi: ^2.1.0
+  # Native Assets hook: downloads the prebuilt libany_shim for the target
+  # from the native-any-v* GitHub Release, checks its SHA256 and registers
+  # it as the CodeAsset the @Native bindings resolve.
+  hooks: ^2.0.0
+  code_assets: ">=1.2.0 <3.0.0"
+  crypto: ^3.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  lints: ^6.0.0

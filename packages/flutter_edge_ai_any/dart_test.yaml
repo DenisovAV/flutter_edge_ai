@@ -1,0 +1,5 @@
+tags:
+  # LAN sync between two accounts: needs local multicast (mDNS) and minutes,
+  # so it is opt-in.
+  lan:
+    skip: "two-device LAN sync; run with `flutter test -t lan --run-skipped test/lan`"

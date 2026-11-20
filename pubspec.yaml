@@ -21,6 +21,7 @@ workspace:
   - packages/flutter_edge_ai_builtin_ai
   - packages/flutter_edge_ai_onnx
   - packages/flutter_edge_ai_agent
+  - packages/flutter_edge_ai_any
   - packages/genkit_flutter_edge_ai
   - packages/genkit_hybrid
 

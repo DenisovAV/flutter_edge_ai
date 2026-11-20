@@ -5,7 +5,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 /// The native hosts and backends on which the discriminating structured
 /// output run passed (`native structured output` in
 /// `test/native_capabilities_test.dart`): macOS arm64 CPU and Metal
-/// (2026-11-04; Qwen2.5 1.5B, Gemma 4 E2B on CPU, SmolLM2 135M). A response
+/// (2026-11-19, llamadart 0.20.1, M4 Max, SmolLM2 135M). A response
 /// format is enabled only after its own run, so every other host and backend
 /// refuses it until one passes there.
 const Map<Abi, Set<edge.PreferredBackend>> structuredOutputQualifiedHosts = {

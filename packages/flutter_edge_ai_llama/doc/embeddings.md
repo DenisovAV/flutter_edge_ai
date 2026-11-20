@@ -5,7 +5,8 @@ That release requires core 2.5.0 and llamadart
 0.15.1 with typed native overflow reporting. The core foundation is
 [flutter_edge_ai #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685);
 the typed SDK error is [llamadart #1201](https://github.com/leehack/llamadart/pull/1201).
-Version 0.0.6 bounds the SDK to `>=0.17.5 <0.17.6`.
+Version 0.0.6 bounded the SDK to `>=0.17.5 <0.17.6` (kept in 0.1.0); 0.2.0 targets
+`^0.20.1` (tested with `0.20.1` / Apple companion `0.20.1`).
 Full platform qualification of that update is pending.
 Source qualification does not replace standalone hosted qualification. Do not
 use a dependency override in production.
@@ -93,10 +94,11 @@ NPU, image/audio input and Web embeddings are refused. Browser registration does
 not claim GGUF embedding files, so an unsupported install can fail its pre-check.
 Inference remains independently available on the package's existing platforms.
 
-Historical source qualification uses the pinned fixture in `tool/embedding_model.json`,
-published llamadart 0.15.1 and the core source. macOS CPU/Metal and Linux/Windows
-CPU embeddings have been measured. Android has an attributed Pixel 8a diagnostic;
-iOS embeddings remain unqualified. See the [per-platform results](platforms.md#embedding-qualification-by-platform).
+Qualification uses the pinned fixture in `tool/embedding_model.json`. macOS CPU/Metal
+and the Android 16 arm64 emulator have been measured on `llamadart 0.20.1`
+(2026-11-19); Linux/Windows CPU and the Pixel 8a diagnostic are historical
+`0.15.1` measurements, and iOS embeddings remain unqualified. See the
+[per-platform results](platforms.md#embedding-qualification-by-platform).
 The dedicated source CI covers Linux/Windows CPU embeddings and Flutter 3.44
 resolution. Hosted package qualification remains a separate release gate against
 the published core.

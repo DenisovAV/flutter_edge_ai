@@ -311,14 +311,36 @@ void main() {
           final script = web.HTMLScriptElement()..type = 'module';
           script.textContent =
               '''
-      const root = new URL('$_bridgeRoot', document.baseURI).href;
-      const module = await import(root + 'llama_webgpu_bridge.js');
+      const root = new URL('$_bridgeRoot', document.baseURI);
+      const manifestResponse = await fetch(new URL('manifest.json', root).href, {
+        cache: 'no-store',
+      });
+      if (!manifestResponse.ok) {
+        throw new Error('Could not load webgpu_bridge/manifest.json (' + manifestResponse.status + ').');
+      }
+      const manifest = await manifestResponse.json();
+      const tag = typeof manifest?.release_tag === 'string' && manifest.release_tag.trim()
+        ? manifest.release_tag.trim()
+        : (typeof manifest?.bridge_assets_tag === 'string' && manifest.bridge_assets_tag.trim()
+          ? manifest.bridge_assets_tag.trim()
+          : '');
+      if (!tag) {
+        throw new Error('webgpu_bridge/manifest.json is missing release_tag.');
+      }
+      const asset = (name) => {
+        const url = new URL(name, root);
+        url.searchParams.set('v', tag);
+        return url.href;
+      };
+      const module = await import(asset('llama_webgpu_bridge.js'));
       window.LlamaWebGpuBridge = module.LlamaWebGpuBridge;
-      window.__llamadartBridgeCoreModuleUrl = root + 'llama_webgpu_core.js';
-      window.__llamadartBridgeWasmUrl = root + 'llama_webgpu_core.wasm';
-      window.__llamadartBridgeCoreModuleUrlMem64 = root + 'llama_webgpu_core_mem64.js';
-      window.__llamadartBridgeWasmUrlMem64 = root + 'llama_webgpu_core_mem64.wasm';
-      window.__llamadartBridgeWorkerUrl = root + 'llama_webgpu_bridge_worker.js';
+      window.__llamadartBridgeModuleUrl = asset('llama_webgpu_bridge.js');
+      window.__llamadartBridgeCoreModuleUrl = asset('llama_webgpu_core.js');
+      window.__llamadartBridgeWasmUrl = asset('llama_webgpu_core.wasm');
+      window.__llamadartBridgeCoreModuleUrlMem64 = asset('llama_webgpu_core_mem64.js');
+      window.__llamadartBridgeWasmUrlMem64 = asset('llama_webgpu_core_mem64.wasm');
+      window.__llamadartBridgeWorkerUrl = asset('llama_webgpu_bridge_worker.js');
+      window.__llamadartBridgeAssetSource = 'local';
       window.__llamadartBridgeThreadPoolSize = Math.max(1, Math.min(4, navigator.hardwareConcurrency || 1));
       window.dispatchEvent(new Event('llama-test-ready'));
     ''';

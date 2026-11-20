@@ -64,7 +64,7 @@ Thinking deltas become `ThinkingResponse` only when `enableThinking` is true.
 String session methods omit typed reasoning with either flag value; use chat
 `generateChatResponseAsync()` for typed thinking and tools. With thinking off,
 the connector hides SDK reasoning-channel deltas. From 0.0.6
-(llamadart 0.17.5), the SDK can classify new `<think>` blocks as content after a
+(llamadart 0.17.5+), the SDK can classify new `<think>` blocks as content after a
 prompt-ending empty thought. For affected Hermes, DeepSeek V3 and Qwen3 Coder XML
 templates, the adapter also hides consecutive leading thought blocks across
 stream chunks, preserving the earlier thinking-off behavior. Templates without
@@ -90,7 +90,7 @@ Elsewhere, and on a model whose device the runtime does not report,
 `structuredOutputSupport` is `none` and `openSession` throws
 `ResponseFormatUnsupportedException`.
 
-Within core's dialect, llamadart 0.17.5's converter refuses `minimum`/`maximum`
+Within core's dialect, llamadart's converter refuses `minimum`/`maximum`
 on a `number`, a one-sided integer bound it cannot build (`minimum: 105`), a
 length or item bound above 2000, an `enum` or `const` beside another assertion,
 and an `enum`/`const` value of another type than `type`. `refusalFor` returns
@@ -228,9 +228,15 @@ Tool declarations are preflighted against cached template metadata before replac
 an existing chat, without waiting for its running generation. A successful
 replacement cancels that turn; an invalid tool declaration leaves it usable. GLM-4.5, Laguna and Hunyuan-V3 accept the SDK's typed parameter
 subset; schemas requiring richer constraints fail explicitly for those grammars.
-Other formats retain the full schema. If any tool cannot be represented as typed
+Other templates receive the full schema, but the grammar may enforce only part of it.
+On llamadart 0.20.1, Qwen3-Coder and Qwen3.5 allow free text for top-level string
+arguments, including strings with an `enum` or `pattern`. Seed-OSS constrains the
+tool name and, when every tool has a typed parameter view, the parameter names.
+Validate argument values in the app before invoking either model’s tools.
+
+If any tool cannot be represented as typed
 parameters, the entire set omits that typed view so shared XML grammars do not
-lose argument names. The adapter keeps its schema bridge: llamadart 0.17.5's
+lose argument names. The adapter keeps its schema bridge: llamadart's
 `ToolDefinition.fromJsonSchema` supports a narrower set of formats and rejects
 formats such as Qwen3 Coder XML. XML nullable-string decoding is a separate SDK
 limitation; nullable string arguments can come back as text instead of calls.

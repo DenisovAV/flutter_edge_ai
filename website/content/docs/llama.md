@@ -14,9 +14,10 @@ core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 ## Try the example
 
 The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.6.0+**.
-Version 0.1.0 uses llamadart **0.17.5** with typed overflow reporting and adds
-the 2.6 session and response-format integration (0.0.3 to 0.0.5 used 0.15.1).
-Connector CI uses
+Version 0.2.0 targets llamadart **^0.20.1** (tested on **0.20.1** / Apple companion
+**0.20.1** / Web bridge **v0.1.86**; 0.1.0 shipped on **0.17.5** / **0.17.3** with
+typed overflow reporting and the 2.6 session and response-format integration, and
+0.0.3 to 0.0.5 used **0.15.1**). Connector CI uses
 Flutter 3.47.1 for reproducible checks. From the repository root:
 
 ```
@@ -34,8 +35,9 @@ The example also has Android, iOS, Linux, Windows and Web runners. Android downl
 into app-owned storage; the installed model restores after restart. The UI focuses on text chat, cancellation and a usable phone
 layout. See the
 [package README](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md)
-for the Web asset preparation and hosting headers. After an upgrade, rerun
-`tool/fetch_web_assets.py` from that package or checkout to refresh its staged Web assets.
+for the Web asset preparation and hosting headers. After upgrading `llamadart`
+or this connector, rerun `dart run llamadart:web_setup --no-index-html` from
+your app to refresh its staged Web assets.
 
 ## Stream a chat response
 
@@ -125,19 +127,20 @@ if its adapter is missing; Web LoRA execution remains unsupported.
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
 Version 0.0.3 adds native embeddings with llamadart 0.15.1; 0.0.4 and 0.0.5
-change only the docs; 0.0.6 moves to llamadart 0.17.5; 0.1.0 adopts core 2.6:
+change only the docs; 0.0.6 moves to llamadart 0.17.5; 0.1.0 adopts core 2.6;
+0.2.0 updates to llamadart `^0.20.1`:
 
 ```
 dependencies:
   flutter_edge_ai: ^2.6.0
-  flutter_edge_ai_llama: ^0.1.0
+  flutter_edge_ai_llama: ^0.2.0
 ```
 
 Core 2.6.0 supplies the engine session SPI, embedding SPI and typed tool history.
 
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
-`llamadart_llama_cpp_flutter: 0.17.3` SwiftPM companion.
+`llamadart_llama_cpp_flutter: 0.20.1` SwiftPM companion (`0.17.3` on 0.1.0).
 
 ## Select llama.cpp only
 
@@ -150,11 +153,11 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Dependency settings do not propagate. llamadart 0.17.5 omits its LiteRT-LM
+Dependency settings do not propagate. llamadart `^0.20.1` omits its LiteRT-LM
 when this connector or Flutter Edge AI LiteRT-LM is in the app graph. Keep the
 explicit selection as defence in depth; selecting both LiteRT-LM owners is rejected. The monorepo configures llama.cpp for its own workspace tests; that
 does not suppress another engine package's independently owned runtime.
-Apple Flutter apps add `llamadart_llama_cpp_flutter 0.17.3` directly and enable
+Apple Flutter apps add `llamadart_llama_cpp_flutter: 0.20.1` directly and enable
 SwiftPM. To keep an app
 llama.cpp only, omit the separate LiteRT-LM engine and companion dependencies.
 
@@ -168,14 +171,15 @@ See the [workspace setup and qualification scope](https://github.com/DenisovAV/f
 Native EmbeddingGemma 2 GGUF text embeddings register through core's embedding
 SPI as `LlamaEmbeddingBackend` in this same engine package. The dedicated
 `flutter_edge_ai_embeddings` package remains tokenizer-only: GGUF carries its
-own tokenizer. Version 0.1.0 requires core 2.6.0+ and llamadart
-0.17.5 (0.0.3 introduced the backend on core 2.5.0's SPI). Use separate GGUF and LiteRT RAG profile IDs; matching dimensions do
+own tokenizer. Version 0.2.0 requires core 2.6.0+ and targets `^0.20.1` (0.1.0
+used 0.17.5; 0.0.3 introduced the backend on core 2.5.0's SPI). Use separate GGUF and LiteRT RAG profile IDs; matching dimensions do
 not make their vectors interchangeable.
 See the [embedding design and qualification](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/embeddings.md).
-Embedding execution has been measured on macOS CPU/Metal (llamadart 0.15.1 and
-0.17.5, #764) and Linux/Windows CPU (0.15.1). Android has a maintainer Pixel 8a
-CPU/Vulkan diagnostic (0.15.1); full Android qualification
-and iOS embedding execution remain unqualified. See the
+Embedding execution has been measured on macOS CPU/Metal (llamadart 0.15.1,
+0.17.5 (#764), and 0.20.1) and Linux/Windows CPU (0.15.1). Android has an
+ARM64 emulator gate (0.20.1) plus a maintainer Pixel 8a CPU/Vulkan diagnostic
+(0.15.1); physical Android qualification and iOS embedding execution remain
+unqualified. See the
 [per-platform embedding evidence](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md#embedding-qualification-by-platform).
 Explicit GPU embeddings on Android (every device) and on iOS simulators fall back to CPU by
 default. Register `LlamaEmbeddingBackend(backendFallback: false)` to refuse
@@ -187,10 +191,11 @@ Media and Web embeddings remain unavailable in the initial profile.
 
 ## Capabilities and qualification
 
-Version 0.1.0 pins llamadart `>=0.17.5 <0.17.6`, Apple companion `0.17.3`,
-native artifacts `v0.8.0-1` and Web bridge `v0.1.79`. Full platform
-qualification of these pins is pending; earlier qualification evidence does
-not qualify the updated pair.
+Version 0.2.0 pins llamadart `^0.20.1` and exact Apple companion `0.20.1` (tested on SDK
+`0.20.1`, companion `0.20.1`, native artifacts `v1.0.0-2`, and Web bridge
+`v0.1.86`; 0.1.0 used `0.17.5` / `0.17.3` / `v0.8.0-1` / `v0.1.79`).
+Full platform qualification of these pins is pending; earlier qualification
+evidence does not qualify the updated pair.
 
 The adapter implements tools, thinking, independent histories, native LoRA,
 and projector-backed image/audio input. Each requires a
@@ -206,7 +211,7 @@ Web installation buffers a byte array; use models below about 2 GB and avoid str
 [support matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md)
 for setup, capability limits and qualification.
 
-With llamadart 0.17.5, adding `flutter_edge_ai_litertlm` keeps the SDK on
+With llamadart `^0.20.1`, adding `flutter_edge_ai_litertlm` keeps the SDK on
 llama.cpp automatically. Retain the root `[llama_cpp]` selection as defence in
 depth; explicitly selecting both LiteRT-LM owners fails with an actionable error.
 On Apple the direct `llamadart_llama_cpp_flutter` companion dependency is required too. From
@@ -214,4 +219,4 @@ On Apple the direct `llamadart_llama_cpp_flutter` companion dependency is requir
 native libraries load in one app; running both engines' models in one app is
 not qualified. Web LoRA is not wired
 by this connector and is rejected, even on a bridge that supports adapters.
-The package README provides Web asset setup using helpers included in its archive.
+The package README provides Web asset setup using `dart run llamadart:web_setup --no-index-html` and `tool/validate_web_build.py`.

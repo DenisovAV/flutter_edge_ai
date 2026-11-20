@@ -43,6 +43,9 @@ only the engines, stores and features your app uses — see
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
 
+The upcoming `flutter_edge_ai_llama` 0.2.0 connector pairs llamadart
+`^0.20.1` with Apple companion 0.20.1. See [llama.cpp](/docs/llama).
+
 ## What's new in 2.6
 
 - **Typed JSON replies** (`flutter_edge_ai` 2.6.0): `openSession` and
@@ -85,8 +88,8 @@ only the engines, stores and features your app uses — see
   otherwise. ORT-GenAI 0.17.0. See [ONNX](/docs/onnx).
 - **Windows memory diagnostics** (`flutter_edge_ai_diagnostics` 0.6.0):
   `memorySnapshot()` on Windows. See [Diagnostics](/docs/diagnostics).
-- **llama.cpp on llamadart 0.17.5** (`flutter_edge_ai_llama` 0.0.6), with
-  Apple companion 0.17.3. See [llama.cpp](/docs/llama).
+- **llama.cpp on llamadart 0.17.5** (`flutter_edge_ai_llama` 0.0.6; superseded by
+  0.2.0 on `^0.20.1`), with Apple companion 0.17.3. See [llama.cpp](/docs/llama).
 
 ## What's new in 2.4
 

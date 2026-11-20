@@ -1,3 +1,6 @@
+## 2.7.1
+- Package skills match 2.7.0: llamadart companion 0.20.1, catalog installs, web cacheApi, EG2 GPU measurements.
+
 ## 2.7.0
 - Hugging Face resolvers per role: `type`, `family`, `tokenizerFile`, `installEmbedder().fromHuggingFace`, runtime defaults for every role.
 - `Message.hashCode` hashes media by content like `==`, which now compares `images` by content too (#823).

@@ -1,3 +1,6 @@
+## 0.4.4
+- Removes a stray line from the `kitchen-adventure` example skill.
+
 ## 0.4.3
 - The UI widgets work in a `package:material_ui` app under `MaterialUiCompatibilityBridge`.
 - `McpManagerView` no longer throws on "Add server" without a `clientFactory`.

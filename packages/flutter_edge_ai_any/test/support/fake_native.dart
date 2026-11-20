@@ -1125,8 +1125,10 @@ final class FakeIndex implements AnyIndexApi {
   /// The index's native close answers an error (it still ends).
   static bool failClose = false;
 
-  /// A state scan of this prefix answers IO.
+  /// A state scan of this prefix answers IO (or, with [failScanWithError],
+  /// throws an Error, as a stopped runtime fails its calls).
   static String? failScanPrefix;
+  static bool failScanWithError = false;
 
   @override
   int bindStart(Map<String, Object?> config) {
@@ -1325,6 +1327,7 @@ final class FakeIndex implements AnyIndexApi {
   }) {
     final failing = failScanPrefix;
     if (failing != null && prefix == failing) {
+      if (failScanWithError) throw StateError('runtime stopped');
       throw _err('any_shim_index_scan', AnyShimStatus.io, 'scan refused');
     }
     final st = (shadow ? _f.shadowState : _f.state) ?? const {};

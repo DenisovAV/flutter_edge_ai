@@ -76,6 +76,7 @@ final class World {
     FakeIndex.gcError = null;
     FakeIndex.failClose = false;
     FakeIndex.failScanPrefix = null;
+    FakeIndex.failScanWithError = false;
     readPendingMax = const Duration(seconds: 10);
     debugEngineMutations.clear();
     debugAccountClockSkewMs.clear();

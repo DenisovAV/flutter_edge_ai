@@ -289,7 +289,9 @@ final class _LocationCore {
   Future<int> _conflictingDocuments() async {
     try {
       return await account._rt.index(conflictingDocumentsJob(handle));
-    } on Exception catch (e) {
+    } on Object catch (e) {
+      // Any failure, an Error included (a stopped runtime fails its calls
+      // with a StateError): never the conflict's replacement.
       print('flutter_edge_ai_any: counting conflicting documents failed: $e');
       return 0;
     }
@@ -649,6 +651,10 @@ final class _LocationCore {
   /// (design §2.2 step 6). Best effort: what fails waits for the next pull.
   Future<int> _sweepSupersede(LocConfig c) async {
     final plan = await _idx(supersedeListJob(handle));
+    // Objects no longer waiting (deleted elsewhere, their entry dropped by a
+    // pull) are no longer failing either.
+    _supersedeFailing.retainAll({for (final (old, _) in plan) old});
+    if (_supersedeFailing.isEmpty) lastSupersedeError = null;
     if (plan.isEmpty) return 0;
     final done = <String>[];
     for (final (old, fresh) in plan) {

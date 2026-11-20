@@ -111,24 +111,30 @@ void main() {
     expect((await p.b.locationStatus(p.loc)).eventsDownSince, isNull);
   });
 
-  test('a failed conflict count never replaces the conflict', () async {
-    final p = await pair(w);
-    final manifest = p.sa.objects.values.firstWhere((o) => o.typeId == locRoot);
-    manifest.leaves['core']!['image'] = FakeVal({'fmt': 1});
-    p.sa.change(manifest.id);
-    await p.a.pull(p.loc);
-    FakeIndex.failScanPrefix = 'u/';
-    await expectLater(
-      p.ia.addVector(id: 'x', embedding: [1, 0, 0, 0], content: 'X'),
-      throwsA(
-        isA<AnySyncConflictException>().having(
-          (e) => e.conflictingDocuments,
-          'conflictingDocuments',
-          0,
+  for (final error in [false, true]) {
+    test('a failed conflict count (${error ? 'an Error' : 'an exception'}) '
+        'never replaces the conflict', () async {
+      final p = await pair(w);
+      final manifest = p.sa.objects.values.firstWhere(
+        (o) => o.typeId == locRoot,
+      );
+      manifest.leaves['core']!['image'] = FakeVal({'fmt': 1});
+      p.sa.change(manifest.id);
+      await p.a.pull(p.loc);
+      FakeIndex.failScanPrefix = 'u/';
+      FakeIndex.failScanWithError = error;
+      await expectLater(
+        p.ia.addVector(id: 'x', embedding: [1, 0, 0, 0], content: 'X'),
+        throwsA(
+          isA<AnySyncConflictException>().having(
+            (e) => e.conflictingDocuments,
+            'conflictingDocuments',
+            0,
+          ),
         ),
-      ),
-    );
-  });
+      );
+    });
+  }
 
   group('D3-2 close errors are surfaced', () {
     test('account close and suspend throw after their cleanup', () async {
@@ -418,6 +424,27 @@ void main() {
       final st = await a.locationStatus(loc);
       expect(st.supersedeErrors, 1);
       expect(st.lastSupersedeError, isNotNull);
+    });
+
+    test('a failing supersede delete stops counting once the object is '
+        'gone elsewhere', () async {
+      final (a, loc, i) = await solo(w);
+      await i.addVector(id: 'x', embedding: [1, 0, 0, 0], content: 'v1');
+      await i.addVector(id: 'x', embedding: [1, 0, 0, 0], content: 'v2');
+      final sdk = w.runtimeOf('a').sdkImpl;
+      sdk.failSyncState = true;
+      await a.pull(loc);
+      expect((await a.locationStatus(loc)).supersedeErrors, 1);
+      // Another device deletes the old version; the pull drops its entry.
+      final space = w.device('a').space(loc.spaceId);
+      final old = docObjects(space).firstWhere((o) => contentOf(o) == 'v1');
+      old.deleted = true;
+      space.change(old.id, deleted: true);
+      await a.pull(loc);
+      final st = await a.locationStatus(loc);
+      expect(st.pendingSupersedeDeletes, 0);
+      expect(st.supersedeErrors, 0);
+      expect(st.lastSupersedeError, isNull);
     });
 
     test('an open after its deadline says it was closed again', () async {

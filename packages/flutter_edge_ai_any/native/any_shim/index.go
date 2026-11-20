@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -102,7 +104,16 @@ type localIndex struct {
 	docs, state anystore.Collection
 	shDocs      anystore.Collection // shadow generation, nil without one
 	shState     anystore.Collection
+	shadowGen   int
+	maxGen      int // the highest generation number in the file
 	cfg         *bindConfig
+
+	// Orphan generations (an old active one after a swap, a replaced or
+	// unswapped shadow) left for index_gc. orphMu guards the list; gcMu
+	// lets one gc run at a time.
+	orphMu  sync.Mutex
+	orphans []int
+	gcMu    sync.Mutex
 }
 
 type indexOpenOpts struct {
@@ -155,7 +166,7 @@ func openIndex(optsJSON string) (_ *localIndex, err error) {
 			unclaim(cl)
 		}
 	}()
-	lock, err := lockFile(path + ".lock")
+	lock, err := lockFile(path + ".shimlock")
 	if err != nil {
 		if codeOf(err) == codeBusy {
 			return nil, err
@@ -200,16 +211,22 @@ func openIndexFile(path string, key []byte) (*localIndex, error) {
 	if err := os.Remove(sidecar + ".tmp"); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, ioOr(err, codeInternal, "remove %s.tmp", sidecar)
 	}
-	kc, err := readKeycheck(sidecar)
-	if err != nil {
-		if codeOf(err) == codeCorrupt {
-			return nil, err
-		}
-		return nil, ioOr(err, codeInternal, "read %s", sidecar)
-	}
 	_, statErr := os.Stat(path)
 	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return nil, ioOr(statErr, codeInternal, "stat %s", path)
+	}
+	kc, err := readKeycheck(sidecar)
+	if err != nil {
+		switch {
+		case codeOf(err) == codeCorrupt && statErr != nil:
+			// A damaged sidecar and no database: nothing to protect, so
+			// the sidecar is rewritten, as for "sidecar, no file".
+			kc = nil
+		case codeOf(err) == codeCorrupt:
+			return nil, err
+		default:
+			return nil, ioOr(err, codeInternal, "read %s", sidecar)
+		}
 	}
 	if statErr != nil { // no file
 		// Journal files of a file that is gone belong to nothing.
@@ -339,20 +356,20 @@ func loadIndex(db anystore.DB, path, fileId string) (*localIndex, error) {
 		x.cfg = &c
 	}
 	// Orphans: a shadow whose swap never came, a generation whose drop
-	// did not commit.
-	var orphans []string
+	// did not finish. Recorded only; index_gc drops them in slices.
+	seen := map[int]bool{}
+	x.maxGen = active
 	for _, n := range names {
 		if m := genRe.FindStringSubmatch(n); m != nil {
-			if g, _ := strconv.Atoi(m[2]); g != active {
-				orphans = append(orphans, n)
+			g, _ := strconv.Atoi(m[2])
+			x.maxGen = max(x.maxGen, g)
+			if g != active && !seen[g] {
+				seen[g] = true
+				x.orphans = append(x.orphans, g)
 			}
 		}
 	}
-	if len(orphans) > 0 {
-		if err := dropCollections(db, orphans); err != nil {
-			return fail(codeInternal, "%s: drop orphan generations %v: %v", path, orphans, err)
-		}
-	}
+	sort.Ints(x.orphans)
 	if x.docs, err = db.OpenCollection(bg, genName("docs", active)); err != nil {
 		return fail(codeCorrupt, "%s: active generation %d: %v", path, active, err)
 	}
@@ -395,28 +412,6 @@ func initIndexDB(db anystore.DB, fileId string) (err error) {
 	return tx.Commit()
 }
 
-func dropCollections(db anystore.DB, names []string) (err error) {
-	tx, err := db.WriteTx(bg)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-	for _, n := range names {
-		c, err := db.OpenCollection(tx.Context(), n)
-		if err != nil {
-			return err
-		}
-		if err := c.Drop(tx.Context()); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
-}
-
 func (x *localIndex) enter() (func(), error) {
 	x.mu.RLock()
 	if x.closed.Load() {
@@ -438,7 +433,7 @@ func (x *localIndex) enterExclusive() (func(), error) {
 // close is idempotent after the first call (which reports CLOSED for
 // later ones). It releases the lock and the claim even when the
 // database close fails.
-func (x *localIndex) close() error {
+func (x *localIndex) close() (err error) {
 	if x.closed.Load() {
 		return errClosed
 	}
@@ -449,14 +444,25 @@ func (x *localIndex) close() error {
 		return errClosed
 	}
 	var errs []error
+	defer func() { err = errors.Join(errs...) }()
+	// First registered, so it runs last: the lock and the claim go even
+	// when a close below panics.
+	defer func() {
+		errs = append(errs, unlockFile(x.lock))
+		unclaim(x.claims)
+	}()
+	defer func() {
+		if r := recover(); r != nil {
+			errs = append(errs, &shimError{code: codePanic, err: fmt.Errorf("panic closing %s: %v\n%s", x.path, r, debug.Stack())})
+		}
+	}()
 	for _, c := range []anystore.Collection{x.docs, x.state, x.shDocs, x.shState, x.meta} {
 		if c != nil {
 			errs = append(errs, c.Close())
 		}
 	}
-	errs = append(errs, x.db.Close(), unlockFile(x.lock))
-	unclaim(x.claims)
-	return errors.Join(errs...)
+	errs = append(errs, x.db.Close())
+	return nil
 }
 
 // ------------------------------------------------------------------- bind
@@ -492,41 +498,67 @@ func ensureDocIndexes(ctx context.Context, docs anystore.Collection, c *bindConf
 	return docs.EnsureIndex(ctx, infos...)
 }
 
+// bind validates and applies in one call (tests); the export splits it
+// into checkBind (the start call) and bind in the op.
 func (x *localIndex) bind(bindJSON string) (map[string]any, error) {
+	req, err := parseBind(bindJSON)
+	if err != nil {
+		return nil, err
+	}
+	return x.applyBind(req)
+}
+
+// checkBind validates a bind against the current config without writing:
+// a malformed request is INVALID_ARGUMENT, a disagreeing one CONFLICT.
+func (x *localIndex) checkBind(bindJSON string) (bindConfig, error) {
+	req, err := parseBind(bindJSON)
+	if err != nil {
+		return req, err
+	}
+	leave, err := x.enter()
+	if err != nil {
+		return req, err
+	}
+	defer leave()
+	_, err = mergeBind(x.cfg, req)
+	return req, err
+}
+
+func parseBind(bindJSON string) (bindConfig, error) {
 	var req bindConfig
 	if err := decodeStrict(bindJSON, &req); err != nil {
-		return nil, err
+		return req, err
 	}
 	if req.Dim <= 0 || req.Dim > maxDim {
-		return nil, invalid("dim must be in 1..%d, got %d", maxDim, req.Dim)
+		return req, invalid("dim must be in 1..%d, got %d", maxDim, req.Dim)
 	}
 	if _, err := vectorParams(&req); err != nil {
-		return nil, err
+		return req, err
 	}
 	seen := map[string]bool{}
 	for _, f := range req.Fields {
 		if !fieldKeyRe.MatchString(f.Key) {
-			return nil, invalid("field key %q is not [0-9a-z-]+", f.Key)
+			return req, invalid("field key %q is not [0-9a-z-]+", f.Key)
 		}
 		switch f.Type {
 		case "string", "number", "bool":
 		default:
-			return nil, invalid("field %q: type %q, expected string, number or bool", f.Key, f.Type)
+			return req, invalid("field %q: type %q, expected string, number or bool", f.Key, f.Type)
 		}
 		if seen[f.Key] {
-			return nil, invalid("field %q is listed twice", f.Key)
+			return req, invalid("field %q is listed twice", f.Key)
 		}
 		seen[f.Key] = true
 	}
-	leave, err := x.enterExclusive()
-	if err != nil {
-		return nil, err
-	}
-	defer leave()
+	return req, nil
+}
+
+// mergeBind is the config after req: fields and textSearch only grow.
+func mergeBind(old *bindConfig, req bindConfig) (bindConfig, error) {
 	merged := bindConfig{Dim: req.Dim, Metric: req.Metric, TextSearch: req.TextSearch}
-	if old := x.cfg; old != nil {
+	if old != nil {
 		if old.Dim != req.Dim || old.Metric != req.Metric {
-			return nil, withCode(codeConflict, "the index is bound to dim %d, metric %s; asked for dim %d, metric %s",
+			return merged, withCode(codeConflict, "the index is bound to dim %d, metric %s; asked for dim %d, metric %s",
 				old.Dim, old.Metric, req.Dim, req.Metric)
 		}
 		merged.Fields = append(merged.Fields, old.Fields...)
@@ -535,7 +567,7 @@ func (x *localIndex) bind(bindJSON string) (map[string]any, error) {
 	for _, f := range req.Fields {
 		if have, ok := merged.field(f.Key); ok {
 			if have.Type != f.Type {
-				return nil, withCode(codeConflict, "field %q is bound as %s; asked for %s", f.Key, have.Type, f.Type)
+				return merged, withCode(codeConflict, "field %q is bound as %s; asked for %s", f.Key, have.Type, f.Type)
 			}
 			continue
 		}
@@ -543,6 +575,21 @@ func (x *localIndex) bind(bindJSON string) (map[string]any, error) {
 	}
 	if merged.Fields == nil {
 		merged.Fields = []fieldDecl{}
+	}
+	return merged, nil
+}
+
+// applyBind writes the merged config and builds the new indexes over
+// every existing row (active and shadow), under the exclusive lock.
+func (x *localIndex) applyBind(req bindConfig) (map[string]any, error) {
+	leave, err := x.enterExclusive()
+	if err != nil {
+		return nil, err
+	}
+	defer leave()
+	merged, err := mergeBind(x.cfg, req)
+	if err != nil {
+		return nil, err
 	}
 	if x.cfg != nil && len(merged.Fields) == len(x.cfg.Fields) && merged.TextSearch == x.cfg.TextSearch {
 		return x.cfg.json(), nil // idempotent: nothing to write
@@ -1012,7 +1059,9 @@ func (x *localIndex) apply(opsJSON string, vectors unsafe.Pointer, nFloats int64
 			return nil, withCode(codeConflict, "state %q is %s, expected %s: nothing applied", c.key, showStr(have), showStr(c.expect))
 		}
 	}
-	docs, state, shDocs, shState, active := x.docs, x.state, x.shDocs, x.shState, x.active
+	docs, state, shDocs, shState, active, shGen, maxGen := x.docs, x.state, x.shDocs, x.shState, x.active, x.shadowGen, x.maxGen
+	var newOrphans []int
+	var closeAfter []anystore.Collection // handles of generations that became orphans
 	swapped := false
 	for i, op := range ops {
 		coll := docs
@@ -1046,23 +1095,23 @@ func (x *localIndex) apply(opsJSON string, vectors unsafe.Pointer, nFloats int64
 				err = sc.UpsertOne(ctx, o)
 			}
 		case "shadowBegin":
+			// A shadow begun before is left as an orphan (index_gc drops
+			// it); the new one takes a number no generation had.
 			if shDocs != nil {
-				if err = shDocs.Drop(ctx); err == nil {
-					err = shState.Drop(ctx)
-				}
+				newOrphans = append(newOrphans, shGen)
+				closeAfter = append(closeAfter, shDocs, shState)
 			}
-			if err == nil {
-				shDocs, shState, err = x.createGeneration(ctx, active+1)
-			}
+			maxGen++
+			shGen = maxGen
+			shDocs, shState, err = x.createGeneration(ctx, shGen)
 		case "shadowSwap":
+			// Only meta.active flips; the old generation is an orphan.
 			a := &anyenc.Arena{}
-			if err = metaSet(ctx, x.meta, "active", a.NewNumberInt(active+1)); err == nil {
-				if err = docs.Drop(ctx); err == nil {
-					err = state.Drop(ctx)
-				}
-			}
+			err = metaSet(ctx, x.meta, "active", a.NewNumberInt(shGen))
+			newOrphans = append(newOrphans, active)
+			closeAfter = append(closeAfter, docs, state)
 			docs, state, shDocs, shState = shDocs, shState, nil, nil
-			active++
+			active, shGen = shGen, 0
 			swapped = true
 		}
 		if err != nil {
@@ -1075,6 +1124,13 @@ func (x *localIndex) apply(opsJSON string, vectors unsafe.Pointer, nFloats int64
 	committed = true
 	if ddl || swapped {
 		x.docs, x.state, x.shDocs, x.shState, x.active = docs, state, shDocs, shState, active
+		x.shadowGen, x.maxGen = shGen, maxGen
+		for _, c := range closeAfter {
+			_ = c.Close() // the collection stays; only this handle goes
+		}
+		x.orphMu.Lock()
+		x.orphans = append(x.orphans, newOrphans...)
+		x.orphMu.Unlock()
 	}
 	return map[string]any{"applied": len(ops)}, nil
 }
@@ -1104,9 +1160,131 @@ func (x *localIndex) createGeneration(ctx context.Context, n int) (anystore.Coll
 	return d, s, nil
 }
 
+// --------------------------------------------------------------------- gc
+
+// gcBatch is how many rows one gc transaction deletes from an orphan.
+const gcBatch = 256
+
+// gc drops orphan generations in bounded steps: each step deletes up to
+// gcBatch rows of one orphan collection in its own transaction, and an
+// emptied collection is dropped. It stops once budget has passed after a
+// step (one step at least), so a call takes about budget plus one step.
+// Readers are not held: orphans are not what they read.
+func (x *localIndex) gc(budget time.Duration) (bool, error) {
+	x.gcMu.Lock()
+	defer x.gcMu.Unlock()
+	deadline := time.Now().Add(budget)
+	for {
+		x.orphMu.Lock()
+		if len(x.orphans) == 0 {
+			x.orphMu.Unlock()
+			return true, nil
+		}
+		g := x.orphans[0]
+		x.orphMu.Unlock()
+		emptied, err := x.gcStep(g)
+		if err != nil {
+			return false, err
+		}
+		if emptied {
+			x.orphMu.Lock()
+			if len(x.orphans) > 0 && x.orphans[0] == g {
+				x.orphans = x.orphans[1:]
+			}
+			x.orphMu.Unlock()
+		}
+		if !time.Now().Before(deadline) {
+			x.orphMu.Lock()
+			done := len(x.orphans) == 0
+			x.orphMu.Unlock()
+			return done, nil
+		}
+	}
+}
+
+// gcStep deletes one batch of generation g (docs first, then state), or
+// drops a collection of it that is empty. Reports true once both are gone.
+func (x *localIndex) gcStep(g int) (bool, error) {
+	names, err := x.db.GetCollectionNames(bg)
+	if err != nil {
+		return false, err
+	}
+	have := map[string]bool{}
+	for _, n := range names {
+		have[n] = true
+	}
+	for _, kind := range []string{"docs", "state"} {
+		name := genName(kind, g)
+		if !have[name] {
+			continue
+		}
+		return false, x.gcCollection(name)
+	}
+	return true, nil
+}
+
+func (x *localIndex) gcCollection(name string) (err error) {
+	tx, err := x.db.WriteTx(bg)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	ctx := tx.Context()
+	c, err := x.db.OpenCollection(ctx, name)
+	if err != nil {
+		return err
+	}
+	it, err := c.Find(nil).Limit(gcBatch).Iter(ctx)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for it.Next() {
+		d, err := it.Doc()
+		if err != nil {
+			it.Close()
+			return err
+		}
+		ids = append(ids, string(d.Value().GetStringBytes("id")))
+	}
+	if err := it.Err(); err != nil {
+		it.Close()
+		return err
+	}
+	it.Close()
+	if len(ids) == 0 {
+		if err := c.Drop(ctx); err != nil {
+			return err
+		}
+	} else {
+		for _, id := range ids {
+			if err := c.DeleteId(ctx, id); err != nil && !errors.Is(err, anystore.ErrDocNotFound) {
+				return err
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if len(ids) > 0 {
+		return c.Close()
+	}
+	return nil
+}
+
+func (x *localIndex) orphanCount() int {
+	x.orphMu.Lock()
+	defer x.orphMu.Unlock()
+	return len(x.orphans)
+}
+
 // ------------------------------------------------------------------ reads
 
-func docRow(v *anyenc.Value, withVector bool) map[string]any {
+func docRow(v *anyenc.Value, withVector bool) (map[string]any, error) {
 	r := map[string]any{"id": string(v.GetStringBytes("id")), "text": nil, "meta": nil, "f": map[string]any{}}
 	if t := v.Get("text"); t != nil {
 		r["text"] = goValue(t)
@@ -1121,18 +1299,25 @@ func docRow(v *anyenc.Value, withVector bool) map[string]any {
 	if withVector {
 		r["vector"] = nil
 		if e != nil {
-			if fs, err := e.VectorF32(); err == nil {
-				r["vector"] = fs
+			fs, err := e.VectorF32()
+			if err != nil {
+				return nil, withCode(codeCorrupt, "row %s: the stored vector does not decode: %v", r["id"], err)
 			}
+			r["vector"] = fs
 		}
 	} else {
 		r["hasVector"] = e != nil
 	}
-	return r
+	return r, nil
 }
 
-func stateRow(v *anyenc.Value) map[string]any {
-	return map[string]any{"key": string(v.GetStringBytes("id")), "value": string(v.GetStringBytes("v"))}
+func stateRow(v *anyenc.Value) (map[string]any, error) {
+	key := string(v.GetStringBytes("id"))
+	val := v.Get("v")
+	if val == nil || val.Type() != anyenc.TypeString {
+		return nil, withCode(codeCorrupt, "state %q is not a string value", key)
+	}
+	return map[string]any{"key": key, "value": string(val.GetStringBytes())}, nil
 }
 
 // collFor names a collection of the caller's: docs, shadow, state,
@@ -1171,9 +1356,9 @@ func (x *localIndex) get(collName, id string) (map[string]any, error) {
 		return nil, err
 	}
 	if isDocs {
-		return docRow(d.Value(), true), nil
+		return docRow(d.Value(), true)
 	}
-	return stateRow(d.Value()), nil
+	return stateRow(d.Value())
 }
 
 const defaultScanLimit = 500
@@ -1220,11 +1405,16 @@ func (x *localIndex) scan(collName, prefix, after string, limit int) (map[string
 			break
 		}
 		lastId = id
+		var row map[string]any
 		if isDocs {
-			items = append(items, docRow(v, false))
+			row, err = docRow(v, false)
 		} else {
-			items = append(items, stateRow(v))
+			row, err = stateRow(v)
 		}
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, row)
 	}
 	if err := it.Err(); err != nil {
 		return nil, err
@@ -1356,6 +1546,11 @@ func (x *localIndex) text(q string, k int, filter string) (map[string]any, error
 	// sort, ties come in insertion order).
 	it, err := x.docs.Find(m).Sort("-_score", "id").Limit(uint(k)).Iter(bg)
 	if err != nil {
+		// A query any-store cannot parse is the caller's; a failure to
+		// read is not.
+		if isIOErrno(err) || errors.Is(err, anystore.ErrCorrupt) {
+			return nil, storeErr(err)
+		}
 		return nil, invalid("text query: %v", err)
 	}
 	res, err := collect(it, "score", it.Score)
@@ -1394,7 +1589,7 @@ func withIndex(h C.uint64_t, f func(x *localIndex) error) error {
 		return err
 	}
 	defer leave()
-	return f(x)
+	return storeErr(f(x))
 }
 
 // withIndexNoLock is for calls that take the index lock themselves.
@@ -1406,7 +1601,7 @@ func withIndexNoLock(h C.uint64_t, f func(x *localIndex) error) error {
 	if x.closed.Load() {
 		return errClosed
 	}
-	return f(x)
+	return storeErr(f(x))
 }
 
 //export any_shim_index_open
@@ -1424,14 +1619,51 @@ func any_shim_index_open(optsJSON *C.char, outIndex *C.uint64_t, outErr **C.char
 	})
 }
 
-//export any_shim_index_close
-func any_shim_index_close(h C.uint64_t, outErr **C.char) C.any_shim_status {
+// indexCloseStart is any_shim_index_close_start without the cgo types.
+func indexCloseStart(h uint64) (uint64, error) {
+	x, err := take[*localIndex](h, "an index")
+	if err != nil {
+		return 0, err
+	}
+	markClosing(x.claims)
+	return startOp(context.Background(), func(context.Context) (any, error) {
+		if err := x.close(); err != nil {
+			return nil, storeErr(err)
+		}
+		return map[string]any{}, nil
+	}), nil
+}
+
+// indexBindStart is any_shim_index_bind_start without the cgo types: the
+// request is checked here (INVALID_ARGUMENT, CONFLICT), the indexes are
+// built in the op.
+func indexBindStart(h uint64, bindJSON string) (uint64, error) {
+	x, err := lookup[*localIndex](h, "an index")
+	if err != nil {
+		return 0, err
+	}
+	req, err := x.checkBind(bindJSON)
+	if err != nil {
+		return 0, err
+	}
+	return startOp(context.Background(), func(context.Context) (any, error) {
+		r, err := x.applyBind(req)
+		return r, storeErr(err)
+	}), nil
+}
+
+//export any_shim_index_close_start
+func any_shim_index_close_start(h C.uint64_t, outOp *C.uint64_t, outErr **C.char) C.any_shim_status {
 	return guard(outErr, func() error {
-		x, err := take[*localIndex](uint64(h), "an index")
+		if outOp == nil {
+			return invalid("out_op is NULL")
+		}
+		op, err := indexCloseStart(uint64(h))
 		if err != nil {
 			return err
 		}
-		return x.close()
+		putOp(outOp, op)
+		return nil
 	})
 }
 
@@ -1453,18 +1685,33 @@ func any_shim_index_release(h C.uintptr_t) {
 	releaseIndex(uint64(h))
 }
 
-//export any_shim_index_bind
-func any_shim_index_bind(h C.uint64_t, bindJSON *C.char, outJSON, outErr **C.char) C.any_shim_status {
+//export any_shim_index_bind_start
+func any_shim_index_bind_start(h C.uint64_t, bindJSON *C.char, outOp *C.uint64_t, outErr **C.char) C.any_shim_status {
 	return guard(outErr, func() error {
-		return withIndexNoLock(h, func(x *localIndex) error {
+		if outOp == nil {
+			return invalid("out_op is NULL")
+		}
+		op, err := indexBindStart(uint64(h), goStr(bindJSON))
+		if err != nil {
+			return err
+		}
+		putOp(outOp, op)
+		return nil
+	})
+}
+
+//export any_shim_index_gc
+func any_shim_index_gc(h C.uint64_t, budgetMs C.int32_t, outJSON, outErr **C.char) C.any_shim_status {
+	return guard(outErr, func() error {
+		return withIndex(h, func(x *localIndex) error {
 			if outJSON == nil {
 				return invalid("out_json is NULL")
 			}
-			r, err := x.bind(goStr(bindJSON))
+			done, err := x.gc(clampWait(budgetMs))
 			if err != nil {
 				return err
 			}
-			return putJSON(outJSON, r)
+			return putJSON(outJSON, map[string]any{"done": done})
 		})
 	})
 }
@@ -1581,6 +1828,13 @@ func goFloats(p *C.float, n C.int32_t) ([]float32, error) {
 func any_shim_index_knn(h C.uint64_t, q *C.float, dim, k C.int32_t, filterJSON *C.char, outJSON, outErr **C.char) C.any_shim_status {
 	return guard(outErr, func() error {
 		return withIndex(h, func(x *localIndex) error {
+			// Bound and the dimension checked before a float is read.
+			if x.cfg == nil {
+				return withCode(codeRefused, "the index is not bound yet (index_bind)")
+			}
+			if int(dim) != x.cfg.Dim {
+				return invalid("query has %d dimensions, the index %d", int32(dim), x.cfg.Dim)
+			}
 			v, err := goFloats(q, dim)
 			if err != nil {
 				return err

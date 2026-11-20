@@ -13,6 +13,8 @@
  *   - Writes results only through out-parameters, and only on ANY_SHIM_OK.
  *   - On an error, writes a malloc'd UTF-8 message to *out_error when
  *     out_error is not NULL. Messages are for people; branch on the code.
+ *     Callers pre-initialise *out_error to NULL (it is left untouched on
+ *     ANY_SHIM_OK).
  *   - Never lets a Go panic cross the boundary: a panic in the call is
  *     recovered and returned as ANY_SHIM_ERR_PANIC. A panic on a goroutine
  *     the SDK started itself is outside this guarantee.
@@ -21,7 +23,9 @@
  *     not declared const because cgo cannot declare an export that way.
  *   - Strings out (*out_json, *out_id, *out_error, ...) are malloc'd and
  *     owned by the caller, who frees them with any_shim_free.
- *   - JSON out is always a complete document (object or array).
+ *   - JSON out is always a complete document (object or array). The one
+ *     exception: any_shim_index_get returns OK with *out_json = NULL for an
+ *     absent row.
  *
  * Handles are opaque, non-zero uint64 values from a process-wide registry.
  * A handle that was never issued, or was closed, is ANY_SHIM_ERR_CLOSED; an
@@ -37,6 +41,14 @@
 #define ANY_SHIM_H_
 
 #include <stdint.h>
+
+/* Handles cross the boundary as uint64_t, and the finalizer-shaped
+ * release functions take them as uintptr_t: 64-bit targets only. */
+#ifdef __cplusplus
+static_assert(sizeof(uintptr_t) == 8, "any_shim needs a 64-bit target");
+#else
+_Static_assert(sizeof(uintptr_t) == 8, "any_shim needs a 64-bit target");
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -88,7 +100,8 @@ typedef int32_t any_shim_status;
 /* No exported call blocks for long. A call that may wait on the network or
  * on a close is split into *_start, which returns an op handle at once,
  * and any_shim_op_wait, which waits at most ~250 ms per call. Everything
- * else returns within a local database operation. */
+ * else returns within a local database operation; the one exception is
+ * any_shim_file_attach (proportional to the file). */
 
 /* ---------------------------------------------------------------- misc */
 
@@ -139,19 +152,30 @@ any_shim_status any_shim_op_cancel(uint64_t op, char **out_error);
  *   nodeConfYaml     string, required; the production network is refused
  *   p2p              {"enabled","localDiscovery","serviceName","port"}
  *   logLevel         "debug"|"info"|"warn"|"error" (default "error")
- * Takes flock/LockFileEx on <dataDir>/.lock: another process holding it
- * is ANY_SHIM_ERR_BUSY. */
-any_shim_status any_shim_account_open(char *opts_json,
-                                      uint64_t *out_account,
-                                      char **out_error);
+ * The start call validates the options, claims both directories and takes
+ * flock/LockFileEx on <dataDir>/.shimlock (another process holding it is
+ * ANY_SHIM_ERR_BUSY), all synchronously: BUSY and REFUSED come back from
+ * the start call itself. The SDK opens in the op. Op result:
+ * {"account":<uint64 handle, as a JSON number>}. A failed or cancelled op
+ * releases the claims and the lock (an account opened by a cancelled op
+ * is closed again). */
+any_shim_status any_shim_account_open_start(char *opts_json,
+                                            uint64_t *out_op,
+                                            char **out_error);
 
 /* Cancels every call and space load in flight; never blocks; any thread.
- * Calls blocked on the network return at once (ANY_SHIM_ERR_CLOSED). */
+ * Calls blocked on the network return at once (ANY_SHIM_ERR_CLOSED).
+ * Terminal: afterwards every call is ANY_SHIM_ERR_CLOSED; only
+ * account_close_start and account_release are useful. */
 any_shim_status any_shim_account_cancel(uint64_t account, char **out_error);
 
 /* Starts the close (cancel, end watches, SDK close, unlock). The op's
- * result is {}. The handle is invalid at once. */
+ * result is {}. The handle is invalid at once. wait_loads_ms > 0: inside
+ * the op (and inside the iOS background task), first waits up to that
+ * long for space loads in flight to finish, then cancels and closes; a
+ * suspend passes 25000, a close 0 (cancel at once). */
 any_shim_status any_shim_account_close_start(uint64_t account,
+                                             int32_t wait_loads_ms,
                                              uint64_t *out_op,
                                              char **out_error);
 
@@ -171,7 +195,9 @@ any_shim_status any_shim_set_local_discovery(uint64_t account,
 
 /* -------------------------------------------------------------- spaces */
 
-/* {"id"}. Recorded in the account state as created on this device. */
+/* {"id"}. Recorded in the account state as created on this device. If
+ * that save fails after the space exists, still OK, with the id and
+ * "stateSaveError":string (never create the space a second time). */
 any_shim_status any_shim_space_create(uint64_t account, char *name,
                                       char **out_json, char **out_error);
 
@@ -201,7 +227,9 @@ any_shim_status any_shim_space_resolve_start(uint64_t account,
  *  "everPeerSynced":bool,"createdHere":bool}.
  * everPeerSynced is persisted in the account state: set the first time a
  * peer sync of the space completed on this device. ANY_SHIM_ERR_NOT_FOUND
- * for an id the account does not know. */
+ * for an id the account does not know. Also "stateSaveError":null|string:
+ * the last save of the account state failed (cleared by a later save that
+ * succeeds), so the persisted flags may be behind the reported ones. */
 any_shim_status any_shim_space_status(uint64_t account, char *space_id,
                                       char **out_json, char **out_error);
 
@@ -265,6 +293,14 @@ any_shim_status any_shim_object_read(uint64_t account, char *space_id,
                                      char *request_json, char **out_json,
                                      char **out_error);
 
+/* The id object_patch {"derive":{"seed","type"}} would produce, computed
+ * without a write (a reader may call it; the space need not be loaded).
+ * type_id must be non-empty; it does not enter the id. {"id"} */
+any_shim_status any_shim_object_derive_id(uint64_t account, char *space_id,
+                                          char *seed, char *type_id,
+                                          char **out_json,
+                                          char **out_error);
+
 /* Deletes an object for every device. A derived object is
  * ANY_SHIM_ERR_REFUSED; an already deleted one is OK. */
 any_shim_status any_shim_object_delete(uint64_t account, char *space_id,
@@ -324,6 +360,8 @@ any_shim_status any_shim_events_poll(uint64_t account, int32_t max_events,
 
 /* --------------------------------------------------------------- files */
 
+/* An exception to the ~250 ms rule: copies the file into the space, in
+ * time proportional to its size. The RAG provider does not call it. */
 any_shim_status any_shim_file_attach(uint64_t account, char *space_id,
                                      char *object_id, char *path,
                                      char *name, char **out_json,
@@ -357,14 +395,17 @@ any_shim_status any_shim_file_read_start(uint64_t account, char *space_id,
  *   matching sidecar             ANY_SHIM_ERR_CORRUPT
  *   no sidecar, file present     ANY_SHIM_ERR_CORRUPT
  *   EACCES/EPERM/ENOSPC          ANY_SHIM_ERR_IO
- * Takes flock/LockFileEx on <path>.lock; held by another process:
+ * Takes flock/LockFileEx on <path>.shimlock; held by another process:
  * ANY_SHIM_ERR_BUSY. The same path open under another ownerToken, or
  * closing: ANY_SHIM_ERR_BUSY; under the same token: ANY_SHIM_ERR_REFUSED.
- * Drops orphan generation collections (an unswapped shadow included). */
+ * Orphan generation collections (an unswapped shadow included) are only
+ * recorded; any_shim_index_gc drops them. */
 any_shim_status any_shim_index_open(char *opts_json, uint64_t *out_index,
                                     char **out_error);
 
-any_shim_status any_shim_index_close(uint64_t index, char **out_error);
+/* Starts the close; the handle is invalid at once. Op result: {}. */
+any_shim_status any_shim_index_close_start(uint64_t index, uint64_t *out_op,
+                                           char **out_error);
 
 /* Finalizer-shaped, as any_shim_account_release. */
 void any_shim_index_release(uintptr_t index);
@@ -374,10 +415,13 @@ void any_shim_index_release(uintptr_t index);
  *             "textSearch":bool}
  * Idempotent; fields and textSearch may only grow (a new field gets its
  * range index); another dim or metric, or a field key with another type,
- * is ANY_SHIM_ERR_CONFLICT. The config lives in meta and survives swaps.
+ * is ANY_SHIM_ERR_CONFLICT (returned by the start call). The config lives
+ * in meta and survives swaps. A bind that adds an index builds it over
+ * every existing row, so it runs in an op. Op result:
  * {"dim","metric","fields","textSearch"} */
-any_shim_status any_shim_index_bind(uint64_t index, char *bind_json,
-                                    char **out_json, char **out_error);
+any_shim_status any_shim_index_bind_start(uint64_t index, char *bind_json,
+                                          uint64_t *out_op,
+                                          char **out_error);
 
 /* {} before any bind; otherwise the same object index_bind returns,
  * plus "fileId". */
@@ -392,8 +436,12 @@ any_shim_status any_shim_index_info(uint64_t index, char **out_json,
  *     {"op":"delete","coll":"docs"|"shadow","id"},
  *     {"op":"clearDocs","coll":"docs"|"shadow"},
  *     {"op":"stateSet","coll":"state"|"shadowState","key","value":null|string},
- *     {"op":"shadowBegin"},                    drops any shadow, starts n+1
- *     {"op":"shadowSwap"}]}                    makes the shadow active
+ *     {"op":"shadowBegin"},                    drops any shadow, starts a
+ *                                              new generation
+ *     {"op":"shadowSwap"}]}                    makes the shadow active:
+ *                                              flips meta.active only; the
+ *                                              old generation becomes an
+ *                                              orphan for index_gc
  * vectors: vector_floats floats; every vector slot satisfies offset >= 0,
  * offset + dim <= vector_floats, dim == the bound dim; the slots tile the
  * buffer in order; no NaN or Inf. Everything is validated before the
@@ -403,6 +451,12 @@ any_shim_status any_shim_index_info(uint64_t index, char **out_json,
 any_shim_status any_shim_index_apply(uint64_t index, char *ops_json,
                                      float *vectors, int64_t vector_floats,
                                      char **out_json, char **out_error);
+
+/* Drops orphan generations, a bounded amount of work per call (about
+ * budget_ms, clamped to 0..250). {"done":bool}: true once no orphan is
+ * left. Call after a swap and after open until done. */
+any_shim_status any_shim_index_gc(uint64_t index, int32_t budget_ms,
+                                  char **out_json, char **out_error);
 
 /* A row of docs (or shadow), or a state value. *out_json = NULL when
  * absent. coll: "docs"|"shadow"|"state"|"shadowState" (a shadow coll

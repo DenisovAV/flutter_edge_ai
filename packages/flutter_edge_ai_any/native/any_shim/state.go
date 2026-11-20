@@ -49,7 +49,7 @@ func loadAccountState(dataDir string) (*accountState, error) {
 		return s, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, ioOr(err, codeInternal, "read %s", s.path)
 	}
 	var d accountStateDoc
 	if err := json.Unmarshal(b, &d); err != nil {
@@ -99,28 +99,38 @@ func (s *accountState) update(spaceId string, sync bool, f func(st *spaceState))
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		if err := s.save(); err != nil {
-			s.mu.Lock()
-			s.err = err
-			s.mu.Unlock()
-		}
+		_ = s.save()
 	}()
 	return nil
 }
 
+// save writes the whole state; its outcome is the state's save error
+// (the last save decides: a later success clears it).
 func (s *accountState) save() error {
 	s.saveMu.Lock()
 	defer s.saveMu.Unlock()
 	s.mu.Lock()
 	b, err := json.Marshal(s.doc)
 	s.mu.Unlock()
-	if err != nil {
-		return err
+	if err == nil {
+		if werr := writeFileAtomic(s.path, b); werr != nil {
+			err = ioOr(werr, codeInternal, "save %s", s.path)
+		}
 	}
-	return writeFileAtomic(s.path, b)
+	s.mu.Lock()
+	s.err = err
+	s.mu.Unlock()
+	return err
 }
 
-// flush waits for background saves and reports the last that failed.
+// saveError is the error of the last save, nil when it succeeded.
+func (s *accountState) saveError() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.err
+}
+
+// flush waits for background saves and reports the last save's error.
 func (s *accountState) flush() error {
 	s.wg.Wait()
 	s.mu.Lock()

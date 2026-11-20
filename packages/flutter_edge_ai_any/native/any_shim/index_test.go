@@ -485,8 +485,10 @@ func TestIndexShadowSwapAndReopen(t *testing.T) {
 		map[string]any{"op": "shadowSwap"},
 		map[string]any{"op": "upsert", "coll": "docs", "id": "after-swap", "text": "x", "vector": nil})
 	mustApply(t, x, ops, buf)
-	if x.active != 1 || x.shDocs != nil {
-		t.Fatalf("active %d shadow %v", x.active, x.shDocs != nil)
+	// gen 0 active, gen 1 the first shadow (orphaned by the second
+	// begin), gen 2 swapped in; 0 and 1 are orphans now.
+	if x.active != 2 || x.shDocs != nil || x.orphanCount() != 2 {
+		t.Fatalf("active %d shadow %v orphans %v", x.active, x.shDocs != nil, x.orphans)
 	}
 	if g, _ := x.get("docs", "n2"); g == nil {
 		t.Fatal("swapped-in row missing")
@@ -500,17 +502,38 @@ func TestIndexShadowSwapAndReopen(t *testing.T) {
 	if r, err := x.text("two", 5, ""); err != nil || len(ids(r)) != 1 {
 		t.Fatalf("text index on the new generation: %v %v", r, err)
 	}
-	// An orphan shadow is dropped at the next open.
+	// An unswapped shadow and the old generations are recorded at the
+	// next open, and index_gc drops them.
 	mustApply(t, x, map[string]any{"ops": []any{map[string]any{"op": "shadowBegin"}}}, nil)
 	if err := x.close(); err != nil {
 		t.Fatal(err)
 	}
 	y := mustOpenIndex(t, path, testKey)
+	if y.orphanCount() != 3 || y.active != 2 {
+		t.Fatalf("after reopen: active %d orphans %v", y.active, y.orphans)
+	}
+	for i := 0; ; i++ {
+		done, err := y.gc(maxWait)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done {
+			break
+		}
+		if i > 100 {
+			t.Fatal("gc never finished")
+		}
+	}
 	names, _ := y.db.GetCollectionNames(bg)
 	for _, n := range names {
-		if n != "meta" && n != "docs_1" && n != "state_1" {
-			t.Fatalf("collections after reopen: %v", names)
+		if n != "meta" && n != "docs_2" && n != "state_2" {
+			t.Fatalf("collections after gc: %v", names)
 		}
+	}
+	// A new shadow never reuses a number: it is past every generation.
+	mustApply(t, y, map[string]any{"ops": []any{map[string]any{"op": "shadowBegin"}}}, nil)
+	if y.shadowGen != 4 {
+		t.Fatalf("new shadow generation %d, want 4", y.shadowGen)
 	}
 	if c, _ := y.docs.Count(bg); c != 2 {
 		t.Fatalf("rows after reopen: %d", c)
@@ -570,8 +593,8 @@ func TestIndexSwapWithConcurrentReaders(t *testing.T) {
 	for e := range errs {
 		t.Fatalf("reader during swaps: %v", e)
 	}
-	if x.active != 30 {
-		t.Fatalf("active = %d", x.active)
+	if x.active != 30 || x.orphanCount() != 30 {
+		t.Fatalf("active = %d, orphans %d", x.active, x.orphanCount())
 	}
 }
 

@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"os"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 )
@@ -41,3 +42,7 @@ func unlockFile(f *os.File) error {
 	_ = windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, ol)
 	return f.Close()
 }
+
+// isPlatformIOErrno: ERROR_HANDLE_DISK_FULL (39) and ERROR_DISK_FULL
+// (112), which Go does not map to ENOSPC.
+func isPlatformIOErrno(e syscall.Errno) bool { return e == 39 || e == 112 }

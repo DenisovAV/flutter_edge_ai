@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -31,20 +33,86 @@ func clampWait(ms C.int32_t) time.Duration {
 // context the op handle can cancel; account ops derive it from the
 // account's, so cancelling or closing the account ends them too.
 type op struct {
-	done   chan struct{}
-	cancel context.CancelFunc
-	result any
-	err    error
+	done     chan struct{}
+	cancel   context.CancelFunc
+	result   any
+	err      error
+	finished atomic.Int64 // unix nanos when f returned; 0 while running
+
+	// discard frees what an undelivered result holds (an opened account):
+	// run once when the op is cancelled, dropped unread, or dropped with
+	// its account, whichever of those meets a finished op.
+	discard     func(result any)
+	discarded   atomic.Bool
+	discardOnce sync.Once
+}
+
+func (o *op) runDiscard() {
+	if o.discard == nil {
+		return
+	}
+	o.discardOnce.Do(func() {
+		defer func() { _ = recover() }()
+		if o.err == nil {
+			o.discard(o.result)
+		}
+	})
+}
+
+// abandon marks the op's result unwanted and cancels it. Never blocks.
+func (o *op) abandon() {
+	o.discarded.Store(true)
+	o.cancel()
+	select {
+	case <-o.done:
+		o.runDiscard()
+	default: // the goroutine runs discard when f returns
+	}
+}
+
+// staleOpAge: a finished op nobody waited for is dropped (and its result
+// discarded) at the next start after this long.
+const staleOpAge = 10 * time.Minute
+
+func dropStaleOps() {
+	cutoff := time.Now().Add(-staleOpAge).UnixNano()
+	var stale []*op
+	handles.mu.Lock()
+	for h, v := range handles.m {
+		if o, ok := v.(*op); ok {
+			if f := o.finished.Load(); f != 0 && f < cutoff {
+				delete(handles.m, h)
+				stale = append(stale, o)
+			}
+		}
+	}
+	handles.mu.Unlock()
+	for _, o := range stale {
+		o.abandon()
+	}
 }
 
 // startOp runs f on a goroutine and registers the op. A panic in f is
-// recovered and becomes the op's ANY_SHIM_ERR_PANIC.
+// recovered and becomes the op's ANY_SHIM_ERR_PANIC. discard (may be
+// nil) frees an undelivered result.
 func startOp(parent context.Context, f func(ctx context.Context) (any, error)) uint64 {
+	h, _ := startOpWith(parent, f, nil)
+	return h
+}
+
+func startOpWith(parent context.Context, f func(ctx context.Context) (any, error), discard func(any)) (uint64, *op) {
+	dropStaleOps()
 	ctx, cancel := context.WithCancel(parent)
-	o := &op{done: make(chan struct{}), cancel: cancel}
+	o := &op{done: make(chan struct{}), cancel: cancel, discard: discard}
 	h := handles.add(o)
 	go func() {
-		defer close(o.done)
+		defer func() {
+			o.finished.Store(time.Now().UnixNano())
+			close(o.done)
+			if o.discarded.Load() {
+				o.runDiscard()
+			}
+		}()
 		defer cancel()
 		defer func() {
 			if r := recover(); r != nil {
@@ -54,7 +122,7 @@ func startOp(parent context.Context, f func(ctx context.Context) (any, error)) u
 		}()
 		o.result, o.err = f(ctx)
 	}()
-	return h
+	return h, o
 }
 
 // wait returns errPending while the op runs. Once it has finished, the
@@ -113,7 +181,7 @@ func any_shim_op_cancel(h C.uint64_t, outErr **C.char) C.any_shim_status {
 		if err != nil {
 			return err
 		}
-		o.cancel()
+		o.abandon()
 		return nil
 	})
 }

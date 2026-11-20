@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -90,6 +91,8 @@ type account struct {
 	loadWG      sync.WaitGroup
 
 	stopStatus func() // the account's own sync-status subscription
+
+	opHandles map[uint64]struct{} // ops started on this account (a.mu)
 
 	closeOnce sync.Once
 	closeDone chan struct{}
@@ -212,7 +215,29 @@ func unclaim(cs []*dirClaim) {
 
 // ------------------------------------------------------------------ open
 
-func openAccount(optsJSON string) (_ *account, err error) {
+// dataDirLockName is the shim's own lock file in dataDir. Not ".lock":
+// that suffix is any-store's sentinel file name.
+const dataDirLockName = ".shimlock"
+
+// pendingAccount is an account whose directories are claimed and locked
+// (synchronously, in the start call) and whose SDK is not open yet.
+type pendingAccount struct {
+	o       openOpts
+	dev     []byte
+	dataDir string
+	claims  []*dirClaim
+	lock    *os.File
+	state   *accountState
+}
+
+func (p *pendingAccount) release() {
+	_ = unlockFile(p.lock)
+	unclaim(p.claims)
+}
+
+// prepareAccount validates the options, claims both directories and takes
+// the data directory's lock. BUSY and REFUSED come from here.
+func prepareAccount(optsJSON string) (_ *pendingAccount, err error) {
 	var o openOpts
 	if err := decodeStrict(optsJSON, &o); err != nil {
 		return nil, err
@@ -241,11 +266,11 @@ func openAccount(optsJSON string) (_ *account, err error) {
 	}
 	dataDir, err := canonicalDir(o.DataDir)
 	if err != nil {
-		return nil, fmt.Errorf("dataDir: %w", err)
+		return nil, ioOr(err, codeInternal, "dataDir")
 	}
 	indexDir, err := canonicalDir(o.IndexDir)
 	if err != nil {
-		return nil, fmt.Errorf("indexDir: %w", err)
+		return nil, ioOr(err, codeInternal, "indexDir")
 	}
 	if dataDir == indexDir {
 		return nil, invalid("dataDir and indexDir must differ")
@@ -259,9 +284,12 @@ func openAccount(optsJSON string) (_ *account, err error) {
 			unclaim(cl)
 		}
 	}()
-	lock, err := lockFile(filepath.Join(dataDir, ".lock"))
+	lock, err := lockFile(filepath.Join(dataDir, dataDirLockName))
 	if err != nil {
-		return nil, err
+		if codeOf(err) == codeBusy {
+			return nil, err
+		}
+		return nil, ioOr(err, codeInternal, "lock %s", dataDir)
 	}
 	defer func() {
 		if err != nil {
@@ -272,6 +300,19 @@ func openAccount(optsJSON string) (_ *account, err error) {
 	if err != nil {
 		return nil, err
 	}
+	return &pendingAccount{o: o, dev: dev, dataDir: dataDir, claims: cl, lock: lock, state: st}, nil
+}
+
+// open opens the SDK. Cancelling opCtx cancels the open; an account that
+// opened anyway is closed again. On any failure the claims and the lock
+// are released.
+func (p *pendingAccount) open(opCtx context.Context) (_ *account, err error) {
+	defer func() {
+		if err != nil {
+			p.release()
+		}
+	}()
+	o := p.o
 	loggerOnce.Do(func() {
 		lvl := o.LogLevel
 		if lvl == "" {
@@ -283,13 +324,13 @@ func openAccount(optsJSON string) (_ *account, err error) {
 	if o.AccountIndex != nil {
 		idx = *o.AccountIndex
 	}
-	prov, err := auth.NewMnemonicProvider(auth.MnemonicConfig{Mnemonic: o.Mnemonic, Index: idx, DeviceKey: dev})
+	prov, err := auth.NewMnemonicProvider(auth.MnemonicConfig{Mnemonic: o.Mnemonic, Index: idx, DeviceKey: p.dev})
 	if err != nil {
 		return nil, invalid("account: %v", err)
 	}
 	off := false
 	cfg := config.Config{
-		Storage: config.Storage{DataDir: dataDir, Topology: config.StorageShared},
+		Storage: config.Storage{DataDir: p.dataDir, Topology: config.StorageShared},
 		Network: config.Network{NodeConfYAML: []byte(o.NodeConfYAML)},
 		P2P: config.P2P{
 			Enabled:        o.P2P.Enabled,
@@ -303,39 +344,64 @@ func openAccount(optsJSON string) (_ *account, err error) {
 		// bodies we write and we read the ones it writes.
 		Modules: []handler.Module{editor.NewModule()},
 	}
+	// The account's context outlives the op; the op's cancel reaches the
+	// open only while it runs.
 	ctx, cancel := context.WithCancel(context.Background())
+	stop := context.AfterFunc(opCtx, cancel)
 	s, err := anysyncsdk.Open(ctx, cfg, prov)
+	cancelledByOp := !stop()
 	if err != nil {
 		cancel()
+		if cancelledByOp {
+			return nil, opCtx.Err()
+		}
 		return nil, err
+	}
+	if cancelledByOp {
+		cancel()
+		_ = s.Close()
+		return nil, opCtx.Err()
 	}
 	a := &account{
 		sdk:       s,
 		ctx:       ctx,
 		cancel:    cancel,
 		events:    newEventQueue(defaultQueueCapacity),
-		state:     st,
-		lock:      lock,
-		claims:    cl,
+		state:     p.state,
+		lock:      p.lock,
+		claims:    p.claims,
 		watches:   map[int64]func(){},
 		loads:     map[string]*spaceLoad{},
+		opHandles: map[uint64]struct{}{},
 		closeDone: make(chan struct{}),
 	}
 	// everPeerSynced is set without a caller: the first non-zero
 	// LastSyncedAt of a space, seen on the account-wide status feed.
 	a.stopStatus = s.Spaces().SubscribeStatus(func(st space.SpaceSyncStatus) {
 		if !st.LastSyncedAt.IsZero() {
-			a.markPeerSynced(st.SpaceId, false)
+			_ = a.markPeerSynced(st.SpaceId, false)
 		}
 	})
 	return a, nil
 }
 
-func (a *account) markPeerSynced(spaceId string, sync bool) {
-	if spaceId == "" {
-		return
+// openAccount prepares and opens on the calling goroutine (tests).
+func openAccount(optsJSON string) (*account, error) {
+	p, err := prepareAccount(optsJSON)
+	if err != nil {
+		return nil, err
 	}
-	_ = a.state.update(spaceId, sync, func(st *spaceState) { st.EverPeerSynced = true })
+	return p.open(context.Background())
+}
+
+// markPeerSynced sets everPeerSynced. sync=true saves before returning
+// and reports a failed save; sync=false saves on a goroutine and a
+// failure shows up as stateSaveError.
+func (a *account) markPeerSynced(spaceId string, sync bool) error {
+	if spaceId == "" {
+		return nil
+	}
+	return a.state.update(spaceId, sync, func(st *spaceState) { st.EverPeerSynced = true })
 }
 
 // enter marks a call in progress; the returned func ends it. It never
@@ -361,28 +427,68 @@ func (a *account) cancelCalls() {
 }
 
 // beginClose does the synchronous part of a close: the handle is
-// already out of the registry; the directories read as closing (a new
-// open is ANY_SHIM_ERR_BUSY), calls and loads are cancelled, pollers
-// woken. Never blocks. Reports false when the close had begun already.
-func (a *account) beginClose() bool {
+// already out of the registry; calls are refused (CLOSED), the
+// directories read as closing (a new open is ANY_SHIM_ERR_BUSY) and the
+// iOS background task begins. cancelNow also cancels calls and loads and
+// wakes pollers (a close that waits for loads cancels later, in
+// finishClose). Never blocks. Reports false when the close had begun
+// already.
+func (a *account) beginClose(cancelNow bool) bool {
 	if a.closed.Swap(true) {
 		return false
 	}
 	a.bgEnd = beginBackgroundTask("flutter_edge_ai_any account close")
 	markClosing(a.claims)
-	a.cancel()
-	a.events.close()
+	if cancelNow {
+		a.cancel()
+		a.events.close()
+	}
 	return true
 }
 
-// finishClose waits for the calls in flight, stops watches and loads,
-// closes the SDK and releases the lock and the directories. A failed
-// SDK close still releases them: the SDK is not usable either way.
+// finishClose optionally waits up to waitLoads for space loads in flight
+// (a suspend lets a joining device finish its first load), then cancels,
+// waits for the calls in flight, stops watches, ops and loads, closes the
+// SDK and releases the lock and the directories. The release runs
+// whatever happens before it, a failed or panicking SDK close included.
 // Runs once; later callers wait for the first and get its result.
-func (a *account) finishClose() error {
+func (a *account) finishClose(waitLoads time.Duration) error {
 	a.closeOnce.Do(func() {
 		defer close(a.closeDone)
-		defer a.bgEnd()
+		var errs []error
+		defer func() { a.closeErr = errors.Join(errs...) }()
+		// First registered, so it runs last: the lock and the claims go
+		// even when anything below panics.
+		defer func() {
+			errs = append(errs, unlockFile(a.lock))
+			unclaim(a.claims)
+		}()
+		defer func() {
+			if a.bgEnd != nil {
+				a.bgEnd()
+			}
+		}()
+		defer func() {
+			if r := recover(); r != nil {
+				errs = append(errs, &shimError{code: codePanic, err: fmt.Errorf("panic while closing: %v\n%s", r, debug.Stack())})
+			}
+		}()
+		a.loadsMu.Lock()
+		a.loadsClosed = true // no load starts from here on
+		a.loadsMu.Unlock()
+		loadsDone := make(chan struct{})
+		go func() { a.loadWG.Wait(); close(loadsDone) }()
+		if waitLoads > 0 {
+			t := time.NewTimer(waitLoads)
+			select {
+			case <-loadsDone:
+			case <-t.C:
+			}
+			t.Stop()
+		}
+		a.cancel()
+		a.events.close()
+		a.dropOps()
 		a.ops.Lock()
 		defer a.ops.Unlock()
 		a.mu.Lock()
@@ -394,33 +500,72 @@ func (a *account) finishClose() error {
 		if a.stopStatus != nil {
 			a.stopStatus()
 		}
-		a.loadsMu.Lock()
-		a.loadsClosed = true
-		a.loadsMu.Unlock()
-		loadsDone := make(chan struct{})
-		go func() { a.loadWG.Wait(); close(loadsDone) }()
 		select {
 		case <-loadsDone:
 		case <-time.After(10 * time.Second):
 			// A load that ignores its cancelled context; the SDK close
 			// below cancels its bootstrap and joins its own work.
 		}
-		errs := []error{a.sdk.Close()}
-		errs = append(errs, a.state.flush(), unlockFile(a.lock))
-		unclaim(a.claims)
-		a.closeErr = errors.Join(errs...)
+		errs = append(errs, closeSDKHook(a.sdk), a.state.flush())
 	})
 	<-a.closeDone
 	return a.closeErr
 }
 
+// closeSDKHook is closeSDK; a test replaces it to make the close panic.
+var closeSDKHook = func(s *anysyncsdk.SDK) error { return closeSDK(s) }
+
+// closeSDK closes the SDK, turning a panic into an error.
+func closeSDK(s interface{ Close() error }) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = &shimError{code: codePanic, err: fmt.Errorf("panic in SDK close: %v\n%s", r, debug.Stack())}
+		}
+	}()
+	return s.Close()
+}
+
+// startOp starts an op on the account's context and tracks it, so the
+// close drops it with the account. The op holds no call lock: the close
+// cancels it through the context.
+func (a *account) startOp(f func(ctx context.Context) (any, error)) uint64 {
+	h, _ := startOpWith(a.ctx, f, nil)
+	a.mu.Lock()
+	if len(a.opHandles) > 64 {
+		// Forget handles already delivered or cancelled.
+		handles.mu.Lock()
+		for k := range a.opHandles {
+			if _, ok := handles.m[k]; !ok {
+				delete(a.opHandles, k)
+			}
+		}
+		handles.mu.Unlock()
+	}
+	a.opHandles[h] = struct{}{}
+	a.mu.Unlock()
+	return h
+}
+
+// dropOps takes the account's ops out of the registry and cancels them.
+func (a *account) dropOps() {
+	a.mu.Lock()
+	hs := a.opHandles
+	a.opHandles = map[uint64]struct{}{}
+	a.mu.Unlock()
+	for h := range hs {
+		if o, ok := takeIf[*op](h); ok {
+			o.abandon()
+		}
+	}
+}
+
 // closeNow closes the account on the calling goroutine (tests).
 func (a *account) closeNow() error {
-	if !a.beginClose() {
+	if !a.beginClose(true) {
 		<-a.closeDone
 		return errClosed
 	}
-	return a.finishClose()
+	return a.finishClose(0)
 }
 
 func (a *account) info() map[string]any {
@@ -472,21 +617,6 @@ func withAccount(h C.uint64_t, f func(a *account) error) error {
 	return f(a)
 }
 
-//export any_shim_account_open
-func any_shim_account_open(optsJSON *C.char, outAccount *C.uint64_t, outErr **C.char) C.any_shim_status {
-	return guard(outErr, func() error {
-		if outAccount == nil {
-			return invalid("out_account is NULL")
-		}
-		a, err := openAccount(goStr(optsJSON))
-		if err != nil {
-			return err
-		}
-		*outAccount = C.uint64_t(handles.add(a))
-		return nil
-	})
-}
-
 //export any_shim_account_cancel
 func any_shim_account_cancel(h C.uint64_t, outErr **C.char) C.any_shim_status {
 	return guard(outErr, func() error {
@@ -499,23 +629,71 @@ func any_shim_account_cancel(h C.uint64_t, outErr **C.char) C.any_shim_status {
 	})
 }
 
-//export any_shim_account_close_start
-func any_shim_account_close_start(h C.uint64_t, outOp *C.uint64_t, outErr **C.char) C.any_shim_status {
+// accountOpenStart is any_shim_account_open_start without the cgo types.
+func accountOpenStart(optsJSON string) (uint64, error) {
+	p, err := prepareAccount(optsJSON)
+	if err != nil {
+		return 0, err
+	}
+	h, _ := startOpWith(context.Background(), func(ctx context.Context) (any, error) {
+		a, err := p.open(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"account": handles.add(a)}, nil
+	}, func(r any) {
+		// Opened, but nobody will take it: close it again.
+		if m, ok := r.(map[string]any); ok {
+			if h, ok := m["account"].(uint64); ok {
+				releaseAccount(h)
+			}
+		}
+	})
+	return h, nil
+}
+
+// accountCloseStart is any_shim_account_close_start without the cgo types.
+func accountCloseStart(h uint64, waitLoadsMs int32) (uint64, error) {
+	a, err := take[*account](h, "an account")
+	if err != nil {
+		return 0, err
+	}
+	wait := time.Duration(max(waitLoadsMs, 0)) * time.Millisecond
+	a.beginClose(wait == 0)
+	return startOp(context.Background(), func(context.Context) (any, error) {
+		if err := a.finishClose(wait); err != nil {
+			return nil, err
+		}
+		return map[string]any{}, nil
+	}), nil
+}
+
+//export any_shim_account_open_start
+func any_shim_account_open_start(optsJSON *C.char, outOp *C.uint64_t, outErr **C.char) C.any_shim_status {
 	return guard(outErr, func() error {
 		if outOp == nil {
 			return invalid("out_op is NULL")
 		}
-		a, err := take[*account](uint64(h), "an account")
+		h, err := accountOpenStart(goStr(optsJSON))
 		if err != nil {
 			return err
 		}
-		a.beginClose()
-		putOp(outOp, startOp(context.Background(), func(context.Context) (any, error) {
-			if err := a.finishClose(); err != nil {
-				return nil, err
-			}
-			return map[string]any{}, nil
-		}))
+		putOp(outOp, h)
+		return nil
+	})
+}
+
+//export any_shim_account_close_start
+func any_shim_account_close_start(h C.uint64_t, waitLoadsMs C.int32_t, outOp *C.uint64_t, outErr **C.char) C.any_shim_status {
+	return guard(outErr, func() error {
+		if outOp == nil {
+			return invalid("out_op is NULL")
+		}
+		op, err := accountCloseStart(uint64(h), int32(waitLoadsMs))
+		if err != nil {
+			return err
+		}
+		putOp(outOp, op)
 		return nil
 	})
 }
@@ -527,10 +705,10 @@ func releaseAccount(h uint64) {
 	if !ok {
 		return
 	}
-	a.beginClose()
+	a.beginClose(true)
 	go func() {
 		defer func() { _ = recover() }()
-		_ = a.finishClose()
+		_ = a.finishClose(0)
 	}()
 }
 

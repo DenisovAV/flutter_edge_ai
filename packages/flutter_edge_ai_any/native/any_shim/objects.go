@@ -17,6 +17,7 @@ import (
 
 	"github.com/anyproto/any-store/v2/anyenc"
 	"github.com/anyproto/any-sync-sdk/space"
+	"github.com/anyproto/any-sync/commonspace/object/tree/objecttree"
 
 	editor "anyshim/third_party/any_editor"
 )
@@ -120,12 +121,12 @@ func notFoundOrDeleted(ctx context.Context, sp space.Space, id string, err error
 // every device picks. synced reports whether the type has any
 // definitions here at all.
 func typeProps(ctx context.Context, sp space.Space, typeId string) (map[string]space.PropertyDef, bool, error) {
+	// The SDK answers an unknown or not yet synced type with an empty
+	// list; an error is a real failure (I/O, a closed account) and is
+	// reported as such, never as "not synced".
 	props, err := sp.Types().Properties(ctx, typeId)
 	if err != nil {
-		if c := codeOf(err); c == codeClosed || c == codeTimeout {
-			return nil, false, err
-		}
-		return map[string]space.PropertyDef{}, false, nil
+		return nil, false, fmt.Errorf("properties of type %s: %w", typeId, err)
 	}
 	sort.Slice(props, func(i, j int) bool { return props[i].Id < props[j].Id })
 	out := map[string]space.PropertyDef{}
@@ -138,6 +139,24 @@ func typeProps(ctx context.Context, sp space.Space, typeId string) (map[string]s
 		}
 	}
 	return out, len(props) > 0, nil
+}
+
+// declaredByOurBundle reports whether typeId is the derived root of one of
+// our bundles and that bundle declares xkey: such an xkey missing from a
+// synced type was removed (RemoveProperty), not "not ours".
+func declaredByOurBundle(ctx context.Context, sp space.Space, typeId, xkey string) bool {
+	for _, req := range []space.EnsureBundleRequest{ragLocationBundle(), ragDocumentBundle()} {
+		root, err := sp.Bundles().DerivedRootId(ctx, req.Id)
+		if err != nil || root != typeId {
+			continue
+		}
+		for _, p := range req.Properties {
+			if p.XKey == xkey {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ------------------------------------------------------------ object_patch
@@ -235,6 +254,9 @@ func resolveOps(ctx context.Context, sp space.Space, typeId string, ops []patchO
 		if !ok {
 			if !synced {
 				return nil, withCode(codeNotFound, "the definitions of type %s have not synced here (property %q)", typeId, o.XKey)
+			}
+			if declaredByOurBundle(ctx, sp, typeId, o.XKey) {
+				return nil, withCode(codeRefused, "property %q of type %s was declared and has been removed", o.XKey, typeId)
 			}
 			return nil, invalid("type %s declares no property %q", typeId, o.XKey)
 		}
@@ -740,7 +762,50 @@ func (a *account) recordsRead(spaceId, objId, collection, after string, since ui
 	return map[string]any{"records": out, "next": next}, nil
 }
 
+// ---------------------------------------------------------- derive id
+
+// sdkObjectChangeType is the change type the SDK derives objects under
+// (spaceimpl.objectChangeType). TestDeriveIdMatchesDerive holds the
+// computation below to Objects().Derive.
+const sdkObjectChangeType = "object"
+
+// deriveObjectId computes the id Objects().Derive would give a seed, the
+// way the SDK's Store.DeriveId does (any-sync's derived root of change
+// type "object", payload = the seed, in this space, no parent), without
+// writing or loading anything.
+func deriveObjectId(spaceId, seed string) (string, error) {
+	if spaceId == "" || seed == "" {
+		return "", invalid("space id and seed are required")
+	}
+	root, err := objecttree.DeriveObjectTreeRoot(objecttree.ObjectTreeDerivePayload{
+		ChangeType:    sdkObjectChangeType,
+		ChangePayload: []byte(seed),
+		SpaceId:       spaceId,
+		IsEncrypted:   true,
+	}, nil)
+	if err != nil {
+		return "", err
+	}
+	return root.Id, nil
+}
+
 // ---------------------------------------------------------------- exports
+
+//export any_shim_object_derive_id
+func any_shim_object_derive_id(h C.uint64_t, spaceID, seed, typeID *C.char, outJSON, outErr **C.char) C.any_shim_status {
+	return guard(outErr, func() error {
+		return withAccount(h, func(a *account) error {
+			if goStr(typeID) == "" {
+				return invalid("type id is empty")
+			}
+			id, err := deriveObjectId(goStr(spaceID), goStr(seed))
+			if err != nil {
+				return err
+			}
+			return putJSON(outJSON, map[string]any{"id": id})
+		})
+	})
+}
 
 //export any_shim_object_patch
 func any_shim_object_patch(h C.uint64_t, spaceID, targetJSON, opsJSON *C.char, outJSON, outErr **C.char) C.any_shim_status {

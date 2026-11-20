@@ -278,8 +278,8 @@ func TestCloseStartOpAndCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a2.beginClose()
-	op := startOp(context.Background(), func(context.Context) (any, error) { return map[string]any{}, a2.finishClose() })
+	a2.beginClose(true)
+	op := startOp(context.Background(), func(context.Context) (any, error) { return map[string]any{}, a2.finishClose(0) })
 	r, err := waitOpDone(t, op, 30*time.Second)
 	if err != nil {
 		t.Fatalf("close op: %v", err)
@@ -514,13 +514,14 @@ func TestRagBundleDeclarationsFrozen(t *testing.T) {
 		}
 		return string(b)
 	}
-	const loc = `{"Id":"flutter_edge_ai.rag.location/v1","Name":"RAG location","DerivedRoot":true,"RootType":"","RootCollections":null,"RootProperties":null,"Parts":[{"Key":"tomb","Name":"Tombstones","Icon":"","Pos":"","Hidden":true,"UI":null,"Uses":null,"Datasets":[{"Key":"tombstones","Module":"records","Shared":false,"DisplayName":"","Description":"","Dynamic":false,"IdRule":1,"IdPattern":"[0-9a-f]{64}|clear","IdMaxLen":64,"DeleteBy":2,"SkipHistory":false,"Search":null,"Indexes":null,"Fields":[{"Key":"key","Name":"","Description":"","Kind":1,"Shape":null,"Scope":0,"Required":false,"MutableBy":2,"Stamp":0,"XFormat":null},{"Key":"revs","Name":"","Description":"","Kind":5,"Shape":null,"Scope":0,"Required":false,"MutableBy":2,"Stamp":0,"XFormat":null}]}]}],"Properties":[{"Name":"core","Description":"","XKey":"core","Meta":null,"Kind":1,"Items":null,"Properties":null,"Required":null,"Scope":0,"XFormat":null},{"Name":"fields","Description":"","XKey":"fields","Meta":null,"Kind":6,"Items":null,"Properties":null,"Required":null,"Scope":0,"XFormat":null},{"Name":"profiles","Description":"","XKey":"profiles","Meta":null,"Kind":6,"Items":null,"Properties":null,"Required":null,"Scope":0,"XFormat":null},{"Name":"textSearch","Description":"","XKey":"textSearch","Meta":null,"Kind":3,"Items":null,"Properties":null,"Required":null,"Scope":0,"XFormat":null}],"XKey":"flutter_edge_ai.rag.location","Layout":null,"Hidden":true,"Collection":false}`
+	const loc = `{"Id":"flutter_edge_ai.rag.location/v1","Name":"RAG location","DerivedRoot":true,"RootType":"","RootCollections":null,"RootProperties":null,"Parts":[{"Key":"tomb","Name":"Tombstones","Icon":"","Pos":"","Hidden":true,"UI":null,"Uses":null,"Datasets":[{"Key":"tombstones","Module":"records","Shared":false,"DisplayName":"","Description":"","Dynamic":false,"IdRule":1,"IdPattern":"[0-9a-f]{64}|[a-z][a-z0-9_]{0,31}","IdMaxLen":64,"DeleteBy":2,"SkipHistory":false,"Search":null,"Indexes":null,"Fields":[{"Key":"key","Name":"","Description":"","Kind":1,"Shape":{"type":"string"},"Scope":0,"Required":false,"MutableBy":2,"Stamp":0,"XFormat":null},{"Key":"revs","Name":"","Description":"","Kind":5,"Shape":{"items":{"type":"number"},"type":"array"},"Scope":0,"Required":false,"MutableBy":2,"Stamp":0,"XFormat":null}]}]}],"Properties":[{"Name":"core","Description":"","XKey":"core","Meta":null,"Kind":6,"Items":null,"Properties":null,"Required":null,"Scope":0,"XFormat":null},{"Name":"fields","Description":"","XKey":"fields","Meta":null,"Kind":6,"Items":null,"Properties":null,"Required":null,"Scope":0,"XFormat":null},{"Name":"profiles","Description":"","XKey":"profiles","Meta":null,"Kind":6,"Items":null,"Properties":null,"Required":null,"Scope":0,"XFormat":null},{"Name":"textSearch","Description":"","XKey":"textSearch","Meta":null,"Kind":6,"Items":null,"Properties":null,"Required":null,"Scope":0,"XFormat":null}],"XKey":"flutter_edge_ai.rag.location","Layout":null,"Hidden":true,"Collection":false}`
 	const doc = `{"Id":"flutter_edge_ai.rag.document/v1","Name":"RAG document","DerivedRoot":true,"RootType":"","RootCollections":null,"RootProperties":null,"Parts":[{"Key":"body","Name":"Body","Icon":"","Pos":"","Hidden":false,"UI":{"type":"document"},"Uses":null,"Datasets":[{"Key":"","Module":"editor","Shared":false,"DisplayName":"","Description":"","Dynamic":false,"IdRule":0,"IdPattern":"","IdMaxLen":0,"DeleteBy":0,"SkipHistory":false,"Search":null,"Indexes":null,"Fields":null}]}],"Properties":[{"Name":"doc","Description":"","XKey":"doc","Meta":null,"Kind":1,"Items":null,"Properties":null,"Required":null,"Scope":0,"XFormat":null},{"Name":"vecs","Description":"","XKey":"vecs","Meta":null,"Kind":6,"Items":null,"Properties":null,"Required":null,"Scope":0,"XFormat":null}],"XKey":"flutter_edge_ai.rag.document","Layout":null,"Hidden":true,"Collection":false}`
 	// The numbers of the golden, by name: they are the SDK's enums.
 	ds := ragLocationBundle().Parts[0].Datasets[0]
 	if ds.IdRule != space.IdUser || ds.DeleteBy != space.DeleteByNone ||
 		ds.Fields[0].MutableBy != space.MutableByAnyone || ds.Fields[1].MutableBy != space.MutableByAnyone ||
-		ds.Fields[0].Kind != space.PropertyKindString || ds.Fields[1].Kind != space.PropertyKindArray {
+		ds.Fields[0].Kind != space.PropertyKindString || ds.Fields[1].Kind != space.PropertyKindArray ||
+		ds.Fields[1].Shape == nil || ds.Fields[1].Shape.Items == nil {
 		t.Fatalf("tombstone declaration: %+v", ds)
 	}
 	if got := enc(ragLocationBundle()); got != loc {
@@ -655,7 +656,7 @@ func TestObjectPatchCreateDeriveAndErrors(t *testing.T) {
 
 	// Derive: the manifest, then an update of it.
 	seed := map[string]any{"derive": map[string]any{"seed": "flutter_edge_ai.rag/manifest/main", "type": ids.loc}}
-	m1, err := patch(a, sid, seed, []any{map[string]any{"xkey": "core", "value": `{"fmt":1,"documents":"text"}`}, map[string]any{"xkey": "textSearch", "value": true}})
+	m1, err := patch(a, sid, seed, []any{map[string]any{"xkey": "core", "leaf": "text", "value": map[string]any{"fmt": 1}}, map[string]any{"xkey": "textSearch", "leaf": "on", "value": true}})
 	if err != nil {
 		t.Fatal(err)
 	}

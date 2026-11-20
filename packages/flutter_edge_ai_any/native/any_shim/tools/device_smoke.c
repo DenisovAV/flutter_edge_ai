@@ -35,6 +35,17 @@ static void *lib;
     }                                                                      \
   } while (0)
 
+/* Waits for an op in 250 ms slices; returns its result (caller frees). */
+static char *wait_op(__typeof__(&any_shim_op_wait) op_wait, uint64_t op, const char *what) {
+  for (;;) {
+    char *res = NULL, *e = NULL;
+    any_shim_status st = op_wait(op, 250, &res, &e);
+    if (st == ANY_SHIM_ERR_PENDING) continue;
+    if (st != ANY_SHIM_OK) { printf("FAIL %s: status %d: %s\n", what, st, e ? e : "(none)"); exit(1); }
+    return res;
+  }
+}
+
 static char *read_file(const char *path) {
   FILE *f = fopen(path, "rb");
   if (!f) return NULL;
@@ -70,10 +81,10 @@ int main(int argc, char **argv) {
   if (!lib) { printf("FAIL dlopen: %s\n", dlerror()); return 1; }
   BIND(any_shim_abi_version) BIND(any_shim_free) BIND(any_shim_version)
   BIND(any_shim_new_mnemonic) BIND(any_shim_new_device_key)
-  BIND(any_shim_account_open) BIND(any_shim_account_close_start) BIND(any_shim_op_wait)
+  BIND(any_shim_account_open_start) BIND(any_shim_account_close_start) BIND(any_shim_op_wait)
   BIND(any_shim_space_create) BIND(any_shim_rag_bundles) BIND(any_shim_object_patch)
-  BIND(any_shim_object_read) BIND(any_shim_index_open) BIND(any_shim_index_bind)
-  BIND(any_shim_index_apply) BIND(any_shim_index_knn) BIND(any_shim_index_close)
+  BIND(any_shim_object_read) BIND(any_shim_index_open) BIND(any_shim_index_bind_start)
+  BIND(any_shim_index_apply) BIND(any_shim_index_knn) BIND(any_shim_index_close_start)
 
   printf("abi %u\n", p_any_shim_abi_version());
   if (p_any_shim_abi_version() != ANY_SHIM_ABI_VERSION) { printf("FAIL abi\n"); return 1; }
@@ -88,8 +99,9 @@ int main(int argc, char **argv) {
   snprintf(opts, sizeof opts, "{\"path\":\"%s/idx/index.anystore\",\"ownerToken\":\"smoke\"}", argv[3]);
   uint64_t idx = 0;
   CHECK(p_any_shim_index_open(opts, &idx, &err), "index open");
-  char *bound = NULL;
-  CHECK(p_any_shim_index_bind(idx, "{\"dim\":3,\"metric\":\"cosine\",\"fields\":[{\"key\":\"cat\",\"type\":\"string\"}],\"textSearch\":true}", &bound, &err), "index bind");
+  uint64_t op = 0;
+  CHECK(p_any_shim_index_bind_start(idx, "{\"dim\":3,\"metric\":\"cosine\",\"fields\":[{\"key\":\"cat\",\"type\":\"string\"}],\"textSearch\":true}", &op, &err), "index bind");
+  char *bound = wait_op(p_any_shim_op_wait, op, "index bind");
   float vecs[6] = {1, 0, 0, 0, 1, 0};
   char *applied = NULL;
   CHECK(p_any_shim_index_apply(idx,
@@ -100,7 +112,8 @@ int main(int argc, char **argv) {
   CHECK(p_any_shim_index_knn(idx, vecs, 3, 1, "{\"f.cat\":\"food\"}", &knn, &err), "knn");
   printf("knn %s\n", knn);
   if (!strstr(knn, "\"id\":\"b\"")) { printf("FAIL knn result\n"); return 1; }
-  CHECK(p_any_shim_index_close(idx, &err), "index close");
+  CHECK(p_any_shim_index_close_start(idx, &op, &err), "index close");
+  p_any_shim_free(wait_op(p_any_shim_op_wait, op, "index close"));
 
   /* Account, offline. */
   char *nodeconf = read_file(argv[2]);
@@ -110,8 +123,12 @@ int main(int argc, char **argv) {
       "\"deviceKeyHex\":\"%s\",\"p2p\":{\"enabled\":false},\"nodeConfYaml\":", argv[3], argv[3], mn, dk);
   json_str(opts, nodeconf);
   strcat(opts, "}");
-  uint64_t acc = 0;
-  CHECK(p_any_shim_account_open(opts, &acc, &err), "account open");
+  CHECK(p_any_shim_account_open_start(opts, &op, &err), "account open");
+  char *opened = wait_op(p_any_shim_op_wait, op, "account open");
+  unsigned long long acc_ull = 0;
+  if (sscanf(opened, "{\"account\":%llu}", &acc_ull) != 1) { printf("FAIL open json %s\n", opened); return 1; }
+  uint64_t acc = (uint64_t)acc_ull;
+  p_any_shim_free(opened);
   char *sp = NULL, *bundles = NULL, *made = NULL, *got = NULL;
   CHECK(p_any_shim_space_create(acc, "device smoke", &sp, &err), "space create");
   char space_id[256];
@@ -128,16 +145,8 @@ int main(int argc, char **argv) {
   CHECK(p_any_shim_object_read(acc, space_id, opts, &got, &err), "object read");
   if (!strstr(got, "\"doc\":\"methane lakes\"")) { printf("FAIL read %s\n", got); return 1; }
   printf("object %s\n", obj_id);
-  uint64_t op = 0;
-  CHECK(p_any_shim_account_close_start(acc, &op, &err), "account close");
-  for (;;) {
-    char *res = NULL, *e = NULL;
-    any_shim_status st = p_any_shim_op_wait(op, 250, &res, &e);
-    if (st == ANY_SHIM_ERR_PENDING) continue;
-    if (st != ANY_SHIM_OK) { printf("FAIL close: status %d: %s\n", st, e ? e : "(none)"); return 1; }
-    p_any_shim_free(res);
-    break;
-  }
+  CHECK(p_any_shim_account_close_start(acc, 0, &op, &err), "account close");
+  p_any_shim_free(wait_op(p_any_shim_op_wait, op, "account close"));
   p_any_shim_free(v); p_any_shim_free(mn); p_any_shim_free(dk); p_any_shim_free(knn);
   p_any_shim_free(bound); p_any_shim_free(applied);
   p_any_shim_free(sp); p_any_shim_free(bundles); p_any_shim_free(made); p_any_shim_free(got);

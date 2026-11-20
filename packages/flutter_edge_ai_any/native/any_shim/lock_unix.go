@@ -43,3 +43,6 @@ func unlockFile(f *os.File) error {
 	}
 	return f.Close()
 }
+
+// isPlatformIOErrno: no errno beyond the POSIX ones isIOErrno checks.
+func isPlatformIOErrno(syscall.Errno) bool { return false }

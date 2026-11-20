@@ -50,20 +50,29 @@ any-sync-sdk v0.7.4, any-sync v0.13.8, any-store v2.4.3 (`go.sum`).
 is split in two: `*_start` returns an op handle at once, and
 `any_shim_op_wait(op, wait_ms)` waits at most 250 ms per call
 (`ANY_SHIM_ERR_PENDING` while the op runs; its own status and result once,
-then the handle is gone). `any_shim_op_cancel` never blocks. The started
-calls: `account_close_start`, `space_list_sync_start`,
-`space_resolve_start`, `space_sync_heads_start`, `file_read_start`.
-`events_poll` and `index_flush` clamp their wait to 250 ms. Everything else
-returns within local database work. A worker isolate therefore never holds
-a Dart hot restart for longer than one slice.
+then the handle is gone). `any_shim_op_cancel` never blocks; a cancelled
+op whose result holds something (an opened account) frees it. The started
+calls: `account_open_start`, `account_close_start`,
+`space_list_sync_start`, `space_resolve_start`, `space_sync_heads_start`,
+`file_read_start`, `index_bind_start`, `index_close_start`. Ops of an
+account are dropped with it; a finished op nobody waited for is dropped
+after 10 minutes. `events_poll`, `index_flush` and `index_gc` bound their
+work to about 250 ms. Everything else returns within local database work,
+except `file_attach` (proportional to the file). A worker isolate
+therefore never holds a Dart hot restart for longer than one slice.
 
-**Accounts.** `account_open` takes `dataDir`, `indexDir` and an
+**Accounts.** `account_open_start` takes `dataDir`, `indexDir` and an
 `ownerToken` (random per isolate group). Each directory is claimed in
-this process: a claim of another token (the previous generation of a hot
-restart) or one still closing is `ERR_BUSY` (retry); the same token is
-`ERR_REFUSED`. Across processes, `<dataDir>/.lock` is held with
-`flock` / `LockFileEx` (`ERR_BUSY`). `account_cancel` cancels every call
-and space load and never blocks. `account_release(uintptr_t)` and
+this process, synchronously in the start call: a claim of another token
+(the previous generation of a hot restart) or one still closing is
+`ERR_BUSY` (retry); the same token is `ERR_REFUSED`. Across processes,
+`<dataDir>/.shimlock` is held with `flock` / `LockFileEx` (`ERR_BUSY`;
+not `.lock`, any-store's sentinel name). The SDK opens in the op.
+`account_cancel` cancels every call and space load, never blocks, and is
+terminal. `account_close_start(h, wait_loads_ms)`: a suspend passes 25000
+so a first space load in flight can finish (inside the iOS background
+task) before the cancel; a close passes 0. The release of the lock and
+the claims runs even when the SDK close fails or panics. `account_release(uintptr_t)` and
 `index_release(uintptr_t)` have the `void(void*)` shape of a
 `NativeFinalizer`: they take the handle out of the registry (a stale one
 is a no-op), mark the directories closing at once and close on a
@@ -75,8 +84,10 @@ iOS the close runs inside a `beginBackgroundTaskWithName:` task
 per space `createdHere` and `everPeerSynced`. `everPeerSynced` is set the
 first time a space's `LastSyncedAt` is non-zero (the shim subscribes to
 the account's sync status itself) or a `sync_heads` round reaches a peer;
-it is never cleared. `space_status` reports both, plus `loading` and
-`lastSyncedAt`.
+it is never cleared. `space_status` reports both, plus `loading`,
+`lastSyncedAt` and `stateSaveError` (the last save failed). A
+`sync_heads` whose flag could not be saved is not OK; a `space_create`
+whose save failed is OK with `stateSaveError` (the space exists).
 
 **Spaces load once.** The first call that needs a space starts one
 detached `Spaces().Get` on the account's context (single-flight per space;
@@ -85,10 +96,11 @@ a failed load frees the slot; an unknown id fails at once as
 150 ms, then answers `ERR_PENDING`; `space_resolve_start` is the wait.
 
 **RAG bundles.** `rag_bundles(ensure)` declares
-`flutter_edge_ai.rag.location/v1` (properties `core`, `fields`,
-`profiles`, `textSearch`; part `tomb` with the records dataset
-`tombstones`: user ids `[0-9a-f]{64}|clear`, no deletes, `key` and `revs`
-mutable by anyone) and `flutter_edge_ai.rag.document/v1` (properties
+`flutter_edge_ai.rag.location/v1` (object-kind properties `core` (a leaf
+per modality), `fields`, `profiles`, `textSearch` (leaf `on`); part
+`tomb` with the records dataset `tombstones`: user ids
+`[0-9a-f]{64}|[a-z][a-z0-9_]{0,31}`, no deletes, `key` (string) and `revs`
+(array of numbers) mutable by anyone) and `flutter_edge_ai.rag.document/v1` (properties
 `doc`, `vecs`; part `body` with the editor dataset). Both on their derived
 roots, hidden. The declarations are frozen (`TestRagBundleDeclarationsFrozen`
 pins them): a change needs a new bundle id. Property ids are read from the
@@ -100,16 +112,20 @@ leaves (`[0-9a-z-]+`) of object-kind ones, on an object by id, a new one
 non-OK (`ERR_DELETED` for a deleted object or record, else
 `ERR_REFUSED`); a create whose values did not all land is deleted again.
 `object_read` reads by ids or a type page (by object id) with an anchor
-`{generation, maxApplySeq}` read before the page. `records_modify` /
+`{generation, maxApplySeq}` read before the page. `object_derive_id`
+computes a derived object's id without a write (pinned to
+`Objects().Derive` by a test). `records_modify` /
 `records_read` work on a records dataset (the tombstones).
 
 **Local index.** One any-store file per location: `meta` (format,
 fileId, active generation, bind config), `docs_<n>` (rows: `id`, `text`,
 `meta`, `f.<key>`, `embedding`; exact vector index, a range index per
 bound field, full text on `text` when bound) and `state_<n>`. A rebuild
-fills generation n+1 and swaps it in with one transaction
-(`shadowBegin`, `shadowSwap`), under an exclusive lock so no reader meets
-a closed collection; orphan generations are dropped at open.
+fills a new generation and swaps it in by flipping `meta.active` in one
+transaction (`shadowBegin`, `shadowSwap`), under an exclusive lock so no
+reader meets a closed collection. Old and unswapped generations become
+orphans; `index_gc` drops them in bounded steps (also those found at
+open). `index_bind_start` builds new indexes over every row in an op.
 `index_apply` validates every op and every vector slot (slots tile the
 float buffer in order, dimension equals the bound one, finite values)
 before one write transaction, and checks its compare-and-set state keys
@@ -119,8 +135,11 @@ sidecar `<path>.keycheck` (`{"fmt":1,"fileId","mode","mac"}`,
 bytes)`) is written before the database, so every crash state is
 classified (`TestIndexKeycheckCrashMatrix`): a wrong key and a damaged
 file are told apart by the sidecar, never by any-store's message; a
-file-system refusal (`EACCES`, `EPERM`, `ENOSPC`, `EROFS`) is `ERR_IO`
-by its errno.
+file-system refusal (`EACCES`, `EPERM`, `ENOSPC`, `EROFS`, `EDQUOT`,
+`EIO`, Windows disk-full) is `ERR_IO` by its errno, and so is any-store's
+"database is full" (its sentinel is internal: the text is pinned to the
+any-store source by `TestAnystoreFullTextIsCurrent`). The index lock is
+`<path>.shimlock`.
 
 **Status codes.** 0 OK, 1 INVALID_ARGUMENT, 2 NOT_FOUND, 3 DELETED,
 4 CLOSED, 5 TIMEOUT, 6 REFUSED, 7 INTERNAL, 8 PANIC, 9 CONFLICT,

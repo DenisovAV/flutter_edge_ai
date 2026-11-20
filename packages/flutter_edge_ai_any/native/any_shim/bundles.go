@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/anyproto/any-sync-sdk/handler"
 	"github.com/anyproto/any-sync-sdk/space"
 
 	editor "anyshim/third_party/any_editor"
@@ -36,31 +37,43 @@ func ragLocationBundle() space.EnsureBundleRequest {
 		XKey:        "flutter_edge_ai.rag.location",
 		Hidden:      true,
 		Properties: []space.PropertyDraft{
-			{Name: "core", XKey: "core", Kind: space.PropertyKindString},
+			// One leaf per modality: core.<text|image|audio> = {"fmt":1}.
+			// Two leaves are a conflict every reader sees.
+			{Name: "core", XKey: "core", Kind: space.PropertyKindObject},
 			{Name: "fields", XKey: "fields", Kind: space.PropertyKindObject},
 			{Name: "profiles", XKey: "profiles", Kind: space.PropertyKindObject},
-			{Name: "textSearch", XKey: "textSearch", Kind: space.PropertyKindBoolean},
+			// Monotone: textSearch.on = true, never unset.
+			{Name: "textSearch", XKey: "textSearch", Kind: space.PropertyKindObject},
 		},
 		Parts: []space.PartDraft{{
 			Key:    "tomb",
 			Name:   "Tombstones",
 			Hidden: true,
 			Datasets: []space.DatasetDraft{{
-				Key:       tombstonesDatasetKey,
-				Module:    space.RecordsModule,
-				IdRule:    space.IdUser,
-				IdPattern: `[0-9a-f]{64}|clear`,
+				Key:    tombstonesDatasetKey,
+				Module: space.RecordsModule,
+				IdRule: space.IdUser,
+				// sha256(key), or a reserved name such as "clear"
+				// (readers ignore reserved ids they do not know).
+				IdPattern: `[0-9a-f]{64}|[a-z][a-z0-9_]{0,31}`,
 				IdMaxLen:  64,
 				DeleteBy:  space.DeleteByNone,
 				Fields: []space.DatasetFieldDraft{
 					// Re-written by every remove of the key, so mutable.
-					{Key: "key", Kind: space.PropertyKindString, MutableBy: space.MutableByAnyone},
+					{Key: "key", Kind: space.PropertyKindString, Shape: handler.Leaf(handler.PropertyKindString), MutableBy: space.MutableByAnyone},
 					// Written only with $addToSet: a commutative max.
-					{Key: "revs", Kind: space.PropertyKindArray, MutableBy: space.MutableByAnyone},
+					{Key: "revs", Kind: space.PropertyKindArray, Shape: revsShape(), MutableBy: space.MutableByAnyone},
 				},
 			}},
 		}},
 	}
+}
+
+// revsShape: an array of numbers.
+func revsShape() *handler.FieldShape {
+	s := handler.Leaf(handler.PropertyKindArray)
+	s.Items = handler.Leaf(handler.PropertyKindNumber)
+	return s
 }
 
 func ragDocumentBundle() space.EnsureBundleRequest {
@@ -100,12 +113,14 @@ type bundleIds struct {
 // taken by someone else's declaration.
 func readBundleIds(ctx context.Context, sp space.Space, req space.EnsureBundleRequest, root, wantDataset string) (bundleIds, error) {
 	out := bundleIds{RootId: root, Properties: map[string]string{}}
+	// Absence is an empty list (the SDK's answer for a root it has no
+	// definitions of yet); an error is a real failure and stays one.
 	props, err := sp.Types().Properties(ctx, root)
 	if err != nil {
-		if codeOf(err) == codeClosed || codeOf(err) == codeTimeout {
-			return out, err
-		}
-		return out, withCode(codeNotFound, "bundle %s: the definitions of %s have not synced here: %v", req.Id, root, err)
+		return out, fmt.Errorf("bundle %s: properties of %s: %w", req.Id, root, err)
+	}
+	if len(props) == 0 {
+		return out, withCode(codeNotFound, "bundle %s: the definitions of %s have not synced here", req.Id, root)
 	}
 	byX := map[string][]space.PropertyDef{}
 	for _, p := range props {
@@ -127,10 +142,7 @@ func readBundleIds(ctx context.Context, sp space.Space, req space.EnsureBundleRe
 	if wantDataset != "" {
 		dss, err := sp.Types().Datasets(ctx, root)
 		if err != nil {
-			if codeOf(err) == codeClosed {
-				return out, err
-			}
-			return out, withCode(codeNotFound, "bundle %s: datasets of %s have not synced here: %v", req.Id, root, err)
+			return out, fmt.Errorf("bundle %s: datasets of %s: %w", req.Id, root, err)
 		}
 		for _, ds := range dss {
 			if ds.Key == wantDataset {

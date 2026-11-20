@@ -203,7 +203,7 @@ func (a *account) spaceStatus(id string) (map[string]any, error) {
 	}
 	st := a.sdk.Spaces().Status(id)
 	if !st.LastSyncedAt.IsZero() {
-		a.markPeerSynced(id, false)
+		_ = a.markPeerSynced(id, false)
 	}
 	out := spaceStatusJSON(st)
 	out["spaceId"] = id
@@ -211,6 +211,10 @@ func (a *account) spaceStatus(id string) (map[string]any, error) {
 	out["loading"] = a.loading(id)
 	out["everPeerSynced"] = ps.EverPeerSynced || !st.LastSyncedAt.IsZero()
 	out["createdHere"] = ps.CreatedHere
+	out["stateSaveError"] = nil
+	if err := a.state.saveError(); err != nil {
+		out["stateSaveError"] = err.Error()
+	}
 	return out, nil
 }
 
@@ -221,8 +225,10 @@ func (a *account) createSpace(name string) (map[string]any, error) {
 	}
 	// Recorded before the call returns: the creator exception of the
 	// publish gate reads it.
+	out := map[string]any{"id": sp.Id()}
 	if err := a.state.update(sp.Id(), true, func(st *spaceState) { st.CreatedHere = true }); err != nil {
-		return nil, fmt.Errorf("space %s created, but the account state was not saved: %w", sp.Id(), err)
+		// The space exists: never make the caller create a second one.
+		out["stateSaveError"] = err.Error()
 	}
 	a.loadsMu.Lock()
 	if _, ok := a.loads[sp.Id()]; !ok && !a.loadsClosed {
@@ -231,7 +237,7 @@ func (a *account) createSpace(name string) (map[string]any, error) {
 		a.loads[sp.Id()] = l
 	}
 	a.loadsMu.Unlock()
-	return map[string]any{"id": sp.Id()}, nil
+	return out, nil
 }
 
 // syncHeads runs one head-sync round with a deadline. A network failure
@@ -247,8 +253,10 @@ func (a *account) syncHeads(ctx context.Context, sp space.Space, timeout time.Du
 	if err != nil {
 		res["error"] = err.Error()
 		res["timedOut"] = errors.Is(tctx.Err(), context.DeadlineExceeded)
-	} else {
-		a.markPeerSynced(sp.Id(), true)
+	} else if serr := a.markPeerSynced(sp.Id(), true); serr != nil {
+		// A peer answered, but the flag the publish gate reads is not on
+		// disk: not OK.
+		return nil, fmt.Errorf("sync_heads reached a peer, but the account state was not saved: %w", serr)
 	}
 	return res, nil
 }
@@ -272,13 +280,6 @@ func (a *account) spaceListSync(ctx context.Context, timeout time.Duration) (map
 		return nil, err
 	}
 	return map[string]any{"spaces": list, "syncError": syncErr, "timedOut": timedOut}, nil
-}
-
-// startAccountOp starts an op on the account's context. The op holds no
-// call lock: the close cancels it through the context and does not wait
-// for it.
-func (a *account) startOp(f func(ctx context.Context) (any, error)) uint64 {
-	return startOp(a.ctx, f)
 }
 
 func positiveTimeout(ms C.int32_t) (time.Duration, error) {

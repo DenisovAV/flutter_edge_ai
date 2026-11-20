@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"strings"
 	"syscall"
 
 	anystore "github.com/anyproto/any-store/v2"
@@ -63,17 +64,49 @@ func invalid(format string, args ...any) error {
 
 var errClosed = withCode(codeClosed, "handle is closed or was never issued")
 
+// anystoreFullText is any-store's "database is full" error. Its sentinel
+// (btree.ErrFull) lives in an internal package, so the text is the only
+// handle; TestAnystoreFullTextIsCurrent pins it to the any-store source.
+const anystoreFullText = "btree: database is full"
+
 // isIOErrno reports a file-system refusal the caller can fix or retry:
-// permission, a read-only file system, a full disk.
+// permission, a read-only file system, a full disk (by errno, which
+// any-store and the SDK keep wrapped), or any-store's own "full".
 func isIOErrno(err error) bool {
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
 		switch errno {
-		case syscall.EACCES, syscall.EPERM, syscall.ENOSPC, syscall.EROFS:
+		case syscall.EACCES, syscall.EPERM, syscall.ENOSPC, syscall.EROFS, syscall.EDQUOT, syscall.EIO:
+			return true
+		}
+		if isPlatformIOErrno(errno) {
 			return true
 		}
 	}
-	return errors.Is(err, fs.ErrPermission)
+	if errors.Is(err, fs.ErrPermission) {
+		return true
+	}
+	return err != nil && strings.Contains(err.Error(), anystoreFullText)
+}
+
+// storeErr classifies a failure of the local index's database: a file
+// system refusal is ERR_IO, a damaged file ERR_CORRUPT, an error that
+// already carries a code keeps it, the rest INTERNAL.
+func storeErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	var se *shimError
+	if errors.As(err, &se) {
+		return err
+	}
+	switch {
+	case isIOErrno(err):
+		return wrapCode(codeIO, err)
+	case errors.Is(err, anystore.ErrCorrupt):
+		return wrapCode(codeCorrupt, err)
+	}
+	return wrapCode(codeInternal, err)
 }
 
 func codeOf(err error) int {
@@ -97,7 +130,8 @@ func codeOf(err error) int {
 		// any-sync never deletes its tree.
 		return codeRefused
 	case errors.Is(err, space.ErrReadOnlySpace),
-		errors.Is(err, list.ErrInsufficientPermissions):
+		errors.Is(err, list.ErrInsufficientPermissions),
+		errors.Is(err, space.ErrSpaceNotAccepted):
 		return codeRefused
 	case errors.Is(err, space.ErrObjectDeleted),
 		errors.Is(err, space.ErrSpaceDeleted),

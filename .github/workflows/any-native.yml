@@ -106,9 +106,10 @@ jobs:
           mkdir -p prebuilt/${{ matrix.target }}
           cp "$RUNNER_TEMP/out/${{ matrix.target }}/"*any_shim.* prebuilt/${{ matrix.target }}/
           cd ../../../.. && flutter pub get
-          cd packages/flutter_edge_ai_any && dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/dart_test.log"
+          # flutter test: the provider depends on flutter_edge_ai_rag (Flutter).
+          cd packages/flutter_edge_ai_any && flutter test --no-pub --reporter expanded 2>&1 | tee "$RUNNER_TEMP/dart_test.log"
           # A run that skipped the native suites examined nothing.
-          if grep -q "libany_shim is not built" "$RUNNER_TEMP/dart_test.log"; then
+          if grep -qE "libany_shim is not built|libany_shim implements ABI" "$RUNNER_TEMP/dart_test.log"; then
             echo "::error::the native suites skipped: the hook did not register the build"
             exit 1
           fi

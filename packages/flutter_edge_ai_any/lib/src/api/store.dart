@@ -115,7 +115,7 @@ final class _AnyVectorStore extends VectorStoreRepository {
     }
     final f = translateFilter(filter, _schema);
     if (f.matchesNothing) return const [];
-    final r = await core._idx(knnJob(core.handle, query, topK, f.query));
+    final r = await core._read(knnJob(core.handle, query, topK, f.query));
     final out = <RetrievalResult>[];
     for (final hit in (r['results'] as List? ?? const [])) {
       final m = (hit as Map).cast<String, Object?>();
@@ -166,7 +166,7 @@ final class _AnyVectorStore extends VectorStoreRepository {
     if (query == null) return const [];
     final f = translateFilter(filter, _schema);
     if (f.matchesNothing) return const [];
-    final r = await core._idx(textJob(core.handle, query, topK, f.query));
+    final r = await core._read(textJob(core.handle, query, topK, f.query));
     final seen = <String>{};
     return [
       for (final hit in (r['results'] as List? ?? const []))
@@ -185,7 +185,7 @@ final class _AnyVectorStore extends VectorStoreRepository {
   @override
   Future<VectorStoreStats> getStats() async {
     final core = _requireCore();
-    final (_, vectors) = await core._idx(countsJob(core.handle));
+    final (_, vectors) = await core._read(countsJob(core.handle));
     return VectorStoreStats(
       documentCount: vectors,
       vectorDimension: core.binding?.profile.dimension ?? 0,

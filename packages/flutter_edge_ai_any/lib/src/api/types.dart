@@ -121,18 +121,22 @@ final class AnySyncStatus {
 
 int _int(Object? v) => v is int ? v : 0;
 
-/// A location's follower failed in the background, or recovered.
+/// A location's follower failed in the background, or recovered; or, with
+/// a null [location], the account's events went down or came back.
 @experimental
 final class AnySyncFollowerEvent {
   AnySyncFollowerEvent._(this.location, this.error, this.at, this.recovered);
 
-  final AnySyncLocation location;
+  /// Null for the account's events (the poller, the sync status watch):
+  /// while they are down no location hears of a change until a pull.
+  final AnySyncLocation? location;
 
   /// The failure; null when [recovered].
   final String? error;
   final DateTime at;
 
-  /// A pull succeeded after a failure.
+  /// `error == null`: a pull succeeded after a failure, or the account's
+  /// events work again.
   final bool recovered;
 
   @override
@@ -305,8 +309,9 @@ enum AnySyncUnindexableReason {
   conflictingBinding,
   revOutOfRange,
 
-  /// The index refused the object's vector (its message is in the native
-  /// log); the row is text-only and not offered to backfill.
+  /// The index refused the object's vector: the native message is stored
+  /// with the object's unindexable entry and reported on followerEvents;
+  /// the row is text-only and not offered to backfill.
   rejectedByIndex,
   unknown,
 }
@@ -410,6 +415,9 @@ final class AnySyncLocationStatus {
     required this.orphanGenerations,
     required this.lastGcError,
     required this.supersedeErrors,
+    required this.lastSupersedeError,
+    required this.eventsDownSince,
+    required this.eventsDownError,
   });
 
   /// Rows in the local index.
@@ -467,9 +475,16 @@ final class AnySyncLocationStatus {
   final int orphanGenerations;
   final String? lastGcError;
 
-  /// Supersede deletes that failed with something other than "gone" in
-  /// this process.
+  /// This device's superseded objects whose delete currently fails with
+  /// something other than "gone", and the last such error.
   final int supersedeErrors;
+  final String? lastSupersedeError;
+
+  /// Since when, and why, the account's events are down: no change reaches
+  /// a follower until they come back (a pull still works). Sticky: only
+  /// working events clear it.
+  final DateTime? eventsDownSince;
+  final String? eventsDownError;
 
   /// The follower's last background failure, until a pull succeeds.
   final String? lastFollowerError;
@@ -483,6 +498,9 @@ final class AnySyncLocationStatus {
     int orphanGenerations = 0,
     String? lastGcError,
     int supersedeErrors = 0,
+    String? lastSupersedeError,
+    DateTime? eventsDownSince,
+    String? eventsDownError,
   }) {
     final raw = ((j['unindexable'] as Map?) ?? const {}).cast<String, int>();
     final typed = <AnySyncUnindexableReason, int>{};
@@ -535,6 +553,9 @@ final class AnySyncLocationStatus {
       orphanGenerations: orphanGenerations,
       lastGcError: lastGcError,
       supersedeErrors: supersedeErrors,
+      lastSupersedeError: lastSupersedeError,
+      eventsDownSince: eventsDownSince,
+      eventsDownError: eventsDownError,
     );
   }
 }

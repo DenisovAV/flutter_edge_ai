@@ -100,6 +100,23 @@ Another device of the same account finds the space with
   `account.followerEvents()` stream (a failure, or `recovered` once a pull
   succeeds again); the follower retries with backoff. A vector the index
   refuses (`rejectedByIndex`) leaves only that document text-only.
+- **The account's events can go down** (the native poller, or the sync
+  status watch). They restart on their own with backoff (1 s to 60 s, never
+  giving up); meanwhile no location hears of a change until a pull, and
+  `locationStatus().eventsDownSince` / `eventsDownError` and an account
+  event on `followerEvents()` (a null `location`) say so. Only working
+  events clear it, not a pull.
+- **A bind or a rebuild's swap holds a location's index** exclusively for
+  a moment (a growing bind backfills every row). Writes and follower pages
+  wait for it; a search waits at most 10 s, then fails with
+  `AnySyncNotReadyException(indexBusy)` (retryable).
+- **Close errors are not hidden.** `account.close()`, `suspend()` and a
+  store's close throw an `AnySyncException` with the native message when
+  the native close failed, after their own cleanup (a closed or suspended
+  account stays so). A native close that returns an error still releases
+  the directory; only a close that panicked leaves it refused for the life
+  of the process (`AnySyncBusyException(previousInstanceFailed)`, carrying
+  the cause): restart the app.
 - **Old index generations** a rebuild leaves behind are dropped in the
   background in bounded steps; `locationStatus().orphanGenerations` and
   `lastGcError` say how that goes.

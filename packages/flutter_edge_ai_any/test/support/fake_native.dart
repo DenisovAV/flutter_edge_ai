@@ -353,7 +353,7 @@ final class FakeRuntime implements AnyRuntime {
     if (fail != null && fail()) {
       throw _err('any_shim_index_apply', AnyShimStatus.io, 'injected');
     }
-    return _roundTrip(await runIndexJob(j, indexHost));
+    return _roundTrip(await j(indexHost));
   }
 
   @override
@@ -513,6 +513,9 @@ final class FakeSdk implements AnySdk {
       d.isOpen = false;
       d.closing = false;
       d.watched.clear();
+      if (failClose) {
+        throw _err('any_shim_op_wait', AnyShimStatus.internal, 'sdk close');
+      }
       return {};
     }, ready: () => waitLoadsMs == 0 || d.loading.isEmpty);
   }
@@ -952,7 +955,19 @@ final class FakeSdk implements AnySdk {
   }
 
   @override
-  int watchSyncStatus() => ++_watches;
+  int watchSyncStatus() {
+    if (failStatusWatches > 0) {
+      failStatusWatches--;
+      throw _err('any_shim_watch_sync_status', AnyShimStatus.internal, 'no');
+    }
+    return ++_watches;
+  }
+
+  /// Sync status watches that fail before one succeeds.
+  int failStatusWatches = 0;
+
+  /// The account's native close answers an error (it still ends).
+  bool failClose = false;
 
   @override
   void unwatch(int watch) {}
@@ -1095,9 +1110,15 @@ final class FakeIndex implements AnyIndexApi {
     return host.start(() {
       f.open = false;
       f.closing = false;
+      if (FakeIndex.failClose) {
+        throw _err('any_shim_op_wait', AnyShimStatus.internal, 'index close');
+      }
       return {};
     });
   }
+
+  /// The index's native close answers an error (it still ends).
+  static bool failClose = false;
 
   @override
   int bindStart(Map<String, Object?> config) {

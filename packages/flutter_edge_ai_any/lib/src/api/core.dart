@@ -36,31 +36,49 @@ final class _LocationCore {
 
   Future<T> _idx<T>(IndexJob<T> job) => account._index(job, spaceId: spaceId);
 
+  /// A read: waits at most 10 s for a bind or swap (indexBusy after).
+  Future<T> _read<T>(IndexJob<T> job) =>
+      account._index(job, spaceId: spaceId, read: true);
+
   Future<T> _sdk<T>(SdkJob<T> job) => account._sdk(job, spaceId: spaceId);
 
-  /// An SDK write (object_patch, records_modify): a NOT_FOUND that names
-  /// definitions not synced here is retryable readiness (D15); another one
-  /// ("object … is not here") keeps its own mapping (D-R12).
+  /// An SDK write (object_patch, records_modify), with NOT_FOUND mapped
+  /// by [_notFoundAsNotReady].
   Future<T> _sdkWrite<T>(SdkJob<T> job) async {
     try {
       return await _sdk(job);
     } on AnySyncException catch (e) {
-      if (_isDefinitionsNotSynced(e)) {
-        throw AnySyncNotReadyException._(
-          spaceId,
-          AnySyncNotReadyReason.definitionsNotSynced,
-          (e.cause as AnyShimException).message,
-        );
-      }
-      rethrow;
+      throw _notFoundAsNotReady(e) ?? e;
     }
   }
 
-  static bool _isDefinitionsNotSynced(AnySyncException e) {
+  /// The one NOT_FOUND mapping of bind, the bundle reads and the writes
+  /// (D3-7): definitions not synced here (either wording) and a space the
+  /// account does not know are retryable readiness, with the native message
+  /// and cause; anything else ("object … is not here") is not, and null.
+  AnySyncNotReadyException? _notFoundAsNotReady(AnySyncException e) {
     final c = e.cause;
-    return c is AnyShimException &&
-        c.status == AnyShimStatus.notFound &&
-        c.message.contains('have not synced');
+    if (c is! AnyShimException || c.status != AnyShimStatus.notFound) {
+      return null;
+    }
+    if (c.message.contains('have not synced') ||
+        c.message.contains('has not synced')) {
+      return AnySyncNotReadyException._(
+        spaceId,
+        AnySyncNotReadyReason.definitionsNotSynced,
+        c.message,
+        c,
+      );
+    }
+    if (c.message.contains('is not known to this account')) {
+      return AnySyncNotReadyException._(
+        spaceId,
+        AnySyncNotReadyReason.unknownSpace,
+        c.message,
+        c,
+      );
+    }
+    return null;
   }
 
   /// Records a background failure and reports it on followerEvents.
@@ -80,8 +98,10 @@ final class _LocationCore {
     account._emitFollower(this);
   }
 
-  /// Supersede deletes that failed with something other than gone.
-  int supersedeErrors = 0;
+  /// This device's superseded objects whose delete currently fails with
+  /// something other than gone (D3-9), and the last such error.
+  final _supersedeFailing = <String>{};
+  String? lastSupersedeError;
 
   /// Generations a swap left that gc has not dropped yet (an estimate:
   /// after an open, 1 until a gc round reports done).
@@ -118,27 +138,45 @@ final class _LocationCore {
     if (_closed || _gcRunning) return;
     _gcRunning = true;
     final h = handle;
+    // A failing step (an orphan that cannot be dropped rotates to the back
+    // natively) is reported and the next step tried after a backoff; a
+    // PENDING (a bind or swap) waits the same way. Runs out after a bounded
+    // number of steps: "gc did not finish" (D3-9).
     Future<void> rounds() async {
+      var failures = 0;
       for (var i = 0; i < 10000; i++) {
         if (_closed) return;
-        final done = await account._rt.index(indexGcJob(h));
-        if (done) {
-          orphanGenerations = 0;
-          lastGcError = null;
-          return;
+        try {
+          final done = await account._rt.index(indexGcJob(h));
+          if (done) {
+            orphanGenerations = 0;
+            lastGcError = null;
+            return;
+          }
+          failures = 0;
+          await Future<void>.delayed(Duration.zero);
+        } on AnyShimException catch (e) {
+          if (_closed) return; // a close racing the gc is not a failure
+          if (e.status != AnyShimStatus.pending) {
+            lastGcError = '${e.operation}: ${e.message}';
+            print(
+              'flutter_edge_ai_any: index gc of ${location.value} failed: '
+              '${e.message}',
+            );
+          }
+          if (++failures > 20) break;
+          await Future<void>.delayed(AnySyncAccount._backoff(failures));
         }
-        await Future<void>.delayed(Duration.zero);
       }
+      if (!_closed) lastGcError ??= 'gc did not finish';
     }
 
     rounds()
         .catchError((Object e) {
-          // A close racing the gc is not a gc failure.
           if (_closed) return;
           lastGcError = '$e';
-          developer.log(
-            'index gc of ${location.value} failed: $e',
-            name: 'flutter_edge_ai_any',
+          print(
+            'flutter_edge_ai_any: index gc of ${location.value} failed: $e',
           );
         })
         .whenComplete(() => _gcRunning = false);
@@ -148,17 +186,22 @@ final class _LocationCore {
     if (_closed) return;
     _closed = true;
     stopFollower();
-    // Waits for the write or page in flight, then closes the file.
+    // Waits for the write or page in flight, then closes the file. A
+    // failed close is said and thrown (D3-2); the finalizer-shaped release
+    // stays attached as the backstop.
     await _lock.run(() async {
       try {
         await account._rt.index(indexCloseJob(handle));
       } on Object catch (e) {
-        // The finalizer-shaped release stays attached as the backstop.
-        developer.log(
-          'closing the index of ${location.value} failed: $e',
-          name: 'flutter_edge_ai_any',
+        print(
+          'flutter_edge_ai_any: closing the index of ${location.value} '
+          'failed: $e',
         );
-        return;
+        throw AnySyncException(
+          'closing the index of ${location.value} failed: $e',
+          retryable: false,
+          cause: e,
+        );
       }
       account._rt.detachIndex(this);
     });
@@ -222,7 +265,7 @@ final class _LocationCore {
         next,
         b,
         manifest: manifest,
-        enableText: enableText,
+        enableText: enableText || textSearch,
         readOnlyOk: true,
       );
       await _bindIndex(next, enableText: enableText);
@@ -246,7 +289,8 @@ final class _LocationCore {
   Future<int> _conflictingDocuments() async {
     try {
       return await account._rt.index(conflictingDocumentsJob(handle));
-    } on Object {
+    } on Exception catch (e) {
+      print('flutter_edge_ai_any: counting conflicting documents failed: $e');
       return 0;
     }
   }
@@ -311,13 +355,7 @@ final class _LocationCore {
         readOnly = true;
         bundles = await _readBundles();
       } on AnySyncException catch (e) {
-        if (_isStatus(e, AnyShimStatus.notFound)) {
-          throw AnySyncNotReadyException._(
-            spaceId,
-            AnySyncNotReadyReason.definitionsNotSynced,
-          );
-        }
-        rethrow;
+        throw _notFoundAsNotReady(e) ?? e;
       }
       final loc = (bundles['location']! as Map).cast<String, Object?>();
       final doc = (bundles['document']! as Map).cast<String, Object?>();
@@ -354,7 +392,7 @@ final class _LocationCore {
         c,
         b,
         manifest: manifest,
-        enableText: enableText,
+        enableText: enableText || textSearch,
         readOnly: readOnly,
       );
       await _bindIndex(c, enableText: enableText);
@@ -376,13 +414,7 @@ final class _LocationCore {
     try {
       return await _sdk(ragBundlesJob(spaceId, false));
     } on AnySyncException catch (e) {
-      if (_isStatus(e, AnyShimStatus.notFound)) {
-        throw AnySyncNotReadyException._(
-          spaceId,
-          AnySyncNotReadyReason.definitionsNotSynced,
-        );
-      }
-      rethrow;
+      throw _notFoundAsNotReady(e) ?? e;
     }
   }
 
@@ -520,7 +552,7 @@ final class _LocationCore {
     });
   }
 
-  /// A background pull: a failure is recorded, reported on statusChanges
+  /// A background pull: a failure is recorded, reported on followerEvents
   /// and retried with backoff (1 s doubling to 60 s), never thrown (D2).
   Future<void> _background() async {
     if (_closed || !_following) return;
@@ -604,13 +636,7 @@ final class _LocationCore {
         continue;
       }
       result = result._plus(o);
-      if (o.rejected.isNotEmpty) {
-        _rejectedInLastPull = true;
-        _recordError(
-          'the index refused vectors of ${o.rejected.length} object(s): '
-          '${o.rejected.values.first}',
-        );
-      }
+      _reportRejected(o);
       readTombstones = false;
       extra = [];
       if (!more) break;
@@ -634,12 +660,15 @@ final class _LocationCore {
         }
         await _sdk(deleteObjectJob(spaceId, old));
         done.add('s/$old');
+        _supersedeFailing.remove(old);
       } on AnySyncException catch (e) {
         if (_isStatus(e, AnyShimStatus.deleted) ||
             _isStatus(e, AnyShimStatus.notFound)) {
           done.add('s/$old');
+          _supersedeFailing.remove(old);
         } else {
-          supersedeErrors++;
+          _supersedeFailing.add(old);
+          lastSupersedeError = e.message;
         }
       }
     }
@@ -653,7 +682,11 @@ final class _LocationCore {
     final c = cfg!;
     final since = account._nowMs();
     await _idx(markRebuildingJob(handle, since));
+    // The winners the last attempt could not read; null when it restarted
+    // because the generation moved (D3-5).
+    List<String>? unreadable;
     for (var attempt = 0; attempt < 5; attempt++) {
+      unreadable = null;
       await _idx(beginShadowJob(handle));
       await _sdk(rebuildManifestJob(c, handle, nowMs: account._nowMs()));
       String? after;
@@ -666,7 +699,9 @@ final class _LocationCore {
         );
         // A page that could not read the winners it needs: never swap with
         // keys missing; this attempt starts again (D-R2).
+        _reportRejected(p.outcome);
         if (p.outcome.needObjects.isNotEmpty) {
+          unreadable = p.outcome.needObjects;
           moved = true;
           break;
         }
@@ -698,8 +733,10 @@ final class _LocationCore {
           moved = true;
           break;
         }
+        _reportRejected(s.outcome);
         if (s.outcome.needObjects.isNotEmpty) {
           if (s.outcome.needObjects.every(extra.contains)) {
+            unreadable = s.outcome.needObjects;
             moved = true; // restart the attempt (D-R2)
             break;
           }
@@ -720,9 +757,27 @@ final class _LocationCore {
     // Each attempt began a shadow; they are orphans now.
     orphanGenerations++;
     _gc();
+    if (unreadable != null) {
+      throw AnySyncException(
+        '${location.value}: a rebuild could not complete: objects '
+        '$unreadable cannot be read',
+        retryable: true,
+      );
+    }
     throw AnySyncException(
       '${location.value}: the space generation kept moving during a rebuild',
       retryable: true,
+    );
+  }
+
+  /// Vectors the index refused in a page are the follower's error (D-R1),
+  /// also during a rebuild or replay (D3-9).
+  void _reportRejected(PageOutcome o) {
+    if (o.rejected.isEmpty) return;
+    _rejectedInLastPull = true;
+    _recordError(
+      'the index refused vectors of ${o.rejected.length} object(s): '
+      '${o.rejected.values.first}',
     );
   }
 
@@ -858,9 +913,9 @@ final class _LocationCore {
     } on Object catch (e) {
       // Best effort, but recorded: compact() repairs what is marked, so a
       // mark that fails is reported, not dropped (D18).
-      developer.log(
-        'the editor body of $id ($key) was not written: $e',
-        name: 'flutter_edge_ai_any',
+      print(
+        'flutter_edge_ai_any: the editor body of $id ($key) was not '
+        'written: $e',
       );
       try {
         await _idx(markBlankBodyJob(handle, id, key));
@@ -1022,7 +1077,7 @@ final class _LocationCore {
 
   Future<AnySyncMissingVectors> missing(String? after, int limit) async {
     final c = requireCfg();
-    final page = await _idx(readMissingJob(handle, after, limit));
+    final page = await _read(readMissingJob(handle, after, limit));
     final modality = _modality(c.documents) ?? EmbeddingModality.text;
     return AnySyncMissingVectors._(
       List.unmodifiable([
@@ -1042,7 +1097,7 @@ final class _LocationCore {
 
   Future<AnySyncLocationStatus> status() async {
     final now = account._nowMs();
-    final j = await _idx(readStatusJob(handle, now));
+    final j = await _read(readStatusJob(handle, now));
     return AnySyncLocationStatus._fromJson(
       j,
       now,
@@ -1050,7 +1105,10 @@ final class _LocationCore {
       followerErrorAt: lastFollowerErrorAt,
       orphanGenerations: orphanGenerations,
       lastGcError: lastGcError,
-      supersedeErrors: supersedeErrors,
+      supersedeErrors: _supersedeFailing.length,
+      lastSupersedeError: lastSupersedeError,
+      eventsDownSince: account._eventsDownSince,
+      eventsDownError: account._eventsDownError,
     );
   }
 

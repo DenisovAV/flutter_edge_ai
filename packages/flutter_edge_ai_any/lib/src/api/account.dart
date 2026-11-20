@@ -221,11 +221,14 @@ final class AnySyncAccount {
       (debugAccountClockSkewMs[_dataDirectory] ?? 0);
 
   /// Starts the events poller and registers the watches of a fresh native
-  /// account (open or resume).
+  /// account (open or resume). A restart pending for the previous native
+  /// account is dropped (D3-1).
   void _startEvents(int handle) {
-    _pollerRestarts = 0;
+    _pollerTimer?.cancel();
+    _pollerTimer = null;
+    _pollerFailures = 0;
     _startPoller(handle);
-    _rt.sdk(watchSyncStatusJob()).ignore();
+    _watchSyncStatus(handle);
     _watched.clear();
     for (final core in _cores.values) {
       _watch(core.location.spaceId);
@@ -235,34 +238,86 @@ final class AnySyncAccount {
   /// Only the poller: native watches belong to the account handle and
   /// outlive a poller (D-R6).
   void _startPoller(int handle) {
+    _pollerStartedAt = DateTime.now();
     _events = _rt
         .events(handle)
         .listen(
-          _onEvent,
+          (e) {
+            // A poller that delivers is up again (D3-1).
+            _pollerFailures = 0;
+            if (_pollerDown) {
+              _pollerDown = false;
+              _maybeEventsUp();
+            }
+            _onEvent(e);
+          },
           onError: (Object e) => _pollerEnded(handle, '$e'),
           onDone: () => _pollerEnded(handle, 'the events poller ended'),
         );
   }
 
-  int _pollerRestarts = 0;
+  int _pollerFailures = 0;
+  DateTime? _pollerStartedAt;
   Timer? _pollerTimer;
-  static const _maxPollerRestarts = 10;
+  bool _pollerDown = false;
+  bool _statusWatchDown = false;
+  int _statusWatchFailures = 0;
+  Timer? _statusWatchTimer;
 
-  /// The one restart path of the poller (D-R6): at most one pending timer,
-  /// reported to the followers, and capped.
+  /// Since when, and why, this account's events are down (the poller, or
+  /// the sync status watch): sticky until they work again, never cleared
+  /// by a pull (D3-1, D3-6).
+  DateTime? _eventsDownSince;
+  String? _eventsDownError;
+
+  static Duration _backoff(int failures) {
+    final base = debugEventsBackoffBase;
+    final n = failures < 1 ? 1 : failures;
+    final ms = base.inMilliseconds * (1 << (n - 1 > 16 ? 16 : n - 1));
+    return Duration(milliseconds: ms > 60000 ? 60000 : ms);
+  }
+
+  void _setEventsDown(String why) {
+    _eventsDownSince ??= DateTime.now();
+    _eventsDownError = why;
+    _emitAccount();
+  }
+
+  void _maybeEventsUp() {
+    if (_pollerDown || _statusWatchDown || _eventsDownSince == null) return;
+    _eventsDownSince = null;
+    _eventsDownError = null;
+    _emitAccount();
+  }
+
+  void _emitAccount() {
+    if (_follower.isClosed) return;
+    final error = _eventsDownError;
+    _follower.add(
+      AnySyncFollowerEvent._(
+        null,
+        error == null ? null : 'events down: $error',
+        _eventsDownSince ?? DateTime.now(),
+        error == null,
+      ),
+    );
+  }
+
+  /// The one restart path of the poller (D-R6, D3-1): at most one pending
+  /// timer; never gives up; the delay doubles from 1 s to 60 s and starts
+  /// over once a poller delivered or ran 60 s.
   void _pollerEnded(int handle, String why) {
     if (_handle != handle || _state == AnySyncAccountState.closed) return;
     if (_pollerTimer != null) return;
-    final giveUp = ++_pollerRestarts > _maxPollerRestarts;
-    for (final core in _cores.values) {
-      core._recordError(
-        giveUp
-            ? 'events stopped after $_maxPollerRestarts restarts: $why'
-            : 'events: $why',
-      );
+    final started = _pollerStartedAt;
+    if (started != null &&
+        DateTime.now().difference(started) >= const Duration(seconds: 60)) {
+      _pollerFailures = 0;
     }
-    if (giveUp) return;
-    _pollerTimer = Timer(const Duration(seconds: 1), () {
+    _pollerFailures++;
+    _pollerDown = true;
+    _setEventsDown(why);
+    _pollerTimer = Timer(_backoff(_pollerFailures), () {
       _pollerTimer = null;
       if (_handle != handle || _state != AnySyncAccountState.open) return;
       _events?.cancel();
@@ -273,24 +328,62 @@ final class AnySyncAccount {
     });
   }
 
+  /// The sync status watch: a failure is the account's events being down,
+  /// retried with backoff like a change watch (D3-6).
+  void _watchSyncStatus(int handle) {
+    _statusWatchTimer?.cancel();
+    _statusWatchTimer = null;
+    _rt
+        .sdk(watchSyncStatusJob())
+        .then((_) {
+          _statusWatchFailures = 0;
+          if (_statusWatchDown) {
+            _statusWatchDown = false;
+            _maybeEventsUp();
+          }
+          return 0;
+        })
+        .catchError((Object e) {
+          if (_handle != handle || _state != AnySyncAccountState.open) {
+            return 0;
+          }
+          _statusWatchDown = true;
+          _setEventsDown('watching sync status failed: $e');
+          _statusWatchTimer = Timer(_backoff(++_statusWatchFailures), () {
+            _statusWatchTimer = null;
+            if (_handle == handle && _state == AnySyncAccountState.open) {
+              _watchSyncStatus(handle);
+            }
+          });
+          return 0;
+        });
+  }
+
   final _watchRetries = <String, int>{};
   final _watchTimers = <String, Timer>{};
 
   /// A change watch for [spaceId]. Needs the native account, not the open
   /// state, so resume can register them before it reports open (D4). A
-  /// failure is the affected followers' error, retried with backoff (D-R7).
+  /// failure is the affected followers' error, retried with backoff
+  /// (D-R7), not recorded while suspended or closed (D3-9); a watch that
+  /// comes back after a failure lets the followers catch up (D3-8).
   void _watch(String spaceId) {
     if (_handle == null || _state == AnySyncAccountState.closed) return;
     if (!_watched.add(spaceId)) return;
     _rt
         .sdk(watchChangesJob(spaceId))
         .then((_) {
-          _watchRetries.remove(spaceId);
+          final failed = _watchRetries.remove(spaceId) != null;
+          if (failed) {
+            for (final core in _cores.values) {
+              if (core.location.spaceId == spaceId) core.onChange();
+            }
+          }
           return 0;
         })
         .catchError((Object e) {
           _watched.remove(spaceId);
-          if (_state == AnySyncAccountState.closed) return 0;
+          if (_state != AnySyncAccountState.open) return 0;
           final n = (_watchRetries[spaceId] ?? 0) + 1;
           _watchRetries[spaceId] = n;
           for (final core in _cores.values) {
@@ -380,9 +473,17 @@ final class AnySyncAccount {
   }
 
   /// Runs an index job; the index isolate outlives suspend.
-  Future<T> _index<T>(IndexJob<T> job, {String? spaceId}) async {
+  /// [read]: a read waits at most [readPendingMax] for a bind or swap that
+  /// holds the index; anything else up to [writePendingMax] (D3-3).
+  Future<T> _index<T>(
+    IndexJob<T> job, {
+    String? spaceId,
+    bool read = false,
+  }) async {
     try {
-      return await _rt.index(job);
+      return await _rt.index(
+        pendingRetrying(job, read ? readPendingMax : writePendingMax),
+      );
     } on AnyShimException catch (e, st) {
       Error.throwWithStackTrace(_mapShim(e, spaceId: spaceId, index: true), st);
     } on ClockExhausted catch (_, st) {
@@ -415,11 +516,23 @@ final class AnySyncAccount {
             : (_state == AnySyncAccountState.closed
                   ? const AnySyncClosedException._()
                   : AnySyncException(e.message, retryable: false, cause: e));
-      case AnyShimStatus.pending:
+      case AnyShimStatus.pending when index:
+        // A bind or swap held the index longer than this call waits.
+        return AnySyncNotReadyException._(
+          spaceId ?? '',
+          AnySyncNotReadyReason.indexBusy,
+          e.message,
+          e,
+        );
+      case AnyShimStatus.pending when e.message.contains('loading'):
         return AnySyncNotReadyException._(
           spaceId ?? '',
           AnySyncNotReadyReason.loading,
+          e.message,
+          e,
         );
+      case AnyShimStatus.pending:
+        return AnySyncException(e.message, retryable: true, cause: e);
       case AnyShimStatus.busy:
         return AnySyncBusyException._(_busyReason(e), e.message, cause: e);
       case AnyShimStatus.keyMismatch:
@@ -657,7 +770,9 @@ final class AnySyncAccount {
     if (_state != AnySyncAccountState.open) return _state;
     _state = AnySyncAccountState.suspended;
     _epoch++;
-    await _closeNative(waitLoadsMs: 25000);
+    final failure = await _closeNative(waitLoadsMs: 25000);
+    // Suspended either way; a failed native close is not hidden (D3-2).
+    if (failure != null) _throwClose('suspend', failure);
     return _state;
   });
 
@@ -682,10 +797,11 @@ final class AnySyncAccount {
     if (_state == AnySyncAccountState.closed) return;
     _state = AnySyncAccountState.closed;
     _epoch++;
-    await _closeNative();
+    final failure = await _closeNative();
     await _status.close();
     await _follower.close();
     _pollerTimer?.cancel();
+    _statusWatchTimer?.cancel();
     for (final t in _watchTimers.values) {
       t.cancel();
     }
@@ -696,30 +812,40 @@ final class AnySyncAccount {
       core.stopFollower();
     }
     await _maybeDispose();
+    if (failure != null) _throwClose('close', failure);
   });
 
   /// Closes the native account. A close cancels what is in flight first;
   /// a suspend does not (account_cancel is terminal, and the close op lets
   /// space loads finish within [waitLoadsMs]).
-  Future<void> _closeNative({int waitLoadsMs = 0}) async {
+  Future<Object?> _closeNative({int waitLoadsMs = 0}) async {
     final h = _handle;
-    if (h == null) return;
+    if (h == null) return null;
     _handle = null;
     if (waitLoadsMs == 0) _rt.cancelAccount(h);
     await _events?.cancel();
     _events = null;
+    Object? failure;
     try {
       await _rt.sdk(closeAccountJob(waitLoadsMs: waitLoadsMs));
     } on Object catch (e) {
-      // A failed SDK.Close still drops the registry entry and the lock
-      // natively (design §4.3); nothing to retry, but it is said.
-      developer.log(
-        'closing the account failed: $e',
-        name: 'flutter_edge_ai_any',
-      );
+      // Said and returned (D3-2): the caller throws it after its own
+      // cleanup. Natively a returned close error still unlocks; only a
+      // panicked close poisons the directory.
+      print('flutter_edge_ai_any: closing the account failed: $e');
+      failure = e;
     }
     _rt.detachAccount(this);
+    return failure;
   }
+
+  static Never _throwClose(String what, Object failure) =>
+      throw AnySyncException(
+        '$what: the native close failed: '
+        '${failure is AnyShimException ? failure.message : failure}',
+        retryable: false,
+        cause: failure,
+      );
 
   Future<void> _maybeDispose() async {
     if (_state == AnySyncAccountState.closed &&
@@ -761,7 +887,13 @@ final class AnySyncAccount {
     // The previous core of this location is still closing: its native
     // handle holds the file until then (D5).
     final closing = _closingCores[key];
-    if (closing != null) await closing;
+    if (closing != null) {
+      try {
+        await closing;
+      } on Object {
+        // Reported to the store that closed it; this open goes on.
+      }
+    }
     var core = _cores[key];
     if (core == null) {
       // Each caller's own rule, also when it joins an open in flight (D16).
@@ -821,10 +953,9 @@ final class AnySyncAccount {
         await _rt.index(indexCloseJob(handle));
       } on Object catch (e) {
         // The finalizer releases it; the failure is said.
-        developer.log(
-          'closing the index of ${location.value} after a failed attach '
-          'failed: $e',
-          name: 'flutter_edge_ai_any',
+        print(
+          'flutter_edge_ai_any: closing the index of ${location.value} '
+          'after a failed attach failed: $e',
         );
       }
       rethrow;
@@ -845,12 +976,19 @@ final class AnySyncAccount {
       _cores.remove(key);
       final closing = core.close();
       _closingCores[key] = closing;
+      Object? failure;
+      StackTrace? stack;
       try {
         await closing;
+      } catch (e, st) {
+        failure = e;
+        stack = st;
       } finally {
         if (identical(_closingCores[key], closing)) _closingCores.remove(key);
       }
       await _maybeDispose();
+      // The store's close reports it, after the cleanup (D3-2).
+      if (failure != null) Error.throwWithStackTrace(failure, stack!);
     }
   }
 

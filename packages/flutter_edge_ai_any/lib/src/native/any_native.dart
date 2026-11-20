@@ -255,8 +255,11 @@ Future<Map<String, Object?>?> awaitOp(
 /// Runs [job] against [host]. An index call answering PENDING (a bind or a
 /// swap holds the index exclusively and readers are refused at once, not
 /// blocked) runs the whole job again after a 250 ms slice, for at most
-/// [max]. Index jobs commit once at their end, so a refused one changed
-/// nothing.
+/// [max]; then the PENDING is thrown. Index jobs commit once at their end,
+/// so a refused one changed nothing.
+///
+/// The worker does not retry by itself: the caller decides how long a
+/// job may wait ([pendingRetrying]): reads briefly, writes and pages long.
 Future<T> runIndexJob<T>(
   IndexJob<T> job,
   AnyIndexHost host, {
@@ -276,6 +279,19 @@ Future<T> runIndexJob<T>(
     }
   }
 }
+
+/// [job], retrying index PENDING answers for at most [max].
+IndexJob<T> pendingRetrying<T>(IndexJob<T> job, Duration max) =>
+    (h) => runIndexJob(job, h, max: max);
+
+/// How long a read waits for a bind or swap, and how long a write or a
+/// follower page does (D3-3).
+Duration readPendingMax = const Duration(seconds: 10); // a test seam
+const writePendingMax = Duration(minutes: 10);
+
+/// Test seam: the first restart delay of the events poller (doubling to
+/// 60 s). Not exported.
+Duration debugEventsBackoffBase = const Duration(seconds: 1);
 
 /// Test seam: a clock skew per data directory (absolute path), in ms, added
 /// to the time an account allocates revs with. Not exported.

@@ -47,17 +47,26 @@ enum AnySyncNotReadyReason {
 
   /// The RAG bundle definitions have not synced to this device.
   definitionsNotSynced,
+
+  /// A bind or a rebuild's swap holds the location's local index longer
+  /// than this call waits (a growing bind backfills every row).
+  indexBusy,
 }
 
 /// Retryable: the space or location is not ready for this call yet.
 @experimental
 final class AnySyncNotReadyException extends AnySyncException {
-  AnySyncNotReadyException._(this.spaceId, this.reason, [String? detail])
-    : super(
-        'Space $spaceId is not ready: ${reason.name}'
-        '${detail == null ? '' : ' ($detail)'}.',
-        retryable: true,
-      );
+  AnySyncNotReadyException._(
+    this.spaceId,
+    this.reason, [
+    String? detail,
+    Object? cause,
+  ]) : super(
+         'Space $spaceId is not ready: ${reason.name}'
+         '${detail == null ? '' : ' ($detail)'}.',
+         retryable: true,
+         cause: cause,
+       );
 
   final String spaceId;
   final AnySyncNotReadyReason reason;

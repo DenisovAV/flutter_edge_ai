@@ -137,7 +137,7 @@ FutureOr<Object?> Function(Object) _sdkJob<T>(SdkJob<T> job) =>
     (ctx) => job(ctx as AnySdk);
 
 FutureOr<Object?> Function(Object) _indexJob<T>(IndexJob<T> job) =>
-    (ctx) => runIndexJob(job, ctx as AnyIndexHost);
+    (ctx) => job(ctx as AnyIndexHost);
 
 // ------------------------------------------------------------ the workers
 
@@ -626,12 +626,18 @@ final class _EventsPoller {
         _controller.add((e as Map).cast<String, Object?>());
       }
     };
-    _isolate = await Isolate.spawn(
-      _eventsMain,
-      [port.sendPort, _handle],
-      debugName: 'flutter_edge_ai_any events',
-      onExit: port.sendPort,
-    );
+    try {
+      _isolate = await Isolate.spawn(
+        _eventsMain,
+        [port.sendPort, _handle],
+        debugName: 'flutter_edge_ai_any events',
+        onExit: port.sendPort,
+      );
+    } catch (e) {
+      // Through the account's restart path, like any other poller end.
+      _controller.addError(StateError('the events isolate did not start: $e'));
+      stop();
+    }
   }
 
   void stop() {

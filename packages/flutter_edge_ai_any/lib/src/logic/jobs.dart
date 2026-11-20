@@ -29,21 +29,30 @@ SdkJob<int> openAccountJob(
   // The deadline passed. One last poll: an account the op opened in the
   // meantime is closed again, never left open unowned (D-R9).
   final last = s.opWait(op, 0);
+  var why = 'the SDK did not open within ${max.inSeconds} s';
   if (last.done) {
     s.adoptAccount(last.result!);
-    final close = s.closeAccountStart();
-    await awaitOp(
-      s,
-      close,
-      deadline: DateTime.now().add(const Duration(seconds: 15)),
-    );
+    why =
+        'the SDK opened after the deadline (${max.inSeconds} s) and was '
+        'closed again';
+    try {
+      final close = s.closeAccountStart();
+      final r = await awaitOp(
+        s,
+        close,
+        deadline: DateTime.now().add(const Duration(seconds: 15)),
+      );
+      if (r == null) why = '$why; that close did not finish within 15 s';
+    } on AnyShimException catch (e) {
+      why = '$why; that close failed: ${e.message}';
+    }
   } else {
     s.opCancel(op);
   }
   throw AnyShimException(
     'any_shim_account_open_start',
     AnyShimStatus.timeout.code,
-    'the SDK did not open within ${max.inSeconds} s',
+    why,
   );
 };
 
@@ -217,6 +226,17 @@ Future<e.PageOutcome> _applyConverging(
 }
 
 IndexJob<e.PageOutcome> _applyJob(
+  int handle,
+  e.LocConfig cfg,
+  e.Page page,
+  int nowMs,
+  bool shadow,
+) => pendingRetrying(
+  _applyOnce(handle, cfg, page, nowMs, shadow),
+  writePendingMax,
+);
+
+IndexJob<e.PageOutcome> _applyOnce(
   int handle,
   e.LocConfig cfg,
   e.Page page,
@@ -473,7 +493,6 @@ IndexJob<
     List<String> dominated,
     List<(String, String)> supersede,
     List<(String, String)> blank,
-    List<String> blankStale,
   })
 >
 planCompactionJob(int handle) =>

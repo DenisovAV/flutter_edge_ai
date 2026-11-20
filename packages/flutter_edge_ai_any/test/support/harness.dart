@@ -19,7 +19,10 @@ const nodeConf = 'fake nodeconf';
 
 /// A world of devices; [root] is a temp directory for their paths.
 final class World {
-  World() : root = Directory.systemTemp.createTempSync('any_unit').path;
+  World() : root = Directory.systemTemp.createTempSync('any_unit').path {
+    // Restarts and gc retries in milliseconds, not seconds.
+    debugEventsBackoffBase = const Duration(milliseconds: 10);
+  }
 
   final net = FakeNetwork();
   final String root;
@@ -71,8 +74,11 @@ final class World {
     FakeIndexHost.bindSlices = 0;
     FakeIndexHost.bindConflictInOp = false;
     FakeIndex.gcError = null;
+    FakeIndex.failClose = false;
+    readPendingMax = const Duration(seconds: 10);
     debugEngineMutations.clear();
     debugAccountClockSkewMs.clear();
+    debugEventsBackoffBase = const Duration(seconds: 1);
     Directory(root).deleteSync(recursive: true);
   }
 }

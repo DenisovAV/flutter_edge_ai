@@ -572,11 +572,13 @@ const unindexableReasons = [
 /// are asked for in [PageOutcome.needObjects] and nothing is applied.
 ///
 /// A page the index refuses (INVALID_ARGUMENT: a vector the shim checks
-/// differently) does not stall the follower: each vector row is probed
-/// alone, and the page is applied again with only the refused objects'
-/// vectors left out, those marked `rejectedByIndex` with the native message
-/// (text-only rows not offered to backfill: the same vector would be
-/// refused again) (D-R1).
+/// differently) does not stall the follower on one bad vector: each vector
+/// row is probed alone, and the page is applied again with only the
+/// refused objects' vectors left out. Those are marked `rejectedByIndex`
+/// with the native message in their unindexable entry, and the follower
+/// reports them (text-only rows not offered to backfill: the same vector
+/// would be refused again) (D-R1). When no row is refused alone, the page
+/// is refused as a whole and the error is thrown (D3-4).
 PageOutcome applyPage(
   AnyIndexApi idx,
   LocConfig cfg,
@@ -886,12 +888,11 @@ PageOutcome applyPage(
     if (e.status == AnyShimStatus.invalidArgument &&
         rejected.isEmpty &&
         vectorRows.isNotEmpty) {
-      final found = _probeVectors(idx, cfg, vectorRows, shadow);
-      // No single row refused on its own: leave every vector of the page
-      // out rather than stall on it.
-      final refused = found.isNotEmpty
-          ? found
-          : {for (final r in vectorRows) r.$1: e.message};
+      final refused = _probeVectors(idx, cfg, vectorRows, shadow);
+      // No single row is refused on its own: the page is refused for
+      // something else. Stall on it, with the native message as the
+      // follower's error, rather than strip every vector (D3-4).
+      if (refused.isEmpty) rethrow;
       final again = applyPage(
         idx,
         cfg,
@@ -920,6 +921,8 @@ Map<String, String> _probeVectors(
 ) {
   final out = <String, String>{};
   for (final (id, key, text, meta, vector) in rows) {
+    // `f` is left empty: the probe never commits (its CAS cannot hold), and
+    // f values are typed before any write, so only the vector is judged.
     final probe = Tx(idx, shadow: shadow)..expect('\u0000probe', '\u0000never');
     probe.upsertRow(
       id: key,
@@ -1303,7 +1306,6 @@ Map<String, Object?> readStatus(AnyIndexApi idx, {required int nowMs}) {
   List<String> dominated,
   List<(String oldId, String newId)> supersede,
   List<(String id, String key)> blank,
-  List<String> blankStale,
 })
 planCompaction(AnyIndexApi idx) {
   final clear = int.tryParse(idx.getState('clear') ?? '') ?? 0;
@@ -1324,21 +1326,13 @@ planCompaction(AnyIndexApi idx) {
   // Only the object a row shows gets its body repaired (with the row's
   // content); a superseded one never will.
   final blank = <(String, String)>[];
-  final stale = <String>[];
   scanAll(idx, 'b/', (k, v) {
     final id = k.substring(2);
     if (shown.contains(id)) {
       blank.add((id, (jsonDecode(v) as Map)['k'] as String));
-    } else {
-      stale.add(id);
     }
   });
-  return (
-    dominated: dominated,
-    supersede: supersede,
-    blank: blank,
-    blankStale: stale,
-  );
+  return (dominated: dominated, supersede: supersede, blank: blank);
 }
 
 /// Drops state entries by key.

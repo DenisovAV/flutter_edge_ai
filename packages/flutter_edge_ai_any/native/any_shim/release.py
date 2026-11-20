@@ -20,6 +20,9 @@
       map is allowed only before the release: it is reported, not failed).
       All seven targets are required, in manifest and verify alike, unless
       --partial (a local check of the targets one machine can build).
+      shim.go must say shimVersion = <version> (a -dev build is never a
+      release) and abiVersion = the header's ANY_SHIM_ABI_VERSION; the
+      manifest records the ABI.
 
 The published tag must never change: a rebuild goes out under a new
 version with a letter suffix (0.1.0-a), never by re-uploading assets.
@@ -110,7 +113,7 @@ def manifest(release_dir, version, partial=False):
         raise SystemExit(f"no archives in {release_dir}")
     open(os.path.join(release_dir, CHECKSUMS), "w").writelines(lines)
     json.dump(
-        {"tag": f"native-any-v{version}", "version": version, "targets": entries},
+        {"tag": f"native-any-v{version}", "version": version, "abi": shim_versions()[1], "targets": entries},
         open(os.path.join(release_dir, MANIFEST), "w"),
         indent=2,
         sort_keys=True,
@@ -126,8 +129,33 @@ def hook_pins(hook_path):
     return version, pins
 
 
-def verify(release_dir, version, hook=None, partial=False):
+def shim_versions():
+    """(shimVersion, abiVersion) from shim.go, and the header's ABI."""
+    src = open(os.path.join(HERE, "shim.go")).read()
+    shim = re.search(r'^const shimVersion = "([^"]+)"$', src, re.M)
+    abi = re.search(r"^const abiVersion = (\d+)$", src, re.M)
+    hdr = re.search(r"^#define ANY_SHIM_ABI_VERSION (\d+)$",
+                    open(os.path.join(HERE, "include", "any_shim.h")).read(), re.M)
+    if not (shim and abi and hdr):
+        raise SystemExit("FAIL shim.go or include/any_shim.h: version constants not found")
+    return shim.group(1), int(abi.group(1)), int(hdr.group(1))
+
+
+def check_shim_versions(version):
+    """The tag native-any-v<version> must be built from a shim.go that says
+    shimVersion = <version> (so a -dev build is never released), with
+    abiVersion equal to the header's ANY_SHIM_ABI_VERSION."""
     problems = []
+    shim, abi, hdr = shim_versions()
+    if shim != version:
+        problems.append(f"shim.go says shimVersion {shim!r}, the release is {version!r}")
+    if abi != hdr:
+        problems.append(f"shim.go abiVersion {abi} differs from the header's ANY_SHIM_ABI_VERSION {hdr}")
+    return problems
+
+
+def verify(release_dir, version, hook=None, partial=False):
+    problems = check_shim_versions(version)
     sums = {}
     for line in open(os.path.join(release_dir, CHECKSUMS)):
         digest, name = line.split()
@@ -135,6 +163,8 @@ def verify(release_dir, version, hook=None, partial=False):
     man = json.load(open(os.path.join(release_dir, MANIFEST)))
     if man["version"] != version or man["tag"] != f"native-any-v{version}":
         problems.append(f"manifest says {man['tag']}, expected native-any-v{version}")
+    if man.get("abi") != shim_versions()[1]:
+        problems.append(f"manifest says ABI {man.get('abi')}, shim.go {shim_versions()[1]}")
     if set(sums) != {e["archive"] for e in man["targets"].values()}:
         problems.append("checksums and manifest list different archives")
     if set(man["targets"]) != set(TARGETS) and not partial:

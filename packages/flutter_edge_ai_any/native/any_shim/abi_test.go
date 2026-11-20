@@ -18,6 +18,9 @@ func readHeader(t *testing.T) string {
 }
 
 func TestAbiVersionMatchesHeader(t *testing.T) {
+	if abiVersion != 2 {
+		t.Fatalf("abiVersion %d: this test file is written for ABI 2", abiVersion)
+	}
 	m := regexp.MustCompile(`#define ANY_SHIM_ABI_VERSION (\d+)`).FindStringSubmatch(readHeader(t))
 	if m == nil {
 		t.Fatal("ANY_SHIM_ABI_VERSION not in the header")
@@ -33,7 +36,10 @@ func TestStatusCodesMatchHeader(t *testing.T) {
 		"ANY_SHIM_ERR_NOT_FOUND": codeNotFound, "ANY_SHIM_ERR_DELETED": codeDeleted,
 		"ANY_SHIM_ERR_CLOSED": codeClosed, "ANY_SHIM_ERR_TIMEOUT": codeTimeout,
 		"ANY_SHIM_ERR_REFUSED": codeRefused, "ANY_SHIM_ERR_INTERNAL": codeInternal,
-		"ANY_SHIM_ERR_PANIC": codePanic,
+		"ANY_SHIM_ERR_PANIC": codePanic, "ANY_SHIM_ERR_CONFLICT": codeConflict,
+		"ANY_SHIM_ERR_CORRUPT": codeCorrupt, "ANY_SHIM_ERR_KEY_MISMATCH": codeKeyMismatch,
+		"ANY_SHIM_ERR_BUSY": codeBusy, "ANY_SHIM_ERR_PENDING": codePending,
+		"ANY_SHIM_ERR_KEY_MISSING": codeKeyMissing, "ANY_SHIM_ERR_IO": codeIO,
 	}
 	got := map[string]int{}
 	for _, m := range regexp.MustCompile(`#define (ANY_SHIM_(?:OK|ERR_[A-Z_]+)) (\d+)`).FindAllStringSubmatch(readHeader(t), -1) {

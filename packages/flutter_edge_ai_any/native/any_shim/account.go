@@ -9,7 +9,11 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,6 +48,8 @@ type p2pOpts struct {
 
 type openOpts struct {
 	DataDir      string  `json:"dataDir"`
+	IndexDir     string  `json:"indexDir"`
+	OwnerToken   string  `json:"ownerToken"`
 	Mnemonic     string  `json:"mnemonic"`
 	AccountIndex *uint32 `json:"accountIndex"`
 	DeviceKeyHex string  `json:"deviceKeyHex"`
@@ -54,14 +60,19 @@ type openOpts struct {
 
 // account is one open SDK instance.
 //
-// Calls hold ops for reading while they run; close takes it for writing
-// after cancelling ctx, so the SDK is never closed under a call, and a
-// call blocked on the network returns at once instead of holding close.
+// Calls hold ops for reading while they run; the close takes it for
+// writing after cancelling ctx, so the SDK is never closed under a call,
+// and a call blocked on the network returns at once instead of holding
+// the close. A call never waits for ops: once the close holds it, or is
+// waiting for it, the call is ANY_SHIM_ERR_CLOSED.
 type account struct {
 	sdk    *anysyncsdk.SDK
 	ctx    context.Context
 	cancel context.CancelFunc
 	events *eventQueue
+	state  *accountState
+	lock   *os.File
+	claims []*dirClaim
 
 	ops    sync.RWMutex
 	closed atomic.Bool
@@ -70,10 +81,20 @@ type account struct {
 	watches  map[int64]func()
 	watchSeq int64
 
-	// docMu serialises document-type lookups, which go to the SDK; kept
-	// apart from mu so watch registration never waits behind them.
-	docMu    sync.Mutex
-	docTypes map[string]*docTypeCache // spaceId ->
+	// Space loads, single-flight per space (spaces.go). loadsClosed is
+	// set, under loadsMu, before the close waits for loadWG, so no load
+	// starts after the wait began.
+	loadsMu     sync.Mutex
+	loads       map[string]*spaceLoad
+	loadsClosed bool
+	loadWG      sync.WaitGroup
+
+	stopStatus func() // the account's own sync-status subscription
+
+	closeOnce sync.Once
+	closeDone chan struct{}
+	closeErr  error
+	bgEnd     func()
 }
 
 var loggerOnce sync.Once
@@ -85,10 +106,10 @@ func decodeStrict(s string, v any) error {
 		return invalid("options: %v", err)
 	}
 	if dec.More() {
-		return invalid("options: trailing data after the JSON object")
+		return invalid("options: trailing data after the JSON value")
 	}
 	if _, err := dec.Token(); err != io.EOF {
-		return invalid("options: trailing data after the JSON object")
+		return invalid("options: trailing data after the JSON value")
 	}
 	return nil
 }
@@ -112,15 +133,98 @@ func checkNetwork(nodeConf string) error {
 	return nil
 }
 
-func openAccount(optsJSON string) (*account, error) {
+// ------------------------------------------------------- directory claims
+
+// dirClaim is one directory (an account's data or index directory, or a
+// local index file) held by an open handle in this process. A claim of
+// another owner token, or one still closing, is ANY_SHIM_ERR_BUSY: after
+// a Dart hot restart the previous isolate group's handles are released
+// by their finalizers and close on a goroutine; the new group retries
+// until they are gone.
+type dirClaim struct {
+	key     string
+	token   string
+	holder  string // what holds it, for messages
+	closing atomic.Bool
+}
+
+var claims = struct {
+	sync.Mutex
+	m map[string]*dirClaim
+}{m: map[string]*dirClaim{}}
+
+// canonicalDir creates dir if needed and returns its absolute path with
+// symlinks resolved, so two spellings of one directory are one claim.
+func canonicalDir(dir string) (string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(abs)
+}
+
+// claim takes every key for token, or none.
+func claim(token, holder string, keys ...string) ([]*dirClaim, error) {
+	claims.Lock()
+	defer claims.Unlock()
+	for _, k := range keys {
+		c, ok := claims.m[k]
+		if !ok {
+			continue
+		}
+		what := strings.SplitN(k, ":", 2)
+		switch {
+		case c.closing.Load():
+			return nil, withCode(codeBusy, "%s %s is still closing (held by %s); retry", what[0], what[1], c.holder)
+		case c.token != token:
+			return nil, withCode(codeBusy, "%s %s is held by another owner (%s), e.g. the previous generation of a hot restart; retry", what[0], what[1], c.holder)
+		default:
+			return nil, withCode(codeRefused, "%s %s is already open in this isolate group (%s)", what[0], what[1], c.holder)
+		}
+	}
+	out := make([]*dirClaim, 0, len(keys))
+	for _, k := range keys {
+		c := &dirClaim{key: k, token: token, holder: holder}
+		claims.m[k] = c
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+func markClosing(cs []*dirClaim) {
+	for _, c := range cs {
+		c.closing.Store(true)
+	}
+}
+
+func unclaim(cs []*dirClaim) {
+	claims.Lock()
+	defer claims.Unlock()
+	for _, c := range cs {
+		if claims.m[c.key] == c {
+			delete(claims.m, c.key)
+		}
+	}
+}
+
+// ------------------------------------------------------------------ open
+
+func openAccount(optsJSON string) (_ *account, err error) {
 	var o openOpts
 	if err := decodeStrict(optsJSON, &o); err != nil {
 		return nil, err
 	}
-	if o.DataDir == "" {
+	switch {
+	case o.DataDir == "":
 		return nil, invalid("dataDir is required")
-	}
-	if o.Mnemonic == "" {
+	case o.IndexDir == "":
+		return nil, invalid("indexDir is required")
+	case o.OwnerToken == "":
+		return nil, invalid("ownerToken is required")
+	case o.Mnemonic == "":
 		return nil, invalid("mnemonic is required")
 	}
 	if err := checkNetwork(o.NodeConfYAML); err != nil {
@@ -134,6 +238,39 @@ func openAccount(optsJSON string) (*account, error) {
 	case "", "debug", "info", "warn", "error":
 	default:
 		return nil, invalid("logLevel %q: expected debug, info, warn or error", o.LogLevel)
+	}
+	dataDir, err := canonicalDir(o.DataDir)
+	if err != nil {
+		return nil, fmt.Errorf("dataDir: %w", err)
+	}
+	indexDir, err := canonicalDir(o.IndexDir)
+	if err != nil {
+		return nil, fmt.Errorf("indexDir: %w", err)
+	}
+	if dataDir == indexDir {
+		return nil, invalid("dataDir and indexDir must differ")
+	}
+	cl, err := claim(o.OwnerToken, "the account in "+dataDir, "dataDir:"+dataDir, "indexDir:"+indexDir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			unclaim(cl)
+		}
+	}()
+	lock, err := lockFile(filepath.Join(dataDir, ".lock"))
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			_ = unlockFile(lock)
+		}
+	}()
+	st, err := loadAccountState(dataDir)
+	if err != nil {
+		return nil, err
 	}
 	loggerOnce.Do(func() {
 		lvl := o.LogLevel
@@ -152,7 +289,7 @@ func openAccount(optsJSON string) (*account, error) {
 	}
 	off := false
 	cfg := config.Config{
-		Storage: config.Storage{DataDir: o.DataDir, Topology: config.StorageShared},
+		Storage: config.Storage{DataDir: dataDir, Topology: config.StorageShared},
 		Network: config.Network{NodeConfYAML: []byte(o.NodeConfYAML)},
 		P2P: config.P2P{
 			Enabled:        o.P2P.Enabled,
@@ -172,41 +309,118 @@ func openAccount(optsJSON string) (*account, error) {
 		cancel()
 		return nil, err
 	}
-	return &account{
-		sdk:      s,
-		ctx:      ctx,
-		cancel:   cancel,
-		events:   newEventQueue(defaultQueueCapacity),
-		docTypes: map[string]*docTypeCache{},
-		watches:  map[int64]func(){},
-	}, nil
+	a := &account{
+		sdk:       s,
+		ctx:       ctx,
+		cancel:    cancel,
+		events:    newEventQueue(defaultQueueCapacity),
+		state:     st,
+		lock:      lock,
+		claims:    cl,
+		watches:   map[int64]func(){},
+		loads:     map[string]*spaceLoad{},
+		closeDone: make(chan struct{}),
+	}
+	// everPeerSynced is set without a caller: the first non-zero
+	// LastSyncedAt of a space, seen on the account-wide status feed.
+	a.stopStatus = s.Spaces().SubscribeStatus(func(st space.SpaceSyncStatus) {
+		if !st.LastSyncedAt.IsZero() {
+			a.markPeerSynced(st.SpaceId, false)
+		}
+	})
+	return a, nil
 }
 
-// enter marks a call in progress; the returned func ends it.
+func (a *account) markPeerSynced(spaceId string, sync bool) {
+	if spaceId == "" {
+		return
+	}
+	_ = a.state.update(spaceId, sync, func(st *spaceState) { st.EverPeerSynced = true })
+}
+
+// enter marks a call in progress; the returned func ends it. It never
+// waits: an account that is closing (or cancelled) is ANY_SHIM_ERR_CLOSED.
 func (a *account) enter() (func(), error) {
-	a.ops.RLock()
-	if a.closed.Load() {
+	if a.closed.Load() || a.ctx.Err() != nil {
+		return nil, errClosed
+	}
+	if !a.ops.TryRLock() {
+		// Only the close takes ops for writing.
+		return nil, errClosed
+	}
+	if a.closed.Load() || a.ctx.Err() != nil {
 		a.ops.RUnlock()
 		return nil, errClosed
 	}
 	return a.ops.RUnlock, nil
 }
 
-func (a *account) close() error {
+// cancelCalls cancels every call and space load in flight. Never blocks.
+func (a *account) cancelCalls() {
+	a.cancel()
+}
+
+// beginClose does the synchronous part of a close: the handle is
+// already out of the registry; the directories read as closing (a new
+// open is ANY_SHIM_ERR_BUSY), calls and loads are cancelled, pollers
+// woken. Never blocks. Reports false when the close had begun already.
+func (a *account) beginClose() bool {
 	if a.closed.Swap(true) {
-		return errClosed
+		return false
 	}
+	a.bgEnd = beginBackgroundTask("flutter_edge_ai_any account close")
+	markClosing(a.claims)
 	a.cancel()
 	a.events.close()
-	a.ops.Lock()
-	defer a.ops.Unlock()
-	a.mu.Lock()
-	for _, stop := range a.watches {
-		stop()
+	return true
+}
+
+// finishClose waits for the calls in flight, stops watches and loads,
+// closes the SDK and releases the lock and the directories. A failed
+// SDK close still releases them: the SDK is not usable either way.
+// Runs once; later callers wait for the first and get its result.
+func (a *account) finishClose() error {
+	a.closeOnce.Do(func() {
+		defer close(a.closeDone)
+		defer a.bgEnd()
+		a.ops.Lock()
+		defer a.ops.Unlock()
+		a.mu.Lock()
+		for _, stop := range a.watches {
+			stop()
+		}
+		a.watches = map[int64]func(){}
+		a.mu.Unlock()
+		if a.stopStatus != nil {
+			a.stopStatus()
+		}
+		a.loadsMu.Lock()
+		a.loadsClosed = true
+		a.loadsMu.Unlock()
+		loadsDone := make(chan struct{})
+		go func() { a.loadWG.Wait(); close(loadsDone) }()
+		select {
+		case <-loadsDone:
+		case <-time.After(10 * time.Second):
+			// A load that ignores its cancelled context; the SDK close
+			// below cancels its bootstrap and joins its own work.
+		}
+		errs := []error{a.sdk.Close()}
+		errs = append(errs, a.state.flush(), unlockFile(a.lock))
+		unclaim(a.claims)
+		a.closeErr = errors.Join(errs...)
+	})
+	<-a.closeDone
+	return a.closeErr
+}
+
+// closeNow closes the account on the calling goroutine (tests).
+func (a *account) closeNow() error {
+	if !a.beginClose() {
+		<-a.closeDone
+		return errClosed
 	}
-	a.watches = map[int64]func(){}
-	a.mu.Unlock()
-	return a.sdk.Close()
+	return a.finishClose()
 }
 
 func (a *account) info() map[string]any {
@@ -237,77 +451,10 @@ func nonNil(s []string) []string {
 	return s
 }
 
-func (a *account) space(id string) (space.Space, error) {
-	return a.spaceCtx(a.ctx, id)
-}
-
-func (a *account) spaceCtx(ctx context.Context, id string) (space.Space, error) {
-	if id == "" {
-		return nil, invalid("space id is empty")
-	}
-	return a.sdk.Spaces().Get(ctx, id)
-}
-
 // cleanupCtx is for undoing a half-done write: it outlives a close that
 // cancelled the call, but not by much.
 func cleanupCtx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 10*time.Second)
-}
-
-func spaceStatusJSON(st space.SpaceSyncStatus) map[string]any {
-	return map[string]any{
-		"spaceId": st.SpaceId, "state": st.State.String(), "p2p": st.P2P.String(),
-		"localPeers": st.LocalPeers, "networkPeers": st.NetworkPeers,
-		"globalPeers": st.GlobalPeers, "synced": st.Synced, "total": st.Total,
-	}
-}
-
-// spaceList returns {"spaces":[...],"syncError":null|string}. A failed
-// sync is reported, not an error: the local list is still the answer. A
-// nil syncError means the SDK reported no error, not that a peer answered
-// (the SDK's own sync swallows per-peer failures).
-func (a *account) spaceList(syncFirst bool) (map[string]any, error) {
-	var syncErr any
-	if syncFirst {
-		if err := a.sdk.Spaces().SyncSpaceList(a.ctx); err != nil {
-			if a.ctx.Err() != nil {
-				return nil, err
-			}
-			syncErr = err.Error()
-		}
-	}
-	list, err := a.sdk.Spaces().List(a.ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]map[string]any, 0, len(list))
-	for _, i := range list {
-		out = append(out, map[string]any{"id": i.Id, "name": i.Name, "status": i.Status.String()})
-	}
-	return map[string]any{"spaces": out, "syncError": syncErr}, nil
-}
-
-// spaceStatus refuses an id the account does not know: the SDK answers
-// "unknown" for any string, so a typo would read as "not synced yet".
-func (a *account) spaceStatus(id string) (map[string]any, error) {
-	if id == "" {
-		return nil, invalid("space id is empty")
-	}
-	st := a.sdk.Spaces().Status(id)
-	if st.State == space.SyncStateUnknown {
-		list, err := a.sdk.Spaces().List(a.ctx)
-		if err != nil {
-			return nil, err
-		}
-		known := false
-		for _, i := range list {
-			known = known || i.Id == id
-		}
-		if !known {
-			return nil, withCode(codeNotFound, "space %s is not known to this account", id)
-		}
-	}
-	return spaceStatusJSON(st), nil
 }
 
 // ---------------------------------------------------------------- exports
@@ -340,16 +487,56 @@ func any_shim_account_open(optsJSON *C.char, outAccount *C.uint64_t, outErr **C.
 	})
 }
 
-//export any_shim_account_close
-func any_shim_account_close(h C.uint64_t, outErr **C.char) C.any_shim_status {
+//export any_shim_account_cancel
+func any_shim_account_cancel(h C.uint64_t, outErr **C.char) C.any_shim_status {
 	return guard(outErr, func() error {
 		a, err := lookup[*account](uint64(h), "an account")
 		if err != nil {
 			return err
 		}
-		handles.remove(uint64(h))
-		return a.close()
+		a.cancelCalls()
+		return nil
 	})
+}
+
+//export any_shim_account_close_start
+func any_shim_account_close_start(h C.uint64_t, outOp *C.uint64_t, outErr **C.char) C.any_shim_status {
+	return guard(outErr, func() error {
+		if outOp == nil {
+			return invalid("out_op is NULL")
+		}
+		a, err := take[*account](uint64(h), "an account")
+		if err != nil {
+			return err
+		}
+		a.beginClose()
+		putOp(outOp, startOp(context.Background(), func(context.Context) (any, error) {
+			if err := a.finishClose(); err != nil {
+				return nil, err
+			}
+			return map[string]any{}, nil
+		}))
+		return nil
+	})
+}
+
+// releaseAccount is any_shim_account_release without the cgo types.
+func releaseAccount(h uint64) {
+	defer func() { _ = recover() }()
+	a, ok := takeIf[*account](h)
+	if !ok {
+		return
+	}
+	a.beginClose()
+	go func() {
+		defer func() { _ = recover() }()
+		_ = a.finishClose()
+	}()
+}
+
+//export any_shim_account_release
+func any_shim_account_release(h C.uintptr_t) {
+	releaseAccount(uint64(h))
 }
 
 //export any_shim_account_info
@@ -365,58 +552,6 @@ func any_shim_set_local_discovery(h C.uint64_t, enabled C.int32_t, outErr **C.ch
 		return withAccount(h, func(a *account) error {
 			a.sdk.SetLocalDiscoveryEnabled(enabled != 0)
 			return nil
-		})
-	})
-}
-
-//export any_shim_space_create
-func any_shim_space_create(h C.uint64_t, name *C.char, outJSON, outErr **C.char) C.any_shim_status {
-	return guard(outErr, func() error {
-		return withAccount(h, func(a *account) error {
-			sp, err := a.sdk.Spaces().Create(a.ctx, space.CreateRequest{Name: goStr(name)})
-			if err != nil {
-				return err
-			}
-			return putJSON(outJSON, map[string]any{"id": sp.Id()})
-		})
-	})
-}
-
-//export any_shim_space_list
-func any_shim_space_list(h C.uint64_t, syncFirst C.int32_t, outJSON, outErr **C.char) C.any_shim_status {
-	return guard(outErr, func() error {
-		return withAccount(h, func(a *account) error {
-			l, err := a.spaceList(syncFirst != 0)
-			if err != nil {
-				return err
-			}
-			return putJSON(outJSON, l)
-		})
-	})
-}
-
-//export any_shim_space_status
-func any_shim_space_status(h C.uint64_t, spaceID *C.char, outJSON, outErr **C.char) C.any_shim_status {
-	return guard(outErr, func() error {
-		return withAccount(h, func(a *account) error {
-			st, err := a.spaceStatus(goStr(spaceID))
-			if err != nil {
-				return err
-			}
-			return putJSON(outJSON, st)
-		})
-	})
-}
-
-//export any_shim_space_sync_heads
-func any_shim_space_sync_heads(h C.uint64_t, spaceID *C.char, outErr **C.char) C.any_shim_status {
-	return guard(outErr, func() error {
-		return withAccount(h, func(a *account) error {
-			sp, err := a.space(goStr(spaceID))
-			if err != nil {
-				return err
-			}
-			return sp.SyncHeads(a.ctx)
 		})
 	})
 }

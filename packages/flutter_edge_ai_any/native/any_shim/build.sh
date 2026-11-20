@@ -95,6 +95,8 @@ case "$target" in
     work="$(mktemp -d "${TMPDIR:-/tmp}/any_shim_ios.XXXXXX")"
     trap 'rm -rf "$work"' EXIT
     (cd "$here" && "${gobuild[@]}" -buildmode=c-archive -ldflags="$ldflags" -o "$work/libany_shim.a" .)
+    # Foundation + libobjc: the background task around a close
+    # (bgtask_ios.go) finds UIApplication at run time; UIKit is not linked.
     # Export only the C API: the archive's other globals stay local, and
     # -dead_strip drops what they alone reached.
     python3 - "$here/include/any_shim.h" > "$work/exports.txt" <<'PY'
@@ -107,7 +109,7 @@ PY
       -Wl,-exported_symbols_list,"$work/exports.txt" \
       -Wl,-dead_strip -Wl,-install_name,@rpath/libany_shim.dylib \
       -Wl,-headerpad_max_install_names \
-      -framework CoreFoundation -framework Security -lresolv \
+      -framework CoreFoundation -framework Foundation -framework Security -lresolv -lobjc \
       -o "$out/libany_shim.dylib"
     xcrun strip -x "$out/libany_shim.dylib"
     if [[ "$target" == ios_sim_arm64 ]]; then

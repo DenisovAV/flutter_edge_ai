@@ -45,7 +45,7 @@ extern "C" {
 /* Bumped on any incompatible change to this header. The Dart side refuses
  * a library whose any_shim_abi_version() differs from the value it was
  * written against. */
-#define ANY_SHIM_ABI_VERSION 1
+#define ANY_SHIM_ABI_VERSION 2
 
 typedef int32_t any_shim_status;
 
@@ -67,6 +67,28 @@ typedef int32_t any_shim_status;
 #define ANY_SHIM_ERR_INTERNAL 7
 /* A Go panic inside the call, recovered. The handle may be unusable. */
 #define ANY_SHIM_ERR_PANIC 8
+/* A compare-and-set in index_apply missed, or index_bind was asked for
+ * another configuration than the index has. Nothing was applied. */
+#define ANY_SHIM_ERR_CONFLICT 9
+/* The local index is damaged (or was written by an unknown format). */
+#define ANY_SHIM_ERR_CORRUPT 10
+/* The local index was written with another key, or with none. */
+#define ANY_SHIM_ERR_KEY_MISMATCH 11
+/* Retryable: a lock held by another process, a directory still held by a
+ * previous owner (a hot restart) or still closing. */
+#define ANY_SHIM_ERR_BUSY 12
+/* An op (any_shim_op_wait) has not finished yet; or a space is still
+ * loading (start any_shim_space_resolve_start and wait for it). */
+#define ANY_SHIM_ERR_PENDING 13
+/* Retryable: the local index needs a key and none was given. */
+#define ANY_SHIM_ERR_KEY_MISSING 14
+/* Retryable: the file system refused (permission, disk full). */
+#define ANY_SHIM_ERR_IO 15
+
+/* No exported call blocks for long. A call that may wait on the network or
+ * on a close is split into *_start, which returns an op handle at once,
+ * and any_shim_op_wait, which waits at most ~250 ms per call. Everything
+ * else returns within a local database operation. */
 
 /* ---------------------------------------------------------------- misc */
 
@@ -75,254 +97,359 @@ uint32_t any_shim_abi_version(void);
 /* Frees a string this library returned. NULL is a no-op. */
 void any_shim_free(void *ptr);
 
-/* {"abi":1,"shim":"…","go":"go1.x","modules":{"github.com/…":"v…"}} */
+/* {"abi":2,"shim":"…","go":"go1.x","modules":{"github.com/…":"v…"}} */
 any_shim_status any_shim_version(char **out_json, char **out_error);
 
 /* A new 12-word BIP-39 mnemonic. Persisting it is the caller's job. */
 any_shim_status any_shim_new_mnemonic(char **out_mnemonic, char **out_error);
 
-/* A new device key, hex. One per install: peers tell devices of one
- * account apart by it. Persisting it is the caller's job. */
+/* A new device key, hex. One per install. Persisting it is the caller's
+ * job (store it "this device only": a restored key is a second writer). */
 any_shim_status any_shim_new_device_key(char **out_hex, char **out_error);
+
+/* ------------------------------------------------------------------ ops */
+
+/* Waits up to wait_ms (clamped to 0..250) for the op. While it runs:
+ * ANY_SHIM_ERR_PENDING. When it has finished: its own status and, on OK,
+ * its result in *out_json; the op handle is then released (a later call
+ * is ANY_SHIM_ERR_CLOSED). */
+any_shim_status any_shim_op_wait(uint64_t op, int32_t wait_ms,
+                                 char **out_json, char **out_error);
+
+/* Asks the op to stop and releases the handle; its result is discarded.
+ * Never blocks. A space load started by space_resolve_start is NOT
+ * cancelled (only closing the account cancels it). */
+any_shim_status any_shim_op_cancel(uint64_t op, char **out_error);
 
 /* ------------------------------------------------------------- account */
 
 /* opts_json:
- *   dataDir        string, required: the SDK's storage directory
- *   mnemonic       string, required
- *   accountIndex   uint, optional (default: the SDK's, 1 = `any`'s)
- *   deviceKeyHex   string, required (any_shim_new_device_key)
- *   nodeConfYaml   string, required; the production network is refused
- *   p2p            {"enabled":bool,"localDiscovery":bool,
- *                   "serviceName":string,"port":int}, all optional
- *   logLevel       "debug"|"info"|"warn"|"error" (default "error"),
- *                  process-wide, applied by the first open only
- */
+ *   dataDir          string, required: the SDK's storage directory
+ *   indexDir         string, required: the account's local index root;
+ *                    two open accounts may not share one
+ *   ownerToken       string, required: random per isolate group. A
+ *                    directory held by another token (a previous hot
+ *                    restart generation) or still closing is
+ *                    ANY_SHIM_ERR_BUSY at once; the caller retries. Held
+ *                    by the same token (already open in this isolate
+ *                    group): ANY_SHIM_ERR_REFUSED.
+ *   mnemonic         string, required
+ *   accountIndex     uint, optional
+ *   deviceKeyHex     string, required
+ *   nodeConfYaml     string, required; the production network is refused
+ *   p2p              {"enabled","localDiscovery","serviceName","port"}
+ *   logLevel         "debug"|"info"|"warn"|"error" (default "error")
+ * Takes flock/LockFileEx on <dataDir>/.lock: another process holding it
+ * is ANY_SHIM_ERR_BUSY. */
 any_shim_status any_shim_account_open(char *opts_json,
                                       uint64_t *out_account,
                                       char **out_error);
 
-/* Ends every watch (pollers get ANY_SHIM_ERR_CLOSED), cancels calls in
- * flight and closes the SDK. The handle is invalid afterwards, even when
- * an error is returned. */
-any_shim_status any_shim_account_close(uint64_t account, char **out_error);
+/* Cancels every call and space load in flight; never blocks; any thread.
+ * Calls blocked on the network return at once (ANY_SHIM_ERR_CLOSED). */
+any_shim_status any_shim_account_cancel(uint64_t account, char **out_error);
 
-/* {"accountId","peerId","techSpaceId",
- *  "p2p":{"enabled","listening","port","state","localDiscovery",
- *         "peers":[{"peerId","connected","spaceIds"}]}} */
+/* Starts the close (cancel, end watches, SDK close, unlock). The op's
+ * result is {}. The handle is invalid at once. */
+any_shim_status any_shim_account_close_start(uint64_t account,
+                                             uint64_t *out_op,
+                                             char **out_error);
+
+/* Finalizer-shaped: void(void*) compatible. Takes the handle out of the
+ * registry atomically (a stale or already closed handle is a no-op),
+ * marks the directory closing at once and closes on a goroutine. Never
+ * blocks, never panics across the boundary. */
+void any_shim_account_release(uintptr_t account);
+
+/* {"accountId","peerId","techSpaceId","p2p":{…}} */
 any_shim_status any_shim_account_info(uint64_t account, char **out_json,
                                       char **out_error);
 
-/* Starts or stops mDNS announce/browse; the QUIC listener stays up. */
 any_shim_status any_shim_set_local_discovery(uint64_t account,
                                              int32_t enabled,
                                              char **out_error);
 
 /* -------------------------------------------------------------- spaces */
 
-/* {"id"} */
+/* {"id"}. Recorded in the account state as created on this device. */
 any_shim_status any_shim_space_create(uint64_t account, char *name,
                                       char **out_json, char **out_error);
 
-/* {"spaces":[{"id","name","status"}],"syncError":null|string}.
- * sync != 0 first asks reachable peers for the account's space list; a
- * failure is reported in syncError and the local list is still returned.
- * A null syncError means the SDK reported no error, not that a peer
- * answered (the SDK does not surface per-peer failures). */
-any_shim_status any_shim_space_list(uint64_t account, int32_t sync,
-                                    char **out_json, char **out_error);
+/* The local list: {"spaces":[{"id","name","status"}]} */
+any_shim_status any_shim_space_list(uint64_t account, char **out_json,
+                                    char **out_error);
 
-/* {"spaceId","state","p2p","localPeers","networkPeers","globalPeers",
- *  "synced","total"}. ANY_SHIM_ERR_NOT_FOUND for an id the account does
- * not know (the SDK itself answers "unknown" for any string). */
+/* Asks reachable peers for the space list, then lists. timeout_ms > 0.
+ * Op result: {"spaces":[…],"syncError":null|string,"timedOut":bool} */
+any_shim_status any_shim_space_list_sync_start(uint64_t account,
+                                               int32_t timeout_ms,
+                                               uint64_t *out_op,
+                                               char **out_error);
+
+/* Makes the space available. The first call per space starts one detached
+ * load (single-flight; only the account's close cancels it; a failed load
+ * frees the slot). Op result: {"spaceId"}. Unknown to the account:
+ * ANY_SHIM_ERR_NOT_FOUND. Other calls that take a space id return
+ * ANY_SHIM_ERR_PENDING while the load runs. */
+any_shim_status any_shim_space_resolve_start(uint64_t account,
+                                             char *space_id,
+                                             uint64_t *out_op,
+                                             char **out_error);
+
+/* {"spaceId","state","loading","p2p","localPeers","networkPeers",
+ *  "globalPeers","synced","total","lastSyncedAt":null|RFC3339,
+ *  "everPeerSynced":bool,"createdHere":bool}.
+ * everPeerSynced is persisted in the account state: set the first time a
+ * peer sync of the space completed on this device. ANY_SHIM_ERR_NOT_FOUND
+ * for an id the account does not know. */
 any_shim_status any_shim_space_status(uint64_t account, char *space_id,
                                       char **out_json, char **out_error);
 
-/* Pushes this device's heads to every reachable peer of the space. */
-any_shim_status any_shim_space_sync_heads(uint64_t account,
-                                          char *space_id,
-                                          char **out_error);
+/* Pushes heads to reachable peers and waits for an answer, up to
+ * timeout_ms (> 0). Op result: {"reachedPeer":bool,"timedOut":bool,
+ * "error":null|string}; a network failure is a result, not a status. */
+any_shim_status any_shim_space_sync_heads_start(uint64_t account,
+                                                char *space_id,
+                                                int32_t timeout_ms,
+                                                uint64_t *out_op,
+                                                char **out_error);
+
+/* --------------------------------------------------------- rag bundles */
+
+/* The two RAG bundles (flutter_edge_ai.rag.location/v1 and
+ * flutter_edge_ai.rag.document/v1), declared here and nowhere else.
+ * ensure != 0 installs them (Bundles().Ensure, DerivedRoot); a winner that
+ * is not the derived root is ANY_SHIM_ERR_REFUSED; a member without write
+ * permission is ANY_SHIM_ERR_REFUSED with "read-only". ensure == 0 only
+ * reads (ANY_SHIM_ERR_NOT_FOUND while the definitions have not synced).
+ * {"location":{"rootId","properties":{xkey:id},"tombstones":collection},
+ *  "document":{"rootId","properties":{xkey:id}}} */
+any_shim_status any_shim_rag_bundles(uint64_t account, char *space_id,
+                                     int32_t ensure, char **out_json,
+                                     char **out_error);
 
 /* ------------------------------------------------------------- objects */
 
-/* Writes a document object (type "RAG Document", created in the space on
- * first use). doc_json:
- *   id      existing object id to update, or
- *   seed    a caller key; the object id is derived from it, the same on
- *           every device (Objects().Derive), so a re-put is idempotent;
- *           such an object can never be deleted (any_shim_object_delete);
- *           with neither, a fresh object is created
- *   name    string -> any.name
- *   text    string -> the body, one editor paragraph per non-empty line,
- *           replacing the previous body
- *   source  string, optional
- *   meta    JSON object, optional, stored as its JSON text
- * out_json: {"id","created"}. A new object whose later writes fail is
- * deleted again before the error is returned. A document type found
- * without its properties (still syncing, or its creator stopped halfway) is
- * completed rather than duplicated. */
-any_shim_status any_shim_object_put(uint64_t account, char *space_id,
-                                    char *doc_json, char **out_json,
-                                    char **out_error);
+/* target_json: {"id"} | {"create":{"type"}} | {"derive":{"seed","type"}}
+ * ops_json: [{"xkey","value"} | {"xkey","leaf","value"}]: $set of a
+ * declared property, or of one leaf of an object-kind property (leaf:
+ * [0-9a-z-]+). An xkey the type does not declare: ANY_SHIM_ERR_NOT_FOUND
+ * while the type's definitions are not synced, else
+ * ANY_SHIM_ERR_INVALID_ARGUMENT. Any SDK error or op rejection is non-OK:
+ * a deleted object or record is ANY_SHIM_ERR_DELETED, anything else
+ * ANY_SHIM_ERR_REFUSED with the reasons; a create whose own ops failed
+ * deletes the object again first. A create is one change.
+ * out_json: {"id","created"}; for derive, created = the object carried no
+ * value of its type before this call. */
+any_shim_status any_shim_object_patch(uint64_t account, char *space_id,
+                                      char *target_json, char *ops_json,
+                                      char **out_json, char **out_error);
 
-/* {"id","type","isDocument","name","text","source","meta","row"};
- * meta is the stored JSON text (null when absent), row the raw object row.
- * ANY_SHIM_ERR_NOT_FOUND / ANY_SHIM_ERR_DELETED when it is not here. */
-any_shim_status any_shim_object_get(uint64_t account, char *space_id,
-                                    char *object_id, char **out_json,
-                                    char **out_error);
+/* The editor body, one paragraph per non-empty line (display only). */
+any_shim_status any_shim_object_set_body(uint64_t account, char *space_id,
+                                         char *object_id, char *text,
+                                         char **out_error);
 
-/* Deletes an object for every device (final: the id is never reused).
- * An object written with a seed is ANY_SHIM_ERR_REFUSED: any-sync never
- * deletes a derived object, whose id anyone can derive again. Clear it
- * with any_shim_object_put instead, or write objects that must be
- * deletable without a seed. */
+/* request_json: {"ids":[…]} | {"type","after","limit"}, plus
+ * "xkeys":[…], the properties to return (by xkey).
+ * {"anchor":{"generation","maxApplySeq"},
+ *  "items":[{"id","typeId","state":"ok"|"missing"|"deleted",
+ *            "props":{xkey:value}}],
+ *  "next":null|id}
+ * limit: default 100, at most 1000. "missing" also covers an object whose
+ * tree is here but whose typed row has not arrived (typeId null). An xkey
+ * the item's type does not declare reads null.
+ * The anchor is read before the page (generation, seq, generation,
+ * retried until stable). Type pages are ordered by object id. */
+any_shim_status any_shim_object_read(uint64_t account, char *space_id,
+                                     char *request_json, char **out_json,
+                                     char **out_error);
+
+/* Deletes an object for every device. A derived object is
+ * ANY_SHIM_ERR_REFUSED; an already deleted one is OK. */
 any_shim_status any_shim_object_delete(uint64_t account, char *space_id,
                                        char *object_id,
                                        char **out_error);
 
-/* Object rows matching a Mongo-style filter (JSON; NULL, "" or "{}" = all).
- * limit <= 0 = no limit. [row, ...] */
-any_shim_status any_shim_object_query(uint64_t account, char *space_id,
-                                      char *filter_json, int32_t limit,
-                                      char **out_json, char **out_error);
+/* {"state":"synced"|"syncing"|"offline"|"unknown"|…}: whether a peer has
+ * acknowledged the object's heads. */
+any_shim_status any_shim_object_sync_state(uint64_t account,
+                                           char *space_id, char *object_id,
+                                           char **out_json,
+                                           char **out_error);
 
-/* --------------------------------------------------------------- files */
+/* Records of a records dataset on an object (the tombstones).
+ * records_json: [{"id","set":{field:value},"addToSet":{field:value}}],
+ * upserted, in one change. Rejections are non-OK as in object_patch. */
+any_shim_status any_shim_records_modify(uint64_t account, char *space_id,
+                                        char *object_id, char *collection,
+                                        char *records_json,
+                                        char **out_error);
 
-/* Attaches the file at path to the object. name may be NULL (the base
- * name is used). out_json: the SDK's FileInfo. */
-any_shim_status any_shim_file_attach(uint64_t account, char *space_id,
-                                     char *object_id, char *path,
-                                     char *name, char **out_json,
-                                     char **out_error);
-
-/* [FileInfo]; object_id NULL or "" = every file of the space. */
-any_shim_status any_shim_file_list(uint64_t account, char *space_id,
-                                   char *object_id, char **out_json,
-                                   char **out_error);
-
-/* The SDK's FileStatus (local presence, upload/download state). */
-any_shim_status any_shim_file_status(uint64_t account, char *space_id,
-                                     char *file_id, char **out_json,
-                                     char **out_error);
-
-/* Copies the file's original bytes to out_path (written to a sibling temp
- * file, then renamed), fetching from a peer if needed. timeout_ms <= 0 =
- * no deadline; otherwise ANY_SHIM_ERR_TIMEOUT when it passes. A read
- * shorter than the file's recorded size is an error, never a file. */
-any_shim_status any_shim_file_read(uint64_t account, char *space_id,
-                                   char *file_id, char *out_path,
-                                   int32_t timeout_ms, int64_t *out_bytes,
-                                   char **out_error);
+/* Records ordered by id after `after` (NULL or "" = from the start), with
+ * _applySeq > since_apply_seq. limit <= 0: 500.
+ * {"records":[{…, "_applySeq"}],"next":null|id}; the SDK's other "_"
+ * fields are left out. */
+any_shim_status any_shim_records_read(uint64_t account, char *space_id,
+                                      char *object_id, char *collection,
+                                      char *after, uint64_t since_apply_seq,
+                                      int32_t limit, char **out_json,
+                                      char **out_error);
 
 /* --------------------------------------------------- change feed, events */
 
-/* The durable feed: changes with applySeq > since, oldest first.
- * {"generation","maxApplySeq",
- *  "changes":[{"objectId","applySeq","deleted"}]}
- * The consumer's cursor is void, and it reindexes from 0, when the
- * generation differs from the one it stored, or when its cursor is above
- * maxApplySeq (the SDK's data was restored from an older copy). limit <= 0 = the SDK's default. */
+/* {"generation","maxApplySeq","changes":[{"objectId","applySeq","deleted"}]} */
 any_shim_status any_shim_changes_since(uint64_t account, char *space_id,
                                        uint64_t since, int32_t limit,
                                        char **out_json, char **out_error);
 
-/* Subscribes to a space's change feed; events go to the account's queue
- * (any_shim_events_poll). Best effort: an event that finds the queue full
- * is dropped, and one {"kind":"overflow"} marker per lost stretch says so;
- * events queued after the marker may still arrive. The consumer replays
- * from its cursor. */
 any_shim_status any_shim_watch_changes(uint64_t account, char *space_id,
                                        int64_t *out_watch, char **out_error);
 
-/* Subscribes to sync status changes of every space. */
 any_shim_status any_shim_watch_sync_status(uint64_t account,
                                            int64_t *out_watch,
                                            char **out_error);
 
-/* Ends a watch. An unknown id is ANY_SHIM_ERR_NOT_FOUND. */
 any_shim_status any_shim_unwatch(uint64_t account, int64_t watch,
                                  char **out_error);
 
-/* Blocks until at least one event is queued or timeout_ms passes
- * (<= 0: return at once), then returns up to max_events (<= 0: 256) as a
- * JSON array, possibly empty. Events:
+/* As in ABI 1, but timeout_ms is clamped to 0..250. Events:
  *   {"kind":"change","watch","spaceId","objectId","applySeq","deleted"}
  *   {"kind":"syncStatus","watch","spaceId","state","p2p","localPeers",
- *    "networkPeers","globalPeers","total"}
- *   {"kind":"overflow","dropped"}: events were dropped, from any watch.
- *    Replay changes from the stored cursor (any_shim_changes_since) and
- *    re-read sync status (any_shim_space_status); dropped status events
- *    have no cursor of their own.
- * Returns ANY_SHIM_ERR_CLOSED once the account is closed, also to a call
- * blocked at that moment. Meant for one dedicated poller thread. */
+ *    "networkPeers","globalPeers","total","lastSyncedAt"}
+ *   {"kind":"overflow","dropped"} */
 any_shim_status any_shim_events_poll(uint64_t account, int32_t max_events,
                                      int32_t timeout_ms, char **out_json,
                                      char **out_error);
 
+/* --------------------------------------------------------------- files */
+
+any_shim_status any_shim_file_attach(uint64_t account, char *space_id,
+                                     char *object_id, char *path,
+                                     char *name, char **out_json,
+                                     char **out_error);
+any_shim_status any_shim_file_list(uint64_t account, char *space_id,
+                                   char *object_id, char **out_json,
+                                   char **out_error);
+any_shim_status any_shim_file_status(uint64_t account, char *space_id,
+                                     char *file_id, char **out_json,
+                                     char **out_error);
+/* Op result: {"bytes"}. Written to a sibling temp file, then renamed. */
+any_shim_status any_shim_file_read_start(uint64_t account, char *space_id,
+                                         char *file_id, char *out_path,
+                                         int32_t timeout_ms,
+                                         uint64_t *out_op,
+                                         char **out_error);
+
 /* --------------------------------------------- local index (never synced) */
 
-/* opts_json:
- *   path          string, required: the any-store database file
- *   dim           int, required, > 0
- *   metric        "cosine" (default) | "l2" | "dot"
- *   mode          "exact" (default: brute force, exact recall) |
- *                 "hnsw" (approximate; filtered queries retried, see knn).
- *                 Any other mode (IVF-SQ cannot train on an empty
- *                 collection) is ANY_SHIM_ERR_REFUSED.
- *   hnsw          {"m","efConstruction","efSearch"}, optional
- *   filterFields  [string]: meta.<field> gets a range index
- *   passphrase    string, optional: page-level AES-256-GCM of the file;
- *                 a database created with one needs it on every open
- * A database opened earlier with other options (dim, metric, mode, hnsw,
- * filterFields) is ANY_SHIM_ERR_INVALID_ARGUMENT: any-store keeps an index
- * as it was built. */
+/* opts_json: {"path" (the database file), "keyHex" (64 hex chars, or
+ * absent/empty for no encryption), "ownerToken"}.
+ * Keycheck sidecar <path>.keycheck, written (tmp, fsync, rename, fsync of
+ * the directory) before the database is created:
+ *   no sidecar, no file          create both
+ *   sidecar, no file             rewrite the sidecar, create the file
+ *   plain sidecar + key, or
+ *   another key                  ANY_SHIM_ERR_KEY_MISMATCH
+ *   keyed sidecar, no key        ANY_SHIM_ERR_KEY_MISSING
+ *   fileId inside != sidecar's   ANY_SHIM_ERR_KEY_MISMATCH
+ *   decrypt failure after a
+ *   matching sidecar             ANY_SHIM_ERR_CORRUPT
+ *   no sidecar, file present     ANY_SHIM_ERR_CORRUPT
+ *   EACCES/EPERM/ENOSPC          ANY_SHIM_ERR_IO
+ * Takes flock/LockFileEx on <path>.lock; held by another process:
+ * ANY_SHIM_ERR_BUSY. The same path open under another ownerToken, or
+ * closing: ANY_SHIM_ERR_BUSY; under the same token: ANY_SHIM_ERR_REFUSED.
+ * Drops orphan generation collections (an unswapped shadow included). */
 any_shim_status any_shim_index_open(char *opts_json, uint64_t *out_index,
                                     char **out_error);
 
 any_shim_status any_shim_index_close(uint64_t index, char **out_error);
 
-/* doc_json: {"id" (required), "name", "text", "meta":{...}}; vector of
- * length dim (the index's). Replaces a document with the same id. */
-any_shim_status any_shim_index_upsert(uint64_t index, char *doc_json,
-                                      float *vector, int32_t dim,
-                                      char **out_error);
+/* Finalizer-shaped, as any_shim_account_release. */
+void any_shim_index_release(uintptr_t index);
 
-/* *out_found = 1 when the id was there, 0 otherwise (not an error). */
-any_shim_status any_shim_index_delete(uint64_t index, char *id,
-                                      int32_t *out_found, char **out_error);
+/* bind_json: {"dim","metric":"cosine"|"l2"|"dot",
+ *             "fields":[{"key","type":"string"|"number"|"bool"}],
+ *             "textSearch":bool}
+ * Idempotent; fields and textSearch may only grow (a new field gets its
+ * range index); another dim or metric, or a field key with another type,
+ * is ANY_SHIM_ERR_CONFLICT. The config lives in meta and survives swaps.
+ * {"dim","metric","fields","textSearch"} */
+any_shim_status any_shim_index_bind(uint64_t index, char *bind_json,
+                                    char **out_json, char **out_error);
 
+/* {} before any bind; otherwise the same object index_bind returns,
+ * plus "fileId". */
+any_shim_status any_shim_index_info(uint64_t index, char **out_json,
+                                    char **out_error);
+
+/* One write transaction. ops_json:
+ *  {"cas":[{"key","expect":null|string}],     state keys, checked first
+ *   "ops":[
+ *     {"op":"upsert","coll":"docs"|"shadow","id","text","meta","f":{…},
+ *      "vector":null|{"offset":int,"dim":int}},
+ *     {"op":"delete","coll":"docs"|"shadow","id"},
+ *     {"op":"clearDocs","coll":"docs"|"shadow"},
+ *     {"op":"stateSet","coll":"state"|"shadowState","key","value":null|string},
+ *     {"op":"shadowBegin"},                    drops any shadow, starts n+1
+ *     {"op":"shadowSwap"}]}                    makes the shadow active
+ * vectors: vector_floats floats; every vector slot satisfies offset >= 0,
+ * offset + dim <= vector_floats, dim == the bound dim; the slots tile the
+ * buffer in order; no NaN or Inf. Everything is validated before the
+ * transaction: a bad op is ANY_SHIM_ERR_INVALID_ARGUMENT, a vector before
+ * index_bind ANY_SHIM_ERR_REFUSED, a CAS miss ANY_SHIM_ERR_CONFLICT; in
+ * each case nothing is applied. {"applied":n} */
+any_shim_status any_shim_index_apply(uint64_t index, char *ops_json,
+                                     float *vectors, int64_t vector_floats,
+                                     char **out_json, char **out_error);
+
+/* A row of docs (or shadow), or a state value. *out_json = NULL when
+ * absent. coll: "docs"|"shadow"|"state"|"shadowState" (a shadow coll
+ * without a shadow: ANY_SHIM_ERR_INVALID_ARGUMENT).
+ * Row: {"id","text","meta","f":{…},"vector":null|[floats]};
+ * state entry: {"key","value"}. */
+any_shim_status any_shim_index_get(uint64_t index, char *coll, char *id,
+                                   char **out_json, char **out_error);
+
+/* Rows or state entries by id/key after `after`, at most limit (<= 0:
+ * 500), keys starting with prefix (NULL = all). Rows come without their
+ * vector: {"id","text","meta","f","hasVector"}; state entries as in
+ * index_get. {"items":[…],"next":null|string} */
+any_shim_status any_shim_index_scan(uint64_t index, char *coll,
+                                    char *prefix, char *after,
+                                    int32_t limit, char **out_json,
+                                    char **out_error);
+
+/* Rows in docs, and rows with a vector. */
 any_shim_status any_shim_index_count(uint64_t index, int64_t *out_count,
                                      char **out_error);
+any_shim_status any_shim_index_count_vectors(uint64_t index,
+                                             int64_t *out_count,
+                                             char **out_error);
 
-/* k nearest documents, optionally under a Mongo-style filter on the
- * stored fields (e.g. {"meta.cat":"food"}).
- * {"results":[{"id","name","text","meta","distance"}],"ef","attempts",
- *  "complete"}
- * In "hnsw" mode a filtered query that returns fewer than k while the
- * collection holds more is re-run with a doubled ef, up to the collection
- * size; "ef" (0 = any-store's default) and "attempts" report what the last
- * run used. That happens when any-store filters the ANN candidates (a
- * filter field without a range index); a filter on a filterFields key is
- * evaluated exactly by any-store itself. "complete" is false when the
- * retries reached any-store's ef ceiling short of the collection size with
- * fewer than k results: there may be more matches than returned. */
+/* Exact k nearest rows with a vector, under an optional Mongo-style filter
+ * on the stored fields (paths f.<key>, combined with $and/$or/$nor).
+ * k: 1..10000. Before index_bind: ANY_SHIM_ERR_REFUSED.
+ * {"results":[{"id","text","meta","distance"}]} */
 any_shim_status any_shim_index_knn(uint64_t index, float *query,
                                    int32_t dim, int32_t k,
                                    char *filter_json, char **out_json,
                                    char **out_error);
 
-/* BM25 over name + text. {"results":[{"id","name","text","meta","score"}]} */
+/* BM25 over text, sorted by score descending then id, before the limit.
+ * query is passed to any-store's $search as given (the caller quotes).
+ * Without textSearch bound: ANY_SHIM_ERR_REFUSED.
+ * {"results":[{"id","text","meta","score"}]} */
 any_shim_status any_shim_index_text(uint64_t index, char *query,
                                     int32_t k, char *filter_json,
                                     char **out_json, char **out_error);
 
-/* Small string values next to the index (cursor, generation).
- * get: *out_value = NULL when the key is not set. */
-any_shim_status any_shim_index_state_get(uint64_t index, char *key,
-                                         char **out_value, char **out_error);
-any_shim_status any_shim_index_state_set(uint64_t index, char *key,
-                                         char *value, char **out_error);
+/* Waits up to wait_ms (0..250) for pending full-text work to commit.
+ * Checkpoints now; wait_ms bounds the wait for the writer (0: one try of
+ * at most 250 ms). Not done in time: ANY_SHIM_ERR_TIMEOUT (retryable). */
+any_shim_status any_shim_index_flush(uint64_t index, int32_t wait_ms,
+                                     char **out_error);
 
 #ifdef __cplusplus
 }

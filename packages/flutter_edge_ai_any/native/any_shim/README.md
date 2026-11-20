@@ -7,10 +7,11 @@ number of local indexes.
 
 | file | what |
 |---|---|
-| `include/any_shim.h` | the C ABI (version 1): the contract, documented per function |
-| `shim.go`, `errors.go`, `registry.go` | exports, status codes, the handle registry |
-| `account.go`, `objects.go`, `files.go`, `events.go` | SDK side |
-| `index.go`, `values.go` | the any-store local index |
+| `include/any_shim.h` | the C ABI (version 2): the contract, documented per function |
+| `shim.go`, `errors.go`, `registry.go`, `ops.go` | exports, status codes, the handle registry, started ops |
+| `account.go`, `state.go`, `lock_unix.go`, `lock_windows.go`, `bgtask_ios.go` | account open/close, directory claims and locks, the account state file, the iOS background task |
+| `spaces.go`, `bundles.go`, `objects.go`, `files.go`, `events.go` | SDK side: spaces and their loads, the RAG bundles, objects and records, files, the change feed |
+| `index.go`, `keycheck.go`, `values.go` | the any-store local index and its keycheck sidecar |
 | `third_party/any_editor/` | `any`'s editor module, copied verbatim (MIT) |
 | `build.sh` | one target per call; see its header |
 | `check_exports.py` | the gate every build passes: exports equal the header, container fits the target |
@@ -40,6 +41,103 @@ any-sync-sdk v0.7.4, any-sync v0.13.8, any-store v2.4.3 (`go.sum`).
   compares the header with the Go exports, the status codes and
   `check_exports.py`, and the Dart package's
   `test/bindings_match_header_test.dart` compares it with the bindings.
+
+## Native API (ABI 2)
+
+`include/any_shim.h` is the reference; this is the shape of it.
+
+**Nothing blocks.** A call that may wait for the network or for a close
+is split in two: `*_start` returns an op handle at once, and
+`any_shim_op_wait(op, wait_ms)` waits at most 250 ms per call
+(`ANY_SHIM_ERR_PENDING` while the op runs; its own status and result once,
+then the handle is gone). `any_shim_op_cancel` never blocks. The started
+calls: `account_close_start`, `space_list_sync_start`,
+`space_resolve_start`, `space_sync_heads_start`, `file_read_start`.
+`events_poll` and `index_flush` clamp their wait to 250 ms. Everything else
+returns within local database work. A worker isolate therefore never holds
+a Dart hot restart for longer than one slice.
+
+**Accounts.** `account_open` takes `dataDir`, `indexDir` and an
+`ownerToken` (random per isolate group). Each directory is claimed in
+this process: a claim of another token (the previous generation of a hot
+restart) or one still closing is `ERR_BUSY` (retry); the same token is
+`ERR_REFUSED`. Across processes, `<dataDir>/.lock` is held with
+`flock` / `LockFileEx` (`ERR_BUSY`). `account_cancel` cancels every call
+and space load and never blocks. `account_release(uintptr_t)` and
+`index_release(uintptr_t)` have the `void(void*)` shape of a
+`NativeFinalizer`: they take the handle out of the registry (a stale one
+is a no-op), mark the directories closing at once and close on a
+goroutine; a failed SDK close still releases the claim and the lock. On
+iOS the close runs inside a `beginBackgroundTaskWithName:` task
+(`UIApplication` found at run time, so the library links no UIKit).
+
+**Account state** (`<dataDir>/any_shim_state.json`, written atomically):
+per space `createdHere` and `everPeerSynced`. `everPeerSynced` is set the
+first time a space's `LastSyncedAt` is non-zero (the shim subscribes to
+the account's sync status itself) or a `sync_heads` round reaches a peer;
+it is never cleared. `space_status` reports both, plus `loading` and
+`lastSyncedAt`.
+
+**Spaces load once.** The first call that needs a space starts one
+detached `Spaces().Get` on the account's context (single-flight per space;
+a failed load frees the slot; an unknown id fails at once as
+`ERR_NOT_FOUND`). A call that needs the space waits for it at most
+150 ms, then answers `ERR_PENDING`; `space_resolve_start` is the wait.
+
+**RAG bundles.** `rag_bundles(ensure)` declares
+`flutter_edge_ai.rag.location/v1` (properties `core`, `fields`,
+`profiles`, `textSearch`; part `tomb` with the records dataset
+`tombstones`: user ids `[0-9a-f]{64}|clear`, no deletes, `key` and `revs`
+mutable by anyone) and `flutter_edge_ai.rag.document/v1` (properties
+`doc`, `vecs`; part `body` with the editor dataset). Both on their derived
+roots, hidden. The declarations are frozen (`TestRagBundleDeclarationsFrozen`
+pins them): a change needs a new bundle id. Property ids are read from the
+space, never computed.
+
+**Objects and records.** `object_patch` sets declared properties, or
+leaves (`[0-9a-z-]+`) of object-kind ones, on an object by id, a new one
+(one change) or a derived one. Any SDK error and any op rejection is
+non-OK (`ERR_DELETED` for a deleted object or record, else
+`ERR_REFUSED`); a create whose values did not all land is deleted again.
+`object_read` reads by ids or a type page (by object id) with an anchor
+`{generation, maxApplySeq}` read before the page. `records_modify` /
+`records_read` work on a records dataset (the tombstones).
+
+**Local index.** One any-store file per location: `meta` (format,
+fileId, active generation, bind config), `docs_<n>` (rows: `id`, `text`,
+`meta`, `f.<key>`, `embedding`; exact vector index, a range index per
+bound field, full text on `text` when bound) and `state_<n>`. A rebuild
+fills generation n+1 and swaps it in with one transaction
+(`shadowBegin`, `shadowSwap`), under an exclusive lock so no reader meets
+a closed collection; orphan generations are dropped at open.
+`index_apply` validates every op and every vector slot (slots tile the
+float buffer in order, dimension equals the bound one, finite values)
+before one write transaction, and checks its compare-and-set state keys
+first. The key is 32 bytes (any-store's raw-key path). The keycheck
+sidecar `<path>.keycheck` (`{"fmt":1,"fileId","mode","mac"}`,
+`mac = HMAC-SHA256(key, "flutter_edge_ai_any/keycheck/v1" ‖ fileId
+bytes)`) is written before the database, so every crash state is
+classified (`TestIndexKeycheckCrashMatrix`): a wrong key and a damaged
+file are told apart by the sidecar, never by any-store's message; a
+file-system refusal (`EACCES`, `EPERM`, `ENOSPC`, `EROFS`) is `ERR_IO`
+by its errno.
+
+**Status codes.** 0 OK, 1 INVALID_ARGUMENT, 2 NOT_FOUND, 3 DELETED,
+4 CLOSED, 5 TIMEOUT, 6 REFUSED, 7 INTERNAL, 8 PANIC, 9 CONFLICT,
+10 CORRUPT, 11 KEY_MISMATCH, 12 BUSY (retry), 13 PENDING (op not
+finished, or space loading), 14 KEY_MISSING (retry), 15 IO (retry). A
+caller maps a code it does not know to INTERNAL.
+
+## Testing
+
+```bash
+go vet ./... && go test ./...      # -short skips the network tests
+```
+
+The network tests use a blackhole address (`10.255.255.1:443`) and LAN
+p2p between two accounts in one process, on a random mDNS service name,
+with `testdata/nodeconf-dead.yml`; never the production network. In a
+sandbox that blocks mDNS, run them outside it.
 
 ## Building
 
@@ -80,6 +178,8 @@ letter suffix (`0.1.0-a`).
    modules `go list -deps -tags nographviz` reports for the seven targets,
    with their license texts).
 3. Create the tag and upload the artifact's files.
-4. Download the assets back, `release.py verify <dir> <version>`.
+4. Download the assets back, `release.py verify <dir> <version>` (it also checks that `shim.go`
+   says `shimVersion = <version>`, so a `-dev` build is never released,
+   and that `abiVersion` equals the header's).
 5. Put the checksums into `_checksums` in `hook/build.dart` and run
    `release.py verify <dir> <version> --hook ../../hook/build.dart`.

@@ -143,7 +143,7 @@ func (a *account) watchChanges(spaceId string) (int64, error) {
 func (a *account) watchSyncStatus() int64 {
 	id := a.newWatchId()
 	cancel := a.sdk.Spaces().SubscribeStatus(func(st space.SpaceSyncStatus) {
-		ev := spaceStatusJSON(st)
+		ev := spaceStatusJSON(st) // carries lastSyncedAt
 		ev["kind"], ev["watch"] = "syncStatus", id
 		a.events.push(ev)
 	})
@@ -243,7 +243,7 @@ func any_shim_unwatch(h C.uint64_t, watch C.int64_t, outErr **C.char) C.any_shim
 }
 
 // any_shim_events_poll does not hold the account's call lock while it
-// waits: close must not wait for a poller, it wakes it.
+// waits (at most 250 ms): close must not wait for a poller, it wakes it.
 //
 //export any_shim_events_poll
 func any_shim_events_poll(h C.uint64_t, maxEvents, timeoutMs C.int32_t, outJSON, outErr **C.char) C.any_shim_status {
@@ -255,7 +255,7 @@ func any_shim_events_poll(h C.uint64_t, maxEvents, timeoutMs C.int32_t, outJSON,
 		if outJSON == nil {
 			return invalid("out_json is NULL")
 		}
-		evs, err := a.events.poll(int(maxEvents), time.Duration(timeoutMs)*time.Millisecond)
+		evs, err := a.events.poll(int(maxEvents), clampWait(timeoutMs))
 		if err != nil {
 			return err
 		}

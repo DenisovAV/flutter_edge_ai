@@ -57,20 +57,9 @@ func (a *account) fileStatus(spaceId, fileId string) (space.FileStatus, error) {
 // fileRead copies the file to outPath through a temp file in the same
 // directory, so a failed or timed-out fetch never leaves a partial file
 // under the requested name.
-func (a *account) fileRead(spaceId, fileId, outPath string, timeout time.Duration) (int64, error) {
-	if fileId == "" || outPath == "" {
-		return 0, invalid("file id and out path are required")
-	}
-	ctx := a.ctx
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-	sp, err := a.spaceCtx(ctx, spaceId)
-	if err != nil {
-		return 0, timeoutOr(ctx, err)
-	}
+func fileRead(parent context.Context, sp space.Space, fileId, outPath string, timeout time.Duration) (int64, error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
 	info, err := sp.Files().Get(ctx, fileId)
 	if err != nil {
 		return 0, timeoutOr(ctx, err)
@@ -82,7 +71,7 @@ func (a *account) fileRead(spaceId, fileId, outPath string, timeout time.Duratio
 	defer r.Close()
 	tmp, err := os.CreateTemp(filepath.Dir(outPath), ".any_shim_read_*")
 	if err != nil {
-		return 0, invalid("create in %s: %v", filepath.Dir(outPath), err)
+		return 0, fmt.Errorf("create in %s: %w", filepath.Dir(outPath), err)
 	}
 	keep := false
 	defer func() {
@@ -193,18 +182,32 @@ func any_shim_file_status(h C.uint64_t, spaceID, fileID *C.char, outJSON, outErr
 	})
 }
 
-//export any_shim_file_read
-func any_shim_file_read(h C.uint64_t, spaceID, fileID, outPath *C.char, timeoutMs C.int32_t, outBytes *C.int64_t, outErr **C.char) C.any_shim_status {
+//export any_shim_file_read_start
+func any_shim_file_read_start(h C.uint64_t, spaceID, fileID, outPath *C.char, timeoutMs C.int32_t, outOp *C.uint64_t, outErr **C.char) C.any_shim_status {
 	return guard(outErr, func() error {
 		return withAccount(h, func(a *account) error {
-			if outBytes == nil {
-				return invalid("out_bytes is NULL")
+			if outOp == nil {
+				return invalid("out_op is NULL")
 			}
-			n, err := a.fileRead(goStr(spaceID), goStr(fileID), goStr(outPath), time.Duration(timeoutMs)*time.Millisecond)
+			d, err := positiveTimeout(timeoutMs)
 			if err != nil {
 				return err
 			}
-			*outBytes = C.int64_t(n)
+			fid, path := goStr(fileID), goStr(outPath)
+			if fid == "" || path == "" {
+				return invalid("file id and out path are required")
+			}
+			sp, err := a.space(goStr(spaceID))
+			if err != nil {
+				return err
+			}
+			putOp(outOp, a.startOp(func(ctx context.Context) (any, error) {
+				n, err := fileRead(ctx, sp, fid, path, d)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"bytes": n}, nil
+			}))
 			return nil
 		})
 	})

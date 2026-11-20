@@ -29,10 +29,10 @@ import (
 
 // abiVersion must equal ANY_SHIM_ABI_VERSION; TestAbiVersionMatchesHeader
 // holds them together.
-const abiVersion = 1
+const abiVersion = 2
 
 // shimVersion names this shim's own release, independent of the SDK's.
-const shimVersion = "0.1.0"
+const shimVersion = "0.2.0-dev"
 
 //export any_shim_abi_version
 func any_shim_abi_version() C.uint32_t { return C.uint32_t(abiVersion) }

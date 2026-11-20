@@ -32,6 +32,16 @@ Map<String, Object?> waitOp(
   throw TimeoutException('op $op');
 }
 
+/// any_shim_account_open_start, then its op (H1).
+AnyShimAccount openAccountNow(Map<String, Object?> options) =>
+    AnyShimAccount.fromOpenResult(waitOp(AnyShimAccount.openStart(options)));
+
+/// index close and bind are ops (H3).
+void closeIndex(AnyShimIndex x) => waitOp(x.closeStart());
+
+Map<String, Object?> bindIndex(AnyShimIndex x, Map<String, Object?> cfg) =>
+    waitOp(x.bindStart(cfg));
+
 final class TimeoutException implements Exception {
   TimeoutException(this.what);
   final String what;
@@ -44,7 +54,7 @@ void main() {
   tearDown(() => tmp.deleteSync(recursive: true));
 
   AnyShimAccount openAccount() {
-    final a = AnyShimAccount.open({
+    final a = openAccountNow({
       'dataDir': '${tmp.path}/sdk',
       'indexDir': '${tmp.path}/index',
       'ownerToken': 'native-test',
@@ -79,7 +89,7 @@ void main() {
         'N83gJpVd9MuNRZAuJLZ7LiMntTThhPc6DtzWWVjb1M3PouVU',
       );
       expect(
-        () => AnyShimAccount.open({
+        () => openAccountNow({
           'dataDir': '${tmp.path}/sdk',
           'indexDir': '${tmp.path}/index',
           'ownerToken': 't',
@@ -117,7 +127,7 @@ void main() {
     test('the same directory under the same token is refused', () {
       openAccount();
       expect(
-        () => AnyShimAccount.open({
+        () => openAccountNow({
           'dataDir': '${tmp.path}/sdk',
           'indexDir': '${tmp.path}/index2',
           'ownerToken': 'native-test',
@@ -191,6 +201,15 @@ void main() {
                 },
               }, const [])['id']!
               as String;
+      // H5: the same id without a write.
+      expect(
+        a.objectDeriveId(
+          space,
+          'flutter_edge_ai.rag/manifest/n',
+          loc['rootId']! as String,
+        )['id'],
+        manifest,
+      );
       a.recordsModify(space, manifest, loc['tombstones']! as String, [
         {
           'id': 'clear',
@@ -238,13 +257,13 @@ void main() {
       });
       addTearDown(() {
         try {
-          x.close();
+          closeIndex(x);
         } on AnyShimException {
           // closed by the test
         }
       });
       expect(x.info(), isEmpty);
-      final bound = x.bind({
+      final bound = bindIndex(x, {
         'dim': 3,
         'metric': 'cosine',
         'fields': [
@@ -254,7 +273,7 @@ void main() {
       });
       expect(bound['dim'], 3);
       expect(
-        () => x.bind({
+        () => bindIndex(x, {
           'dim': 4,
           'metric': 'cosine',
           'fields': [],
@@ -347,18 +366,28 @@ void main() {
       expect((x.get('docs', 'b')! as Map)['meta'], '{"m":1}');
       final scan = x.scan('state', prefix: 'cur');
       expect((scan['items']! as List), hasLength(1));
-      x.close();
+      // H4: a swap leaves an orphan that gc drops in bounded rounds.
+      x.apply({
+        'ops': [
+          {'op': 'shadowBegin'},
+          {'op': 'shadowSwap'},
+        ],
+      }, Float32List(0));
+      var done = false;
+      for (var i = 0; i < 100 && !done; i++) {
+        done = x.gc(100)['done'] == true;
+      }
+      expect(done, isTrue);
+      closeIndex(x);
       expect(() => x.count(), throwsStatus(AnyShimStatus.closed));
     });
 
     test('the keycheck tells another key from a corrupt file', () {
       final path = '${tmp.path}/k/index.anystore';
       final key = 'ab' * 32;
-      AnyShimIndex.open({
-        'path': path,
-        'keyHex': key,
-        'ownerToken': 't',
-      }).close();
+      closeIndex(
+        AnyShimIndex.open({'path': path, 'keyHex': key, 'ownerToken': 't'}),
+      );
       expect(
         () => AnyShimIndex.open({'path': path, 'ownerToken': 't'}),
         throwsStatus(AnyShimStatus.keyMissing),
@@ -371,11 +400,9 @@ void main() {
         }),
         throwsStatus(AnyShimStatus.keyMismatch),
       );
-      AnyShimIndex.open({
-        'path': path,
-        'keyHex': key,
-        'ownerToken': 't',
-      }).close();
+      closeIndex(
+        AnyShimIndex.open({'path': path, 'keyHex': key, 'ownerToken': 't'}),
+      );
     });
   });
 }

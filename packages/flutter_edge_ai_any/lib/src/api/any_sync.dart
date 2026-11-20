@@ -9,6 +9,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
@@ -31,8 +32,6 @@ part 'types.dart';
 
 /// The platform's native layer, or the test override.
 AnyNative _nativeLayer() => debugAnyNativeOverride ?? createAnyNative();
-
-int _nowMs() => DateTime.now().millisecondsSinceEpoch;
 
 /// The largest topK a search takes (any-store's KnnMaxK).
 const _maxTopK = 10000;
@@ -69,7 +68,12 @@ VectorStoreBinding _bindingFrom(Map<String, Object?> j) => VectorStoreBinding(
 /// input never reaches the query syntax; the terms are OR'ed (any-store's
 /// default).
 String? _textQuery(String text) {
-  final terms = text.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+  // C strings end at a NUL; a NUL is never part of a term.
+  final terms = text
+      .replaceAll('\u0000', ' ')
+      .split(RegExp(r'\s+'))
+      .where((t) => t.isNotEmpty)
+      .toList();
   if (terms.isEmpty) return null;
   return terms.map((t) => '"${t.replaceAll('"', '""')}"').join(' ');
 }

@@ -30,7 +30,12 @@ void main() {
     final net = FakeNetwork();
     final rt = await net.native().start() as FakeRuntime;
     final sdk = rt.sdkImpl;
-    sdk.openAccount({'dataDir': '/d', 'ownerToken': 't', 'mnemonic': 'm'});
+    final open = sdk.openAccountStart({
+      'dataDir': '/d',
+      'ownerToken': 't',
+      'mnemonic': 'm',
+    });
+    sdk.adoptAccount((await awaitOp(sdk, open))!);
     final space = sdk.spaceCreate('s')['id']! as String;
     sdk.device!.loading.add(space);
     final op = sdk.spaceResolveStart(space);

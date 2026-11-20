@@ -113,6 +113,7 @@ Page readFollowerPage(
     ...extraIds,
   };
   final items = readObjects(sdk, cfg.spaceId, ids, docXkeys);
+  final all = withExtras(changes, extraIds);
   final manifestChanged =
       readTombstones || changes.any((c) => c.objectId == cfg.manifestId);
   ManifestRead? manifest;
@@ -128,12 +129,48 @@ Page readFollowerPage(
     toSeq: toSeq,
     cursorRaw: cursorRaw,
     clearRaw: clearRaw,
-    changes: changes,
+    changes: all,
     items: items,
     manifest: manifest,
     tombs: tombs?.records,
     tombSeq: tombs?.seq,
     more: more,
+  );
+}
+
+/// [changes] with a synthetic entry in front for each extra object a page
+/// carries that the feed did not name (a winner an earlier attempt needed),
+/// so applyPage judges it like any other (D1); a deleted one is forgotten.
+List<ChangeItem> withExtras(List<ChangeItem> changes, List<String> extraIds) {
+  if (debugEngineMutations.contains('extrasNotApplied')) return changes;
+  final named = {for (final c in changes) c.objectId};
+  return [
+    for (final id in extraIds)
+      if (!named.contains(id)) ChangeItem(id, 0, false),
+    ...changes,
+  ];
+}
+
+/// Adds [ids] to [page]: their objects and a synthetic change each.
+Page withObjects(AnySdk sdk, LocConfig cfg, Page page, List<String> ids) {
+  final items = {
+    ...page.items,
+    ...readObjects(sdk, cfg.spaceId, ids, docXkeys),
+  };
+  return Page(
+    generation: page.generation,
+    maxApplySeq: page.maxApplySeq,
+    fromSeq: page.fromSeq,
+    toSeq: page.toSeq,
+    cursorRaw: page.cursorRaw,
+    clearRaw: page.clearRaw,
+    changes: withExtras(page.changes, ids),
+    items: items,
+    manifest: page.manifest,
+    tombs: page.tombs,
+    tombSeq: page.tombSeq,
+    more: page.more,
+    next: page.next,
   );
 }
 

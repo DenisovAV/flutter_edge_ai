@@ -10,7 +10,9 @@
 // yield between them (awaitOp), so a 20 s syncNow does not queue another
 // location's writes behind it.
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:ffi';
+import 'dart:io' show sleep;
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -35,8 +37,17 @@ final class _FfiNative implements AnyNative {
   @override
   Future<AnyRuntime> start() async {
     final sdk = await _Worker.spawn('sdk');
-    final index = await _Worker.spawn('index');
+    final _Worker index;
+    try {
+      index = await _Worker.spawn('index');
+    } catch (_) {
+      sdk.stop();
+      rethrow;
+    }
     sdk.send(_IndexPort(index.port));
+    // The SDK isolate waits for index answers (toIndex); when the index
+    // isolate goes, those waits fail instead of hanging.
+    index.onExit = () => sdk.send(const _IndexGone());
     return _FfiRuntime(sdk, index);
   }
 }
@@ -135,6 +146,10 @@ final class _IndexPort {
   final SendPort port;
 }
 
+final class _IndexGone {
+  const _IndexGone();
+}
+
 final class _Job {
   _Job(this.run, this.reply);
   final FutureOr<Object?> Function(Object ctx) run;
@@ -142,28 +157,48 @@ final class _Job {
 }
 
 final class _Worker {
-  _Worker._(this.port, this._isolate, this._exit);
+  _Worker._(this.port, this._isolate, this._exit, this._errors);
 
   final SendPort port;
   final Isolate _isolate;
   final RawReceivePort _exit;
-  final _pending = <Completer<Object?>>{};
+  final RawReceivePort _errors;
+  final _pending = <Completer<Object?>, RawReceivePort>{};
   bool _stopped = false;
+  void Function()? onExit;
 
   static Future<_Worker> spawn(String kind) async {
     final boot = ReceivePort();
     final exit = RawReceivePort();
-    final isolate = await Isolate.spawn(
-      _workerMain,
-      [boot.sendPort, kind],
-      debugName: 'flutter_edge_ai_any $kind',
-      onExit: exit.sendPort,
-      onError: exit.sendPort,
-      errorsAreFatal: false,
-    );
+    final errors = RawReceivePort();
+    final Isolate isolate;
+    try {
+      isolate = await Isolate.spawn(
+        _workerMain,
+        [boot.sendPort, kind],
+        debugName: 'flutter_edge_ai_any $kind',
+        onExit: exit.sendPort,
+        onError: errors.sendPort,
+        errorsAreFatal: false,
+      );
+    } catch (_) {
+      boot.close();
+      exit.close();
+      errors.close();
+      rethrow;
+    }
     final port = await boot.first as SendPort;
-    final worker = _Worker._(port, isolate, exit);
-    exit.handler = (_) => worker._failAll('the $kind isolate exited');
+    final worker = _Worker._(port, isolate, exit, errors);
+    exit.handler = (_) {
+      worker._failAll('the $kind isolate exited');
+      worker.onExit?.call();
+    };
+    // An uncaught error in a job's async tail: the isolate lives on (errors
+    // are not fatal), so it is logged and the other jobs carry on.
+    errors.handler = (Object? e) => developer.log(
+      'uncaught error in the $kind isolate: $e',
+      name: 'flutter_edge_ai_any',
+    );
     return worker;
   }
 
@@ -174,8 +209,8 @@ final class _Worker {
       return Future.error(StateError('flutter_edge_ai_any: runtime stopped'));
     }
     final done = Completer<Object?>();
-    _pending.add(done);
     final reply = RawReceivePort();
+    _pending[done] = reply;
     reply.handler = (Object? msg) {
       reply.close();
       _pending.remove(done);
@@ -192,7 +227,8 @@ final class _Worker {
   }
 
   void _failAll(String why) {
-    for (final c in [..._pending]) {
+    for (final MapEntry(key: c, value: reply) in [..._pending.entries]) {
+      reply.close();
       if (!c.isCompleted) c.completeError(StateError(why));
     }
     _pending.clear();
@@ -204,6 +240,7 @@ final class _Worker {
     port.send(const _Stop());
     _failAll('flutter_edge_ai_any: runtime stopped');
     _exit.close();
+    _errors.close();
     // The worker closes its port on _Stop and exits once its jobs end; a
     // job blocked in native code ends within its 250 ms slice.
     Future<void>.delayed(const Duration(seconds: 5), () {
@@ -224,6 +261,8 @@ void _workerMain(List<Object?> args) {
   port.handler = (Object? msg) {
     if (msg is _IndexPort) {
       (ctx as FfiSdk).indexPort = msg.port;
+    } else if (msg is _IndexGone) {
+      (ctx as FfiSdk).indexGone();
     } else if (msg is _Job) {
       _runJob(ctx, msg);
     } else if (msg is _Stop) {
@@ -275,17 +314,21 @@ final class FfiSdk implements AnySdk {
   int? get accountHandle => _account?.handle;
 
   @override
-  int openAccount(Map<String, Object?> options) {
-    final a = AnyShimAccount.open(options);
+  int openAccountStart(Map<String, Object?> options) =>
+      AnyShimAccount.openStart(options);
+
+  @override
+  int adoptAccount(Map<String, Object?> openResult) {
+    final a = AnyShimAccount.fromOpenResult(openResult);
     _account = a;
     return a.handle;
   }
 
   @override
-  int closeAccountStart() {
+  int closeAccountStart({int waitLoadsMs = 0}) {
     final a = _a;
     _account = null;
-    return a.closeStart();
+    return a.closeStart(waitLoadsMs: waitLoadsMs);
   }
 
   @override
@@ -330,6 +373,13 @@ final class FfiSdk implements AnySdk {
     String spaceId,
     Map<String, Object?> request,
   ) => _a.objectRead(spaceId, request);
+
+  @override
+  Map<String, Object?> objectDeriveId(
+    String spaceId,
+    String seed,
+    String typeId,
+  ) => _a.objectDeriveId(spaceId, seed, typeId);
 
   @override
   void objectDelete(String spaceId, String objectId) =>
@@ -386,25 +436,42 @@ final class FfiSdk implements AnySdk {
   @override
   void opCancel(int op) => AnyShim.opCancel(op);
 
+  final _toIndex = <Completer<Object?>, RawReceivePort>{};
+
+  /// The index isolate exited: every wait for it fails, later ones too.
+  void indexGone() {
+    indexPort = null;
+    for (final MapEntry(key: c, value: reply) in [..._toIndex.entries]) {
+      reply.close();
+      if (!c.isCompleted) {
+        c.completeError(StateError('flutter_edge_ai_any: index isolate gone'));
+      }
+    }
+    _toIndex.clear();
+  }
+
   @override
   Future<T> toIndex<T>(IndexJob<T> job) {
     final port = indexPort;
     if (port == null) {
       return Future.error(StateError('flutter_edge_ai_any: no index isolate'));
     }
-    final done = Completer<T>();
+    final done = Completer<Object?>();
     final reply = RawReceivePort();
+    _toIndex[done] = reply;
     reply.handler = (Object? msg) {
       reply.close();
+      _toIndex.remove(done);
+      if (done.isCompleted) return;
       final m = msg! as List;
       if (m[0] == true) {
-        done.complete(m[1] as T);
+        done.complete(m[1]);
       } else {
         done.completeError(m[1]!, StackTrace.fromString(m[2]! as String));
       }
     };
     port.send(_Job(_indexJob(job), reply.sendPort));
-    return done.future;
+    return done.future.then((v) => v as T);
   }
 }
 
@@ -415,6 +482,12 @@ final class FfiIndexHost implements AnyIndexHost {
   int open(Map<String, Object?> options) => AnyShimIndex.open(options).handle;
 
   @override
+  OpPoll opWait(int op, int waitMs) => AnyShim.opWait(op, waitMs);
+
+  @override
+  void opCancel(int op) => AnyShim.opCancel(op);
+
+  @override
   AnyIndexApi index(int handle) => FfiIndexApi(AnyShimIndex.fromHandle(handle));
 }
 
@@ -423,10 +496,13 @@ final class FfiIndexApi implements AnyIndexApi {
   final AnyShimIndex _x;
 
   @override
-  void close() => _x.close();
+  int closeStart() => _x.closeStart();
 
   @override
-  Map<String, Object?> bind(Map<String, Object?> config) => _x.bind(config);
+  int bindStart(Map<String, Object?> config) => _x.bindStart(config);
+
+  @override
+  Map<String, Object?> gc(int budgetMs) => _x.gc(budgetMs);
 
   @override
   Map<String, Object?> info() => _x.info();
@@ -544,6 +620,11 @@ final class _EventsPoller {
         stop();
         return;
       }
+      if (msg is String) {
+        _controller.addError(StateError(msg));
+        stop();
+        return;
+      }
       for (final e in (msg as List)) {
         _controller.add((e as Map).cast<String, Object?>());
       }
@@ -568,17 +649,26 @@ final class _EventsPoller {
 void _eventsMain(List<Object?> args) {
   final out = args[0]! as SendPort;
   final account = AnyShimAccount.fromHandle(args[1]! as int);
+  var failures = 0;
   while (true) {
     try {
       final events = account.pollEvents(maxEvents: 256, timeoutMs: 250);
+      failures = 0;
       if (events.isNotEmpty) out.send(events);
     } on AnyShimException catch (e) {
       if (e.status == AnyShimStatus.closed) {
         out.send(null);
         return;
       }
-      // Anything else is reported by the calls that need the account; the
-      // poller only keeps the followers awake.
+      // Never a hot loop: wait a slice; after many in a row, give up and
+      // say why (the account restarts the poller).
+      if (++failures >= _maxPollFailures) {
+        out.send('events_poll failed $failures times: ${e.message}');
+        return;
+      }
+      sleep(const Duration(milliseconds: 250));
     }
   }
 }
+
+const _maxPollFailures = 20;

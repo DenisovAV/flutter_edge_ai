@@ -21,7 +21,11 @@ void main() {
         debugEngineMutations.clear();
         await w.dispose();
       }
-      expect(failure, isNotNull, reason: 'the scenario passed without $rule');
+      expect(
+        failure,
+        isA<TestFailure>(),
+        reason: 'the scenario passed (or broke otherwise) without $rule',
+      );
     });
   }
 }

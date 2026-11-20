@@ -15,6 +15,9 @@ import 'package:flutter_edge_ai_any/flutter_edge_ai_any.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:flutter_edge_ai_any/src/native/any_native.dart'
+    show debugAccountClockSkewMs;
+
 import '../support/native_library.dart';
 
 final profile = EmbeddingProfile(id: 'lan-test-v1', dimension: 4);
@@ -131,6 +134,41 @@ void main() {
         return (await ia.stats()).documentCount == 1;
       }, what: 'A applies the remove');
       expect((await ib.stats()).documentCount, 1);
+
+      Future<String?> top(RagIndex i, List<double> q) async {
+        final hits = await i.searchVector(embedding: q, topK: 1);
+        return hits.isEmpty ? null : hits.single.content;
+      }
+
+      // Concurrent updates of one key: both devices settle on the same
+      // winner (the higher rev).
+      await Future.wait([
+        ia.addVector(id: 'c', embedding: [0, 0, 1, 0], content: 'from a'),
+        ib.addVector(id: 'c', embedding: [0, 0, 1, 0], content: 'from b'),
+      ]);
+      await until(() async {
+        await a.syncNow(loc, timeout: const Duration(seconds: 5));
+        await b.syncNow(loc, timeout: const Duration(seconds: 5));
+        final ta = await top(ia, [0, 0, 1, 0]);
+        return ta != null && ta == await top(ib, [0, 0, 1, 0]);
+      }, what: 'both devices agree on the concurrent update');
+
+      // A clock 10 min ahead on B: A counts the lead, and A's next write
+      // still wins (its HLC took in B's rev).
+      debugAccountClockSkewMs['$dir/b/sdk'] = 10 * 60 * 1000;
+      await ib.addVector(id: 'z', embedding: [0, 0, 0, 1], content: 'b ahead');
+      debugAccountClockSkewMs.clear();
+      await until(() async {
+        await a.syncNow(loc, timeout: const Duration(seconds: 5));
+        return await top(ia, [0, 0, 0, 1]) == 'b ahead';
+      }, what: 'A receives the write from the clock ahead');
+      expect((await a.locationStatus(loc)).revsAheadOfClock, greaterThan(0));
+      await ia.addVector(id: 'z', embedding: [0, 0, 0, 1], content: 'a later');
+      await until(() async {
+        await b.syncNow(loc, timeout: const Duration(seconds: 5));
+        return await top(ib, [0, 0, 0, 1]) == 'a later';
+      }, what: "B sees A's later write win over its clock-ahead one");
+
       await ia.dispose();
       await ib.dispose();
     },

@@ -13,13 +13,41 @@ import 'reads.dart' as r;
 
 // ------------------------------------------------------------------ SDK
 
-SdkJob<int> openAccountJob(Map<String, Object?> options) =>
-    (s) => s.openAccount(options);
+/// Starts the open (claims and lock now: BUSY / REFUSED at once) and waits
+/// for `anysyncsdk.Open` in slices. Returns the handle.
+SdkJob<int> openAccountJob(Map<String, Object?> options) => (s) async {
+  final op = s.openAccountStart(options);
+  final r = await awaitOp(
+    s,
+    op,
+    deadline: DateTime.now().add(const Duration(minutes: 2)),
+  );
+  if (r == null) {
+    throw AnyShimException(
+      'any_shim_account_open_start',
+      AnyShimStatus.timeout.code,
+      'the SDK did not open within 2 min',
+    );
+  }
+  return s.adoptAccount(r);
+};
 
-/// Starts the close and waits for it in slices.
-SdkJob<void> closeAccountJob() => (s) async {
-  final op = s.closeAccountStart();
-  await awaitOp(s, op);
+/// Starts the close and waits for it in slices, at most [waitLoadsMs] for
+/// space loads in flight plus 15 s for the close itself.
+SdkJob<void> closeAccountJob({int waitLoadsMs = 0}) => (s) async {
+  final op = s.closeAccountStart(waitLoadsMs: waitLoadsMs);
+  final r = await awaitOp(
+    s,
+    op,
+    deadline: DateTime.now().add(Duration(milliseconds: waitLoadsMs + 15000)),
+  );
+  if (r == null) {
+    throw AnyShimException(
+      'any_shim_account_close_start',
+      AnyShimStatus.timeout.code,
+      'the SDK did not close in time; it goes on closing natively',
+    );
+  }
 };
 
 SdkJob<Map<String, Object?>> accountInfoJob() =>
@@ -39,8 +67,8 @@ SdkJob<Map<String, Object?>> spaceListSyncJob(int timeoutMs) => (s) async {
     op,
     deadline: DateTime.now().add(Duration(milliseconds: timeoutMs + 2000)),
   );
-  return res ??
-      {'spaces': const [], 'syncError': 'timed out', 'timedOut': true};
+  // The deadline passed: the local list, said to be one.
+  return res ?? {...s.spaceList(), 'syncError': 'timed out', 'timedOut': true};
 };
 
 /// Resolves a space, waiting at most [waitMs]: `ok`, or `loading` when the
@@ -61,6 +89,7 @@ SdkJob<Map<String, Object?>> spaceStatusJob(String spaceId) =>
 /// `{reachedPeer, timedOut, error}`; the deadline passing is a result.
 SdkJob<Map<String, Object?>> syncHeadsJob(String spaceId, int timeoutMs) =>
     (s) async {
+      if (timeoutMs <= 0) timeoutMs = 1;
       final op = s.syncHeadsStart(spaceId, timeoutMs);
       final res = await awaitOp(
         s,
@@ -73,12 +102,11 @@ SdkJob<Map<String, Object?>> syncHeadsJob(String spaceId, int timeoutMs) =>
 SdkJob<Map<String, Object?>> ragBundlesJob(String spaceId, bool ensure) =>
     (s) => s.ragBundles(spaceId, ensure: ensure);
 
-/// The location's manifest object id: derived from its seed, with no ops.
+/// The location's manifest object id, computed without a write (a reader
+/// may call it).
 SdkJob<String> manifestIdJob(String spaceId, String indexName, String root) =>
     (s) =>
-        s.objectPatch(spaceId, {
-              'derive': {'seed': manifestSeed(indexName), 'type': root},
-            }, const [])['id']!
+        s.objectDeriveId(spaceId, manifestSeed(indexName), root)['id']!
             as String;
 
 SdkJob<ManifestRead> readManifestJob(String spaceId, String manifestId) =>
@@ -146,9 +174,34 @@ SdkJob<(e.PageOutcome, bool more)> pullStepJob(
     readTombstones: readTombstones,
     extraIds: extraIds,
   );
-  final outcome = await s.toIndex(_applyJob(handle, cfg, page, nowMs, shadow));
+  final outcome = await _applyConverging(s, cfg, handle, page, nowMs, shadow);
   return (outcome, page.more);
 };
+
+/// Applies [page]; when it needs winners it did not carry, reads them (with
+/// a synthetic change each, D1) and applies again, a few rounds at most.
+Future<e.PageOutcome> _applyConverging(
+  AnySdk s,
+  e.LocConfig cfg,
+  int handle,
+  e.Page page,
+  int nowMs,
+  bool shadow,
+) async {
+  var p = page;
+  var outcome = await s.toIndex(_applyJob(handle, cfg, p, nowMs, shadow));
+  final asked = <String>{};
+  for (var round = 0; round < 5 && outcome.needObjects.isNotEmpty; round++) {
+    final fresh = [
+      for (final id in outcome.needObjects)
+        if (asked.add(id)) id,
+    ];
+    if (fresh.isEmpty) break;
+    p = r.withObjects(s, cfg, p, asked.toList());
+    outcome = await s.toIndex(_applyJob(handle, cfg, p, nowMs, shadow));
+  }
+  return outcome;
+}
 
 IndexJob<e.PageOutcome> _applyJob(
   int handle,
@@ -169,7 +222,7 @@ rebuildPageJob(
   required int nowMs,
 }) => (s) async {
   final page = r.readTypePage(s, cfg, after: after);
-  final outcome = await s.toIndex(_applyJob(handle, cfg, page, nowMs, true));
+  final outcome = await _applyConverging(s, cfg, handle, page, nowMs, true);
   return (
     outcome: outcome,
     generation: page.generation,
@@ -214,9 +267,7 @@ replayStepJob(
     changes: page.changes,
     items: page.items,
   );
-  final outcome = await s.toIndex(
-    _applyJob(handle, cfg, noCursor, nowMs, true),
-  );
+  final outcome = await _applyConverging(s, cfg, handle, noCursor, nowMs, true);
   return (
     outcome: outcome,
     generation: page.generation,
@@ -230,14 +281,38 @@ replayStepJob(
 IndexJob<int> indexOpenJob(Map<String, Object?> options) =>
     (h) => h.open(options);
 
-IndexJob<void> indexCloseJob(int handle) =>
-    (h) => h.index(handle).close();
+/// Starts the close and waits for it in slices.
+IndexJob<void> indexCloseJob(int handle) => (h) async {
+  final op = h.index(handle).closeStart();
+  await awaitOp(
+    h,
+    op,
+    deadline: DateTime.now().add(const Duration(minutes: 1)),
+  );
+};
 
+/// Binds (a growing bind backfills every row, so it is an op) and returns
+/// the bound configuration.
 IndexJob<Map<String, Object?>> indexBindJob(
   int handle,
   Map<String, Object?> config,
-) =>
-    (h) => h.index(handle).bind(config);
+) => (h) async {
+  final op = h.index(handle).bindStart(config);
+  return (await awaitOp(h, op))!;
+};
+
+/// One bounded round of dropping orphan generations; whether all are gone.
+IndexJob<bool> indexGcJob(int handle) =>
+    (h) => h.index(handle).gc(200)['done'] == true;
+
+/// Documents written under a binding the manifest does not have.
+IndexJob<int> conflictingDocumentsJob(int handle) => (h) {
+  var n = 0;
+  e.scanAll(h.index(handle), 'u/', (k, v) {
+    if ((jsonDecode(v) as Map)['r'] == 'conflictingBinding') n++;
+  });
+  return n;
+};
 
 IndexJob<Map<String, Object?>> indexInfoJob(int handle) =>
     (h) => h.index(handle).info();
@@ -378,6 +453,7 @@ IndexJob<
     List<String> dominated,
     List<(String, String)> supersede,
     List<(String, String)> blank,
+    List<String> blankStale,
   })
 >
 planCompactionJob(int handle) =>

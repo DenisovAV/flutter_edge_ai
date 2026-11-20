@@ -38,21 +38,38 @@ Object? coerceField(Object? value, FilterFieldType type) => switch (type) {
 
 /// A row's `f` object: every declared field [metadata] carries a coercible
 /// value for, keyed by its field key.
-Map<String, Object?> normaliseFields(String? metadata, FilterSchema schema) {
-  if (schema.isEmpty || metadata == null || metadata.isEmpty) return const {};
+Map<String, Object?> normaliseFields(String? metadata, FilterSchema schema) =>
+    normaliseFieldsCounted(metadata, schema).f;
+
+/// [normaliseFields], and how many values it dropped: a declared field
+/// present with a value of another type, or metadata that is not a JSON
+/// object (counted once). A dropped value never matches a filter.
+({Map<String, Object?> f, int dropped}) normaliseFieldsCounted(
+  String? metadata,
+  FilterSchema schema,
+) {
+  if (schema.isEmpty || metadata == null || metadata.isEmpty) {
+    return (f: const {}, dropped: 0);
+  }
   Object? decoded;
   try {
     decoded = jsonDecode(metadata);
   } on FormatException {
-    return const {};
+    return (f: const {}, dropped: 1);
   }
-  if (decoded is! Map) return const {};
+  if (decoded is! Map) return (f: const {}, dropped: 1);
   final out = <String, Object?>{};
+  var dropped = 0;
   for (final field in schema.fields) {
-    final v = coerceField(decoded[field.name], field.type);
-    if (v != null) out[fieldKeyOf(field)] = v;
+    final raw = decoded[field.name];
+    final v = coerceField(raw, field.type);
+    if (v != null) {
+      out[fieldKeyOf(field)] = v;
+    } else if (raw != null) {
+      dropped++;
+    }
   }
-  return out;
+  return (f: out, dropped: dropped);
 }
 
 /// The translated filter: null [query] with [matchesNothing] false means

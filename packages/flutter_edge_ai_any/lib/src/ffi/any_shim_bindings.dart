@@ -56,18 +56,19 @@ external int any_shim_op_cancel(int op, OutStr outError);
 // ------------------------------------------------------------- account
 
 @Native<Status Function(Pointer<Utf8>, Pointer<Uint64>, OutStr)>()
-external int any_shim_account_open(
+external int any_shim_account_open_start(
   Pointer<Utf8> optsJson,
-  Pointer<Uint64> outAccount,
+  Pointer<Uint64> outOp,
   OutStr outError,
 );
 
 @Native<Status Function(Uint64, OutStr)>()
 external int any_shim_account_cancel(int account, OutStr outError);
 
-@Native<Status Function(Uint64, Pointer<Uint64>, OutStr)>()
+@Native<Status Function(Uint64, Int32, Pointer<Uint64>, OutStr)>()
 external int any_shim_account_close_start(
   int account,
+  int waitLoadsMs,
   Pointer<Uint64> outOp,
   OutStr outError,
 );
@@ -185,6 +186,25 @@ external int any_shim_object_read(
   int account,
   Pointer<Utf8> spaceId,
   Pointer<Utf8> requestJson,
+  OutStr outJson,
+  OutStr outError,
+);
+
+@Native<
+  Status Function(
+    Uint64,
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+    OutStr,
+    OutStr,
+  )
+>()
+external int any_shim_object_derive_id(
+  int account,
+  Pointer<Utf8> spaceId,
+  Pointer<Utf8> seed,
+  Pointer<Utf8> typeId,
   OutStr outJson,
   OutStr outError,
 );
@@ -360,16 +380,28 @@ external int any_shim_index_open(
   OutStr outError,
 );
 
-@Native<Status Function(Uint64, OutStr)>()
-external int any_shim_index_close(int index, OutStr outError);
+@Native<Status Function(Uint64, Pointer<Uint64>, OutStr)>()
+external int any_shim_index_close_start(
+  int index,
+  Pointer<Uint64> outOp,
+  OutStr outError,
+);
 
 @Native<Void Function(UintPtr)>()
 external void any_shim_index_release(int index);
 
-@Native<Status Function(Uint64, Pointer<Utf8>, OutStr, OutStr)>()
-external int any_shim_index_bind(
+@Native<Status Function(Uint64, Pointer<Utf8>, Pointer<Uint64>, OutStr)>()
+external int any_shim_index_bind_start(
   int index,
   Pointer<Utf8> bindJson,
+  Pointer<Uint64> outOp,
+  OutStr outError,
+);
+
+@Native<Status Function(Uint64, Int32, OutStr, OutStr)>()
+external int any_shim_index_gc(
+  int index,
+  int budgetMs,
   OutStr outJson,
   OutStr outError,
 );

@@ -243,24 +243,35 @@ final class AnyShimAccount {
   /// The native handle; valid until the close starts.
   final int handle;
 
-  /// Opens an account; [options] as any_shim_account_open documents.
-  static AnyShimAccount open(Map<String, Object?> options) {
-    late Pointer<Uint64> out;
-    return _call('any_shim_account_open', (arena, err) {
-      out = arena<Uint64>();
-      return b.any_shim_account_open(_j(arena, options), out, err);
-    }, (_) => AnyShimAccount._(out.value));
-  }
+  /// Starts opening an account; [options] as any_shim_account_open_start
+  /// documents. The directory claims and the lock are taken here (BUSY or
+  /// REFUSED at once); the op's result is `{account}`.
+  static int openStart(Map<String, Object?> options) => _start(
+    'any_shim_account_open_start',
+    (arena, out, err) =>
+        b.any_shim_account_open_start(_j(arena, options), out, err),
+  );
+
+  /// The account an open op answered.
+  static AnyShimAccount fromOpenResult(Map<String, Object?> result) =>
+      AnyShimAccount._((result['account']! as num).toInt());
 
   void cancel() => _check(
     'any_shim_account_cancel',
     (_, err) => b.any_shim_account_cancel(handle, err),
   );
 
-  /// Starts the close; the handle is invalid at once. Returns the op.
-  int closeStart() => _start(
+  /// Starts the close; the handle is invalid at once. Returns the op. With
+  /// [waitLoadsMs] > 0 the op first waits that long for space loads in
+  /// flight (a suspend).
+  int closeStart({int waitLoadsMs = 0}) => _start(
     'any_shim_account_close_start',
-    (_, out, err) => b.any_shim_account_close_start(handle, out, err),
+    (_, out, err) => b.any_shim_account_close_start(
+      handle,
+      _i32(waitLoadsMs, 'waitLoadsMs'),
+      out,
+      err,
+    ),
   );
 
   Map<String, Object?> info() => _jsonMap(
@@ -370,6 +381,23 @@ final class AnyShimAccount {
       handle,
       _s(arena, spaceId),
       _j(arena, request),
+      out,
+      err,
+    ),
+  );
+
+  /// `{id}` of the object [seed] derives for [typeId], without a write.
+  Map<String, Object?> objectDeriveId(
+    String spaceId,
+    String seed,
+    String typeId,
+  ) => _jsonMap(
+    'any_shim_object_derive_id',
+    (arena, out, err) => b.any_shim_object_derive_id(
+      handle,
+      _s(arena, spaceId),
+      _s(arena, seed),
+      _s(arena, typeId),
       out,
       err,
     ),
@@ -576,15 +604,25 @@ final class AnyShimIndex {
     }, (_) => AnyShimIndex._(out.value));
   }
 
-  void close() => _check(
-    'any_shim_index_close',
-    (_, err) => b.any_shim_index_close(handle, err),
+  /// Starts the close; the op's result is `{}`.
+  int closeStart() => _start(
+    'any_shim_index_close_start',
+    (_, out, err) => b.any_shim_index_close_start(handle, out, err),
   );
 
-  Map<String, Object?> bind(Map<String, Object?> config) => _jsonMap(
-    'any_shim_index_bind',
+  /// Starts a bind (a growing bind backfills every row); the op's result is
+  /// the bound configuration.
+  int bindStart(Map<String, Object?> config) => _start(
+    'any_shim_index_bind_start',
     (arena, out, err) =>
-        b.any_shim_index_bind(handle, _j(arena, config), out, err),
+        b.any_shim_index_bind_start(handle, _j(arena, config), out, err),
+  );
+
+  /// Drops orphan generations within [budgetMs] (0..250): `{done}`.
+  Map<String, Object?> gc(int budgetMs) => _jsonMap(
+    'any_shim_index_gc',
+    (_, out, err) =>
+        b.any_shim_index_gc(handle, _i32(budgetMs, 'budgetMs'), out, err),
   );
 
   Map<String, Object?> info() => _jsonMap(

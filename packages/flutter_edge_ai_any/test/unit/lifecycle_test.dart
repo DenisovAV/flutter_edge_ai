@@ -226,11 +226,13 @@ void main() {
     },
   );
 
-  test('compact deletes dominated objects and repairs blank bodies', () async {
+  test('compact deletes dominated objects, keeps a superseded one whose '
+      'successor has not synced (D10), repairs blank bodies', () async {
     final a = await w.open('a');
     final s = await a.createSpace('s');
     final loc = AnySyncLocation(spaceId: s.id, indexName: 'n');
     final i = await openVectors(a, loc);
+    final space = w.device('a').space(s.id);
     w.runtimeOf('a').sdkImpl.failBodies = true;
     await i.addVector(id: 'x', embedding: [1, 0, 0, 0], content: 'v1');
     w.runtimeOf('a').sdkImpl.failBodies = false;
@@ -239,17 +241,21 @@ void main() {
     w.runtimeOf('a').sdkImpl.failBodies = true;
     await i.addVector(id: 'z', embedding: [0, 1, 0, 0], content: 'Z');
     w.runtimeOf('a').sdkImpl.failBodies = false;
+    // A peer's older version of y: dominated, and no supersede waits on it.
+    craftDoc(space, indexName: 'n', key: 'y', rev: 5, content: 'old y');
+    await a.pull(loc);
     var st = await a.locationStatus(loc);
-    expect(st.dominatedObjects, 1);
+    expect(st.dominatedObjects, 2);
+    expect(st.pendingSupersedeDeletes, 1);
     expect(st.blankBodies, 2);
     final c = await a.compact(loc);
-    expect(c.deleted, 1);
+    expect(c.deleted, 1, reason: 'the peer object; v1 waits for v2 to sync');
     expect(c.bodiesRepaired, 1, reason: 'the superseded one gets none');
-    final space = w.device('a').space(s.id);
-    expect(docObjects(space), hasLength(3));
+    expect(docObjects(space).map(contentOf).toSet(), {'v1', 'v2', 'Y', 'Z'});
     expect(docObjects(space).firstWhere((o) => contentOf(o) == 'Z').body, 'Z');
     st = await a.locationStatus(loc);
-    expect(st.dominatedObjects, 0);
+    expect(st.dominatedObjects, 1);
+    expect(st.pendingSupersedeDeletes, 1);
     expect(st.blankBodies, 0);
     expect(await idsOf(i, [1, 0, 0, 0]), containsAll(['x', 'y', 'z']));
   });

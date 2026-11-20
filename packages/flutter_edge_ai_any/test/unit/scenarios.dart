@@ -139,7 +139,56 @@ Future<void> hlcFeedsFromReads(World w) async {
   expect(onB.single.content, 'mine');
 }
 
+/// D1: a winner the page did not carry is read and applied: when the
+/// visible winner is deleted, the older object takes the row again.
+Future<void> fallbackWinnerIsRead(World w) async {
+  final p = await pair(w);
+  final h = leafKeyOf(profile4);
+  final n = p.loc.indexName;
+  craftDoc(
+    p.sa,
+    indexName: n,
+    key: 'k',
+    rev: 10,
+    content: 'old',
+    vecs: {
+      h: leafValue([1, 0, 0, 0], 'old'),
+    },
+  );
+  await p.a.pull(p.loc);
+  final fresh = craftDoc(
+    p.sa,
+    indexName: n,
+    key: 'k',
+    rev: 20,
+    content: 'new',
+    vecs: {
+      h: leafValue([1, 0, 0, 0], 'new'),
+    },
+  );
+  await p.a.pull(p.loc);
+  expect(
+    (await p.ia.searchVector(embedding: [1, 0, 0, 0], topK: 1)).single.content,
+    'new',
+  );
+  fresh.deleted = true;
+  p.sa.change(fresh.id, deleted: true);
+  try {
+    await p.a.pull(p.loc);
+  } catch (e) {
+    fail('the pull did not converge: $e');
+  }
+  expect(
+    (await p.ia.searchVector(embedding: [1, 0, 0, 0], topK: 1)).single.content,
+    'old',
+  );
+}
+
 final scenarios = <String, (Scenario, String)>{
+  'D1: a deleted winner falls back to the object the page lacked': (
+    fallbackWinnerIsRead,
+    'extrasNotApplied',
+  ),
   'S1: an unchanged re-add does not resurrect an unseen remove': (
     s1UnchangedReAddDoesNotResurrect,
     'noS1',

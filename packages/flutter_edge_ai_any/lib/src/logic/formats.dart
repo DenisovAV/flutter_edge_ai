@@ -179,7 +179,8 @@ final class LeafValue {
     if (v is! Map) return LeafValue(LeafKind.badVector);
     final fmt = v['fmt'];
     if (fmt is int && fmt > currentFmt) {
-      return LeafValue(LeafKind.newerFormat, ch: v['ch'] as String?);
+      final ch = v['ch'];
+      return LeafValue(LeafKind.newerFormat, ch: ch is String ? ch : null);
     }
     final dim = v['dim'];
     final ch = v['ch'];
@@ -194,7 +195,9 @@ final class LeafValue {
     }
     if (dim != dimension) return LeafValue(LeafKind.wrongDimension, ch: ch);
     final decoded = decodeVector(vec, dim);
-    if (decoded == null) return LeafValue(LeafKind.badVector, ch: ch);
+    if (decoded == null || vectorProblem(decoded) != null) {
+      return LeafValue(LeafKind.badVector, ch: ch);
+    }
     return LeafValue(LeafKind.ok, ch: ch, vector: decoded);
   }
 
@@ -236,14 +239,27 @@ Float32List? decodeVector(String b64, int dim) {
   return out;
 }
 
-/// [values] as float32, or null when one is not finite or does not stay
-/// finite as a float32.
+/// The largest squared L2 norm a vector may have: what the shim refuses
+/// beyond (MaxFloat32 / 8), so the index never meets a vector its cosine
+/// would overflow on.
+const double maxSquaredNorm = 3.4028234663852886e38 / 8;
+
+/// Why [v] cannot be stored, or null: a value that is not finite, or a
+/// squared norm above [maxSquaredNorm].
+String? vectorProblem(Float32List v) {
+  var sq = 0.0;
+  for (final x in v) {
+    if (!x.isFinite) return 'not finite';
+    sq += x * x;
+  }
+  if (!sq.isFinite || sq > maxSquaredNorm) return 'norm too large';
+  return null;
+}
+
+/// [values] as float32, or null when [vectorProblem] refuses them.
 Float32List? finiteFloat32(List<double> values) {
   final out = Float32List.fromList(values);
-  for (final x in out) {
-    if (!x.isFinite) return null;
-  }
-  return out;
+  return vectorProblem(out) == null ? out : null;
 }
 
 // -------------------------------------------------------------- manifest
@@ -283,10 +299,11 @@ final class ProfileLeaf {
 
 /// The manifest as a reader sees it (design §2.1): only leaves whose value
 /// hashes to their key count; the others are counted in [ignoredLeaves].
+/// `core` is object-kind, one leaf per modality (`core.DOCUMENTS =
+/// {"fmt":1}`): two leaves are a conflict every reader sees.
 final class ManifestRead {
   ManifestRead({
-    required this.present,
-    this.documents,
+    required this.coreLeaves,
     this.coreNewerFormat = false,
     this.fields = const [],
     this.profiles = const [],
@@ -294,23 +311,44 @@ final class ManifestRead {
     this.ignoredLeaves = 0,
   });
 
-  /// Whether `core` is there (the manifest was published).
-  final bool present;
-  final String? documents;
+  /// The modalities `core` names, sorted.
+  final List<String> coreLeaves;
   final bool coreNewerFormat;
   final List<FieldLeaf> fields;
   final List<ProfileLeaf> profiles;
   final bool textSearch;
   final int ignoredLeaves;
 
-  static final absent = ManifestRead(present: false);
+  /// Whether `core` is there (the manifest was published).
+  bool get present => coreLeaves.isNotEmpty;
+
+  /// The one modality, or null when absent or when two were published.
+  String? get documents => coreLeaves.length == 1 ? coreLeaves.single : null;
+
+  static final absent = ManifestRead(coreLeaves: const []);
+
+  static final _modalityLeaf = RegExp(r'^[a-z][a-z0-9-]{0,31}$');
 
   /// From the props of an object_read item (`core`, `fields`, `profiles`,
   /// `textSearch`).
   static ManifestRead fromProps(Map<String, Object?>? props) {
     if (props == null) return absent;
-    final core = _jsonValue(props['core']);
     var ignored = 0;
+    final core = <String>[];
+    var newer = false;
+    final c = _jsonValue(props['core']);
+    if (c is Map) {
+      for (final MapEntry(:key, :value) in c.entries) {
+        final v = _jsonValue(value);
+        final fmt = v is Map ? v['fmt'] : null;
+        if (key is! String || !_modalityLeaf.hasMatch(key) || fmt is! int) {
+          ignored++;
+          continue;
+        }
+        if (fmt > currentFmt) newer = true;
+        core.add(key);
+      }
+    }
     final fields = <FieldLeaf>[];
     final f = _jsonValue(props['fields']);
     if (f is Map) {
@@ -350,27 +388,16 @@ final class ManifestRead {
         ignored++;
       }
     }
+    core.sort();
     fields.sort((a, b) => a.key.compareTo(b.key));
     profiles.sort((a, b) => a.key.compareTo(b.key));
-    final textSearch = props['textSearch'] == true;
-    if (core is! Map) {
-      return ManifestRead(
-        present: false,
-        fields: fields,
-        profiles: profiles,
-        textSearch: textSearch,
-        ignoredLeaves: ignored,
-      );
-    }
-    final fmt = core['fmt'];
-    final docs = core['documents'];
+    final t = _jsonValue(props['textSearch']);
     return ManifestRead(
-      present: true,
-      documents: docs is String ? docs : null,
-      coreNewerFormat: fmt is! int || fmt > currentFmt,
+      coreLeaves: core,
+      coreNewerFormat: newer,
       fields: fields,
       profiles: profiles,
-      textSearch: textSearch,
+      textSearch: t is Map && t['on'] == true,
       ignoredLeaves: ignored,
     );
   }
@@ -378,6 +405,7 @@ final class ManifestRead {
   Map<String, Object?> toJson() => {
     'present': present,
     'documents': documents,
+    'core': coreLeaves,
     'coreNewerFormat': coreNewerFormat,
     'fields': [
       for (final f in fields) {'name': f.name, 'type': f.type},
@@ -391,8 +419,7 @@ final class ManifestRead {
   };
 
   static ManifestRead fromJson(Map<String, Object?> j) => ManifestRead(
-    present: j['present'] == true,
-    documents: j['documents'] as String?,
+    coreLeaves: [for (final c in (j['core'] as List? ?? const [])) c as String],
     coreNewerFormat: j['coreNewerFormat'] == true,
     fields: [
       for (final f in (j['fields'] as List? ?? const []))
@@ -423,9 +450,19 @@ Object? _jsonValue(Object? v) {
   return v;
 }
 
-/// The `core` property value.
-String encodeCore(String documents) =>
-    jsonEncode({'fmt': currentFmt, 'documents': documents});
+/// The `core` leaf op of [documents].
+Map<String, Object?> coreOp(String documents) => {
+  'xkey': 'core',
+  'leaf': documents,
+  'value': {'fmt': currentFmt},
+};
+
+/// The `textSearch.on` op (only ever true).
+const Map<String, Object?> textSearchOp = {
+  'xkey': 'textSearch',
+  'leaf': 'on',
+  'value': true,
+};
 
 // ------------------------------------------------------------ tombstones
 
@@ -438,6 +475,7 @@ final class TombRecord {
     required this.maxRev,
     required this.valid,
     required this.revs,
+    this.badRevs = 0,
   });
 
   final String id;
@@ -446,15 +484,20 @@ final class TombRecord {
   final bool valid;
   final List<int> revs;
 
+  /// Revs out of range (or not integers): ignored, counted.
+  final int badRevs;
+
   bool get isClear => id == clearRecordId;
 
   static TombRecord parse(Map<String, Object?> r) {
     final id = (r['id'] ?? r['_id']) as String? ?? '';
     final key = r['key'];
+    final raw = r['revs'] is List ? r['revs'] as List : const [];
     final revs = <int>[
-      for (final x in (r['revs'] is List ? r['revs'] as List : const []))
+      for (final x in raw)
         if (revInRange(x)) x as int,
     ];
+    final bad = raw.length - revs.length;
     final max = revs.isEmpty ? 0 : revs.reduce((a, b) => a > b ? a : b);
     if (id == clearRecordId) {
       return TombRecord(
@@ -472,6 +515,7 @@ final class TombRecord {
       maxRev: max,
       valid: valid,
       revs: revs,
+      badRevs: bad,
     );
   }
 }

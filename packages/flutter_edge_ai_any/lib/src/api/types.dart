@@ -61,7 +61,27 @@ final class AnySyncStatus {
     required this.lastSyncedAt,
     required this.everPeerSynced,
     required this.createdHere,
-  });
+    this.stateSaveError,
+  }) : followerError = null,
+       followerErrorAt = null,
+       location = null;
+
+  /// A location's follower failed (or recovered: [followerError] null).
+  AnySyncStatus._follower(
+    AnySyncLocation this.location,
+    this.followerError,
+    this.followerErrorAt,
+  ) : spaceId = location.spaceId,
+      state = AnySyncSpaceState.unknown,
+      rawState = 'follower',
+      p2p = null,
+      localPeers = 0,
+      networkPeers = 0,
+      globalPeers = 0,
+      lastSyncedAt = null,
+      everPeerSynced = false,
+      createdHere = false,
+      stateSaveError = null;
 
   final String spaceId;
   final AnySyncSpaceState state;
@@ -80,6 +100,18 @@ final class AnySyncStatus {
   /// Whether a peer sync of this space ever completed on this device.
   final bool everPeerSynced;
   final bool createdHere;
+
+  /// The account state (everPeerSynced, the creator mark) failed to save.
+  final String? stateSaveError;
+
+  /// Set on a status a location's follower reports: its last background
+  /// failure, null once a pull succeeded again. The space fields are then
+  /// not meaningful ([rawState] is `follower`).
+  final String? followerError;
+  final DateTime? followerErrorAt;
+
+  /// The location a follower status is about.
+  final AnySyncLocation? location;
 
   static AnySyncStatus _fromJson(Map<String, Object?> j) {
     final loading = j['loading'] == true;
@@ -101,6 +133,7 @@ final class AnySyncStatus {
       lastSyncedAt: last is String ? DateTime.tryParse(last) : null,
       everPeerSynced: j['everPeerSynced'] == true,
       createdHere: j['createdHere'] == true,
+      stateSaveError: j['stateSaveError'] as String?,
     );
   }
 
@@ -370,6 +403,10 @@ final class AnySyncLocationStatus {
     required this.manifest,
     required this.conflict,
     required this.firstPullPending,
+    required this.ignoredTombstones,
+    required this.droppedFilterValues,
+    required this.lastFollowerError,
+    required this.lastFollowerErrorAt,
   });
 
   /// Rows in the local index.
@@ -413,7 +450,25 @@ final class AnySyncLocationStatus {
   /// Writes wait for the first full pull of this file.
   final bool firstPullPending;
 
-  static AnySyncLocationStatus _fromJson(Map<String, Object?> j, int nowMs) {
+  /// Tombstone records whose id is not sha256(key), and revs out of range:
+  /// ignored.
+  final int ignoredTombstones;
+
+  /// Rows whose metadata carried a declared filter field with a value of
+  /// another type (or was not a JSON object): those values match no
+  /// filter.
+  final int droppedFilterValues;
+
+  /// The follower's last background failure, until a pull succeeds.
+  final String? lastFollowerError;
+  final DateTime? lastFollowerErrorAt;
+
+  static AnySyncLocationStatus _fromJson(
+    Map<String, Object?> j,
+    int nowMs, {
+    String? followerError,
+    DateTime? followerErrorAt,
+  }) {
     final raw = ((j['unindexable'] as Map?) ?? const {}).cast<String, int>();
     final typed = <AnySyncUnindexableReason, int>{};
     for (final MapEntry(:key, :value) in raw.entries) {
@@ -458,6 +513,10 @@ final class AnySyncLocationStatus {
             ], j['conflictingDocuments'] as int? ?? 0)
           : null,
       firstPullPending: fp != null && (jsonDecode(fp) as Map)['d'] != true,
+      ignoredTombstones: j['tombIgnored'] as int? ?? 0,
+      droppedFilterValues: j['droppedFields'] as int? ?? 0,
+      lastFollowerError: followerError,
+      lastFollowerErrorAt: followerErrorAt,
     );
   }
 }

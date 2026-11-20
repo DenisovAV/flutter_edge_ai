@@ -29,21 +29,33 @@ export 'any_status.dart';
 typedef SdkJob<T> = FutureOr<T> Function(AnySdk sdk);
 typedef IndexJob<T> = FutureOr<T> Function(AnyIndexHost host);
 
+/// Waits for the ops of any_shim.h (one op table per process: account,
+/// space and index ops alike).
+abstract interface class OpWaiter {
+  OpPoll opWait(int op, int waitMs);
+  void opCancel(int op);
+}
+
 /// The SDK side of one account, as seen from its SDK isolate.
 ///
 /// Every call on a space or object needs an open account; with none (never
 /// opened, or closed) it throws [AnyShimException] with
 /// [AnyShimStatus.closed], as the native library does for a closed handle.
-abstract interface class AnySdk {
-  /// Opens the account (any_shim_account_open) and keeps its handle for the
-  /// calls below. Returns the handle.
-  int openAccount(Map<String, Object?> options);
+abstract interface class AnySdk implements OpWaiter {
+  /// Starts opening the account (any_shim_account_open_start): the claims
+  /// and the lock are taken now (BUSY / REFUSED at once). Returns the op.
+  int openAccountStart(Map<String, Object?> options);
+
+  /// Keeps the account an open op answered (`{account}`) for the calls
+  /// below. Returns its handle.
+  int adoptAccount(Map<String, Object?> openResult);
 
   /// The open account's handle, or null.
   int? get accountHandle;
 
-  /// Starts the close and forgets the handle; returns the op.
-  int closeAccountStart();
+  /// Starts the close and forgets the handle; returns the op. With
+  /// [waitLoadsMs] > 0 the op first lets space loads in flight finish.
+  int closeAccountStart({int waitLoadsMs = 0});
 
   Map<String, Object?> accountInfo();
   Map<String, Object?> spaceCreate(String name);
@@ -59,6 +71,13 @@ abstract interface class AnySdk {
     List<Object?> ops,
   );
   void objectSetBody(String spaceId, String objectId, String text);
+
+  /// `{id}` of the object [seed] derives for [typeId], without a write.
+  Map<String, Object?> objectDeriveId(
+    String spaceId,
+    String seed,
+    String typeId,
+  );
   Map<String, Object?> objectRead(String spaceId, Map<String, Object?> request);
   void objectDelete(String spaceId, String objectId);
   Map<String, Object?> objectSyncState(String spaceId, String objectId);
@@ -81,16 +100,13 @@ abstract interface class AnySdk {
   int watchSyncStatus();
   void unwatch(int watch);
 
-  OpPoll opWait(int op, int waitMs);
-  void opCancel(int op);
-
   /// Runs [job] on the index isolate and returns its result here, so data
   /// read on this isolate reaches the index without crossing the caller's.
   Future<T> toIndex<T>(IndexJob<T> job);
 }
 
 /// The index side of one account: its open index files.
-abstract interface class AnyIndexHost {
+abstract interface class AnyIndexHost implements OpWaiter {
   /// any_shim_index_open; returns the handle.
   int open(Map<String, Object?> options);
 
@@ -102,8 +118,14 @@ abstract interface class AnyIndexHost {
 /// One open local index (any_shim_index_*), with the get and scan results
 /// already normalised: a state entry is its string value, a row its map.
 abstract interface class AnyIndexApi {
-  void close();
-  Map<String, Object?> bind(Map<String, Object?> config);
+  /// Starts the close; returns the op ([AnyIndexHost.opWait]).
+  int closeStart();
+
+  /// Starts a bind; the op's result is the bound configuration.
+  int bindStart(Map<String, Object?> config);
+
+  /// Drops orphan generations within [budgetMs]: `{done}`.
+  Map<String, Object?> gc(int budgetMs);
   Map<String, Object?> info();
   Map<String, Object?> apply(Map<String, Object?> ops, Float32List vectors);
 
@@ -196,7 +218,7 @@ String _randomHex(int bytes) {
 /// [cancelled] says so, throwing [AnyShimException] with
 /// [AnyShimStatus.closed]. The op's own failure is thrown as its status.
 Future<Map<String, Object?>?> awaitOp(
-  AnySdk sdk,
+  OpWaiter sdk,
   int op, {
   DateTime? deadline,
   bool Function()? cancelled,
@@ -233,6 +255,10 @@ Future<Map<String, Object?>?> awaitOp(
     await Future<void>.delayed(Duration.zero);
   }
 }
+
+/// Test seam: a clock skew per data directory (absolute path), in ms, added
+/// to the time an account allocates revs with. Not exported.
+final Map<String, int> debugAccountClockSkewMs = {};
 
 /// Test seam: when set, AnySyncAccount uses it instead of the FFI runtime.
 /// Not exported from the barrel.

@@ -18,10 +18,19 @@ final class _LocationCore {
   bool textSearch = false;
   int refs = 0;
   bool hasOwner = false;
-  int ownerEpoch = 0;
+
+  /// Bumped when the owning store closes (not when one opens): an account
+  /// call that started before stops early (backfill).
+  int ownerCloses = 0;
   bool _closed = false;
   bool _following = false;
   Timer? _debounce;
+  Timer? _retry;
+  int _failures = 0;
+
+  /// The last background follower failure, until a pull succeeds (D2).
+  String? lastFollowerError;
+  DateTime? lastFollowerErrorAt;
 
   String get spaceId => location.spaceId;
 
@@ -29,6 +38,24 @@ final class _LocationCore {
 
   Future<T> _sdk<T>(SdkJob<T> job) => account._sdk(job, spaceId: spaceId);
 
+  /// An SDK write (object_patch, records_modify): NOT_FOUND there means the
+  /// bundle definitions have not synced to this device (D15).
+  Future<T> _sdkWrite<T>(SdkJob<T> job) async {
+    try {
+      return await _sdk(job);
+    } on AnySyncException catch (e) {
+      if (_isStatus(e, AnyShimStatus.notFound)) {
+        throw AnySyncNotReadyException._(
+          spaceId,
+          AnySyncNotReadyReason.definitionsNotSynced,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Reads the local binding. A binding without its config is a bind that
+  /// did not finish: unbound (D6).
   Future<void> attach(int h) async {
     handle = h;
     account._rt.attachIndex(this, h);
@@ -40,10 +67,32 @@ final class _LocationCore {
     }
     final b = st['binding'];
     final c = st['cfg'];
-    if (b != null) binding = _bindingFrom((jsonDecode(b) as Map).cast());
-    if (c != null) cfg = LocConfig.fromJson((jsonDecode(c) as Map).cast());
+    if (b != null && c != null) {
+      binding = _bindingFrom((jsonDecode(b) as Map).cast());
+      cfg = LocConfig.fromJson((jsonDecode(c) as Map).cast());
+    }
     final info = await _idx(indexInfoJob(h));
     textSearch = info['textSearch'] == true;
+    _gc();
+  }
+
+  /// Drops orphan generations in bounded rounds, in the background (H4).
+  void _gc() {
+    final h = handle;
+    Future<void> round() async {
+      for (var i = 0; i < 1000 && !_closed; i++) {
+        final done = await account._rt.index(indexGcJob(h));
+        if (done) return;
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    round().catchError((Object e) {
+      developer.log(
+        'index gc of ${location.value} failed: $e',
+        name: 'flutter_edge_ai_any',
+      );
+    });
   }
 
   Future<void> close() async {
@@ -54,9 +103,12 @@ final class _LocationCore {
     await _lock.run(() async {
       try {
         await account._rt.index(indexCloseJob(handle));
-      } on Object {
-        // The finalizer-shaped release is the backstop; detaching it would
-        // leak the handle if the close failed.
+      } on Object catch (e) {
+        // The finalizer-shaped release stays attached as the backstop.
+        developer.log(
+          'closing the index of ${location.value} failed: $e',
+          name: 'flutter_edge_ai_any',
+        );
         return;
       }
       account._rt.detachIndex(this);
@@ -81,9 +133,9 @@ final class _LocationCore {
 
   // ------------------------------------------------------- open and bind
 
-  /// `initialize` (design §2.1: it only reads): resolves the space, starts a
-  /// new file's first pull, and when this device bound the location before,
-  /// brings the local index to [schema] and starts the follower.
+  /// `initialize`: resolves the space, starts a new file's first pull, and
+  /// when this device bound the location before, brings the local index to
+  /// [schema] (D7) and starts the follower.
   Future<void> prepare(FilterSchema schema, {required bool enableText}) async {
     await account._resolveSpace(spaceId);
     final head = await _idx(getStateJob(handle, 'cursor'));
@@ -100,19 +152,43 @@ final class _LocationCore {
     final c = cfg;
     if (b == null || c == null) return;
     final grown = _schemaGrows(c.schema, schema);
-    final next = LocConfig.fromJson(
-      c.toJson(),
-      schema: _union(c.schema, schema),
-    );
+    final pending = await _idx(getStateJob(handle, 'needsRebuild')) != null;
     await _lock.run(() async {
-      await _bindIndex(next, enableText: enableText);
-      if (grown) {
-        // Publishing the new field leaves is the one write an open makes:
-        // the schema is a union (design §2.1, D4), and the open is where
-        // this device learns it grew.
-        await _publishMissing(next, b, readOnlyOk: true);
-        await _rebuildLocked();
+      var next = c;
+      if (grown || (enableText && !textSearch)) {
+        final manifest = await _sdk(readManifestJob(spaceId, c.manifestId));
+        next = LocConfig.fromJson(c.toJson(), schema: _union(c.schema, schema));
+        // A field the location already has with another type is a
+        // conflict, here as at bind.
+        final refusal = manifestConflict(manifest, next, _bindingJson(b));
+        if (refusal != null) {
+          throw AnySyncConflictException._(
+            AnySyncManifest._fromJson(manifest.toJson()),
+            await _idx(conflictingDocumentsJob(handle)),
+            [for (final r in refusal['reasons']! as List) r as String],
+          );
+        }
+        await _bindIndex(next, enableText: enableText);
+        await _idx(
+          setStatesJob(handle, {
+            'cfg': jsonEncode(next.toJson()),
+            if (grown) 'needsRebuild': '1',
+          }),
+        );
+        cfg = next;
+        await _publishMissing(
+          next,
+          b,
+          manifest: manifest,
+          enableText: enableText,
+          readOnlyOk: true,
+        );
+      } else {
+        await _bindIndex(next, enableText: enableText);
       }
+      // A grown schema's rows lack the new f.* values: rebuild, also when
+      // a previous open was interrupted before its swap.
+      if (grown || pending) await _rebuildLocked();
     });
     _startFollower();
     await _catchUp();
@@ -121,25 +197,18 @@ final class _LocationCore {
   static bool _schemaGrows(FilterSchema have, FilterSchema want) =>
       want.fields.any((f) => have.fieldFor(f.name)?.type != f.type);
 
-  /// [have] plus the fields of [want] it lacks (a name declared with
-  /// another type keeps both, and the conflict check refuses it).
+  /// [have] plus the fields of [want] it lacks. A name [want] declares with
+  /// another type keeps [want]'s, so the conflict check sees it.
   static FilterSchema _union(FilterSchema have, FilterSchema want) {
-    final fields = [...have.fields];
-    for (final f in want.fields) {
-      if (!fields.any((x) => x.name == f.name && x.type == f.type)) {
-        fields.add(f);
-      }
-    }
-    // FilterSchema refuses duplicate names; keep the stored type then.
-    final seen = <String>{};
-    return FilterSchema(
-      fields: [
-        for (final f in fields)
-          if (seen.add(f.name)) f,
-      ],
-    );
+    final fields = [
+      for (final f in have.fields)
+        if (want.fieldFor(f.name) == null) f,
+      ...want.fields,
+    ];
+    return FilterSchema(fields: fields);
   }
 
+  /// index_bind (an op: a growing bind backfills). Writes no state.
   Future<void> _bindIndex(LocConfig c, {required bool enableText}) async {
     final manifestText = await _idx(getStateJob(handle, 'manifest'));
     final published =
@@ -158,12 +227,11 @@ final class _LocationCore {
       }),
     );
     textSearch = info['textSearch'] == true;
-    await _idx(setStatesJob(handle, {'cfg': jsonEncode(c.toJson())}));
-    cfg = c;
   }
 
   /// `bind` (design §2.1): the bundles, the publish gate or the conflict
-  /// check, then the local binding and the follower.
+  /// check, index_bind, then binding, manifest and config in ONE state
+  /// commit (D6), then the follower.
   Future<void> bindLocation(
     VectorStoreBinding b,
     FilterSchema schema, {
@@ -197,22 +265,17 @@ final class _LocationCore {
       final loc = (bundles['location']! as Map).cast<String, Object?>();
       final doc = (bundles['document']! as Map).cast<String, Object?>();
       final locRoot = loc['rootId']! as String;
-      final String manifestId;
-      try {
-        manifestId = await _sdk(
-          manifestIdJob(spaceId, location.indexName, locRoot),
-        );
-      } on AnySyncReadOnlyException {
-        throw AnySyncReadOnlyException._(
-          'this account cannot derive the manifest of ${location.value}',
-        );
-      }
+      // Computed, never written (D11): a reader may call it.
+      final manifestId = await _sdk(
+        manifestIdJob(spaceId, location.indexName, locRoot),
+      );
       final c = LocConfig(
         spaceId: spaceId,
         indexName: location.indexName,
         docRoot: doc['rootId']! as String,
         manifestId: manifestId,
         tombColl: loc['tombstones']! as String,
+        locRoot: locRoot,
         profileId: b.profile.id,
         dimension: b.profile.dimension,
         documents: b.documents.name,
@@ -227,7 +290,7 @@ final class _LocationCore {
         if (refusal != null) {
           throw AnySyncConflictException._(
             AnySyncManifest._fromJson(manifest.toJson()),
-            0,
+            await _idx(conflictingDocumentsJob(handle)),
             [for (final r in refusal['reasons']! as List) r as String],
           );
         }
@@ -239,13 +302,15 @@ final class _LocationCore {
         enableText: enableText,
         readOnly: readOnly,
       );
+      await _bindIndex(c, enableText: enableText);
       await _idx(
         setStatesJob(handle, {
           'binding': jsonEncode(_bindingJson(b)),
           'manifest': jsonEncode(published.toJson()),
+          'cfg': jsonEncode(c.toJson()),
         }),
       );
-      await _bindIndex(c, enableText: enableText);
+      cfg = c;
       binding = b;
     });
     _startFollower();
@@ -271,17 +336,17 @@ final class _LocationCore {
     return c is AnyShimException && c.status == s;
   }
 
-  /// The publish gate (design §2.1) for a manifest without `core`: returns
-  /// the manifest to bind against, `present: false` meaning "publish it".
+  /// The publish gate (design §2.1, D8) for a manifest without `core`:
+  /// returns the manifest to bind against, `present: false` meaning
+  /// "publish it". A converged round first; the creator exception only when
+  /// no peer could be reached, for a space created here that never synced
+  /// with a peer, and whose account state saved.
   Future<ManifestRead> _gate(LocConfig c, ManifestRead absent) async {
-    final status = AnySyncStatus._fromJson(await _sdk(spaceStatusJob(spaceId)));
-    // Creator exception (S3): no peer ever synced this space here, so no
-    // manifest can have reached this device.
-    if (!status.everPeerSynced) return absent;
-    final wait = account._spaceOpenWait;
-    final heads = await _sdk(syncHeadsJob(spaceId, wait.inMilliseconds));
+    var wait = account._spaceOpenWait.inMilliseconds;
+    if (wait <= 0) wait = 1;
+    final heads = await _sdk(syncHeadsJob(spaceId, wait));
     if (heads['reachedPeer'] == true) {
-      final deadline = DateTime.now().add(wait);
+      final deadline = DateTime.now().add(Duration(milliseconds: wait));
       while (true) {
         final s = AnySyncStatus._fromJson(await _sdk(spaceStatusJob(spaceId)));
         if (s.state == AnySyncSpaceState.synced) break;
@@ -297,30 +362,38 @@ final class _LocationCore {
       // Converged: what this device has now is what the peers have.
       return _sdk(readManifestJob(spaceId, c.manifestId));
     }
+    final status = AnySyncStatus._fromJson(await _sdk(spaceStatusJob(spaceId)));
+    if (status.createdHere &&
+        !status.everPeerSynced &&
+        status.stateSaveError == null) {
+      return absent;
+    }
     throw AnySyncNotReadyException._(
       spaceId,
       AnySyncNotReadyReason.manifestNotSynced,
-      'no peer answered',
+      status.stateSaveError != null
+          ? 'the account state did not save: ${status.stateSaveError}'
+          : 'no peer answered',
     );
   }
 
   /// Writes the manifest leaves this binding needs and [manifest] lacks
   /// (all of them, with `core`, when it is absent); returns the manifest as
-  /// published.
+  /// published. A reader never writes.
   Future<ManifestRead> _publishMissing(
     LocConfig c,
     VectorStoreBinding b, {
-    ManifestRead? manifest,
+    required ManifestRead manifest,
     bool enableText = false,
     bool readOnly = false,
     bool readOnlyOk = false,
   }) async {
-    final ManifestRead m =
-        manifest ??
-        await _sdk<ManifestRead>(readManifestJob(spaceId, c.manifestId));
+    final m = manifest;
     final ops = <Map<String, Object?>>[];
+    final core = [...m.coreLeaves];
     if (!m.present) {
-      ops.add({'xkey': 'core', 'value': encodeCore(c.documents)});
+      ops.add(coreOp(c.documents));
+      core.add(c.documents);
     }
     final fields = <FieldLeaf>[...m.fields];
     for (final f in c.schema.fields) {
@@ -336,9 +409,7 @@ final class _LocationCore {
       ops.add({'xkey': 'profiles', 'leaf': mine.key, 'value': mine.toJson()});
       profiles.add(mine);
     }
-    if (enableText && !m.textSearch) {
-      ops.add({'xkey': 'textSearch', 'value': true});
-    }
+    if (enableText && !m.textSearch) ops.add(textSearchOp);
     if (ops.isEmpty) return m;
     if (readOnly) {
       if (readOnlyOk) return m;
@@ -347,22 +418,18 @@ final class _LocationCore {
       );
     }
     try {
-      await _sdk(patchJob(spaceId, {'id': c.manifestId}, ops));
+      // Derive, not {id}: the first publish creates the manifest object.
+      await _sdkWrite(
+        patchJob(spaceId, {
+          'derive': {'seed': manifestSeed(c.indexName), 'type': c.locRoot},
+        }, ops),
+      );
     } on AnySyncReadOnlyException {
       if (readOnlyOk) return m;
       rethrow;
-    } on AnySyncException catch (e) {
-      if (_isStatus(e, AnyShimStatus.notFound)) {
-        throw AnySyncNotReadyException._(
-          spaceId,
-          AnySyncNotReadyReason.definitionsNotSynced,
-        );
-      }
-      rethrow;
     }
     return ManifestRead(
-      present: true,
-      documents: m.present ? m.documents : c.documents,
+      coreLeaves: core..sort(),
       coreNewerFormat: m.coreNewerFormat,
       fields: fields,
       profiles: profiles,
@@ -382,6 +449,8 @@ final class _LocationCore {
     _following = false;
     _debounce?.cancel();
     _debounce = null;
+    _retry?.cancel();
+    _retry = null;
   }
 
   /// A change event: pull after 200 ms of quiet (design §4.1).
@@ -391,19 +460,41 @@ final class _LocationCore {
     _debounce = Timer(const Duration(milliseconds: 200), () {
       _debounce = null;
       if (account._state != AnySyncAccountState.open) return;
-      pull().ignore();
+      _background();
     });
   }
 
-  /// The catch-up after open: a failure here (suspended, a peer gone) is
-  /// not the open's, and the next change or explicit pull retries.
-  Future<void> _catchUp() async {
+  /// A background pull: a failure is recorded, reported on statusChanges
+  /// and retried with backoff (1 s doubling to 60 s), never thrown (D2).
+  Future<void> _background() async {
+    if (_closed || !_following) return;
     try {
       await pull();
-    } on AnySyncException {
-      // Reported by the next call that needs it.
+      _failures = 0;
+      _retry?.cancel();
+      _retry = null;
+      if (lastFollowerError != null) {
+        lastFollowerError = null;
+        lastFollowerErrorAt = null;
+        account._emitFollower(this);
+      }
+    } catch (e) {
+      _failures++;
+      lastFollowerError = '$e';
+      lastFollowerErrorAt = DateTime.now();
+      account._emitFollower(this);
+      final secs = _failures >= 7 ? 60 : 1 << (_failures - 1);
+      _retry?.cancel();
+      _retry = Timer(Duration(seconds: secs), () {
+        _retry = null;
+        if (account._state == AnySyncAccountState.open) _background();
+      });
     }
   }
+
+  /// The catch-up after open: its failure is the follower's, not the
+  /// open's (D2); it is recorded and retried.
+  Future<void> _catchUp() => _background();
 
   /// One pull (design §3): follower pages until the feed is exhausted,
   /// rebuilding when the generation moved, then the supersede deletes that
@@ -431,7 +522,7 @@ final class _LocationCore {
           tombSeq: fs.tombSeq,
           readTombstones: readTombstones,
           extraIds: extra,
-          nowMs: _nowMs(),
+          nowMs: account._nowMs(),
         ),
       );
       if (o.needRebuild) {
@@ -489,18 +580,18 @@ final class _LocationCore {
   /// replay the feed from the anchor, swap. Runs under the lock.
   Future<AnySyncPull> _rebuildLocked() async {
     final c = cfg!;
-    final since = _nowMs();
+    final since = account._nowMs();
     await _idx(markRebuildingJob(handle, since));
     for (var attempt = 0; attempt < 5; attempt++) {
       await _idx(beginShadowJob(handle));
-      await _sdk(rebuildManifestJob(c, handle, nowMs: _nowMs()));
+      await _sdk(rebuildManifestJob(c, handle, nowMs: account._nowMs()));
       String? after;
       String? gen;
       int? anchor;
       var moved = false;
       do {
         final p = await _sdk(
-          rebuildPageJob(c, handle, after: after, nowMs: _nowMs()),
+          rebuildPageJob(c, handle, after: after, nowMs: account._nowMs()),
         );
         if (anchor == null) {
           gen = p.generation;
@@ -523,7 +614,7 @@ final class _LocationCore {
             handle,
             fromSeq: seq,
             extraIds: extra,
-            nowMs: _nowMs(),
+            nowMs: account._nowMs(),
           ),
         );
         if (s.generation != gen) {
@@ -557,7 +648,7 @@ final class _LocationCore {
 
   // --------------------------------------------------------------- writes
 
-  Never _refused(WriteRefused w, StackTrace st) {
+  Future<Never> _refused(WriteRefused w, StackTrace st) async {
     if (w.reason == 'firstPullPending') {
       Error.throwWithStackTrace(
         AnySyncNotReadyException._(
@@ -569,10 +660,13 @@ final class _LocationCore {
       );
     }
     final j = (jsonDecode(w.detail ?? '{}') as Map).cast<String, Object?>();
+    final conflicting = await account._rt.index(
+      conflictingDocumentsJob(handle),
+    );
     Error.throwWithStackTrace(
       AnySyncConflictException._(
         AnySyncManifest._fromJson({...j, 'present': true}),
-        0,
+        conflicting,
         [for (final r in (j['reasons'] as List? ?? const [])) r as String],
       ),
       st,
@@ -586,7 +680,7 @@ final class _LocationCore {
       try {
         return await body(c);
       } on WriteRefused catch (w, st) {
-        _refused(w, st);
+        return _refused(w, st);
       }
     });
   }
@@ -605,8 +699,9 @@ final class _LocationCore {
     if (plan.plan == AddPlan.noop) return;
     if (plan.plan == AddPlan.leafOnly) {
       final id = plan.objectId!;
+      var patched = false;
       try {
-        await _sdk(
+        await _sdkWrite(
           patchJob(
             spaceId,
             {'id': id},
@@ -615,14 +710,31 @@ final class _LocationCore {
             ],
           ),
         );
-        await _idx(applyLeafJob(handle, c, key, id, ch, vector));
-        return;
+        patched = true;
       } on AnySyncException catch (e) {
         // The winner was deleted meanwhile: the caller asked to add.
         if (!_isStatus(e, AnyShimStatus.deleted)) rethrow;
       }
+      if (patched) {
+        // The leaf is in the space now: a local failure is committed (D12).
+        bool applied;
+        try {
+          applied = await _idx(applyLeafJob(handle, c, key, id, ch, vector));
+        } catch (e) {
+          throw AnySyncCommittedException._(key, null, id, e);
+        }
+        if (!applied) {
+          throw AnySyncCommittedException._(
+            key,
+            null,
+            id,
+            StateError('the object stopped being the visible winner'),
+          );
+        }
+        return;
+      }
     }
-    final rev = await _idx(allocateWriteRevJob(handle, _nowMs()));
+    final rev = await _idx(allocateWriteRevJob(handle, account._nowMs()));
     final doc = DocValue.encode(
       loc: c.indexName,
       key: key,
@@ -631,7 +743,7 @@ final class _LocationCore {
       content: content,
       meta: meta,
     );
-    final created = await _sdk(
+    final created = await _sdkWrite(
       patchJob(
         spaceId,
         {
@@ -655,7 +767,7 @@ final class _LocationCore {
           content: content,
           meta: meta,
           vector: vector,
-          nowMs: _nowMs(),
+          nowMs: account._nowMs(),
         ),
       );
     } catch (e) {
@@ -664,10 +776,12 @@ final class _LocationCore {
     try {
       await _sdk(setBodyJob(spaceId, id, content));
     } on Object {
+      // Best effort, but recorded: compact() repairs what is marked, so a
+      // mark that fails is reported, not dropped (D18).
       try {
         await _idx(markBlankBodyJob(handle, id, key));
-      } on Object {
-        // Counted on the next compact's scan instead.
+      } catch (e) {
+        throw AnySyncCommittedException._(key, rev, id, e);
       }
     }
   });
@@ -675,8 +789,8 @@ final class _LocationCore {
   /// Remove (design §2.3): a tombstone rev, then the local delete, then
   /// this device's older objects of the key.
   Future<void> remove(String key) => _write((c) async {
-    final rev = await _idx(allocateWriteRevJob(handle, _nowMs()));
-    await _sdk(
+    final rev = await _idx(allocateWriteRevJob(handle, account._nowMs()));
+    await _sdkWrite(
       recordsModifyJob(spaceId, c.manifestId, c.tombColl, [
         {
           'id': sha256Hex(key),
@@ -697,8 +811,8 @@ final class _LocationCore {
   /// Clear (design §2.3): a clear rev, one local transaction, then the
   /// mapped objects below it.
   Future<void> clear() => _write((c) async {
-    final rev = await _idx(allocateWriteRevJob(handle, _nowMs()));
-    await _sdk(
+    final rev = await _idx(allocateWriteRevJob(handle, account._nowMs()));
+    await _sdkWrite(
       recordsModifyJob(spaceId, c.manifestId, c.tombColl, [
         {
           'id': clearRecordId,
@@ -708,7 +822,7 @@ final class _LocationCore {
     );
     final List<String> doomed;
     try {
-      doomed = await _idx(applyClearJob(handle, rev, _nowMs()));
+      doomed = await _idx(applyClearJob(handle, rev, account._nowMs()));
     } catch (e) {
       throw AnySyncCommittedException._('', rev, c.manifestId, e);
     }
@@ -742,8 +856,9 @@ final class _LocationCore {
         );
         continue;
       }
-      if (v.any((x) => !x.isFinite)) {
-        t.failed.add(AnySyncVectorFailure._(item.key, 'not finite'));
+      final problem = vectorProblem(v);
+      if (problem != null) {
+        t.failed.add(AnySyncVectorFailure._(item.key, problem));
         continue;
       }
       final check = await _idx(
@@ -763,7 +878,7 @@ final class _LocationCore {
           break;
       }
       try {
-        await _sdk(
+        await _sdkWrite(
           patchJob(
             spaceId,
             {'id': item._objectId},
@@ -788,13 +903,32 @@ final class _LocationCore {
         }
         continue;
       }
-      final ok = await _idx(
-        applyLeafJob(handle, c, item.key, item._objectId, item.contentHash, v),
-      );
+      // The leaf is in the space now: a local failure is committed (D12).
+      bool ok;
+      try {
+        ok = await _idx(
+          applyLeafJob(
+            handle,
+            c,
+            item.key,
+            item._objectId,
+            item.contentHash,
+            v,
+          ),
+        );
+      } catch (e) {
+        throw AnySyncCommittedException._(item.key, null, item._objectId, e);
+      }
       if (ok) {
         t.written++;
       } else {
-        t.changed++;
+        t.failed.add(
+          AnySyncVectorFailure._(
+            item.key,
+            'committed to the space; the local index takes it at the next '
+            'pull',
+          ),
+        );
       }
     }
     return t;
@@ -823,9 +957,14 @@ final class _LocationCore {
   }
 
   Future<AnySyncLocationStatus> status() async {
-    final now = _nowMs();
+    final now = account._nowMs();
     final j = await _idx(readStatusJob(handle, now));
-    return AnySyncLocationStatus._fromJson(j, now);
+    return AnySyncLocationStatus._fromJson(
+      j,
+      now,
+      followerError: lastFollowerError,
+      followerErrorAt: lastFollowerErrorAt,
+    );
   }
 
   /// compact (design §2.4), then a pull, so the totals reflect its deletes.
@@ -856,12 +995,9 @@ final class _LocationCore {
     final superseded = await _sweepSupersede(c);
     var repaired = 0;
     final fixed = <String>[];
+    // A superseded object gets no body: it is about to go.
+    fixed.addAll([for (final id in plan.blankStale) 'b/$id']);
     for (final (id, key) in plan.blank) {
-      // A superseded object gets no body: it is about to go.
-      if (plan.dominated.contains(id)) {
-        fixed.add('b/$id');
-        continue;
-      }
       final row = await _idx(getRowJob(handle, key));
       final content = row?['text'] as String?;
       if (content == null) continue;

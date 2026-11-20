@@ -76,7 +76,7 @@ void main() {
   test('every header function is bound with the same signature', () {
     final h = _header();
     final d = _bindings();
-    expect(h, hasLength(49));
+    expect(h, hasLength(51));
     expect(d.keys.toSet(), h.keys.toSet());
     for (final name in h.keys) {
       expect(d[name], h[name], reason: name);

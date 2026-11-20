@@ -18,7 +18,9 @@
 //   ahead         {"n": count, "lead": largest lead ms} of revs ahead of clock
 //   lastPull      ms of the last follower page
 //   rebuilding    ms since a rebuild started
-//   tombIgnored   tombstone records whose id is not sha256(key)
+//   tombIgnored   tombstone records whose id is not sha256(key), and revs
+//                 out of range
+//   needsRebuild  set with a grown schema; a swap clears it
 //   k/<key>       {"t": tomb rev, "row": objectId|null, "o": {id: obj}}
 //   o/<id>        the key the object belongs to
 //   u/<id>        {"r": reason, "k": key?, "v": rev?, "at": ms}  unindexable
@@ -26,6 +28,7 @@
 //   s/<id>        {"new": id, "k": key, "at": ms}  supersede delete waiting
 //   b/<id>        {"k": key}                       body not written
 //   m/<key>       {"id": objectId, "c": ch}        row without this vector
+//   d/<key>       n: filter values the row's meta dropped (wrong type)
 //
 // An object entry `obj`: {"r": rev, "o": own, "s": "ok"|"newer"|"conflict",
 // "c": sha256(content), "m": metaHash, "l": leaf kind, "lc": leaf ch}.
@@ -48,6 +51,7 @@ final class LocConfig {
     required this.docRoot,
     required this.manifestId,
     required this.tombColl,
+    required this.locRoot,
     required this.profileId,
     required this.dimension,
     required this.documents,
@@ -59,6 +63,9 @@ final class LocConfig {
   final String docRoot;
   final String manifestId;
   final String tombColl;
+
+  /// The location bundle's root type (the manifest's type).
+  final String locRoot;
   final String profileId;
   final int dimension;
 
@@ -78,6 +85,7 @@ final class LocConfig {
     'docRoot': docRoot,
     'manifestId': manifestId,
     'tombColl': tombColl,
+    'locRoot': locRoot,
     'profileId': profileId,
     'dimension': dimension,
     'documents': documents,
@@ -93,6 +101,7 @@ final class LocConfig {
         docRoot: j['docRoot']! as String,
         manifestId: j['manifestId']! as String,
         tombColl: j['tombColl']! as String,
+        locRoot: j['locRoot'] as String? ?? '',
         profileId: j['profileId']! as String,
         dimension: j['dimension']! as int,
         documents: j['documents']! as String,
@@ -333,6 +342,31 @@ final class KeyEntry {
   );
 }
 
+/// Upserts [key]'s row with its meta normalised into `f.*`, and keeps the
+/// count of the values that normalising dropped (`d/<key>`).
+void upsertDoc(
+  Tx tx,
+  LocConfig cfg, {
+  required String key,
+  required String text,
+  required String? meta,
+  required Float32List? vector,
+}) {
+  final n = normaliseFieldsCounted(meta, cfg.schema);
+  tx.upsertRow(id: key, text: text, meta: meta, f: n.f, vector: vector);
+  if (n.dropped > 0) {
+    tx.set('d/$key', '${n.dropped}');
+  } else if (tx.get('d/$key') != null) {
+    tx.set('d/$key', null);
+  }
+}
+
+/// Deletes [key]'s row and what describes it.
+void deleteDoc(Tx tx, String key) {
+  tx.deleteRow(key);
+  if (tx.get('d/$key') != null) tx.set('d/$key', null);
+}
+
 KeyEntry loadKey(Tx tx, String key) {
   final j = tx.getJson('k/$key');
   return j == null ? KeyEntry() : KeyEntry.fromJson(j);
@@ -531,12 +565,18 @@ const unindexableReasons = [
 /// Applies [page] (design §3): tombstones and clear revs, then each change,
 /// then each affected key's row. Rows for winners this page did not carry
 /// are asked for in [PageOutcome.needObjects] and nothing is applied.
+///
+/// A page the index refuses as malformed (INVALID_ARGUMENT, a vector the
+/// shim checks differently) is applied again without its vectors, the
+/// objects that carried one marked `badVector` (text-only rows), instead of
+/// stalling the follower on it.
 PageOutcome applyPage(
   AnyIndexApi idx,
   LocConfig cfg,
   Page page, {
   required int nowMs,
   bool shadow = false,
+  bool dropVectors = false,
 }) {
   final out = PageOutcome();
   final tx = Tx(idx, shadow: shadow);
@@ -571,6 +611,7 @@ PageOutcome applyPage(
     for (final r in t.revs) {
       clock.see(r);
     }
+    ignoredTombs += t.badRevs;
     if (t.isClear) {
       if (t.maxRev > clear) clear = t.maxRev;
       continue;
@@ -660,12 +701,19 @@ PageOutcome applyPage(
     final rev = doc.rev!;
     clock.see(rev);
     final vecs = item.props['vecs'];
-    final leaf = doc.kind == DocKind.ok
+    var leaf = doc.kind == DocKind.ok
         ? LeafValue.parse(
             vecs is Map ? vecs[cfg.profileKey] : null,
             cfg.dimension,
           )
         : LeafValue(LeafKind.missing);
+    // A vector of other content (an add raced a leaf write): text-only.
+    if (leaf.kind == LeafKind.ok && leaf.ch != sha256Hex(doc.content ?? '')) {
+      leaf = LeafValue(LeafKind.missing);
+    }
+    if (dropVectors && leaf.kind == LeafKind.ok) {
+      leaf = LeafValue(LeafKind.badVector, ch: leaf.ch);
+    }
     final String status;
     if (doc.kind == DocKind.newerFormat) {
       status = 'newer';
@@ -744,7 +792,7 @@ PageOutcome applyPage(
     final ok = w != null && e.objs[w]!.status == 'ok';
     if (!ok) {
       if (e.row != null) {
-        tx.deleteRow(key);
+        deleteDoc(tx, key);
         out.removed++;
         e.row = null;
       }
@@ -754,11 +802,12 @@ PageOutcome applyPage(
     } else if (pageDocs.containsKey(w)) {
       final (doc, leaf) = pageDocs[w]!;
       final vector = leaf.kind == LeafKind.ok ? leaf.vector : null;
-      tx.upsertRow(
-        id: key,
+      upsertDoc(
+        tx,
+        cfg,
+        key: key,
         text: doc.content!,
         meta: doc.meta,
-        f: normaliseFields(doc.meta, cfg.schema),
         vector: vector,
       );
       out.applied++;
@@ -796,6 +845,16 @@ PageOutcome applyPage(
     if (e.status == AnyShimStatus.conflict && !shadow) {
       return PageOutcome()..casMiss = true;
     }
+    if (e.status == AnyShimStatus.invalidArgument && !dropVectors) {
+      return applyPage(
+        idx,
+        cfg,
+        page,
+        nowMs: nowMs,
+        shadow: shadow,
+        dropVectors: true,
+      );
+    }
     rethrow;
   }
   return out;
@@ -811,7 +870,9 @@ Map<String, Object?>? manifestConflict(
   if (!m.present) return null;
   final reasons = <String>[];
   if (m.coreNewerFormat) reasons.add('newerFormat');
-  if (m.documents != binding['documents']) reasons.add('documents');
+  if (m.coreLeaves.length > 1 || m.documents != binding['documents']) {
+    reasons.add('documents');
+  }
   final types = <String, Set<String>>{};
   for (final f in m.fields) {
     types.putIfAbsent(f.name, () => {}).add(f.type);
@@ -903,13 +964,7 @@ void applyOwnAdd(
   tx.set('o/$objectId', key);
   final w = e.visibleWinner(tx.getInt('clear'));
   if (w == objectId) {
-    tx.upsertRow(
-      id: key,
-      text: content,
-      meta: meta,
-      f: normaliseFields(meta, cfg.schema),
-      vector: vector,
-    );
+    upsertDoc(tx, cfg, key: key, text: content, meta: meta, vector: vector);
     e.row = objectId;
     if (tx.get('m/$key') != null) tx.set('m/$key', null);
   }
@@ -950,11 +1005,12 @@ bool applyLeaf(
   o.leaf = 'ok';
   o.leafCh = ch;
   final meta = row['meta'] as String?;
-  tx.upsertRow(
-    id: key,
+  upsertDoc(
+    tx,
+    cfg,
+    key: key,
     text: row['text']! as String,
     meta: meta,
-    f: normaliseFields(meta, cfg.schema),
     vector: vector,
   );
   e.row = objectId;
@@ -994,7 +1050,7 @@ List<String> applyRemove(AnyIndexApi idx, String key, int rev) {
   final e = loadKey(tx, key);
   if (rev > e.tomb) e.tomb = rev;
   if (e.row != null) {
-    tx.deleteRow(key);
+    deleteDoc(tx, key);
     e.row = null;
   }
   if (tx.get('m/$key') != null) tx.set('m/$key', null);
@@ -1032,7 +1088,7 @@ List<String> applyClear(AnyIndexApi idx, int rev, {required int nowMs}) {
     }
     after = s.next;
   } while (after != null);
-  for (final prefix in ['m/', 'p/', 'u/', 's/']) {
+  for (final prefix in ['m/', 'p/', 'u/', 's/', 'd/']) {
     String? a;
     do {
       final s = idx.scanState(prefix: prefix, after: a, limit: 500);
@@ -1149,6 +1205,7 @@ Map<String, Object?> readStatus(AnyIndexApi idx, {required int nowMs}) {
     'conflict': conflict == null ? null : jsonDecode(conflict),
     'conflictingDocuments': conflictingDocs,
     'tombIgnored': int.tryParse(idx.getState('tombIgnored') ?? '') ?? 0,
+    'droppedFields': scanAll(idx, 'd/', null),
     'firstPull': idx.getState('firstPull'),
   };
 }
@@ -1158,23 +1215,42 @@ Map<String, Object?> readStatus(AnyIndexApi idx, {required int nowMs}) {
   List<String> dominated,
   List<(String oldId, String newId)> supersede,
   List<(String id, String key)> blank,
+  List<String> blankStale,
 })
 planCompaction(AnyIndexApi idx) {
   final clear = int.tryParse(idx.getState('clear') ?? '') ?? 0;
-  final dominated = <String>[];
-  scanAll(idx, 'k/', (k, v) {
-    final e = KeyEntry.fromJson((jsonDecode(v) as Map).cast());
-    dominated.addAll(e.dominated(clear));
-  });
   final supersede = <(String, String)>[];
   scanAll(idx, 's/', (k, v) {
     supersede.add((k.substring(2), (jsonDecode(v) as Map)['new'] as String));
   });
-  final blank = <(String, String)>[];
-  scanAll(idx, 'b/', (k, v) {
-    blank.add((k.substring(2), (jsonDecode(v) as Map)['k'] as String));
+  // A superseded object whose successor has not synced waits (C3): the
+  // supersede sweep deletes it once the successor is acknowledged.
+  final waiting = {for (final (old, _) in supersede) old};
+  final dominated = <String>[];
+  final shown = <String>{};
+  scanAll(idx, 'k/', (k, v) {
+    final e = KeyEntry.fromJson((jsonDecode(v) as Map).cast());
+    dominated.addAll(e.dominated(clear).where((id) => !waiting.contains(id)));
+    if (e.row != null) shown.add(e.row!);
   });
-  return (dominated: dominated, supersede: supersede, blank: blank);
+  // Only the object a row shows gets its body repaired (with the row's
+  // content); a superseded one never will.
+  final blank = <(String, String)>[];
+  final stale = <String>[];
+  scanAll(idx, 'b/', (k, v) {
+    final id = k.substring(2);
+    if (shown.contains(id)) {
+      blank.add((id, (jsonDecode(v) as Map)['k'] as String));
+    } else {
+      stale.add(id);
+    }
+  });
+  return (
+    dominated: dominated,
+    supersede: supersede,
+    blank: blank,
+    blankStale: stale,
+  );
 }
 
 /// Drops state entries by key.

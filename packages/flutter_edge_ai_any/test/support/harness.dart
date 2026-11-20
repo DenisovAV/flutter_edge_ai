@@ -62,6 +62,8 @@ final class World {
     }
     debugAnyNativeOverride = null;
     FakeIndex.failApply = null;
+    FakeIndex.refuseVectors = null;
+    debugAccountClockSkewMs.clear();
     Directory(root).deleteSync(recursive: true);
   }
 }

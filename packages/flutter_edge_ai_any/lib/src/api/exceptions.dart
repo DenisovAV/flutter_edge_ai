@@ -127,7 +127,8 @@ final class AnySyncReadOnlyException extends AnySyncException {
 final class AnySyncCommittedException extends AnySyncException {
   AnySyncCommittedException._(this.key, this.rev, this.objectId, Object cause)
     : super(
-        'The write of "$key" (rev $rev, object $objectId) committed to the '
+        'The write of "$key" (rev ${rev ?? '-'}, object $objectId) committed '
+        'to the '
         'space, but the local index did not take it; the follower applies '
         'it later. Do not retry the write.',
         retryable: false,
@@ -135,7 +136,9 @@ final class AnySyncCommittedException extends AnySyncException {
       );
 
   final String key;
-  final int rev;
+
+  /// The rev written; null for a vector-leaf write, which takes none.
+  final int? rev;
 
   /// The object written: the new document object, or for a remove or clear
   /// the manifest object the tombstone record lives on.

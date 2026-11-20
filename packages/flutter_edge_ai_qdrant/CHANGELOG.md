@@ -1,4 +1,4 @@
-## Unreleased
+## 2.2.0
 - Requires `qdrant_edge` ^0.9.0 (Qdrant Edge 0.9 engine).
 - Text and hybrid search (BM25) through `VectorStoreSpec.enableTextSearch`.
 - After writing with this version, do not downgrade to 2.1.1 or earlier.

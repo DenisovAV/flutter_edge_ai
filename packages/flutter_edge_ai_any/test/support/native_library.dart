@@ -20,7 +20,13 @@ String hostTarget() {
 /// build and the suites must fail, so this returns null and lets them.
 String? nativeSkipReason() {
   try {
-    any_shim_abi_version();
+    final abi = any_shim_abi_version();
+    if (abi != anyShimAbiVersion) {
+      // The pinned release (native-any-v0.1.0) is ABI 1; these suites need
+      // a local build of this tree.
+      return 'libany_shim implements ABI $abi, these bindings need '
+          '$anyShimAbiVersion: run native/any_shim/build.sh ${hostTarget()}';
+    }
     return null;
   } on ArgumentError catch (e) {
     final target = hostTarget();

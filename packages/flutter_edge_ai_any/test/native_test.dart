@@ -1,12 +1,15 @@
-// libany_shim through the Dart wrapper, offline: one account with p2p off
-// and a nodeconf whose nodes are all on a closed port, so nothing leaves
-// the process. The LAN case is test/lan/lan_sync_test.dart.
+// libany_shim (ABI 2) through the Dart wrapper, offline: one account with
+// p2p off and a nodeconf whose nodes are all on a closed port, so nothing
+// leaves the process. Skipped, with the reason, when no ABI-2 library is
+// loadable here (support/native_library.dart). The LAN case is
+// test/lan/lan_sync_test.dart; the provider over the real library is
+// test/native_provider_test.dart.
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_any/src/ffi/any_shim.dart';
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 import 'support/native_library.dart';
 
@@ -15,22 +18,36 @@ Matcher throwsStatus(AnyShimStatus s) =>
 
 Float32List vec(List<double> v) => Float32List.fromList(v);
 
+/// Waits for an op in slices, as the provider does.
+Map<String, Object?> waitOp(
+  int op, {
+  Duration max = const Duration(seconds: 30),
+}) {
+  final end = DateTime.now().add(max);
+  while (DateTime.now().isBefore(end)) {
+    final p = AnyShim.opWait(op, 250);
+    if (p.done) return p.result!;
+  }
+  AnyShim.opCancel(op);
+  throw TimeoutException('op $op');
+}
+
+final class TimeoutException implements Exception {
+  TimeoutException(this.what);
+  final String what;
+}
+
 void main() {
   final skip = nativeSkipReason();
   late Directory tmp;
-
-  setUpAll(() {
-    if (skip != null) return;
-    AnyShim.checkAbi();
-  });
   setUp(() => tmp = Directory.systemTemp.createTempSync('any_shim_test'));
   tearDown(() => tmp.deleteSync(recursive: true));
 
-  // Closed before tmp is deleted, also when a test fails midway (the SDK
-  // holds its files open); a test that closes it itself is fine.
   AnyShimAccount openAccount() {
     final a = AnyShimAccount.open({
       'dataDir': '${tmp.path}/sdk',
+      'indexDir': '${tmp.path}/index',
+      'ownerToken': 'native-test',
       'mnemonic': AnyShim.newMnemonic(),
       'deviceKeyHex': AnyShim.newDeviceKey(),
       'nodeConfYaml': deadNodeConf(),
@@ -38,7 +55,7 @@ void main() {
     });
     addTearDown(() {
       try {
-        a.close();
+        waitOp(a.closeStart());
       } on AnyShimException catch (e) {
         if (e.status != AnyShimStatus.closed) rethrow;
       }
@@ -47,18 +64,13 @@ void main() {
   }
 
   group('process-wide', skip: skip, () {
-    test('version names the pinned SDK', () {
+    test('version names ABI 2 and the pinned SDK', () {
       final v = AnyShim.version();
-      expect(v['abi'], 1);
+      expect(v['abi'], 2);
       expect(
         (v['modules'] as Map)['github.com/anyproto/any-sync-sdk'],
         'v0.7.4',
       );
-    });
-
-    test('mnemonics are 12 words, device keys differ', () {
-      expect(AnyShim.newMnemonic().split(' '), hasLength(12));
-      expect(AnyShim.newDeviceKey(), isNot(AnyShim.newDeviceKey()));
     });
 
     test('the production network is refused', () {
@@ -69,6 +81,8 @@ void main() {
       expect(
         () => AnyShimAccount.open({
           'dataDir': '${tmp.path}/sdk',
+          'indexDir': '${tmp.path}/index',
+          'ownerToken': 't',
           'mnemonic': AnyShim.newMnemonic(),
           'deviceKeyHex': AnyShim.newDeviceKey(),
           'nodeConfYaml': prod,
@@ -77,26 +91,7 @@ void main() {
       );
     });
 
-    test('arguments C cannot carry are refused in Dart', () {
-      final a = openAccount();
-      final space = a.createSpace('args');
-      expect(() => a.createSpace('a\u0000b'), throwsArgumentError);
-      expect(
-        () => a.queryObjects(space, limit: 1 << 40),
-        throwsA(isA<RangeError>()),
-      );
-      expect(
-        () => a.readFile(space, 'f', '${tmp.path}/x', timeout: Duration.zero),
-        throwsArgumentError,
-      );
-      expect(
-        () => a.pollEvents(timeout: const Duration(microseconds: -1)),
-        throwsArgumentError,
-      );
-      expect(() => a.changesSince(space, -1), throwsA(isA<RangeError>()));
-    });
-
-    test('a stale handle is closed, not a crash', () {
+    test('a stale handle is closed; release of one is a no-op', () {
       expect(
         () => AnyShimAccount.fromHandle(1 << 50).info(),
         throwsStatus(AnyShimStatus.closed),
@@ -105,209 +100,282 @@ void main() {
         () => AnyShimIndex.fromHandle(1 << 50).count(),
         throwsStatus(AnyShimStatus.closed),
       );
+      AnyShim.accountRelease(1 << 50);
+      AnyShim.indexRelease(1 << 50);
+    });
+
+    test('arguments C cannot carry are refused in Dart', () {
+      final a = openAccount();
+      final space = a.spaceCreate('args')['id']! as String;
+      expect(() => a.spaceCreate('a\u0000b'), throwsArgumentError);
+      expect(() => a.changesSince(space, -1), throwsA(isA<RangeError>()));
+      expect(() => a.syncHeadsStart(space, -1), throwsA(isA<RangeError>()));
     });
   });
 
   group('account', skip: skip, () {
-    test('documents, feed, files and close', () {
-      final a = openAccount();
-      final info = a.info();
-      expect((info['p2p'] as Map)['enabled'], false);
-
-      final space = a.createSpace('notes');
-      final list = a.listSpaces();
-      expect(list['syncError'], isNull);
+    test('the same directory under the same token is refused', () {
+      openAccount();
       expect(
-        (list['spaces']! as List).map((s) => (s as Map)['id']),
-        contains(space),
-      );
-      expect(
-        () => a.spaceStatus('bafyreinosuchspace.abc'),
-        throwsStatus(AnyShimStatus.notFound),
-      );
-
-      final put = a.putObject(space, {
-        'seed': 'doc-1',
-        'name': 'Titan',
-        'text': 'methane lakes\nnitrogen air',
-        'meta': {'cat': 'space'},
-      });
-      expect(put['created'], true);
-      final again = a.putObject(space, {
-        'seed': 'doc-1',
-        'name': 'Titan',
-        'text': 'v2',
-      });
-      expect(again, {'id': put['id'], 'created': false});
-
-      final id = put['id']! as String;
-      final doc = a.getObject(space, id);
-      expect(doc['isDocument'], true);
-      expect(doc['text'], 'v2');
-      expect(doc['meta'], isNull, reason: 'the second put set no meta');
-
-      expect(
-        () => a.putObject(space, {'name': 'x', 'colour': 'red'}),
-        throwsStatus(AnyShimStatus.invalidArgument),
-      );
-
-      final feed = a.changesSince(space, 0);
-      expect(feed['generation'], isNotEmpty);
-      final changes = (feed['changes']! as List).cast<Map>();
-      expect(changes.map((c) => c['objectId']), contains(id));
-
-      final src = File('${tmp.path}/blob.bin')
-        ..writeAsBytesSync(List.generate(50000, (i) => i & 0xff));
-      final fi = a.attachFile(space, id, src.path);
-      expect(fi['size'], 50000);
-      expect(a.listFiles(space, objectId: id), hasLength(1));
-      final out = '${tmp.path}/out.bin';
-      expect(
-        a.readFile(
-          space,
-          fi['fileId']! as String,
-          out,
-          timeout: const Duration(seconds: 10),
-        ),
-        50000,
-      );
-      expect(File(out).readAsBytesSync(), src.readAsBytesSync());
-
-      // A seeded (derived) object is never deleted; a created one is.
-      expect(
-        () => a.deleteObject(space, id),
-        throwsStatus(AnyShimStatus.refused),
-      );
-      final plain =
-          a.putObject(space, {'name': 'n', 'text': 't'})['id']! as String;
-      a.deleteObject(space, plain);
-      expect(
-        () => a.getObject(space, plain),
-        throwsA(
-          isA<AnyShimException>().having(
-            (e) => e.status,
-            'status',
-            anyOf(AnyShimStatus.deleted, AnyShimStatus.notFound),
-          ),
-        ),
-      );
-
-      a.close();
-      expect(() => a.info(), throwsStatus(AnyShimStatus.closed));
-      expect(() => a.close(), throwsStatus(AnyShimStatus.closed));
-    });
-
-    test(
-      'a watch delivers changes; close wakes a poller on another isolate',
-      () async {
-        final a = openAccount();
-        final space = a.createSpace('w');
-        final watch = a.watchChanges(space);
-        final id = a.putObject(space, {'name': 'n', 'text': 't'})['id'];
-        final seen = <Object?>{};
-        final end = DateTime.now().add(const Duration(seconds: 5));
-        while (!seen.contains(id) && DateTime.now().isBefore(end)) {
-          for (final ev in a.pollEvents(
-            timeout: const Duration(milliseconds: 200),
-          )) {
-            if (ev['kind'] == 'change' && ev['watch'] == watch) {
-              seen.add(ev['objectId']);
-            }
-          }
-        }
-        expect(seen, contains(id));
-        a.unwatch(watch);
-        expect(() => a.unwatch(watch), throwsStatus(AnyShimStatus.notFound));
-
-        // The poller says when it is about to block; close comes well
-        // after, and the poller reports how long it was blocked, so a poll
-        // that only started after close (and returned at once) fails.
-        final handle = a.handle;
-        final started = ReceivePort();
-        final port = started.sendPort;
-        final poller = Isolate.run(() {
-          final acc = AnyShimAccount.fromHandle(handle);
-          acc.info();
-          port.send(null);
-          final sw = Stopwatch()..start();
-          try {
-            acc.pollEvents(timeout: const Duration(seconds: 30));
-            return ('returned', sw.elapsedMilliseconds);
-          } on AnyShimException catch (e) {
-            return (e.status.name, sw.elapsedMilliseconds);
-          }
-        });
-        await started.first;
-        await Future<void>.delayed(const Duration(milliseconds: 400));
-        a.close();
-        final (status, blockedMs) = await poller;
-        expect(status, 'closed');
-        expect(blockedMs, greaterThanOrEqualTo(300));
-        expect(blockedMs, lessThan(5000));
-      },
-    );
-  });
-
-  group('index', skip: skip, () {
-    test('exact knn, filter, BM25, state, delete', () {
-      final x = AnyShimIndex.open({
-        'path': '${tmp.path}/idx.db',
-        'dim': 3,
-        'filterFields': ['cat'],
-      });
-      x.upsert({
-        'id': 'a',
-        'name': 'Rocket',
-        'text': 'kerosene and oxygen',
-        'meta': {'cat': 'space'},
-      }, vec([1, 0, 0]));
-      x.upsert({
-        'id': 'b',
-        'name': 'Bread',
-        'text': 'flour and water',
-        'meta': {'cat': 'food'},
-      }, vec([0, 1, 0]));
-      x.upsert({
-        'id': 'c',
-        'name': 'Rover',
-        'text': 'rock samples',
-        'meta': {'cat': 'space'},
-      }, vec([0.9, 0.1, 0]));
-      expect(x.count(), 3);
-
-      List<Object?> ids(Map<String, Object?> r) =>
-          (r['results']! as List).map((m) => (m as Map)['id']).toList();
-      expect(ids(x.knn(vec([1, 0, 0]), 2)), ['a', 'c']);
-      expect(ids(x.knn(vec([1, 0, 0]), 3, filter: {'meta.cat': 'food'})), [
-        'b',
-      ]);
-      expect(ids(x.text('kerosene', 5)), ['a']);
-      expect(
-        () => x.upsert({'id': 'd'}, vec([1, 0])),
-        throwsStatus(AnyShimStatus.invalidArgument),
-      );
-
-      expect(x.getState('cursor'), isNull);
-      x.setState('cursor', '17');
-      expect(x.getState('cursor'), '17');
-
-      expect(x.delete('a'), true);
-      expect(x.delete('a'), false);
-      x.close();
-      expect(() => x.count(), throwsStatus(AnyShimStatus.closed));
-
-      expect(
-        () => AnyShimIndex.open({'path': '${tmp.path}/idx.db', 'dim': 4}),
-        throwsStatus(AnyShimStatus.invalidArgument),
-      );
-      expect(
-        () => AnyShimIndex.open({
-          'path': '${tmp.path}/other.db',
-          'dim': 4,
-          'mode': 'ivfsq',
+        () => AnyShimAccount.open({
+          'dataDir': '${tmp.path}/sdk',
+          'indexDir': '${tmp.path}/index2',
+          'ownerToken': 'native-test',
+          'mnemonic': AnyShim.newMnemonic(),
+          'deviceKeyHex': AnyShim.newDeviceKey(),
+          'nodeConfYaml': deadNodeConf(),
+          'p2p': {'enabled': false},
         }),
         throwsStatus(AnyShimStatus.refused),
       );
+    });
+
+    test('bundles, a document, the feed, tombstones', () {
+      final a = openAccount();
+      final space = a.spaceCreate('notes')['id']! as String;
+      waitOp(a.spaceResolveStart(space));
+      final status = a.spaceStatus(space);
+      expect(status['everPeerSynced'], false);
+      final b = a.ragBundles(space, ensure: true);
+      final docRoot = (b['document']! as Map)['rootId']! as String;
+      final loc = (b['location']! as Map).cast<String, Object?>();
+      expect(a.ragBundles(space, ensure: false), b);
+
+      final created = a.objectPatch(
+        space,
+        {
+          'create': {'type': docRoot},
+        },
+        [
+          {'xkey': 'doc', 'value': '{"fmt":1}'},
+          {
+            'xkey': 'vecs',
+            'leaf': 'abc-1',
+            'value': {'fmt': 1},
+          },
+        ],
+      );
+      expect(created['created'], true);
+      final id = created['id']! as String;
+      expect(
+        () => a.objectPatch(
+          space,
+          {'id': id},
+          [
+            {'xkey': 'nosuch', 'value': 1},
+          ],
+        ),
+        throwsStatus(AnyShimStatus.invalidArgument),
+      );
+      final read = a.objectRead(space, {
+        'ids': [id],
+        'xkeys': ['doc', 'vecs'],
+      });
+      final item = (read['items']! as List).single as Map;
+      expect(item['typeId'], docRoot);
+      expect((item['props'] as Map)['doc'], '{"fmt":1}');
+      expect((read['anchor'] as Map)['generation'], isNotEmpty);
+
+      final feed = a.changesSince(space, 0);
+      expect(
+        (feed['changes']! as List).map((c) => (c as Map)['objectId']),
+        contains(id),
+      );
+      expect(a.objectSyncState(space, id)['state'], isNot('synced'));
+
+      final manifest =
+          a.objectPatch(space, {
+                'derive': {
+                  'seed': 'flutter_edge_ai.rag/manifest/n',
+                  'type': loc['rootId'],
+                },
+              }, const [])['id']!
+              as String;
+      a.recordsModify(space, manifest, loc['tombstones']! as String, [
+        {
+          'id': 'clear',
+          'addToSet': {'revs': 7},
+        },
+      ]);
+      final recs = a.recordsRead(space, manifest, loc['tombstones']! as String);
+      expect(((recs['records']! as List).single as Map)['revs'], [7]);
+
+      a.objectDelete(space, id);
+      a.objectDelete(space, id); // already deleted: OK
+      expect(
+        () => a.objectDelete(space, manifest),
+        throwsStatus(AnyShimStatus.refused),
+      );
+    });
+
+    test('cancel wakes a poller on another isolate; close ends it', () async {
+      final a = openAccount();
+      final handle = a.handle;
+      final started = ReceivePort();
+      final port = started.sendPort;
+      final poller = Isolate.run(() {
+        final acc = AnyShimAccount.fromHandle(handle);
+        port.send(null);
+        while (true) {
+          try {
+            acc.pollEvents(timeoutMs: 250);
+          } on AnyShimException catch (e) {
+            return e.status.name;
+          }
+        }
+      });
+      await started.first;
+      waitOp(a.closeStart());
+      expect(await poller, 'closed');
+    });
+  });
+
+  group('index', skip: skip, () {
+    test('bind, apply with vector slots and CAS, knn, text, state', () {
+      final x = AnyShimIndex.open({
+        'path': '${tmp.path}/idx/index.anystore',
+        'ownerToken': 'native-test',
+      });
+      addTearDown(() {
+        try {
+          x.close();
+        } on AnyShimException {
+          // closed by the test
+        }
+      });
+      expect(x.info(), isEmpty);
+      final bound = x.bind({
+        'dim': 3,
+        'metric': 'cosine',
+        'fields': [
+          {'key': 'k1-string', 'type': 'string'},
+        ],
+        'textSearch': true,
+      });
+      expect(bound['dim'], 3);
+      expect(
+        () => x.bind({
+          'dim': 4,
+          'metric': 'cosine',
+          'fields': [],
+          'textSearch': true,
+        }),
+        throwsStatus(AnyShimStatus.conflict),
+      );
+      x.apply({
+        'cas': [
+          {'key': 'cursor', 'expect': null},
+        ],
+        'ops': [
+          {
+            'op': 'upsert',
+            'coll': 'docs',
+            'id': 'a',
+            'text': 'kerosene and oxygen',
+            'meta': null,
+            'f': {'k1-string': 'space'},
+            'vector': {'offset': 0, 'dim': 3},
+          },
+          {
+            'op': 'upsert',
+            'coll': 'docs',
+            'id': 'b',
+            'text': 'flour and water',
+            'meta': '{"m":1}',
+            'f': {'k1-string': 'food'},
+            'vector': {'offset': 3, 'dim': 3},
+          },
+          {
+            'op': 'upsert',
+            'coll': 'docs',
+            'id': 'c',
+            'text': 'text only row',
+            'meta': null,
+            'f': {},
+            'vector': null,
+          },
+          {'op': 'stateSet', 'coll': 'state', 'key': 'cursor', 'value': '1'},
+        ],
+      }, vec([1, 0, 0, 0, 1, 0]));
+      expect(x.count(), 3);
+      expect(x.countVectors(), 2);
+      expect(
+        () => x.apply({
+          'cas': [
+            {'key': 'cursor', 'expect': null},
+          ],
+          'ops': [
+            {'op': 'delete', 'coll': 'docs', 'id': 'a'},
+          ],
+        }, Float32List(0)),
+        throwsStatus(AnyShimStatus.conflict),
+      );
+      expect(
+        () => x.apply({
+          'ops': [
+            {
+              'op': 'upsert',
+              'coll': 'docs',
+              'id': 'd',
+              'text': '',
+              'meta': null,
+              'f': {},
+              'vector': {'offset': 0, 'dim': 3},
+            },
+          ],
+        }, vec([double.nan, 0, 0])),
+        throwsStatus(AnyShimStatus.invalidArgument),
+      );
+      List<Object?> ids(Map<String, Object?> r) =>
+          (r['results']! as List).map((m) => (m as Map)['id']).toList();
+      expect(ids(x.knn(vec([1, 0, 0]), 5)), ['a', 'b']);
+      expect(
+        ids(
+          x.knn(
+            vec([1, 0, 0]),
+            5,
+            filter: {
+              'f.k1-string': {r'$eq': 'food'},
+            },
+          ),
+        ),
+        ['b'],
+      );
+      expect(ids(x.text('"kerosene"', 5)), ['a']);
+      expect(x.get('state', 'cursor'), {'key': 'cursor', 'value': '1'});
+      expect(x.get('state', 'nosuch'), isNull);
+      expect((x.get('docs', 'b')! as Map)['meta'], '{"m":1}');
+      final scan = x.scan('state', prefix: 'cur');
+      expect((scan['items']! as List), hasLength(1));
+      x.close();
+      expect(() => x.count(), throwsStatus(AnyShimStatus.closed));
+    });
+
+    test('the keycheck tells another key from a corrupt file', () {
+      final path = '${tmp.path}/k/index.anystore';
+      final key = 'ab' * 32;
+      AnyShimIndex.open({
+        'path': path,
+        'keyHex': key,
+        'ownerToken': 't',
+      }).close();
+      expect(
+        () => AnyShimIndex.open({'path': path, 'ownerToken': 't'}),
+        throwsStatus(AnyShimStatus.keyMissing),
+      );
+      expect(
+        () => AnyShimIndex.open({
+          'path': path,
+          'keyHex': 'cd' * 32,
+          'ownerToken': 't',
+        }),
+        throwsStatus(AnyShimStatus.keyMismatch),
+      );
+      AnyShimIndex.open({
+        'path': path,
+        'keyHex': key,
+        'ownerToken': 't',
+      }).close();
     });
   });
 }

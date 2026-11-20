@@ -1,5 +1,5 @@
 tags:
-  # Two-process LAN sync: needs local multicast (mDNS) and minutes, so it is
-  # opt-in. Run with: dart test -t lan --run-skipped
+  # LAN sync between two accounts: needs local multicast (mDNS) and minutes,
+  # so it is opt-in.
   lan:
-    skip: "two-device LAN sync; run with `dart test -t lan --run-skipped`"
+    skip: "two-device LAN sync; run with `flutter test -t lan --run-skipped test/lan`"

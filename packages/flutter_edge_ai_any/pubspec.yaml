@@ -1,10 +1,10 @@
 name: flutter_edge_ai_any
-description: "Native layer for an any-sync store in flutter_edge_ai: an in-process Go shim over any-sync-sdk and an any-store local index, with Dart FFI bindings. No public API yet."
+description: "A flutter_edge_ai_rag vector-store provider over any-sync: documents sync end-to-end encrypted between a user's devices, each device keeps a local vector + BM25 index."
 version: 0.1.0-dev
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_any
-# Not published: the network, the public API and the RAG provider are not
-# decided yet (see README.md). Remove only together with that decision.
+# Not published: the network is not decided yet (see README.md). Remove only
+# together with that decision.
 publish_to: none
 
 # Native platforms only. The web has neither the transports (QUIC, TCP,
@@ -20,10 +20,23 @@ resolution: workspace
 
 environment:
   sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
 
-# Pure Dart on purpose: lib/ imports no Flutter, so the same bindings serve
-# a Flutter app and a plain Dart process (the two-device LAN test runs two).
+# lib/lifecycle.dart is the only library of this package that imports
+# Flutter, and the barrel never exports it. lib/src/ffi imports nothing but
+# dart:ffi and package:ffi, so the bindings stay usable from a plain Dart
+# process (each device of the two-device LAN test is one).
 dependencies:
+  flutter:
+    sdk: flutter
+  # Not yet the floor this source needs: it builds against the unreleased
+  # flutter_edge_ai_rag 1.2.0 in this workspace (text search: `searchText`,
+  # `supportsTextSearch`, `VectorStoreSpec.enableTextSearch`), as
+  # flutter_edge_ai_sqlite does; the release that publishes this package
+  # raises it to ^1.2.0.
+  flutter_edge_ai_rag: ^1.1.0
+  # @experimental on every public type, @visibleForTesting seams.
+  meta: ^1.15.0
   ffi: ^2.1.0
   # Native Assets hook: downloads the prebuilt libany_shim for the target
   # from the native-any-v* GitHub Release, checks its SHA256 and registers
@@ -33,5 +46,6 @@ dependencies:
   crypto: ^3.0.6
 
 dev_dependencies:
-  test: ^1.25.0
+  flutter_test:
+    sdk: flutter
   lints: ^6.0.0

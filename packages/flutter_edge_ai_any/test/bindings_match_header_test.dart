@@ -2,7 +2,7 @@
 // same parameter count and the same C types, and nothing else.
 import 'dart:io';
 
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 /// C type in the header -> the Dart native type the bindings use.
 const _cToDart = {
@@ -13,6 +13,7 @@ const _cToDart = {
   'char*': 'Pointer<Utf8>',
   'char**': 'OutStr',
   'uint64_t': 'Uint64',
+  'uintptr_t': 'UintPtr',
   'uint64_t*': 'Pointer<Uint64>',
   'int64_t': 'Int64',
   'int64_t*': 'Pointer<Int64>',
@@ -75,7 +76,7 @@ void main() {
   test('every header function is bound with the same signature', () {
     final h = _header();
     final d = _bindings();
-    expect(h, hasLength(35));
+    expect(h, hasLength(49));
     expect(d.keys.toSet(), h.keys.toSet());
     for (final name in h.keys) {
       expect(d[name], h[name], reason: name);

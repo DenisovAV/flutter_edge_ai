@@ -20,9 +20,10 @@ using either throws `UnimplementedError`.
 <Info>
 
 Speech is a separate package so apps that don't need it don't ship the model or
-the extra native surface. It depends on <code>flutter_edge_ai_litertlm</code>,
-which owns the shared <code>libLiteRtLm</code> native bundle — no separate
-native download.
+the extra native surface. Its native libraries come from
+<code>litertlm_dart</code>, which owns the shared <code>libLiteRtLm</code>
+bundle that <code>flutter_edge_ai_litertlm</code> uses too — no separate native
+download.
 
 </Info>
 
@@ -81,6 +82,18 @@ print(transcript); // "She had ... watch for all year."
 
 await recognizer.close();
 ```
+
+A catalog build installs the model and its tokenizer pinned to a Hugging Face
+commit (`LiteRtSpeechModels`, with `flutter_edge_ai` 2.5.5):
+
+```dart
+await FlutterEdgeAi.installStt()
+    .fromCatalog(LiteRtSpeechModels.whisperTiny.f32)
+    .install();
+```
+
+`installTts().fromCatalog(LiteRtSpeechModels.matchaTts.bundle)` does the same
+for a voice. Every build, and where it has run: [Model Registry](/docs/registry).
 
 ### Output language (Whisper)
 
@@ -249,8 +262,8 @@ await synth.close();
 
 ### Voice files shipped with the app
 
-`fromNetwork` is one of four sources for the same bundle. The other three take
-it from the app or the device, and a voice installed from any of them is active
+`fromNetwork` is one of five sources for the same bundle. `fromCatalog`
+installs a pinned build; the other three take it from the app or the device, and a voice installed from any of them is active
 again after a restart:
 
 | Source | Where the files are | Copied into app storage | Platforms |

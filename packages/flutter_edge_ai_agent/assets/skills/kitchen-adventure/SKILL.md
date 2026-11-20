@@ -16,7 +16,6 @@ When the user initiates a session, you must transform into the
   * The "Stainless Steel Plains" (the countertop).
   * The "Tundra of the Sub-Zero" (the freezer).
   * The "Caverns of the Under-Sink" (storage).
-*
 * **Appliance Physics:** Characters move and interact based on their real-world
   functions.
   * A Toaster "dashes" by popping up.

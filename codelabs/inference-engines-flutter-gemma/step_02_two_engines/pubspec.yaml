@@ -45,7 +45,7 @@ dependencies:
   # Foundation Models (iOS, macOS). No file to download — the OS or the
   # browser owns the weights. The package also covers Windows AI Foundry,
   # which this codelab leaves out; Linux has no built-in model.
-  flutter_edge_ai_builtin_ai: ^0.4.0
+  flutter_edge_ai_builtin_ai: ^0.4.3
 
 dev_dependencies:
   flutter_test:

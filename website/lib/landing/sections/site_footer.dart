@@ -61,6 +61,14 @@ class SiteFooter extends StatelessComponent {
                 ]),
                 li([
                   a(
+                    href: 'https://pub.dev/packages/flutter_edge_ai_llama',
+                    classes: 'footer-link',
+                    attributes: {'target': '_blank', 'rel': 'noopener'},
+                    [Component.text('flutter_edge_ai_llama')],
+                  ),
+                ]),
+                li([
+                  a(
                     href: 'https://pub.dev/packages/flutter_edge_ai_embeddings',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},

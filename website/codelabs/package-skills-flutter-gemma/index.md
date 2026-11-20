@@ -148,8 +148,8 @@ assistants above read it the same way, in three stages:
 3. **Execution.** It follows the instructions while it does the task.
 
 Stage 2 runs entirely on the description, so `flutter_edge_ai`'s skills describe
-tasks and symptoms rather than APIs — *"offline chat, running an LLM
-locally…"*, *"a reply comes back empty"*. Nine ship in the package, one per
+tasks and symptoms rather than APIs — *"offline chat, local models, Hugging
+Face installs…"*, *"when a reply is empty"*. Nine ship in the package, one per
 area: inference, function calling, RAG, speech, MediaPipe, ONNX, built-in AI,
 memory diagnostics and decisions.
 

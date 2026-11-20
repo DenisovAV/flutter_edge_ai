@@ -223,11 +223,13 @@ class _ChatPageState extends State<ChatPage> {
       // its own.
       //
       // What this does NOT do is balance the history, and that is the hole in
-      // the hand-written loop. If `generateChatResponseAsync` throws
-      // mid-stream, the calls it had already yielded are committed and now
-      // have no response — exactly the dangling state the round-two branch
-      // above takes such care to avoid. Closing it means tracking what
-      // `_generate` collected before it threw and answering those calls here.
+      // the hand-written loop. If `generateChatResponseAsync` throws because
+      // the engine failed, core takes the turn back, its calls included; but
+      // anything else that throws once a call is committed — staging the tool
+      // response, say — leaves that call with no response, exactly the
+      // dangling state the round-two branch above takes such care to avoid.
+      // Closing it means tracking what `_generate` collected and answering
+      // those calls here.
       // Step 3 hands the loop to the SDK, which already does.
       if (mounted) {
         setState(() {

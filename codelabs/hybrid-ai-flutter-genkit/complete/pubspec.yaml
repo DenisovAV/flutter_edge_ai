@@ -23,7 +23,7 @@ dependencies:
   # LiteRT-LM and the EmbeddingGemma tokenizer provider from these packages.
   flutter_edge_ai: ^2.7.0
   flutter_edge_ai_litertlm: ^1.21.0
-  flutter_edge_ai_embeddings: ^2.3.0
+  flutter_edge_ai_embeddings: ^2.3.3
 
   # Hybrid on-device ↔ cloud routing
   genkit_hybrid: ^0.5.1

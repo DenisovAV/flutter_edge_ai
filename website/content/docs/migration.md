@@ -1,12 +1,12 @@
 ---
 title: Migration
-description: Upgrade to Flutter Edge AI 2.6 (engine session/chat/turn SPI, decider SPI on InferenceModel, typed responses and failed-turn rollback), 2.5 (openModel and embedding providers), and earlier releases.
+description: Upgrade to Flutter Edge AI 2.7 (Hugging Face resolvers per role, the litertlm_dart runtime and its user_defines key), 2.6 (engine session/chat/turn SPI, decider SPI on InferenceModel, typed responses and failed-turn rollback), 2.5 (openModel and embedding providers), and earlier releases.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
 
-## Unreleased: Hugging Face resolvers per role
+## flutter_edge_ai 2.7.0: Hugging Face resolvers per role
 
 - A `HuggingFaceResolver` implementation adds the role it serves:
   `@override ModelManagementType get type => ModelManagementType.inference;`
@@ -36,16 +36,22 @@ meta:
 
 ```
 dependencies:
-  flutter_edge_ai_litertlm: ^1.21.0
+  flutter_edge_ai: ^2.7.0
+  flutter_edge_ai_litertlm: ^1.21.0   # requires flutter_edge_ai 2.7.x
 ```
+
+`flutter_edge_ai_litertlm` 1.21.0 accepts core 2.7.x only, and
+`flutter_edge_ai_onnx` 0.10.0 and `flutter_edge_ai_builtin_ai` 0.4.3 also
+require core 2.7.0: upgrade them together.
 
 The native library, its build hook and the Dart runtime under the engine moved
 to a new pure-Dart package, `litertlm_dart`, which `flutter_edge_ai_litertlm`
 depends on.
 
 - **NPU flags move to the `litertlm_dart:` key.** `qualcomm_npu`,
-  `google_tensor_npu` and the Qualcomm `qualcomm_npu_maven_url` /
-  `qualcomm_npu_aar` / `qualcomm_npu_qairt_zip` settings now go under
+  `google_tensor_npu`, `mediatek_npu` and their settings
+  (`qualcomm_npu_maven_url` / `qualcomm_npu_aar` / `qualcomm_npu_qairt_zip`,
+  `mediatek_npu_maven_url` / `mediatek_npu_aar`) now go under
   `hooks: user_defines: litertlm_dart:` (the workspace root's pubspec, if the
   app is a workspace member):
 
@@ -495,7 +501,7 @@ A location now binds one embedding profile **and** one document modality
 | `open(spec:, activeEmbedderProfileId: id)`, profile bound on the first text operation | `open(spec:, embedder: FlutterEdgeAiActiveEmbedder(profileId: id))` — or `.forActiveModel(namespace:)` — resolves the profile (loading the model) and binds the location at once: install the embedder before `open()` |
 | `open(spec:, embeddingProfile: p)` for precomputed vectors | `openVectors(spec:, profile: p)` |
 | `index.addText(id:, content: c)` | `index.add(id:, document: EmbeddingInput.text(c))` |
-| `index.searchText(query: q)` | `index.search(query: EmbeddingInput.text(q))` |
+| `index.searchText(query: q)` | `index.search(query: EmbeddingInput.text(q))` (rag 1.2.0's `searchText(text:)` is a different call: keyword search over an index opened with `enableTextSearch`, see [Text and hybrid search](/docs/embeddings-and-rag#text-and-hybrid-search)) |
 | `index.embeddingProfile` could be null | never null; `index.documents` names the modality |
 | `RagEmbedder { profile, embedDocument(String), embedQuery(String) }` | `{ resolveProfile(), modalities, embedDocument(EmbeddingInput), embedQuery(EmbeddingInput, documentModality:) }`: wrap strings in `EmbeddingInput.text`, return `{EmbeddingModality.text}` from `modalities` |
 | a filter on an undeclared field was ignored | `ArgumentError`: declare every filtered field in `VectorStoreSpec.filterSchema` |
@@ -770,11 +776,14 @@ that release; RAG later changed in 2.0 as documented above.
 
 1. Add the opt-in packages for the formats/features you use (see table below).
 2. Call `await FlutterEdgeAi.initialize(inferenceEngines: [...], ...)` once in `main()`, passing the engines/backends from the packages you added.
-3. Then apply the 2.0–2.4 sections above: RAG moved to `flutter_edge_ai_rag`
+3. Then apply the 2.0–2.7 sections above: RAG moved to `flutter_edge_ai_rag`
    (2.0), `isThinking` became `enableThinking` (2.1), sampling defaults come
    from the model (2.2), the embedding API changed (2.3), backends follow the
-   `.litertlm` file (2.4, litertlm 1.14 and 1.15), and, if you use the agent,
-   `schedule_notification` is opt-in (`flutter_edge_ai_agent` 0.4).
+   `.litertlm` file (2.4, litertlm 1.14 and 1.15), members were removed and
+   deprecated (2.5), sessions and chats come from `openSession`/`openChat`
+   (2.6), NPU flags go under `litertlm_dart:` (litertlm 1.21.0), and, if you
+   use the agent, `schedule_notification` is opt-in
+   (`flutter_edge_ai_agent` 0.4).
 
 ## 1. pubspec.yaml
 
@@ -785,7 +794,7 @@ dependencies:
   flutter_gemma: ^0.16.3
 ```
 
-**After (current 2.6 set):**
+**After (current 2.7 set):**
 
 ```
 dependencies:
@@ -826,8 +835,8 @@ file type.
 > from the OS),
 > `flutter_edge_ai_onnx` (ONNX Runtime — ORT-GenAI text generation +
 > plain-ORT embeddings via `dart:ffi` on native, + Web via Transformers.js /
-> onnxruntime-web), and `flutter_edge_ai_llama` (GGUF chat models through
-> llama.cpp, via llamadart; see [llama.cpp](/docs/llama)). Add any of them only
+> onnxruntime-web), and `flutter_edge_ai_llama` (GGUF chat models and
+> EmbeddingGemma 2 GGUF text embeddings through llama.cpp, via llamadart; see [llama.cpp](/docs/llama)). Add any of them only
 > if you want that feature. See
 > [Getting Started](/docs/getting-started).
 

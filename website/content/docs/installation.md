@@ -189,8 +189,9 @@ Required by any engine package: `flutter_edge_ai_litertlm`, `flutter_edge_ai_med
 `flutter_edge_ai_speech`.
 
 **Set the minimum iOS version to 15.0** — or **16.0** if your app depends on
-`flutter_edge_ai_mediapipe`, which needs MediaPipe GenAI, and **16.4** with
-`flutter_edge_ai_llama`, whose llama.cpp companion needs it. Core,
+`flutter_edge_ai_mediapipe`, which needs MediaPipe GenAI, **16.4** with
+`flutter_edge_ai_llama`, whose llama.cpp companion needs it, and **15.1** with
+`flutter_edge_ai_onnx`, whose iOS ONNX Runtime is built for it. Core,
 `flutter_edge_ai_litertlm` and embeddings build from 15.0. (`flutter_gemma` before 1.6.4 declared
 16.0.)
 
@@ -588,8 +589,9 @@ redistributable needed — Linux Vulkan driver, and known limitations).
 
 ## Platform & architecture support
 
-The native packages ship prebuilts only for the architectures below. Other ABIs
-fail at native load with a typed error.
+`flutter_edge_ai_litertlm`, `flutter_edge_ai_speech` and the LiteRT embedders
+ship prebuilts only for the architectures below. Other ABIs fail at native load
+with a typed error.
 
 | Platform | Supported architecture | Not supported |
 |---|---|---|
@@ -602,6 +604,10 @@ fail at native load with a typed error.
 
 ¹ MediaPipe text inference also works on Android `x86_64` / `armeabi-v7a` (see
 the Android section above).
+
+`flutter_edge_ai_onnx` also runs on Windows ARM64, and `flutter_edge_ai_llama`
+follows llamadart (Android `x86_64`, macOS `x86_64` on the CPU) — see
+[ONNX](/docs/onnx) and [llama.cpp](/docs/llama).
 
 For development, prefer an Apple Silicon Mac — the Android emulator runs
 `arm64-v8a` natively, and macOS / iOS Simulator builds are arm64.

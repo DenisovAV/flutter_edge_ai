@@ -25,7 +25,7 @@ dependencies:
   flutter_edge_ai_litertlm: ^1.21.0
   # Step 5 embeds your documents. The engine above runs the forward pass;
   # this package supplies the tokenizers it needs.
-  flutter_edge_ai_embeddings: ^2.3.0
+  flutter_edge_ai_embeddings: ^2.3.3
 
 dev_dependencies:
   flutter_test:

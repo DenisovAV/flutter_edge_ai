@@ -125,8 +125,8 @@ copies digits wrongly on some GPUs (seen on Adreno and Metal). `activationDataTy
 `getActiveModel` fixes it at the cost of a slower prefill; left unset, the model
 file decides, except that a FunctionGemma bundle declaring no
 `prefer_activation_type` gets `float32` on its GPU attempt (litertlm 1.14.0),
-because at half precision it answers with nothing, and so does Gemma 4 loaded
-with `maxTokens` above 2,048 (litertlm 1.20.1,
+because at half precision it answers with nothing, and so does a model installed
+as `ModelType.gemma4` and loaded with `maxTokens` above 2,048 (litertlm 1.20.1,
 [LiteRT-LM #4001](https://github.com/google-ai-edge/LiteRT-LM/issues/4001)); pass
 `ActivationDataType.float16` to keep half precision. On Android, Gemma 4 is
 not switched to float32 by itself (litertlm 1.21.0): with the current native
@@ -186,8 +186,8 @@ run yet.
 
 **MediaTek has its own flag too.** A bundle compiled ahead of time for a
 MediaTek SoC (Google publishes Gemma 3 1B for MT6989/MT6991/MT6993, Gemma 3
-270M for MT6991/MT6993, Qwen3 0.6B for MT6993 and EmbeddingGemma 2 for
-MT6991/MT6993; nothing for Gemma 4) runs on a phone with that SoC and Android
+270M for MT6991/MT6993, Gemma 3n E2B and Qwen3 0.6B for MT6993 and
+EmbeddingGemma 2 for MT6991/MT6993; nothing for Gemma 4) runs on a phone with that SoC and Android
 12 or later when the app sets `mediatek_npu: true` in the same `user_defines`
 block (from flutter_edge_ai_litertlm 1.17.0). The build then fetches Google's
 `litert-npu-runtime-mediatek` 2.3.0 AAR from Google Maven, checks its pinned
@@ -272,7 +272,8 @@ with no error and nothing in the log:
 Both are tracked upstream in
 [LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508).
 An NPU bundle is compiled for one KV-cache length: 4096 for every Gemma 4 E2B
-NPU build, 1280 for Gemma 3 1B and FastVLM, 4096 for Gemma 3 270M (the
+NPU build, 1280 for Gemma 3 1B and FastVLM, 4096 for Gemma 3 270M and
+Qwen3 0.6B, 2048 for Gemma 3n E2B (the
 catalog's `requiredMaxTokens`, and the context the
 [Model Registry](/docs/registry) gives each NPU build). `maxTokens` is **not**
 clamped up to 1024 on the NPU attempt (it is on CPU and GPU — see below); keep

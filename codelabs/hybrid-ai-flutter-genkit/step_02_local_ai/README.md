@@ -15,8 +15,8 @@ Each step is a **directory**, not a branch — open the one you want and run it:
 | `step_02_local_ai` | On-device inference via `genkit_flutter_edge_ai` (Gemma 3 1B, LiteRT-LM) |
 | `step_03_hybrid` | `AiEngine` — one Genkit, cloud + local routed by `genkit_hybrid` |
 | `step_04_smart_routing` | Smart routing + image (multimodal) input |
-| `step_05_embeddings` | On-device embeddings + RAG over a local tourist guide |
-| `complete` | The finished app |
+| `step_05_embeddings` | On-device embeddings (EmbeddingGemma) — the tourist guides indexed |
+| `complete` | RAG: the toggle, the augmented prompt and the Sources banner |
 
 ## Requirements
 
@@ -24,7 +24,7 @@ Each step is a **directory**, not a branch — open the one you want and run it:
 - A GEMINI_API_KEY from [aistudio.google.com](https://aistudio.google.com)
 - A HuggingFace account (for model downloads)
 - Android, iOS, macOS, Windows, Linux, or the web
-- ~1 GB free disk space
+- ~1 GB free disk space (about 2.2 GB on the web)
 
 ## Quick Start
 
@@ -37,6 +37,12 @@ flutter run \
   --dart-define=HF_TOKEN=hf_xxx
 ```
 
+Accept the licences of
+[litert-community/Gemma3-1B-IT](https://huggingface.co/litert-community/Gemma3-1B-IT)
+and
+[litert-community/embeddinggemma-300m](https://huggingface.co/litert-community/embeddinggemma-300m)
+with the account the `HF_TOKEN` belongs to.
+
 ## Key Dependencies
 
 ```yaml
@@ -45,6 +51,7 @@ genkit_google_genai: ^1.0.0
 genkit_flutter_edge_ai: ^0.12.1
 flutter_edge_ai: ^2.7.0
 flutter_edge_ai_litertlm: ^1.21.0   # LiteRT-LM engine (flutter_edge_ai ships none by default)
+flutter_edge_ai_embeddings: ^2.3.3
 genkit_hybrid: ^0.5.1
 ```
 

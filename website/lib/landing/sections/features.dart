@@ -57,7 +57,7 @@ const _features = [
     icon: '⚡',
     title: 'Hardware Acceleration',
     desc:
-        'CPU/GPU on every native target and WebGPU on the web, plus NPUs: Qualcomm (Android, Linux arm64), Google Tensor (Android) and Intel (Windows)',
+        'CPU/GPU on every native target and WebGPU on the web, plus NPUs: Qualcomm (Android, Linux arm64), Google Tensor and MediaTek (Android) and Intel (Windows)',
     accent: Brand.orange,
   ),
   _FeatureData(

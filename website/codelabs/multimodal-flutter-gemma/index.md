@@ -532,7 +532,7 @@ telling you that you rarely need to do: it changes models.
 
 **This step downloads 2.59 GB** on Android, iOS and desktop. On the web the
 model is the 2.0 GB build Step 2 already used, because SmolVLM2 has no web
-build of its own (see Step 2) — but this step app downloads it again; see
+build of its own (see Step 1) — but this step app downloads it again; see
 below. Gemma 4 E2B is seven times the size of SmolVLM2 on native, and there is
 no honest way to shrink that number: audio needs weights that were trained
 with it.
@@ -588,8 +588,9 @@ application identity, so SmolVLM2 is still sitting exactly where it was. Press
 the delete button in `step_02_vision` before you move on if you want that
 0.36 GB back.
 
-On the **web**, the model does not change. Step 2's own `ModelChoice` already
-resolves to `gemma-4-E2B-it-web.litertlm` in the browser (see Step 2), so there
+On the **web**, the model does not change. Step 2's `ModelChoice` — the one
+Step 1 introduced — already resolves to `gemma-4-E2B-it-web.litertlm` in the
+browser (see Step 1), so there
 is no id to change, and Step 3's only contribution is the `supportAudio` flag
 below. The download screen comes back all the same. Browser storage belongs to
 one origin in one browser profile, and `flutter run -d chrome` runs each step
@@ -1010,9 +1011,9 @@ a URL before it gives up. Ship only `opfs_helper.js` and that restore call
 hits an undefined global, the `catch` around it swallows the error, and an app
 that still reads "installed" silently re-downloads the whole model.
 `FlutterEdgeAi.initialize` passes `webStorageMode: WebStorageMode.streaming`
-from Step 2 on, which is what routes those bytes through OPFS rather than the
+from Step 1 on, which is what routes those bytes through OPFS rather than the
 Cache API default; see
-Step 2 for why a 2 GB model is streamed rather than buffered. And `model.dart`
+Step 1 for why a 2 GB model is streamed rather than buffered. And `model.dart`
 installs a different file on the web than everywhere else —
 `gemma-4-E2B-it-web.litertlm` rather than `gemma-4-E2B-it.litertlm`, a separate
 build of the same checkpoint built for `@litert-lm/core` (see Step 3). All

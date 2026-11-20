@@ -184,7 +184,7 @@ unqualified. See the
 Explicit GPU embeddings on Android (every device) and on iOS simulators fall back to CPU by
 default. Register `LlamaEmbeddingBackend(backendFallback: false)` to refuse
 those requests before loading. From 0.0.6 the same
-refusal and CPU fallback policy to macOS x64/Rosetta as a conservative guard
+refusal and CPU fallback policy applies to macOS x64/Rosetta, as a conservative guard
 for upstream-reported Intel/AMD Metal corruption; macOS arm64 Metal is unaffected.
 Automatic requests keep SDK automatic selection.
 Media and Web embeddings remain unavailable in the initial profile.

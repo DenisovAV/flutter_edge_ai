@@ -12,8 +12,8 @@ no separate process, no IPC.
 
 LiteRT-LM (`.litertlm`) is the **primary** desktop engine (core registers no
 engine, so register `LiteRtLmEngine()`), but not the only one. **`flutter_edge_ai_onnx`** ([ONNX Runtime](/docs/onnx) — ORT-GenAI
-generation + ORT embeddings) also runs on desktop (macOS arm64, Linux x64 and
-Windows x64), **`flutter_edge_ai_llama`** ([llama.cpp](/docs/llama), `.gguf`)
+generation + ORT embeddings) also runs on desktop (macOS arm64, Linux x64,
+Windows x64 and Windows ARM64), **`flutter_edge_ai_llama`** ([llama.cpp](/docs/llama), `.gguf`)
 runs on all three desktops, and the OS built-in model is available through
 **`flutter_edge_ai_builtin_ai`** ([Built-in AI](/docs/builtin-ai)) on **macOS**
 (Apple Foundation Models) and, since 0.3.0, on **Windows** (AI Foundry / Phi
@@ -39,7 +39,7 @@ statement: **there is no MediaPipe engine on desktop.** See
 │   │  ───────────────────────────────────           │ │
 │   │  libLiteRtLm.{dylib,dll,so}                    │ │
 │   │  + libLiteRt.{dll,so} (Linux/Windows)          │ │
-│   │  + libLiteRtLmMetalAccelerator.dylib (macOS)   │ │
+│   │  + LiteRtLmMetalAccelerator.framework (macOS)  │ │
 │   │  + libLiteRtWebGpuAccelerator.{dll,so}         │ │
 │   │  + libwebgpu_dawn.{dll,so} (Linux/Windows GPU) │ │
 │   │  + dxil.dll + dxcompiler.dll (Windows GPU)     │ │
@@ -123,8 +123,8 @@ and was measured on a Panther Lake PC, 2026-10-21; see
 ## Requirements
 
 - **Flutter** ≥ 3.44.0
-- **macOS**: Apple Silicon (arm64); 12.0 with `flutter_edge_ai_builtin_ai`, 14.0 with `flutter_edge_ai_llama`
-- **Windows**: 10/11 64-bit. LiteRT-LM needs no Visual C++ Redistributable (see below); `flutter_edge_ai_llama` 0.0.6's llama.cpp Windows x64 archive carries the Visual C++ runtime DLLs app-local (Windows arm64 not checked).
+- **macOS**: Apple Silicon (arm64); 14.0 with `flutter_edge_ai_litertlm` (and so `flutter_edge_ai_speech`) or `flutter_edge_ai_llama`, 12.0 with `flutter_edge_ai_builtin_ai`
+- **Windows**: 10/11 64-bit. LiteRT-LM needs no Visual C++ Redistributable (see below); `flutter_edge_ai_llama`'s Windows runtime comes from llamadart; whether its current archive carries the Visual C++ runtime is not checked (see [llama.cpp](/docs/llama)).
 - **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 10+ — RHEL 9 ships GCC 11's libstdc++, which is too old)
 - **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available (`LiteRtLmEngine(backendFallback: false)` turns the fallback off)
 
@@ -333,7 +333,7 @@ drops them. A `.litertlm` model loads on macOS without them.
 includes:
 
 - `LiteRtLm.dll`, `LiteRt.dll`, `libGemmaModelConstraintProvider.dll`, `StreamProxy.dll`
-- `libLiteRtWebGpuAccelerator.dll`, `libLiteRtTopKWebGpuSampler.dll`
+- `libLiteRtWebGpuAccelerator.dll`
 - `webgpu_dawn.dll` (Dawn WebGPU backend — split into a shared lib in LiteRT-LM v0.14.0; the accelerator DLL imports it, so GPU fails without it)
 - `dxil.dll` + `dxcompiler.dll` (DirectX Shader Compiler runtime — required for WebGPU/DX12 shader compilation; from [microsoft/DirectXShaderCompiler v1.9.2602](https://github.com/microsoft/DirectXShaderCompiler/releases/tag/v1.9.2602))
 - `LiteRtDispatch.dll`, the OpenVINO runtime (`openvino*.dll`) and TBB (`tbb*.dll`) — the Intel NPU dispatch behind `PreferredBackend.npu` on Lunar Lake / Panther Lake
@@ -343,8 +343,8 @@ so on): Native Assets drops the `lib` prefix on Windows, while `LiteRtLm.dll`
 imports them with it.
 
 `StreamProxy.dll` exposes a `LoadLibraryExA(LOAD_WITH_ALTERED_SEARCH_PATH)` helper
-that `flutter_edge_ai_litertlm` uses to pre-load `LiteRt.dll`, `libLiteRtTopKWebGpuSampler.dll`
-and `libLiteRtWebGpuAccelerator.dll`, then `LiteRtLm.dll` itself. Without this,
+that `litertlm_dart` uses to pre-load `LiteRt.dll` and
+`libLiteRtWebGpuAccelerator.dll`, then `LiteRtLm.dll` itself. Without this,
 modern Windows DLL search order doesn't always include the application directory
 for secondary `LoadLibrary` calls — they would fail to find the GPU accelerator
 DLL and silently fall back to CPU.
@@ -369,7 +369,7 @@ them at all.
 The bundle includes:
 
 - `libLiteRtLm.so`, `libLiteRt.so`, `libGemmaModelConstraintProvider.so`
-- `libLiteRtWebGpuAccelerator.so`, `libLiteRtTopKWebGpuSampler.so`, `libStreamProxy.so`
+- `libLiteRtWebGpuAccelerator.so`, `libStreamProxy.so`
 - `libwebgpu_dawn.so` (Dawn WebGPU backend — split into a shared lib in LiteRT-LM v0.14.0; the accelerator loads it via `$ORIGIN` rpath, so GPU fails without it)
 
 `libStreamProxy.so` exposes `stream_proxy_load_global` (an `RTLD_GLOBAL`
@@ -484,9 +484,7 @@ await cpu.close();
   engines, and both created at the same time on an empty cache. On Windows
   Lunar Lake, CPU, GPU and NPU engines ran together in the Intel NPU demo
   (LiteRT-LM clients on `native-v0.18.0-f`). Not measured: Android, iOS,
-  Linux, and two GPU engines on Windows, which preloads LiteRT-LM's WebGPU
-  sampler: it keeps one `wgpu::Instance` per process, and a second one fails
-  with `wgpu::Instance already set`.
+  Linux, and two GPU engines on Windows.
 
 To swap the active model, call `model.close()` first, then
 `getActiveModel(...)` again. Switching its backend (CPU ↔ GPU) works the same way.
@@ -501,7 +499,7 @@ was linked statically and conflicted with the separately shipped WebGPU
 accelerator. Fixed in 1.4.0, before the rename — every
 `flutter_edge_ai_litertlm` release has the fix.
 
-### Per-token sampler: GPU on Windows, CPU on macOS and Linux
+### Per-token sampler: CPU on Linux and Windows
 
 When `preferredBackend: PreferredBackend.gpu`, the **forward pass** (prefill +
 decode) runs on the GPU accelerator (Metal, DX12, Vulkan). Where the **per-token
@@ -514,9 +512,8 @@ delegate can't prepare the vision encoder's ops); set
 only where the section allows it
 (`(await readLiteRtLmBundleInfo(path)).audioEncoder?.backendConstraint`).
 
-- **Windows** — GPU. `flutter_edge_ai_litertlm` preloads `libLiteRtTopKWebGpuSampler.dll`, which in `native-v0.18.0` exports its full C ABI (7 of 7 functions).
-- **macOS** — CPU. The bundle does not ship `libLiteRtTopKMetalSampler`: upstream opens it by bare file name, which cannot reach a library inside the app bundle, so the factory uses the CPU chain.
-- **Linux** — CPU. The sampler `.so` exports its full C ABI, but it holds a process-static `wgpu::Instance` that any second `engine_create` rejects. Since runtime model swap matters more than the few ms saved, `flutter_edge_ai_litertlm` doesn't preload it and lets the factory fall back to CPU.
+- **Linux and Windows** — CPU. From `native-v0.19.0-a` no GPU sampler ships there (the fused WebGPU sampler crashed GPU engine create), so LiteRT-LM samples on the CPU while the logits stay on the GPU.
+- **macOS** — LiteRT-LM's samplers are linked into `libLiteRtLm` (from `native-v0.19.0-a`).
 
 ### `randomSeed` / `temperature` / `topK` / `topP` — only the first session's values apply
 

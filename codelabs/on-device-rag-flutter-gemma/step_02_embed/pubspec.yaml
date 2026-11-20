@@ -44,7 +44,7 @@ dependencies:
   # The tokenizers an embedding backend needs. Since flutter_gemma 1.9.0 a
   # backend no longer carries one — which tokenizer a model wants is a
   # property of the model, so the app registers it (see main.dart).
-  flutter_edge_ai_embeddings: ^2.3.0
+  flutter_edge_ai_embeddings: ^2.3.3
 
 dev_dependencies:
   flutter_test:

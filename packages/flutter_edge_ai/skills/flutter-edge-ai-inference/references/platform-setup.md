@@ -344,7 +344,8 @@ Storage mode, set in `FlutterEdgeAi.initialize(webStorageMode: ...)`:
 | `none` | no persistence; downloads every launch |
 
 The `.litertlm` web engine loads the web build of a model —
-`gemma-4-E2B-it-web.litertlm` (2.0 GB, so use `streaming`), not
+`gemma-4-E2B-it-web.litertlm` (2.0 GB, under 2 GiB, so the default `cacheApi`
+holds it), not
 `gemma-4-E2B-it.litertlm`. It is text-only: an image or audio message throws
 `UnsupportedError`. LoRA is not supported on any `.litertlm` path, native
 included: a session `loraPath` throws `UnsupportedError`, and an adapter

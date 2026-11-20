@@ -70,7 +70,8 @@ call. That is the rule the loop in Step 3 exists to keep.
 ### What you'll need
 
 * Flutter 3.44 or newer, and any one of Flutter's six platforms to run on: an
-  Android device or emulator, an iOS device or simulator, an Apple-silicon Mac,
+  arm64 Android device or emulator (an Apple-silicon Mac's emulator is arm64),
+  an iOS device or simulator, an Apple-silicon Mac,
   a Windows or Linux desktop, or Chrome. `step_01_starter/` is a whole app, not
   a diff against another codelab — clone the repo and run it
 * **No Hugging Face token to run the app**, in any step. The two repositories
@@ -551,8 +552,9 @@ each of them is a committed call that would have been left dangling:
 * **your tool threw** — the failed call is answered with `{'error': …}`, the
   siblings in that turn are answered as not run, and the exception is
   *rethrown* so you still see it
-* **the generation stream errored mid-turn** — the calls it had already yielded
-  are answered before the original error is rethrown
+* **the generation stream errored mid-turn** — a turn the engine failed is
+  taken back, its calls with it, so nothing is left dangling; a call that did
+  stay committed is answered before the original error is rethrown
 
 All three balance the history before they return, and that is what leaves the
 chat usable for the next message — with one exception the SDK states rather
@@ -1159,7 +1161,7 @@ wins.
 
 **The web** builds and runs, and text chat works. Function calling is a
 **maybe**, and the honest reason is that nobody here has run it. The plumbing
-is in place: core 1.7.3 fixed `createChat` dropping `tools`, and the browser
+is in place: `openChat` passes `tools` through on the web arm, and the browser
 arm sends the declarations to the runtime as a structured preface for both
 families, the same JSON the native side sends. What is missing is a
 measurement — no browser run against either model, with either kind of tool.

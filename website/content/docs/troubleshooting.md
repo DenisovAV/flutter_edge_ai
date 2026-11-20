@@ -73,7 +73,7 @@ final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024); // context wi
 final chat = await model.openChat(maxOutputTokens: 100);        // reply cap
 ```
 
-(`maxOutputTokens` is honored on `.litertlm` and ONNX; the MediaPipe `.task` path has no session-level output cap and ignores it.)
+(`maxOutputTokens` is honored on `.litertlm`, ONNX, `.gguf` and built-in AI on Android, iOS and macOS; the MediaPipe `.task` path has no session-level output cap and ignores it, and so does built-in AI on Windows and the Web.)
 
 ## iOS
 
@@ -166,8 +166,9 @@ way on every run: asked when a delivery arrived (`2026/06/23`), it answers
 The published Gemma 4 `.litertlm` files ask for half-precision activations,
 and at half precision the rotary positions past about 2,048 tokens stop being
 distinct ([LiteRT-LM #4001](https://github.com/google-ai-edge/LiteRT-LM/issues/4001)).
-Since `flutter_edge_ai_litertlm` 1.20.1 a Gemma 4 model loaded with `maxTokens`
-above 2,048 and no `activationDataType` gets full precision on its GPU attempt
+Since `flutter_edge_ai_litertlm` 1.20.1 a model installed as `ModelType.gemma4`
+and loaded with `maxTokens` above 2,048 and no `activationDataType` gets full
+precision on its GPU attempt
 by itself, except on Android (litertlm 1.21.0 keeps half precision there and
 prints a WARNING). With an older version, or a smaller `maxTokens`, ask for
 it, but not on an Adreno 8xx GPU (a Galaxy S25, for one): with the current
@@ -418,12 +419,12 @@ applies to `flutter_edge_ai_litertlm` (always has), `flutter_edge_ai_onnx`, and
   produced.
 - **Maintainers only:** a local `native/<name>/prebuilt/<target>/` overrides the
   pinned release. `flutter_edge_ai_sqlite` says so on stderr when it takes that
-  path; `flutter_edge_ai_litertlm` and `flutter_edge_ai_onnx` take it silently. If a
+  path; `litertlm_dart` (under `flutter_edge_ai_litertlm`) and `flutter_edge_ai_onnx` take it silently. If a
   new release "did not take", look for that directory first.
 
 ## Another package bundles its own LiteRT-LM
 
-**`The LiteRT-LM library at … is not the one flutter_edge_ai_litertlm ships (it
+**`The LiteRT-LM library at … is not the one litertlm_dart ships (it
 lacks litert_lm_engine_settings_set_kernel_batch_size)`** — a `StateError` (an
 `EmbeddingLoadException` for an embedder) when a `.litertlm` model, an embedder
 or speech loads. Another package in the app ships its own LiteRT-LM under the

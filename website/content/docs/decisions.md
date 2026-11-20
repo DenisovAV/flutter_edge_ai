@@ -492,7 +492,7 @@ final answer = await decider.choose(
 );
 ```
 
-LiteTune 0.5.0's `bundle` prints only the `options:` part of that call
+LiteTune's `bundle` (0.5.0 through 0.9.1) prints only the `options:` part of that call
 (`model.createDecider(options: [...])`); add the `question:`, which its
 `contract.json` and the section carry, and the `fromModel()` calibration.
 
@@ -520,11 +520,12 @@ mean nothing for another question or another option list:
 
 Each decision renders the prompt with the model's own chat template, prefills
 it once, and scores every option on its shortest unique prefix, rewinding to
-the prompt between options. Before the first decision on a loaded model,
-LiteRT-LM checks how its version scores right after a prefill (0.18.0 drops
-the prompt's second-to-last token, LiteRT-LM #3561, and the decider prefills
-the last token again to match); an engine whose check gives neither answer,
-or whose scores are not repeatable, is refused rather than guessed. An input
+the prompt between options. Before the first decision on a loaded model, a
+debug or profile build checks that this LiteRT-LM scores right after a prefill
+with the whole prompt (LiteRT-LM 0.18.0 dropped the prompt's second-to-last
+token, #3561; the 0.19 native build carries the fix). An engine that still
+scores the 0.18 way, or whose scores are not repeatable, is refused rather
+than guessed. An input
 whose prompt does not fit the model's `maxTokens` is refused with
 `ArgumentError`, never truncated, and a decision that cannot fit even with a
 one-character input is refused when the decider is created. A cancel stops a
@@ -579,12 +580,13 @@ options that are a property of the text (a tone, an emotion, yes or no, a
 level), and an embedding decider for many options by topic.
 
 **The scoring self-check.** In a debug or profile build, the first
-`createDecider` on a model runs LiteRT-LM's scoring self-check: it finds out
-how this LiteRT-LM scores right after a prefill (LiteRT-LM #3561) and refuses
-an engine whose scores do not repeat bit for bit or change after a rewind. A
-release build does not run it and scores in the mode the check picked on
-every engine measured (`once`: LiteRT-LM 0.18.0 on the CPU, Apple Metal and
-Adreno 830), so the first decision does not pay for it. Run the decider once
+`createDecider` on a model runs LiteRT-LM's scoring self-check: it checks
+that this LiteRT-LM scores right after a prefill with the whole prompt
+(LiteRT-LM #3561, fixed in 0.19) and refuses an engine whose scores do not
+repeat bit for bit or change after a rewind. A release build does not run it;
+the pinned native build passed it on every engine measured (LiteRT-LM 0.19 on
+the CPU, Apple Metal, Adreno 830, a Tesla T4 and an Arc B390), so the first
+decision does not pay for it. Run the decider once
 in debug on the hardware you ship to, above all on a GPU nobody measured: a
 refusal there is one a release build would not report.
 

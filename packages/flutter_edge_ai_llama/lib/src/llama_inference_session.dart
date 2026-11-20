@@ -1195,7 +1195,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   }
 }
 
-// In llamadart 0.17.5 these formats classify tags after a closed thought as text.
+// These formats can classify tags after a closed thought as text.
 // Restrict compatibility handling to an empty thought at the rendered prompt end.
 bool _hasClosedThinkingPrompt(llama.LlamaChatTemplateResult rendered) =>
     !rendered.thinkingForcedOpen &&

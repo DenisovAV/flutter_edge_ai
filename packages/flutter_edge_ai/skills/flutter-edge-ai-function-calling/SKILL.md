@@ -21,7 +21,7 @@ Packages, engine and model install are in the flutter-edge-ai-inference skill. T
    (FastVLM, Qwen2-VL, SmolVLM2, LLaVA-OneVision) cannot — they describe the
    action in prose instead. A GGUF model through `flutter_edge_ai_llama` can
    call tools when its chat template supports them.
-9. Never combine tools with `responseFormat`. `openChat(tools: ..., responseFormat: ...)` throws `ArgumentError` before the engine is called because a tool call is not a value of the requested format. Use a separate structured chat/session for the final typed answer, or request JSON in the prompt and validate it in the app.
+7. Never combine tools with `responseFormat`. `openChat(tools: ..., responseFormat: ...)` throws `ArgumentError` before the engine is called because a tool call is not a value of the requested format. Use a separate structured chat/session for the final typed answer, or request JSON in the prompt and validate it in the app.
 
 ## Declare a tool
 
@@ -154,7 +154,7 @@ The model can recover from an error it can read. An exception thrown out of a to
 
 **Model answers in prose**
 - Symptom: "I would change the colour to red" instead of a call.
-- Fix: check `supportsFunctionCalls: true`, pass `modelType` on web and ONNX, then check the model is tool-capable.
+- Fix: check `supportsFunctionCalls: true`, pass `modelType` on the `.litertlm` web engine (or when it differs from the installed type), then check the model is tool-capable.
 
 **Raw markers in the text**
 - Symptom: `<|tool_call>` or `<tool_call|>` appears in `TextResponse` tokens.

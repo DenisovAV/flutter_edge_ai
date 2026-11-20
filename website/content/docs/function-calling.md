@@ -79,8 +79,8 @@ agent chaining is **not** supported on Web.
 ## Declaring tools
 
 Describe each function as a `Tool` — a `name`, a `description`, and a
-JSON-Schema `parameters` map — then pass the list to `openChat` (or
-`openChat`) together with `supportsFunctionCalls: true`. `openSession` also
+JSON-Schema `parameters` map — then pass the list to `openChat` together
+with `supportsFunctionCalls: true`. `openSession` also
 takes `tools:`, and the two passthrough families read them there, through the
 runtime's own tool path: Gemma 4, and FunctionGemma on a `.litertlm`. For every
 other model it is the chat that puts the tools into the prompt and parses the
@@ -303,8 +303,8 @@ arguments, so read back from text alone it has none — keep `toolCalls`.
 
 Function calling is supported on **Android, iOS, Web, and Desktop**. For Gemma 4,
 the native function-call tokens are routed through the LiteRT-LM SDK chat-template
-path (use `ModelType.gemma4`), so Gemma 4 function calling needs a `.litertlm`
-model: with MediaPipe `.task` (including the web `-web.task` builds) and with ONNX
+path (use `ModelType.gemma4`), so among the LiteRT-LM, MediaPipe and ONNX
+engines Gemma 4 function calling needs a `.litertlm` model: with MediaPipe `.task` (including the web `-web.task` builds) and with ONNX
 the tools do not reach a Gemma 4 model. See [Capabilities](/docs/capabilities).
 
 With the [Built-in AI](/docs/builtin-ai) engine (`flutter_edge_ai_builtin_ai`)

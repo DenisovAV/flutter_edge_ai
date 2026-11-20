@@ -89,7 +89,7 @@ is on the [Capabilities](/docs/capabilities) page.
 
 Desktop is served **primarily** by [`flutter_edge_ai_litertlm`](/docs/litertlm)
 (`.litertlm`). [`flutter_edge_ai_onnx`](/docs/onnx) also runs
-on macOS arm64, Windows x64 and Linux x64, [`flutter_edge_ai_llama`](/docs/llama)
+on macOS arm64, Windows x64, Windows ARM64 and Linux x64, [`flutter_edge_ai_llama`](/docs/llama)
 (`.gguf`) on all three desktops, and the OS built-in model is
 available via [`flutter_edge_ai_builtin_ai`](/docs/builtin-ai) on **macOS** (Apple
 Foundation Models) and on **Windows** (AI Foundry — nothing to configure to
@@ -132,7 +132,8 @@ await FlutterEdgeAi.initialize(
 ```
 
 **Platform support:** device-verified via `dart:ffi` on macOS (Apple Silicon),
-Linux x64, Windows x64, Android (arm64), and iOS (arm64). On **Web**,
+Linux x64, Windows x64, Windows ARM64 (a GitHub-hosted Windows 11 ARM64
+runner), Android (arm64), and iOS (arm64). On **Web**,
 `OnnxEngine` runs generation through Transformers.js v4 and
 `OnnxEmbeddingBackend` runs through onnxruntime-web (WebGPU/WASM) — same
 public API as native, no `if (kIsWeb)` needed in app code.

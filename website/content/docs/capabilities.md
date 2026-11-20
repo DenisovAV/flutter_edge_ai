@@ -29,8 +29,8 @@ should use LiteRT-LM (`.litertlm`). The packages are
 
 So text generation has five interchangeable runtimes (the fifth is llama.cpp through `flutter_edge_ai_llama`, for GGUF models, with image and audio input through a compatible GGUF projector; see [llama.cpp](/docs/llama)), embeddings have three
 (LiteRT and ONNX on every platform, and llama.cpp for EmbeddingGemma 2 GGUF text
-natively through `flutter_edge_ai_llama` 0.0.3, measured on macOS, Linux and
-Windows; Android and iOS not qualified), and speech has one (LiteRT, on
+natively through `flutter_edge_ai_llama` 0.0.3, measured on macOS, Linux,
+Windows and an Android emulator; Android phones and iOS not qualified), and speech has one (LiteRT, on
 native platforms).
 
 - **Embeddings**: LiteRT runs `.tflite` models (EmbeddingGemma 1, Gecko) and
@@ -49,8 +49,10 @@ native platforms).
 - **Built-in AI** uses the model the OS ships: Gemini Nano on Android, Apple
   Foundation Models on iOS and macOS 26+, Phi Silica on Windows, and the Chrome
   Prompt API on the Web.
-- Native libraries are built for arm64 on Android, iOS and macOS, for x64 on
-  Windows, and for x64 and arm64 on Linux (ONNX Runtime: Linux x64 only).
+- LiteRT-LM's native libraries are built for arm64 on Android, iOS and macOS,
+  for x64 on Windows, and for x64 and arm64 on Linux; ONNX Runtime adds
+  Windows ARM64 and has no Linux arm64 build; llama.cpp follows llamadart's
+  targets.
 
 ## What each engine supports for text generation
 
@@ -60,12 +62,14 @@ native platforms).
 | **Audio** | ✅ Native | — | — | — |
 | **Function calling** | ✅ Native/Prompt | ✅ Prompt | ✅ Prompt | ✅ Prompt |
 | **Thinking** | ✅ Full | ✅ Tags | ✅ Tags | — |
-| **Structured output (`responseFormat`)** | ✅ qualified native CPU/GPU rows | ❌ refused | ✅ native macOS arm64 only | ❌ no qualified platform yet |
+| **Structured output (`responseFormat`)** | ✅ qualified native CPU/GPU rows | ❌ refused | ✅ native macOS arm64 and Windows x64 | ❌ no qualified platform yet |
 
 `flutter_edge_ai_llama` also supports response formats on macOS arm64 CPU/Metal
 and in Chrome on macOS with dart2wasm + WebGPU; other GGUF hosts/backends are
-refused until qualified. ONNX requires native macOS arm64 and a model directory
-containing `tokenizer.json`; ONNX Web refuses formats. LiteRT-LM currently
+refused until qualified. ONNX requires native macOS arm64 or Windows x64 and a
+model directory containing `tokenizer.json`; the Linux x64 and Windows ARM64
+runtimes are refused until they have run, and ONNX on iOS, Android and the Web
+refuses formats. LiteRT-LM currently
 enforces the whole dialect on macOS and iOS arm64 CPU/Metal, Linux x64
 CPU/Vulkan, Windows x64 CPU/D3D12, and Android arm64 CPU plus
 Adreno/Mali/PowerVR GPU. NPU, Web, and every unlisted row are refused.

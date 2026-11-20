@@ -528,7 +528,7 @@ The resolver lives in the engine package — `LitertlmManifestResolver` in `flut
 
 Each resolver serves one role — its `type`: `ModelManagementType.inference`, `embedding`, `stt` or `tts`. `resolveHuggingFace(repo, type: …, fileType: …)` asks only the resolvers of that role (inference by default), so an `.onnx` language model and an `.onnx` embedder each reach their own. A backend package carries its resolver the way an engine does: `initialize` registers the resolvers of `inferenceEngines`, `embeddingBackends`, `sttBackends` and `ttsBackends`, and refuses a provider whose resolver serves another role than its list. The explicit `huggingFaceResolvers:` list is registered first and wins a tie within its role.
 
-An embedder installs the same way once an embedding resolver is registered for its file type:
+No published backend ships an embedding resolver yet (the LiteRT-LM, ONNX and built-in AI resolvers serve the inference role). With your own `HuggingFaceResolver` whose `type` is `ModelManagementType.embedding`, passed in `initialize(huggingFaceResolvers: [...])`, an embedder installs the same way:
 
 ```dart
 final install = await FlutterEdgeAi.installEmbedder()
@@ -710,8 +710,8 @@ about 0.2–0.3 s per 3-second clip on an Apple-silicon Mac) and on the web from
 512 tokens or fewer, and use the 270m when you embed only text; see
 [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
 The same repositories hold each bundle compiled for one SoC's NPU
-(`…_Qualcomm_SM8850.litertlm`, `…_Qualcomm_SM8650.litertlm`,
-`…_Qualcomm_QCS8275.litertlm`, 202–563 MB),
+(`…_Qualcomm_SM8550/SM8650/SM8750/SM8850.litertlm`,
+`…_Qualcomm_QCS8275.litertlm`, 188–563 MB; run on SM8650, SM8850 and QCS8275),
 which `flutter_edge_ai_litertlm` 1.13.1 runs on Qualcomm Android and Qualcomm
 Linux arm64 with `preferredBackend: PreferredBackend.npu`; see
 [EmbeddingGemma 2 on a Qualcomm NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-qualcomm-npu).

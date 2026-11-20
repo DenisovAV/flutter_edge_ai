@@ -111,6 +111,13 @@ final chat = await inference.openChat(
 the length of the answer. 4096 leaves room for what an agent adds to the
 conversation in the next steps.
 
+On a GPU, Gemma 4 with a context above 2,048 tokens runs float32 activations
+on iOS, macOS, Windows and Linux, because at float16 its positions stop being
+distinct past about 2,048 tokens (LiteRT-LM #4001). Android keeps the bundle's
+float16, since float32 fails on Adreno 8xx GPUs with the native build in
+`flutter_edge_ai_litertlm` 1.21.0, and prints one WARNING line saying so. An
+explicit `activationDataType` always wins.
+
 Now ask it two things:
 
 ```text
@@ -196,9 +203,9 @@ bundles it:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.6.0
-  flutter_edge_ai_litertlm: ^1.20.0
-  flutter_edge_ai_agent: ^0.4.2
+  flutter_edge_ai: ^2.7.0
+  flutter_edge_ai_litertlm: ^1.21.0
+  flutter_edge_ai_agent: ^0.4.3
 
 flutter:
   assets:
@@ -804,7 +811,7 @@ declares `require-secret: true` under `metadata`. The app stores the key with
 `set(skillName, key)` on a `SecretStore` (`SecretEditorDialog` asks the user
 for it) and passes that store to `AgentSession.fromModel(secretStore: ...)`;
 the agent hands the key to your function as `secret`. It never goes into the
-prompt. Through 0.4.0 it does go into the page the loopback server sends to
+prompt. Through 0.4.3 it does go into the page the loopback server sends to
 the webview, and that server does not check who asks while the skill runs:
 treat such a key as one another app on the same device could read.
 
@@ -884,14 +891,8 @@ Duration: 2
   you wrote, and `SkillManagerView` lets the user switch skills on and off.
   Like Step 5's dialog, these widgets and `McpManagerView` are built on
   `package:flutter/material.dart`, so they need the same bridge in
-  `MaterialApp.builder`. `AgentChatView` also needs a `Material` ancestor of
-  that package's own type, which material_ui's `Scaffold` is not: wrap it in
-  `legacy.Material(type: legacy.MaterialType.transparency, child: ...)`, with
-  `import 'package:flutter/material.dart' as legacy show Material, MaterialType;`.
-  When adding a skill or a server fails, `SkillManagerView` and
-  `McpManagerView` report it through that package's `ScaffoldMessenger`,
-  which the bridge does not provide, so in this app the failure throws
-  instead of showing a message.
+  `MaterialApp.builder`. Under it they bring their own `Material`, and a skill
+  that fails to add or a server that fails to connect is reported in a dialog.
 * The package bundles more skills: `query-wikipedia` (needs the network),
   `interactive-map` (answers with a webview) and `kitchen-adventure`, a
   text-only persona.

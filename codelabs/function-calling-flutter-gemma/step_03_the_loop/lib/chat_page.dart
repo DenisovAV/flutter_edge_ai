@@ -94,7 +94,11 @@ class _ChatPageState extends State<ChatPage> {
       // and without that key the GPU runs at FP16 and answers every prompt with
       // `<pad>` or nothing at all — measured on Android and on macOS Metal
       // alike, with no exception and no warning, a chat that looks alive and
-      // returns filler. Asking for float32 fixes it.
+      // returns filler. Asking for float32 fixes it. On Adreno 8xx GPUs,
+      // though, the native build in flutter_edge_ai_litertlm 1.21.0 fails
+      // Gemma 4 E2B at float32 at the first token, and FunctionGemma at
+      // float32 there is unmeasured: if a turn fails and its error names
+      // float32, open it with `preferredBackend: PreferredBackend.cpu`.
       //
       // Re-converted with a current litetune — which Step 4 does — the same
       // weights carry the key and need no argument. So this is about one

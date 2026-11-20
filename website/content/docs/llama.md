@@ -132,7 +132,7 @@ change only the docs; 0.0.6 moves to llamadart 0.17.5; 0.1.0 adopts core 2.6;
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai: ^2.7.0
   flutter_edge_ai_llama: ^0.2.0
 ```
 
@@ -184,7 +184,7 @@ unqualified. See the
 Explicit GPU embeddings on Android (every device) and on iOS simulators fall back to CPU by
 default. Register `LlamaEmbeddingBackend(backendFallback: false)` to refuse
 those requests before loading. From 0.0.6 the same
-refusal and CPU fallback policy to macOS x64/Rosetta as a conservative guard
+refusal and CPU fallback policy applies to macOS x64/Rosetta, as a conservative guard
 for upstream-reported Intel/AMD Metal corruption; macOS arm64 Metal is unaffected.
 Automatic requests keep SDK automatic selection.
 Media and Web embeddings remain unavailable in the initial profile.

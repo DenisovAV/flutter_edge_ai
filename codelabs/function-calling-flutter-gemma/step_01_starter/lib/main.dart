@@ -29,9 +29,9 @@ Future<void> main() async {
   try {
     await FlutterEdgeAi.initialize(
       inferenceEngines: [LiteRtLmEngine()],
-      // OPFS streaming: on web a `.litertlm` this size does not fit the blob
-      // the default `cacheApi` mode would have to buffer it into. Every other
-      // platform ignores this.
+      // OPFS streaming: on web the `.litertlm` engine reads the model as a
+      // stream instead of one blob, as the docs recommend for `.litertlm`.
+      // Every other platform ignores this.
       webStorageMode: WebStorageMode.streaming,
     );
   } catch (error) {

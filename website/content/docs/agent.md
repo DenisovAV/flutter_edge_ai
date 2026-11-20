@@ -47,8 +47,8 @@ used below).
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.6.0
-  flutter_edge_ai_agent: ^0.4.2
+  flutter_edge_ai: ^2.7.0
+  flutter_edge_ai_agent: ^0.4.3
   flutter_edge_ai_litertlm: ^1.21.0   # an inference engine (LiteRtLmEngine)
 ```
 
@@ -59,7 +59,7 @@ The agent is **not supported on Web** — never verified end-to-end, and the exa
 A skill is a Markdown file (`SKILL.md`) with YAML frontmatter and one of four
 execution mechanisms:
 
-| Skill type | What it does | Android | iOS | macOS | Windows | Web | Linux |
+| Skill type | What it does | Android | iOS | macOS | Windows | Web | Linux⁵ |
 |---|---|:-:|:-:|:-:|:-:|:-:|:-:|
 | **text-only** | A persona / instruction the model follows directly | ✅ | ✅ | ✅ | ✅ | ❌³ | ✅ |
 | **MCP** | Calls remote MCP tools over Streamable HTTP | ✅ | ✅ | ✅ | ✅ | ❌³ | ✅ |
@@ -73,7 +73,8 @@ return an `ErrorResult`; text / native-intent / MCP skills work on Linux.
 ³ Not supported on Web — never verified end-to-end, and the example app
 disables it (see the note below). ⁴ Only Android and iOS open the OS calendar
 editor; macOS, Windows and Linux open a Google Calendar event page in the
-browser, and Linux cannot schedule a notification.
+browser, and Linux cannot schedule a notification. ⁵ Not verified end-to-end
+on Linux (see the note below).
 
 JS skills run in a headless, sandboxed webview. To grant a secure context (so
 skills using `crypto.subtle` and other secure-context Web APIs work), the package
@@ -133,7 +134,10 @@ final session = await AgentSession.fromModel(
 a deployment that does not serve `assets/packages/flutter_edge_ai_agent/` causes it.
 
 The package also ships an adaptive UI: `AgentChatView`, `SkillManagerView`,
-`McpManagerView`, `SecretEditorDialog`, and `SkillTesterView`.
+`McpManagerView`, `SecretEditorDialog`, and `SkillTesterView`. From `flutter_edge_ai_agent`
+0.4.3, in an app built on `package:material_ui`, put `MaterialUiCompatibilityBridge` in
+`MaterialApp.builder`, above the Navigator:
+`builder: (context, child) => MaterialUiCompatibilityBridge(child: child!)`.
 
 ## Asking about a photo
 

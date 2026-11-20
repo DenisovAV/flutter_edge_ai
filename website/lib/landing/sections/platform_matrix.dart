@@ -55,7 +55,8 @@ class PlatformMatrix extends StatelessComponent {
             Component.text(
               'NPU: Qualcomm on Android and on the Linux arm64 QCS8275 (the '
               'app opts in with qualcomm_npu), Google Tensor G6 on Android '
-              '(google_tensor_npu), and Intel Lunar Lake on Windows. The '
+              '(google_tensor_npu), MediaTek on Android (mediatek_npu; Gemma 3 '
+              '1B run on an MT6989 tablet), and Intel Lunar Lake on Windows. The '
               'Panther Lake NPU is enabled in code and was measured on a '
               'Panther Lake PC, 2026-10-21. Tensor G5 is enabled in code, not '
               'measured. '

@@ -96,8 +96,8 @@ Open `step_01_starter`. It already depends on both packages, and on
 ```yaml
 dependencies:
   material_ui: ^1.1.0
-  flutter_edge_ai: ^2.6.0
-  flutter_edge_ai_builtin_ai: ^0.4.1
+  flutter_edge_ai: ^2.7.0
+  flutter_edge_ai_builtin_ai: ^0.4.3
 ```
 
 `flutter_edge_ai` supplies the common model, session and message APIs. It does

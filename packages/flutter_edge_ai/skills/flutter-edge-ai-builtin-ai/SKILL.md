@@ -23,6 +23,7 @@ flutter pub add flutter_edge_ai flutter_edge_ai_builtin_ai flutter_edge_ai_liter
 ```dart
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
@@ -34,12 +35,10 @@ await FlutterEdgeAi.initialize(
 final spec = BuiltInAiModels.forCurrentPlatform; // null on Linux
 
 Future<InferenceModel> downloadGemma() async {
-  await FlutterEdgeAi.installModel(
-    modelType: ModelType.gemma4,
-    fileType: ModelFileType.litertlm,
-  ).fromNetwork(
-    // 2.6 GB — ask first. On web: gemma-4-E2B-it-web.litertlm
-    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
+  // 2.6 GB (2.0 GB on web) — ask first. The catalog build is pinned to a
+  // Hugging Face commit; natively its size is checked before activation.
+  await FlutterEdgeAi.installModelFromCatalog(
+    kIsWeb ? LiteRtLmModels.gemma4E2bIt.web : LiteRtLmModels.gemma4E2bIt.generic,
   ).install();
   return FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 }
@@ -97,7 +96,7 @@ final usable = availability == BuiltInAiAvailability.available ||
 | Platform | Model | Needs |
 | --- | --- | --- |
 | Android | Gemini Nano (AICore) | a device on [Google's Prompt API device list](https://developers.google.com/ml-kit/genai#prompt-device); `minSdk 26` |
-| iOS, macOS | Apple Foundation Models | iOS 26+ / macOS 26+ on an iPhone 15 Pro or newer, or an Apple Silicon Mac, with Apple Intelligence on; below OS 26 it reports `unavailableOsTooOld`. flutter_local_ai builds from iOS 13 / macOS 12; with core the app needs iOS 15.0 and a macOS 12.0 deployment target |
+| iOS, macOS | Apple Foundation Models | iOS 26+ / macOS 26+ on an iPhone 15 Pro or newer, or an Apple Silicon Mac, with Apple Intelligence on; below OS 26 it reports `unavailableOsTooOld`. flutter_local_ai builds from iOS 13 / macOS 12; with core the app needs iOS 15.0 and a macOS 12.0 deployment target — 14.0 with `flutter_edge_ai_litertlm`, as in the fallback above |
 | Windows | Phi Silica (Windows AI Foundry) | Windows 11 25H2+ on a Copilot+ PC or a supported GPU, in a packaged app. Streams one final chunk and ignores `maxOutputTokens` |
 | Web | Gemini Nano (Chrome Prompt API) | desktop Chrome 148+ — not mobile browsers, Firefox or Safari |
 | Web | Phi-4-mini (Edge Prompt API) | Microsoft Edge with the Prompt API flag on; Edge Dev 154–155 exposes the API but cannot run the model |

@@ -15,28 +15,28 @@ formats and features you need.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.6.0                      # Core — always required (no engine on its own)
+  flutter_edge_ai: ^2.7.0                      # Core — always required (no engine on its own)
 
   # Inference engines — add at least one:
   flutter_edge_ai_litertlm: ^1.21.0            # .litertlm models (FFI; mobile + desktop + web) + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.3.0            # .task / .bin models (MediaPipe; mobile + web)
-  flutter_edge_ai_builtin_ai: ^0.4.1           # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS 26+) / Windows AI Foundry / Chrome Prompt API (Web)
-  flutter_edge_ai_onnx: ^0.9.1                 # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.3.1            # .task / .bin models (MediaPipe; mobile + web)
+  flutter_edge_ai_builtin_ai: ^0.4.3           # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS 26+) / Windows AI Foundry / Chrome Prompt API (Web)
+  flutter_edge_ai_onnx: ^0.10.0                 # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
   flutter_edge_ai_llama: ^0.2.0                # .gguf models — llama.cpp through llamadart, + LlamaEmbeddingBackend (EmbeddingGemma 2 text, native) (see /docs/llama)
 
   # Optional — text-embedding tokenizer implementations (.tflite / .onnx models; an EmbeddingGemma 2 .litertlm needs none):
-  flutter_edge_ai_embeddings: ^2.3.2           # embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via embeddingTokenizers: (needs a backend, e.g. LiteRtEmbeddingBackend above)
+  flutter_edge_ai_embeddings: ^2.3.3           # embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via embeddingTokenizers: (needs a backend, e.g. LiteRtEmbeddingBackend above)
 
   # Optional — independent RAG orchestration plus one storage provider:
-  flutter_edge_ai_rag: ^1.1.2               # RagIndex, profiles, filters
+  flutter_edge_ai_rag: ^1.2.0               # RagIndex, profiles, filters
   flutter_edge_ai_qdrant: ^2.1.1            # qdrant-edge; fastest on native
-  flutter_edge_ai_sqlite: ^2.1.1            # sqlite-vec / vec0; all platforms incl. web — needs Flutter 3.47
+  flutter_edge_ai_sqlite: ^2.2.0            # sqlite-vec / vec0; all platforms incl. web — needs Flutter 3.47
 
   # Optional — on-device speech (STT + TTS):
-  flutter_edge_ai_speech: ^0.6.1               # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
+  flutter_edge_ai_speech: ^0.6.2               # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
 
   # Optional — on-device agent skills:
-  flutter_edge_ai_agent: ^0.4.2                # agent skills the model runs itself (text / JS / native-intent / MCP)
+  flutter_edge_ai_agent: ^0.4.3                # agent skills the model runs itself (text / JS / native-intent / MCP)
 
   # Optional — memory diagnostics (Android + iOS + macOS + Linux + Windows):
   flutter_edge_ai_diagnostics: ^0.6.1          # what a model costs in memory the OS cannot reclaim, read from the OS
@@ -160,7 +160,9 @@ model to the engine that handles its file type. For RAG, register
 - `huggingFaceToken`: authentication token for gated models (Gemma3n, Gemma 3 1B / 270M, EmbeddingGemma 1).
 - `maxDownloadRetries`: number of retry attempts for failed downloads (default: 10).
 - `webStorageMode` **(Web only)**: storage strategy for model files (default: `cacheApi`).
-  - `WebStorageMode.cacheApi`: Cache API with Blob URLs (for models <2GB).
+  - `WebStorageMode.cacheApi`: Cache API with Blob URLs (for models <2GB). Since
+    core 2.7.0 a download streams into the Cache API without a Dart copy, so
+    a `--wasm` build installs files over 1 GiB too.
   - `WebStorageMode.streaming`: OPFS streaming (for large models >2GB like E4B, 7B).
   - `WebStorageMode.none`: no caching (ephemeral mode for testing). Restore
     notices about model files that are gone stay in the debug log in this
@@ -189,8 +191,9 @@ Required by any engine package: `flutter_edge_ai_litertlm`, `flutter_edge_ai_med
 `flutter_edge_ai_speech`.
 
 **Set the minimum iOS version to 15.0** — or **16.0** if your app depends on
-`flutter_edge_ai_mediapipe`, which needs MediaPipe GenAI, and **16.4** with
-`flutter_edge_ai_llama`, whose llama.cpp companion needs it. Core,
+`flutter_edge_ai_mediapipe`, which needs MediaPipe GenAI, **16.4** with
+`flutter_edge_ai_llama`, whose llama.cpp companion needs it, and **15.1** with
+`flutter_edge_ai_onnx`, whose iOS ONNX Runtime is built for it. Core,
 `flutter_edge_ai_litertlm` and embeddings build from 15.0. (`flutter_gemma` before 1.6.4 declared
 16.0.)
 
@@ -588,8 +591,9 @@ redistributable needed — Linux Vulkan driver, and known limitations).
 
 ## Platform & architecture support
 
-The native packages ship prebuilts only for the architectures below. Other ABIs
-fail at native load with a typed error.
+`flutter_edge_ai_litertlm`, `flutter_edge_ai_speech` and the LiteRT embedders
+ship prebuilts only for the architectures below. Other ABIs fail at native load
+with a typed error.
 
 | Platform | Supported architecture | Not supported |
 |---|---|---|
@@ -602,6 +606,11 @@ fail at native load with a typed error.
 
 ¹ MediaPipe text inference also works on Android `x86_64` / `armeabi-v7a` (see
 the Android section above).
+
+`flutter_edge_ai_onnx` also runs on Windows ARM64 (and has no Linux arm64
+build), and `flutter_edge_ai_llama` follows llamadart's targets (its Android
+build includes `x86_64`) — see
+[ONNX](/docs/onnx) and [llama.cpp](/docs/llama).
 
 For development, prefer an Apple Silicon Mac — the Android emulator runs
 `arm64-v8a` natively, and macOS / iOS Simulator builds are arm64.

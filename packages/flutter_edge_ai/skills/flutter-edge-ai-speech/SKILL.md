@@ -155,7 +155,7 @@ try {
 
 `TtsModelType.supertonic` and `TtsModelType.kokoro` are in the enum but throw `UnimplementedError` — do not use them.
 
-To ship the voice with the app instead of downloading it, swap `fromNetwork` for one of:
+To ship the voice with the app instead of downloading it, swap `fromCatalog` (or `fromNetwork`) for one of:
 
 | Call | Expects | Notes |
 | --- | --- | --- |

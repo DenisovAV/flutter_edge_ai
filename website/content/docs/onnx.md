@@ -39,8 +39,9 @@ and the example build were verified on a GitHub-hosted Windows 11 ARM64 runner
 
 > On an unsupported native host (macOS Intel, or any other native ABI)
 > `OnnxEngine` politely declines and logs why, letting another registered engine
-> take over. Android needs **`minSdk 24`** (both ORT and ORT-GenAI AARs declare
-> `minSdkVersion=24`). The native library co-location — ORT loaded next to
+> take over. Android needs **`minSdk 24`** (ORT's AAR declares
+> `minSdkVersion=24`, and the bundled ORT-GenAI is built for API 24; the build
+> fails below it). The native library co-location — ORT loaded next to
 > ORT-GenAI — is handled for you: the build hook bundles the two libraries side
 > by side (on iOS ORT-GenAI's framework keeps its own ORT private, and
 > embeddings use a separate `onnxruntime.framework`), and on macOS and Linux
@@ -54,9 +55,9 @@ Add the package and register whichever arm(s) you use at startup:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.6.0
-  flutter_edge_ai_onnx: ^0.9.1         # ONNX Runtime engines
-  flutter_edge_ai_embeddings: ^2.3.2   # tokenizers, for embeddings
+  flutter_edge_ai: ^2.7.0
+  flutter_edge_ai_onnx: ^0.10.0         # ONNX Runtime engines
+  flutter_edge_ai_embeddings: ^2.3.3   # tokenizers, for embeddings
 ```
 
 ```dart
@@ -162,16 +163,17 @@ falls back to WASM.
 
 ## Structured JSON output
 
-This section requires core 2.6.0 and `flutter_edge_ai_onnx` 0.9.0.
+This section requires core 2.6.0 and `flutter_edge_ai_onnx` 0.9.0 (Windows
+x64: 0.10.0).
 
 Native ORT-GenAI can apply llguidance to each independent generator opened by
-`openSession(responseFormat: ...)` or `openChat(responseFormat: ...)`. In that
-release it is enabled only on macOS arm64, after its host run passed, and only
-when the model directory contains `tokenizer.json`. Linux x64, Windows
-x64/ARM64, Android, iOS and ONNX Web return a reason from
+`openSession(responseFormat: ...)` or `openChat(responseFormat: ...)`. It is
+enabled on macOS arm64 (0.9.0) and Windows x64 (0.10.0), after each host's run
+passed, and only when the model directory contains `tokenizer.json`. Linux
+x64, Windows ARM64, Android, iOS and ONNX Web return a reason from
 `structuredOutputSupport` and throw `ResponseFormatUnsupportedException` if a
-format is requested; the desktop Linux/Windows archives containing guidance are
-still disabled until their own runs pass.
+format is requested; the Linux x64 and Windows ARM64 archives contain guidance
+but stay disabled until their own runs pass.
 
 ```dart
 final format = ResponseFormat.jsonSchema({

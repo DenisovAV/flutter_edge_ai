@@ -43,8 +43,30 @@ only the engines, stores and features your app uses — see
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
 
-The upcoming `flutter_edge_ai_llama` 0.2.0 connector pairs llamadart
-`^0.20.1` with Apple companion 0.20.1. See [llama.cpp](/docs/llama).
+## What's new in 2.7
+
+- **Saving a conversation** (`flutter_edge_ai` 2.7.0): `MessageTranscriptCodec`
+  writes a list of `Message`s as versioned JSON and reads it back. See
+  [Saving a conversation](#saving-a-conversation).
+- **Hugging Face resolvers per role** (`flutter_edge_ai` 2.7.0): a resolver
+  declares the role it serves, and `installEmbedder().fromHuggingFace` installs
+  an embedder. See [Migration](/docs/migration).
+- **Web downloads** (`flutter_edge_ai` 2.7.0): downloads stream into the Cache
+  API, and `--wasm` builds install models over 1 GiB.
+- **Text and hybrid search** (`flutter_edge_ai_rag` 1.2.0,
+  `flutter_edge_ai_sqlite` 2.2.0): `searchText`, `searchHybrid` (RRF) and
+  `VectorStoreSpec.enableTextSearch`, with SQLite FTS5 on every platform. See
+  [Text and hybrid search](/docs/embeddings-and-rag#text-and-hybrid-search).
+- **`litertlm_dart`** (`flutter_edge_ai_litertlm` 1.21.0): the LiteRT-LM
+  runtime and its native build hook moved to this package, so NPU flags go
+  under `hooks: user_defines: litertlm_dart:`. On Android, Gemma 4 on the GPU
+  stays at FP16 above 2,048 tokens, and a GPU turn that fails names the CPU
+  (see [Troubleshooting](/docs/troubleshooting#android)). See
+  [Migration](/docs/migration).
+- **ONNX response formats on Windows x64** (`flutter_edge_ai_onnx` 0.10.0, on
+  ORT-GenAI 0.20.0). See [ONNX](/docs/onnx).
+- **llama.cpp** (`flutter_edge_ai_llama` 0.2.0): llamadart `^0.20.1` with
+  Apple companion 0.20.1. See [llama.cpp](/docs/llama).
 
 ## What's new in 2.6
 
@@ -145,7 +167,8 @@ Upgrading from 2.3: see [Migration](/docs/migration).
   `flutter_edge_ai_llama`, on pub.dev since 0.0.1.
 - **EmbeddingGemma 2 on an Intel NPU** (`flutter_edge_ai_litertlm` 1.13.2): the
   Panther Lake bundles load on Windows x64 with
-  `preferredBackend: PreferredBackend.npu` (not yet run on an Intel NPU). See
+  `preferredBackend: PreferredBackend.npu` (not run on an Intel NPU at that
+  release; the 270m has since run on a Panther Lake PC). See
   [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 - **Audio turns** (`flutter_edge_ai_speech` 0.5.7, `flutter_edge_ai_agent`
   0.2.10): `VoiceSession.runAudioTurn` gives the model the recording itself,

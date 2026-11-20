@@ -24,14 +24,14 @@ notes below).
 ```
 dependencies:
   genkit: ^1.0.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_edge_ai: ^0.12.0
-  flutter_edge_ai: ^2.6.0
+  genkit_flutter_edge_ai: ^0.12.1
+  flutter_edge_ai: ^2.7.0
   # Add the inference engine(s) you need:
   flutter_edge_ai_litertlm: ^1.21.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.3.0  # .task / .bin models (mobile + web)
+  flutter_edge_ai_mediapipe: ^1.3.1  # .task / .bin models (mobile + web)
   # Optional — tokenizers for .tflite / .onnx embedding models (an EmbeddingGemma 2
   # .litertlm needs none; the backend is flutter_edge_ai_litertlm above):
-  flutter_edge_ai_embeddings: ^2.3.2
+  flutter_edge_ai_embeddings: ^2.3.3
 ```
 
 ### Setup
@@ -170,7 +170,7 @@ final response = await ai.generate(
   prompt: 'Hello!',
   config: FlutterEdgeAiModelOptions(
     maxTokens: 2048,                // context window (input + output), not reply length
-    maxOutputTokens: 256,           // cap on the reply (every engine except MediaPipe)
+    maxOutputTokens: 256,           // cap on the reply (not MediaPipe, nor built-in AI on Windows and web)
     temperature: 0.5,
     topK: 40,
     supportImage: true,
@@ -280,8 +280,8 @@ On the engine builds paired with those releases, this native path is available
 for LiteRT-LM on macOS and iOS arm64 CPU/Metal, Linux x64 CPU/Vulkan, Windows
 x64 CPU/D3D12, and Android arm64 CPU plus Adreno/Mali/PowerVR GPU; for a
 qualified GGUF model (macOS arm64 CPU/Metal, or Chrome on macOS with dart2wasm
-+ WebGPU); and for native ONNX on macOS arm64 when the model directory contains
-`tokenizer.json`. LiteRT-LM NPU, Web, and unlisted rows are refused. MediaPipe,
++ WebGPU); and for native ONNX on macOS arm64 and (from `flutter_edge_ai_onnx`
+0.10.0) Windows x64 when the model directory contains `tokenizer.json`. LiteRT-LM NPU, Web, and unlisted rows are refused. MediaPipe,
 ONNX Web, and every built-in-AI
 platform also refuse formats. On a refused row the `gemma-4-e2b` example below
 is prompt-only: its schema is added to the prompt and Genkit parses
@@ -370,7 +370,7 @@ Genkit models.
 
 ```
 dependencies:
-  genkit_hybrid: ^0.5.0
+  genkit_hybrid: ^0.5.1
   genkit: ^1.0.0
 ```
 

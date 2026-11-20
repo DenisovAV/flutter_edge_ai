@@ -53,20 +53,19 @@ larger chunk just because the model file declares a larger context.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai: ^2.7.0
   flutter_edge_ai_litertlm: ^1.21.0
-  flutter_edge_ai_embeddings: ^2.3.2 # tokenizers for .tflite / .onnx models
-  flutter_edge_ai_rag: ^1.1.2
-  flutter_edge_ai_sqlite: ^2.1.1 # all six platforms, including Web
+  flutter_edge_ai_embeddings: ^2.3.3 # tokenizers for .tflite / .onnx models
+  flutter_edge_ai_rag: ^1.2.0
+  flutter_edge_ai_sqlite: ^2.2.0 # all six platforms, including Web
   # flutter_edge_ai_qdrant: ^2.1.1 # native alternative
 ```
 
 <Warning>
 
-Upgrade every flutter_edge_ai package together. With core 2.3.0 the minimum
-versions are litertlm 1.13.0, embeddings 2.3.0, onnx 0.5.8, rag 1.1.0, sqlite
-and qdrant 2.1.0 (the full list is in [Migration](/docs/migration)). An older
-engine or store fails to compile against 2.3.0.
+Upgrade every flutter_edge_ai package together: flutter_edge_ai_litertlm 1.21.0
+and flutter_edge_ai_onnx 0.10.0 need core 2.7.0, and text search needs rag
+1.2.0 with sqlite 2.2.0. The full list is in [Migration](/docs/migration).
 
 </Warning>
 
@@ -152,7 +151,8 @@ final vector = await embedder.embed(
 - **CPU by default natively, WebGPU on the Web.** `activeBackend` reports the
   backend that actually loaded.
 - **GPU text tower on Linux x64, Windows x64 and macOS arm64 when asked
-  (LiteRT-LM 0.19 / litertlm 1.20.0).** `preferredBackend:
+  (Linux x64 from litertlm 1.19.0; Windows x64 and macOS arm64 from 1.20.0,
+  LiteRT-LM 0.19).** `preferredBackend:
   PreferredBackend.gpu` is enabled in code (`native_hosts.dart`) for all three
   bundles on Linux x64, the 270m on Windows x64, and the 270m and 740m on
   macOS arm64. Other bundle/host combinations on those three hosts are not
@@ -160,6 +160,8 @@ final vector = await embedder.embed(
   - The Linux rows were measured on an NVIDIA L4, 2026-10-26; the three text
     towers took 13–14 ms on the GPU versus 84–91 ms on its CPU, with minimum
     cosine 0.99709 to the CPU vectors ([PR #714](https://github.com/DenisovAV/flutter_edge_ai/pull/714)).
+    The same PR records a Tesla T4 run: 32–64 ms on the GPU versus 232–308 ms
+    on its CPU, cosine 0.99691.
     The 270m also passed on a GCE Tesla T4, 2026-11-04
     ([0.19 paid-run report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-l1-paid-runs.md)).
   - The Windows 270m passed on a Panther Lake Arc B390 and a Lunar Lake Arc
@@ -618,17 +620,20 @@ await FlutterEdgeAi.installEmbedder()
     .install();
 ```
 
-On native, current LiteRT and ONNX embedding paths run on CPU, except the
-EmbeddingGemma 2 per-SoC bundles, which run on a Qualcomm NPU
+On native, the `.tflite` and ONNX embedding paths run on CPU. EmbeddingGemma 2
+runs on CPU by default, its text tower on the GPU when asked on Linux x64,
+Windows x64 and macOS arm64 ([above](#embeddinggemma-2)), and its per-SoC
+bundles on a Qualcomm NPU
 ([above](#embeddinggemma-2-on-a-qualcomm-npu)), a Google Tensor one
 ([above](#embeddinggemma-2-on-a-google-tensor-npu)), a MediaTek one (with
 `mediatek_npu: true`, see [LiteRT-LM](/docs/litertlm); not run on an MT6991/MT6993
 phone yet) or, on Windows, an Intel one
 ([above](#embeddinggemma-2-on-an-intel-npu)). On Web the `.tflite` and ONNX
 paths try WebGPU and can fall back to WASM; EmbeddingGemma 2 runs on WebGPU
-only, with no fallback. **preferredBackend** reaches the embedder only as
-**npu** for the per-SoC bundles; **npu** on a generic EmbeddingGemma 2 bundle
-throws **EmbeddingLoadException**, and any other request is not applied. Inspect
+only, with no fallback. The GGUF embedder takes **cpu** or **gpu**
+([llama.cpp](/docs/llama)). **npu** on a generic EmbeddingGemma 2 bundle throws
+**EmbeddingLoadException**, and a request a backend does not honour is not
+applied. Inspect
 **EmbeddingModel.activeBackend** when the selected backend matters.
 
 ## Embedding API

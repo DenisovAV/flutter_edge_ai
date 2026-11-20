@@ -254,6 +254,7 @@ full web `.litertlm` feature matrix.
 - After `stopGeneration()` on a `.litertlm` model on Android, iOS or desktop the
   chat keeps working. Since `flutter_edge_ai_litertlm` 1.15.0
   the images and audio from earlier turns stay in its context: the conversation
-  is rewound to before the stopped turn. In 1.14.0 and earlier, and on the NPU,
-  it continues from a text copy of the history instead, so send the image again
-  if the next question is about it.
+  is rewound to before the stopped turn. In 1.14.0 and earlier it continued
+  from a text copy of the history instead. On the NPU, where it cannot rewind,
+  the conversation is rebuilt from the earlier messages, images and audio
+  included.

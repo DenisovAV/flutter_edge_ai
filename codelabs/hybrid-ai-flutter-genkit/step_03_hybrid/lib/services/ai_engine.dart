@@ -35,7 +35,7 @@ const kEmbedder = 'embedding-gemma-300m';
 
 /// Context window for the on-device target, in tokens. `maxTokens` is the
 /// WHOLE window (input + output) and genkit_flutter_edge_ai defaults it to 1024.
-/// RagService's take(3) of ~600-token city guides alone is ~1.7k tokens —
+/// RagService's take(3) of ~550-token city guides alone is ~1.7k tokens —
 /// measured on device: "Input token ids are too long … 1713 >= 1024". The
 /// bundled Gemma-3-1B `.litertlm` is built for 4096 (`ekv4096`), so use it.
 const kOnDeviceContextTokens = 4096;

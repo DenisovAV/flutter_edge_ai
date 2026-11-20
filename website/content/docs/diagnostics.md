@@ -59,7 +59,7 @@ dependencies:
   flutter_edge_ai_diagnostics: ^0.6.1
 ```
 
-This page describes 0.6.0, which adds Windows; 0.5.0 added Linux; 0.4.0 added the experimental
+This page describes 0.6.1; 0.6.0 added Windows; 0.5.0 added Linux; 0.4.0 added the experimental
 `gpuMemory()`; 0.3.0
 added macOS and `anonymousPeakBytes`, and 0.2.2 read Android and iOS without
 the peak.

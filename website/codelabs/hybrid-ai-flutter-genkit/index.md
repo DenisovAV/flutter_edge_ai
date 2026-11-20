@@ -26,9 +26,9 @@ screen exists to make *where the answer came from* visible.
 - A **RAG toggle**. Off, the model answers from memory. On, your question is
   embedded **on the phone** and matched against ten city guides shipped inside
   the app — Paris, Tokyo, Barcelona, Istanbul, Marrakech, New York, Prague,
-  Rio, Singapore, Sydney. A `Sources: Paris` banner under the policy picker is
-  the only place you can see that the answer was grounded in a guide rather
-  than invented.
+  Rio, Singapore, Sydney. A `Sources: Paris (…%)` banner under the policy
+  picker is the only place you can see that the answer was grounded in a guide
+  rather than invented.
 - **Image attachment** — a photo goes to the cloud, the only target that
   declares vision; on the text-only policies the send is blocked with a hint.
 - A **budget** policy that spends three cloud calls, then quietly drops to the
@@ -42,8 +42,8 @@ you are building toward:
 
 1. On **Cloud**, ask "what should I see in Paris?" — an ordinary cloud answer,
    tokens streaming in.
-2. Turn **RAG** on and ask the same question: a `Sources: Paris` banner
-   appears, and the answer now leans on the bundled guide instead of the
+2. Turn **RAG** on and ask the same question: a `Sources: Paris (…%)`
+   banner appears, and the answer now leans on the bundled guide instead of the
    model's memory.
 3. Switch to **Local** and turn off wi-fi. The phone answers. This is the moment
    the whole codelab exists for.
@@ -59,12 +59,12 @@ you are building toward:
 
 Six increments, each a directory you can open and run:
 
-1. **Cloud Chat** — Streaming responses from Gemini via `genkit_google_genai`
-2. **Local Inference** — On-device AI with Gemma 3 1B via `genkit_flutter_edge_ai`
-3. **Hybrid Strategy** — one `genkit_hybrid` router over cloud and device (rules, fallback, capability, cascade, budget)
-4. **Smart Routing & Images** — multimodal input and image-aware policy routing
-5. **Embeddings** — Semantic vector representations with EmbeddingGemma via Genkit
-6. **RAG** — Context-augmented generation using a local tourist guide
+- **Step 2 — Cloud Chat** — Streaming responses from Gemini via `genkit_google_genai`
+- **Step 3 — Local Inference** — On-device AI with Gemma 3 1B via `genkit_flutter_edge_ai`
+- **Step 4 — Hybrid Strategy** — one `genkit_hybrid` router over cloud and device (rules, fallback, capability, cascade, budget)
+- **Step 4.5 — Smart Routing & Images** — multimodal input and image-aware policy routing
+- **Step 5 — Embeddings** — Semantic vector representations with EmbeddingGemma via Genkit
+- **Step 6 — RAG** — Context-augmented generation using a local tourist guide
 
 ### What you'll learn
 
@@ -85,9 +85,9 @@ Six increments, each a directory you can open and run:
 - Any one of Flutter's six platforms: an arm64 Android device or emulator
   (libLiteRtLm is arm64-only — an Apple-silicon Mac's emulator qualifies), an
   iOS device or simulator, an Apple-silicon Mac, a Windows or Linux desktop, or
-  Chrome. The same code runs on all of them through Step 4 — Step 3 lists the
-  handful of things each one asks of you — including Step 5's embeddings and
-  the RAG Step 6 builds on them, which run on Chrome too
+  Chrome. The same code runs on all of them, Step 5's embeddings and Step 6's
+  RAG included, Chrome too; Step 3 lists the handful of things each platform
+  asks of you
 - ~1 GB free disk space for the on-device LLM plus EmbeddingGemma on native;
   on web the LLM alone is a 2.0 GB build (Step 3 explains why it's a
   different, larger model there), plus EmbeddingGemma on top
@@ -448,8 +448,9 @@ window.litertLmReady = (async () => {
 
 `cache_api.js` and `opfs_helper.js` are copied byte-for-byte from the
 `flutter_edge_ai` package's own `web/` directory — `installModel()` (and, in
-general, `installEmbedder()`) call into them (via `window.cachePut` and
-friends) to put model bytes into browser storage. Without them a web model
+general, `installEmbedder()`) call into them to find
+and load model bytes in browser storage (since core 2.7.0 a download streams
+straight into the Cache API). Without them a web model
 install fails. Copy both files into your app's `web/` directory alongside
 `index.html`. Browser storage is not a permanent install, though: the bytes
 survive a reload, the app's in-memory handle on them does not, so a reloaded
@@ -484,18 +485,19 @@ is the only target that declares vision anywhere.
 
 ### Update dependencies
 
-Add `genkit_flutter_edge_ai` and `flutter_edge_ai`:
+Add `genkit_flutter_edge_ai`, `flutter_edge_ai`, the LiteRT-LM engine and the
+tokenizers:
 
 ```yaml
   # Step 3: On-device AI (LiteRT-LM engine)
-  genkit_flutter_edge_ai: ^0.12.0
-  flutter_edge_ai: ^2.6.0
+  genkit_flutter_edge_ai: ^0.12.1
+  flutter_edge_ai: ^2.7.0
   # flutter_edge_ai registers no engine by default — opt into LiteRT-LM
   # (.litertlm inference) here.
-  flutter_edge_ai_litertlm: ^1.20.0
+  flutter_edge_ai_litertlm: ^1.21.0
   # Step 5 embeds your documents. The engine above runs the forward pass;
   # this package supplies the tokenizers it needs.
-  flutter_edge_ai_embeddings: ^2.3.0
+  flutter_edge_ai_embeddings: ^2.3.3
 ```
 
 Run `flutter pub get`.
@@ -751,7 +753,7 @@ plugins and `flutter_edge_ai_litertlm`) is already in place from Steps 2–3:
 
 ```yaml
   # Hybrid on-device ↔ cloud routing
-  genkit_hybrid: ^0.5.0
+  genkit_hybrid: ^0.5.1
 ```
 
 Run `flutter pub get`.
@@ -808,7 +810,7 @@ const kEmbedder = 'embedding-gemma-300m';
 
 /// Context window for the on-device target, in tokens. `maxTokens` is the
 /// WHOLE window (input + output) and genkit_flutter_edge_ai defaults it to 1024.
-/// RagService's take(3) of ~600-token city guides alone is ~1.7k tokens —
+/// RagService's take(3) of ~550-token city guides alone is ~1.7k tokens —
 /// measured on device: "Input token ids are too long … 1713 >= 1024". The
 /// bundled Gemma-3-1B `.litertlm` is built for 4096 (`ekv4096`), so use it.
 const kOnDeviceContextTokens = 4096;
@@ -1622,21 +1624,26 @@ smaller `seq256` build would refuse every one of them.
 
 There's no second `Genkit` to build — `AiEngine` already declared the embedder
 back in Step 4, right next to the on-device model in the *same*
-`GenkitFlutterEdgeAiPlugin`, gated by the same `embeddingsSupported`:
+`GenkitFlutterEdgeAiPlugin`, gated by `embeddingsSupported`, which `initialize()`
+passes as `embedders` (`_ai = appGenkit(embedders: embeddingsSupported);`):
 
 ```dart
-GenkitFlutterEdgeAiPlugin(
-  models: [
-    FlutterEdgeAiModelConfig(
-      name: kLocalModel,
-      modelType: _modelType,
-      fileType: ModelFileType.litertlm,
+static Genkit appGenkit({required bool embedders}) => Genkit(
+  plugins: [
+    GenkitFlutterEdgeAiPlugin(
+      models: [
+        FlutterEdgeAiModelConfig(
+          name: kLocalModel,
+          modelType: _modelType,
+          fileType: ModelFileType.litertlm,
+        ),
+      ],
+      embedders: embedders
+          ? [FlutterEdgeAiEmbedderConfig(name: kEmbedder)]
+          : const [],
     ),
   ],
-  embedders: embeddingsSupported
-      ? [FlutterEdgeAiEmbedderConfig(name: kEmbedder)]
-      : const [],
-),
+);
 ```
 
 So the one `AiEngine` Genkit already exposes the embedder — you just call
@@ -1809,7 +1816,7 @@ on-device target is answering inside a fixed window.
 > **`maxTokens` is the whole context window, not the reply length.** It is the
 > KV-cache budget: everything the model reads *plus* everything it writes.
 > `genkit_flutter_edge_ai` defaults it to 1024, which is fine for the chat we've
-> had so far and not fine the moment RAG lands. Three city guides at ~600
+> had so far and not fine the moment RAG lands. Three city guides at ~550
 > tokens each is ~1.7k of prompt before the model has said a word, so the
 > first RAG question on **Local** dies during prefill with
 > `Input token ids are too long ... 1713 >= 1024` — a native error, not a bad
@@ -1823,7 +1830,7 @@ the config of the model the router hands the target:
 ```dart
 /// Context window for the on-device target, in tokens. `maxTokens` is the
 /// WHOLE window (input + output) and genkit_flutter_edge_ai defaults it to 1024.
-/// RagService's take(3) of ~600-token city guides alone is ~1.7k tokens —
+/// RagService's take(3) of ~550-token city guides alone is ~1.7k tokens —
 /// measured on device: "Input token ids are too long … 1713 >= 1024". The
 /// bundled Gemma-3-1B `.litertlm` is built for 4096 (`ekv4096`), so use it.
 const kOnDeviceContextTokens = 4096;
@@ -1857,7 +1864,7 @@ In `chat_screen.dart`:
 
 ### Test it
 
-Try these queries:
+Try these queries (example output; your percentages will differ):
 - "What should I eat in Tokyo?" → sources: Tokyo (92%)
 - "Best European city for history?" → sources: Prague (78%), Istanbul (71%)
 - "Tell me about the Eiffel Tower" → sources: Paris (95%)
@@ -1911,8 +1918,10 @@ Gemma 3 1B does not.
 
 ### What's next
 
-- **Production embeddings**: Persist the vector store with SQLite + `drift` so
-  you don't re-embed on every cold start
+- **Persistent RAG**: replace the in-memory list with `flutter_edge_ai_rag`
+  over `flutter_edge_ai_sqlite` (every platform, the web included), so you
+  don't re-embed on every cold start — the
+  [On-Device RAG](/codelabs/on-device-rag-flutter-gemma) codelab builds one
 - **More models**: Swap `gemini-3.7-flash` for `gemini-3.1-pro-preview` for
   complex queries, or add a second on-device model for specialized tasks
 - **Genkit flows**: Wrap the hybrid routing in a `defineFlow` to add
@@ -1920,8 +1929,6 @@ Gemma 3 1B does not.
 - **Decide on the device**: give a policy a classifier —
   `genkit_flutter_edge_ai`'s `deciderRouteClassifier` turns an EmbeddingGemma
   decider into one — and map its labels to targets, after your rules
-- **On-device RAG with Qdrant**: Replace the in-memory store with
-  [Qdrant](https://qdrant.tech) for persistent, scalable vector search
 
 ### Resources
 

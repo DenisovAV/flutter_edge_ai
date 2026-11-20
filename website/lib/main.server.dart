@@ -48,8 +48,7 @@ const String _codelabsDescription =
 /// `SoftwareApplication` schema, whose `url` is the site origin — publishing
 /// the same package entity from two different pages. A `CollectionPage` is what
 /// this page actually is: a listing whose items are the codelabs. Deliberately
-/// minimal — no `ItemList`, because six of the seven entries have no URL yet
-/// and listing them would assert pages that do not exist.
+/// minimal — no `ItemList`; the cards on the page are the list.
 const Map<String, Object?> _codelabsCollectionSchema = {
   '@context': 'https://schema.org',
   '@type': 'CollectionPage',

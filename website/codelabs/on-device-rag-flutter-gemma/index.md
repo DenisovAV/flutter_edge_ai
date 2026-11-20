@@ -45,7 +45,7 @@ to make, and each step here is built around one of them:
 ### What you'll need
 
 * Flutter **3.47** or newer — higher than the rest of flutter_edge_ai asks for.
-  `flutter_edge_ai_sqlite` 2.1.0 requires sqlite3 3.6.0, whose build
+  `flutter_edge_ai_sqlite` 2.2.0 requires sqlite3 3.6.0, whose build
   toolchain wants `meta ^1.19.0`, and every Flutter 3.44.x pins `meta` to
   1.18.0 exactly. On 3.44 the Step 3 app will not resolve
 * Any one of Flutter's six platforms: an arm64 Android device or emulator, an
@@ -539,7 +539,7 @@ session.
 ### Run it
 
 Index once, then search for **something warm with beans**. Ribollita comes
-first, at around 0.6 — and the word "warm" appears nowhere in it. That is the
+first (in example output at a score around 0.6; your numbers will differ) — and the word "warm" appears nowhere in it. That is the
 difference between semantic search and `LIKE '%warm%'`.
 
 Now kill the app and reopen the recipes page. The header still says
@@ -767,13 +767,18 @@ knows those vectors are vectors, and a prompt that keeps the answer honest.
   `SqliteVectorStoreProvider`. The `RagIndex` calls stay the same. You give up
   the web, for a store that can search an HNSW index instead of scanning
   once a corpus outgrows `fullScanThreshold`.
+* **Search by words too.** With the SQLite store, set
+  `enableTextSearch: true` in `VectorStoreSpec` and the index keeps an FTS5
+  text index beside the vectors: `searchText(text:)` ranks documents by BM25,
+  and `searchHybrid(text:)` fuses that ranking with the vector search
+  (reciprocal rank fusion). The qdrant store has no text search.
 * **Bring your own corpus.** Nothing here is recipe-shaped except
   `recipes.dart`. Twelve constants become a folder of Markdown, and the only
   real design decision is what goes into `text` versus what becomes a filter
   field.
-* **[Hybrid AI with Genkit](/codelabs/hybrid-ai-flutter-genkit)** puts the same
-  RAG behind a router that decides per message whether the cloud or the device
-  should answer.
+* **[Hybrid AI with Genkit](/codelabs/hybrid-ai-flutter-genkit)** puts retrieval
+  — an in-memory version over Genkit's `embed()` — behind a router that
+  decides per message whether the cloud or the device should answer.
 
 ### Reference
 

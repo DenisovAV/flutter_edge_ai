@@ -70,7 +70,8 @@ call. That is the rule the loop in Step 3 exists to keep.
 ### What you'll need
 
 * Flutter 3.44 or newer, and any one of Flutter's six platforms to run on: an
-  Android device or emulator, an iOS device or simulator, an Apple-silicon Mac,
+  arm64 Android device or emulator (an Apple-silicon Mac's emulator is arm64),
+  an iOS device or simulator, an Apple-silicon Mac,
   a Windows or Linux desktop, or Chrome. `step_01_starter/` is a whole app, not
   a diff against another codelab — clone the repo and run it
 * **No Hugging Face token to run the app**, in any step. The two repositories
@@ -127,9 +128,9 @@ before the first frame is guarded:
   try {
     await FlutterEdgeAi.initialize(
       inferenceEngines: [LiteRtLmEngine()],
-      // OPFS streaming: on web a `.litertlm` this size does not fit the blob
-      // the default `cacheApi` mode would have to buffer it into. Every other
-      // platform ignores this.
+      // OPFS streaming: on web the `.litertlm` engine reads the model as a
+      // stream instead of one blob, as the docs recommend for `.litertlm`.
+      // Every other platform ignores this.
       webStorageMode: WebStorageMode.streaming,
     );
   } catch (error) {
@@ -360,6 +361,15 @@ same on GPU as on CPU and runs about 1.5× faster — which is a fair summary of
 what the fine-tuning step buys you even before you change a single training
 row.
 
+On Android, float32 for FunctionGemma is measured on one GPU: a fine-tuned
+FunctionGemma on a Galaxy S24 (Adreno 750) flooded 14 of 20 prompts with
+`<pad>` at float16 and none at float32, at 1.4 s per prompt against 2.5 s on
+the CPU. On Adreno 8xx GPUs the native build in `flutter_edge_ai_litertlm`
+1.21.0 fails Gemma 4 E2B at float32 at the first token (measured on a Galaxy
+S25 Ultra, Adreno 830), and FunctionGemma at float32 there is unmeasured. If a
+turn fails and the stream error names float32, open the model with
+`preferredBackend: PreferredBackend.cpu`.
+
 What changes with tools is not the number but what has to fit under it: the
 declarations are rendered into the prompt once — by the runtime — and stay in
 the history for the rest of the conversation, and every call and every tool response is another
@@ -534,7 +544,7 @@ refuses instead of producing a silent no-op.
 ### What you got that you did not write
 
 The happy path in Step 2 was correct. Three others were not there at all, and
-each of them is a committed call that would have been left dangling:
+each of them could leave a committed call without an answer:
 
 * **the turn was cancelled** — the loop answers every collected call with
   `{'status': 'cancelled'}` before returning, so the history is balanced and
@@ -542,8 +552,9 @@ each of them is a committed call that would have been left dangling:
 * **your tool threw** — the failed call is answered with `{'error': …}`, the
   siblings in that turn are answered as not run, and the exception is
   *rethrown* so you still see it
-* **the generation stream errored mid-turn** — the calls it had already yielded
-  are answered before the original error is rethrown
+* **the generation stream errored mid-turn** — a turn the engine failed is
+  taken back, its calls with it, so nothing is left dangling; a call that did
+  stay committed is answered before the original error is rethrown
 
 All three balance the history before they return, and that is what leaves the
 chat usable for the next message — with one exception the SDK states rather
@@ -605,11 +616,11 @@ The commands below are checked against **litetune 0.9.1**: run end to end on
 LiteRT-LM 0.19.1 for verification and the 0.18.0 builder for conversion. The source is
 available on [GitHub](https://github.com/DenisovAV/litetune).
 
-This verification pipeline deliberately stays on litetune's measured LiteRT-LM
-0.18 verifier and matching builder. The completed Flutter app uses
-`flutter_edge_ai_litertlm` 1.20.0 and runs LiteRT-LM 0.19; the verifier
-version is not the app runtime. Do not change the commands to 0.19 without
-re-running and replacing the measurements below.
+The measurements below were taken with litetune 0.4.1, whose verifier ran
+LiteRT-LM 0.18; litetune 0.9.1 verifies on LiteRT-LM 0.19.1, and its changelog
+reports the same numbers on 0.18.0 and 0.19.1 for every family it measured. The
+completed Flutter app uses `flutter_edge_ai_litertlm` 1.21.0 and runs LiteRT-LM
+0.19.1 through `litertlm_dart`; the verifier version is not the app runtime.
 
 Converted with litetune 0.3.0 on Python 3.10 or 3.11? Convert again: with a
 relative `--output-dir`, as below, that version wrote a bundle without its GPU
@@ -1132,6 +1143,14 @@ defaults:
       );
 ```
 
+For Gemma 4 that default depends on the context. Above 2,048 tokens its GPU
+attempt runs float32 activations on iOS, macOS, Windows and Linux, because at
+float16 its positions stop being distinct past about 2,048 tokens
+(LiteRT-LM #4001). Android keeps the bundle's float16, since float32 fails on
+Adreno 8xx GPUs with the native build in `flutter_edge_ai_litertlm` 1.21.0, and
+prints one WARNING line saying so. An explicit `activationDataType` always
+wins.
+
 ### Where this runs
 
 | | Android | iOS device | iOS Simulator | macOS | Windows | Linux | Web |
@@ -1142,7 +1161,7 @@ defaults:
 
 **The web** builds and runs, and text chat works. Function calling is a
 **maybe**, and the honest reason is that nobody here has run it. The plumbing
-is in place: core 1.7.3 fixed `createChat` dropping `tools`, and the browser
+is in place: `openChat` passes `tools` through on the web arm, and the browser
 arm sends the declarations to the runtime as a structured preface for both
 families, the same JSON the native side sends. What is missing is a
 measurement — no browser run against either model, with either kind of tool.

@@ -136,10 +136,12 @@ for another task, e.g. `TaskType.questionAnswering`.
 ## GGUF embeddings (`flutter_edge_ai_llama` 0.0.3+)
 
 `LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3 (core 2.5.0, llamadart
-0.15.1) runs EmbeddingGemma 2 GGUF text embeddings natively. 0.0.6 moves to
-llamadart 0.17.5: measured there on macOS CPU/Metal (#764); Linux/Windows CPU were
-measured on 0.15.1 only; Android (CPU only) and iOS are not qualified, and only
-the Q8_0 file below is numerically qualified. An explicit GPU request on
+0.15.1) runs EmbeddingGemma 2 GGUF text embeddings natively. 0.0.6 moved to
+llamadart 0.17.5 and 0.2.0 (core 2.6.0) to llamadart `^0.20.1`: macOS CPU/Metal
+was measured on 0.17.5 (#764) and 0.20.1; Linux/Windows CPU on 0.15.1 only;
+Android has a CPU gate on an arm64 emulator (0.20.1) and no physical-phone
+qualification; iOS is not qualified, and only the Q8_0 file below is
+numerically qualified. An explicit GPU request on
 Android, iOS simulators and, from 0.0.6, macOS x64 loads on the CPU, or fails
 with `backendFallback: false`. A `.gguf` carries its own
 tokenizer: a `tokenizerFrom…()` makes `install()` throw `ArgumentError`.
@@ -147,7 +149,7 @@ tokenizer: a `tokenizerFrom…()` makes `install()` throw `ArgumentError`.
 App setup (that package's README, *Add it to your app*, and `doc/platforms.md`):
 `hooks: user_defines: llamadart: llamadart_native_runtimes: [llama_cpp]` in the
 app's pubspec, or the workspace root's; on iOS/macOS also
-`llamadart_llama_cpp_flutter: 0.17.3` (0.15.0 before 0.0.6) in the app's own dependencies,
+`llamadart_llama_cpp_flutter: 0.20.1` (0.17.3 with 0.0.6 and 0.1.0, 0.15.0 before 0.0.6) in the app's own dependencies,
 `flutter config --enable-swift-package-manager`, and iOS 16.4 / macOS 14
 deployment targets; on Android arm64-v8a and x86_64 only. From
 `flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM keeps Swift Package Manager on too,
@@ -290,7 +292,9 @@ final eg2Index = await rag.open(
   270m, 440m and 740m; Windows x64 for the 270m; macOS arm64 for the 270m and
   740m. Other bundle combinations on those GPU hosts throw
   `EmbeddingLoadException` as unmeasured. The Linux rows were measured on an
-  NVIDIA L4, 2026-10-26 ([PR #714](https://github.com/DenisovAV/flutter_edge_ai/pull/714));
+  NVIDIA L4, 2026-10-26 (text 13–14 ms on the GPU vs 84–91 ms on the CPU, min
+  cosine 0.99709) and on a Tesla T4 (32–64 ms vs 232–308 ms, cosine 0.99691),
+  both in [PR #714](https://github.com/DenisovAV/flutter_edge_ai/pull/714);
   the Windows 270m passed on Panther Lake Arc B390 and Lunar Lake Arc 140V,
   2026-11-04
   ([0.19 paid-run report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-l1-paid-runs.md));

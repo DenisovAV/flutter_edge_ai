@@ -96,8 +96,12 @@ type localIndex struct {
 	// mu: reads and plain writes hold it shared; bind, a shadow begin or
 	// swap, and close hold it exclusively, so a reader never meets a
 	// collection handle the swap closed.
-	mu     sync.RWMutex
-	closed atomic.Bool
+	mu      sync.RWMutex
+	closed  atomic.Bool
+	closing atomic.Bool // set at the start of a close, before it waits for mu
+	// exclWanted counts exports waiting for the exclusive lock: new
+	// shared entries back off (PENDING) so the waiter is not starved.
+	exclWanted atomic.Int32
 
 	meta        anystore.Collection
 	active      int
@@ -124,6 +128,18 @@ type indexOpenOpts struct {
 
 func genName(kind string, n int) string { return kind + "_" + strconv.Itoa(n) }
 
+// openStoreErr classifies a failure of the database while opening or
+// loading it: storeErr's classes (errno IO, anystore.ErrCorrupt CORRUPT,
+// else INTERNAL), with a clear message for a file of another any-store
+// version.
+func openStoreErr(err error, format string, args ...any) error {
+	msg := fmt.Sprintf(format, args...)
+	if errors.Is(err, anystore.ErrIncompatibleVersion) || errors.Is(err, anystore.ErrV1Database) {
+		return wrapCode(codeInternal, fmt.Errorf("%s: written by an any-store version this build cannot read: %w", msg, err))
+	}
+	return storeErr(fmt.Errorf("%s: %w", msg, err))
+}
+
 // ioOr classifies a file-system failure as ANY_SHIM_ERR_IO and anything
 // else as other.
 func ioOr(err error, other int, format string, args ...any) error {
@@ -135,6 +151,7 @@ func ioOr(err error, other int, format string, args ...any) error {
 }
 
 func openIndex(optsJSON string) (_ *localIndex, err error) {
+	dropStaleOps()
 	var o indexOpenOpts
 	if err := decodeStrict(optsJSON, &o); err != nil {
 		return nil, err
@@ -252,7 +269,7 @@ func openIndexFile(path string, key []byte) (*localIndex, error) {
 	if err != nil {
 		// The sidecar says the key is right, so a decrypt failure is
 		// damage, not a wrong key.
-		return nil, ioOr(err, codeCorrupt, "open %s", path)
+		return nil, openStoreErr(err, "open %s", path)
 	}
 	x, err := loadIndex(db, path, kc.FileId)
 	if err != nil {
@@ -265,7 +282,7 @@ func openIndexFile(path string, key []byte) (*localIndex, error) {
 func createIndexDB(path string, key []byte, fileId string) (*localIndex, error) {
 	db, err := anystore.Open(bg, path, dbConfig(key))
 	if err != nil {
-		return nil, ioOr(err, codeInternal, "create %s", path)
+		return nil, openStoreErr(err, "create %s", path)
 	}
 	x, err := loadIndex(db, path, fileId)
 	if err != nil {
@@ -300,7 +317,7 @@ func metaSet(ctx context.Context, meta anystore.Collection, key string, v *anyen
 func loadIndex(db anystore.DB, path, fileId string) (*localIndex, error) {
 	names, err := db.GetCollectionNames(bg)
 	if err != nil {
-		return nil, ioOr(err, codeCorrupt, "read %s", path)
+		return nil, openStoreErr(err, "read %s", path)
 	}
 	hasMeta := false
 	for _, n := range names {
@@ -312,28 +329,40 @@ func loadIndex(db anystore.DB, path, fileId string) (*localIndex, error) {
 		}
 		// New, or created before a crash that came ahead of this commit.
 		if err := initIndexDB(db, fileId); err != nil {
-			return nil, ioOr(err, codeInternal, "initialise %s", path)
+			return nil, openStoreErr(err, "initialise %s", path)
 		}
 		names = []string{metaCollection, genName("docs", 0), genName("state", 0)}
 	}
 	meta, err := db.OpenCollection(bg, metaCollection)
 	if err != nil {
-		return nil, ioOr(err, codeCorrupt, "open meta of %s", path)
+		return nil, openStoreErr(err, "open meta of %s", path)
 	}
 	x := &localIndex{db: db, path: path, meta: meta}
 	fail := func(code int, format string, args ...any) (*localIndex, error) {
 		_ = meta.Close()
 		return nil, withCode(code, format, args...)
 	}
+	// A read that fails is classified by its error; a value that is
+	// missing or of the wrong type is damage.
+	failRead := func(err error, what string) (*localIndex, error) {
+		_ = meta.Close()
+		return nil, openStoreErr(err, "%s: read meta %s", path, what)
+	}
 	fv, err := metaGet(bg, meta, "fmt")
-	if err != nil || fv == nil || fv.Type() != anyenc.TypeNumber {
+	if err != nil {
+		return failRead(err, "fmt")
+	}
+	if fv == nil || fv.Type() != anyenc.TypeNumber {
 		return fail(codeCorrupt, "%s: meta has no format (%v)", path, err)
 	}
 	if n, _ := fv.Int(); n != indexFmt {
 		return fail(codeCorrupt, "%s has format %d; this build knows %d", path, n, indexFmt)
 	}
 	idv, err := metaGet(bg, meta, "fileId")
-	if err != nil || idv == nil || idv.Type() != anyenc.TypeString {
+	if err != nil {
+		return failRead(err, "fileId")
+	}
+	if idv == nil || idv.Type() != anyenc.TypeString {
 		return fail(codeCorrupt, "%s: meta has no fileId (%v)", path, err)
 	}
 	if got := string(idv.GetStringBytes()); got != fileId {
@@ -341,13 +370,16 @@ func loadIndex(db anystore.DB, path, fileId string) (*localIndex, error) {
 	}
 	x.fileId = fileId
 	av, err := metaGet(bg, meta, "active")
-	if err != nil || av == nil || av.Type() != anyenc.TypeNumber {
+	if err != nil {
+		return failRead(err, "active")
+	}
+	if av == nil || av.Type() != anyenc.TypeNumber {
 		return fail(codeCorrupt, "%s: meta has no active generation (%v)", path, err)
 	}
 	active, _ := av.Int()
 	x.active = active
 	if bv, err := metaGet(bg, meta, "bind"); err != nil {
-		return fail(codeCorrupt, "%s: bind: %v", path, err)
+		return failRead(err, "bind")
 	} else if bv != nil {
 		var c bindConfig
 		if bv.Type() != anyenc.TypeString || json.Unmarshal(bv.GetStringBytes(), &c) != nil {
@@ -370,12 +402,24 @@ func loadIndex(db anystore.DB, path, fileId string) (*localIndex, error) {
 		}
 	}
 	sort.Ints(x.orphans)
-	if x.docs, err = db.OpenCollection(bg, genName("docs", active)); err != nil {
-		return fail(codeCorrupt, "%s: active generation %d: %v", path, active, err)
+	openGen := func(kind string) (anystore.Collection, error) {
+		c, err := db.OpenCollection(bg, genName(kind, active))
+		switch {
+		case errors.Is(err, anystore.ErrCollectionNotFound):
+			return nil, withCode(codeCorrupt, "%s: meta names active generation %d, which has no %s collection", path, active, kind)
+		case err != nil:
+			return nil, openStoreErr(err, "%s: open active generation %d", path, active)
+		}
+		return c, nil
 	}
-	if x.state, err = db.OpenCollection(bg, genName("state", active)); err != nil {
+	if x.docs, err = openGen("docs"); err != nil {
+		_ = meta.Close()
+		return nil, err
+	}
+	if x.state, err = openGen("state"); err != nil {
 		_ = x.docs.Close()
-		return fail(codeCorrupt, "%s: active generation %d: %v", path, active, err)
+		_ = meta.Close()
+		return nil, err
 	}
 	return x, nil
 }
@@ -412,8 +456,21 @@ func initIndexDB(db anystore.DB, fileId string) (err error) {
 	return tx.Commit()
 }
 
+var errIndexBusy = withCode(codePending, "index busy: a bind or a generation swap holds it; retry")
+
+// enter takes the shared lock without waiting: while a bind or a swap
+// holds (or waits for) the exclusive lock, an export answers
+// ANY_SHIM_ERR_PENDING at once instead of blocking behind it.
 func (x *localIndex) enter() (func(), error) {
-	x.mu.RLock()
+	if x.closing.Load() {
+		return nil, errClosed
+	}
+	if x.exclWanted.Load() > 0 || !x.mu.TryRLock() {
+		if x.closing.Load() {
+			return nil, errClosed
+		}
+		return nil, errIndexBusy
+	}
 	if x.closed.Load() {
 		x.mu.RUnlock()
 		return nil, errClosed
@@ -421,13 +478,42 @@ func (x *localIndex) enter() (func(), error) {
 	return x.mu.RUnlock, nil
 }
 
+// enterExclusive waits for the exclusive lock (in an op: a bind, a close).
 func (x *localIndex) enterExclusive() (func(), error) {
+	if x.closing.Load() {
+		return nil, errClosed
+	}
 	x.mu.Lock()
 	if x.closed.Load() {
 		x.mu.Unlock()
 		return nil, errClosed
 	}
 	return x.mu.Unlock, nil
+}
+
+// enterExclusiveBounded is enterExclusive for an export: it tries for at
+// most maxWait (readers hold the shared lock only briefly), then answers
+// ANY_SHIM_ERR_PENDING.
+func (x *localIndex) enterExclusiveBounded() (func(), error) {
+	x.exclWanted.Add(1)
+	defer x.exclWanted.Add(-1)
+	deadline := time.Now().Add(maxWait)
+	for {
+		if x.closing.Load() {
+			return nil, errClosed
+		}
+		if x.mu.TryLock() {
+			if x.closed.Load() {
+				x.mu.Unlock()
+				return nil, errClosed
+			}
+			return x.mu.Unlock, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, errIndexBusy
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 // close is idempotent after the first call (which reports CLOSED for
@@ -437,6 +523,7 @@ func (x *localIndex) close() (err error) {
 	if x.closed.Load() {
 		return errClosed
 	}
+	x.closing.Store(true)
 	markClosing(x.claims)
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -445,11 +532,25 @@ func (x *localIndex) close() (err error) {
 	}
 	var errs []error
 	defer func() { err = errors.Join(errs...) }()
-	// First registered, so it runs last: the lock and the claim go even
-	// when a close below panics.
+	// The order is held by defers: a panic in a collection close is
+	// recovered, then the database closes, then the lock and the claim
+	// go. A database close that failed or panicked poisons the claim and
+	// keeps the lock: the file may still be open, so it gets no second
+	// writer in this process.
+	dbFailed := false
 	defer func() {
+		if dbFailed {
+			poison(x.claims)
+			return
+		}
 		errs = append(errs, unlockFile(x.lock))
 		unclaim(x.claims)
+	}()
+	defer func() {
+		if err := callRecovered("database close", func() error { return closeDBHook(x.db) }); err != nil {
+			dbFailed = true
+			errs = append(errs, err)
+		}
 	}()
 	defer func() {
 		if r := recover(); r != nil {
@@ -461,9 +562,11 @@ func (x *localIndex) close() (err error) {
 			errs = append(errs, c.Close())
 		}
 	}
-	errs = append(errs, x.db.Close())
 	return nil
 }
+
+// closeDBHook closes the database; a test replaces it.
+var closeDBHook = func(db anystore.DB) error { return db.Close() }
 
 // ------------------------------------------------------------------- bind
 
@@ -1022,7 +1125,7 @@ func (x *localIndex) apply(opsJSON string, vectors unsafe.Pointer, nFloats int64
 	var leave func()
 	var err error
 	if needsExclusive(opsJSON) {
-		leave, err = x.enterExclusive()
+		leave, err = x.enterExclusiveBounded()
 	} else {
 		leave, err = x.enter()
 	}
@@ -1162,29 +1265,56 @@ func (x *localIndex) createGeneration(ctx context.Context, n int) (anystore.Coll
 
 // --------------------------------------------------------------------- gc
 
-// gcBatch is how many rows one gc transaction deletes from an orphan.
-const gcBatch = 256
+// gcScan is how many ids a gc transaction reads at a time; it deletes
+// them one by one and stops at its own time slice.
+const gcScan = 64
 
-// gc drops orphan generations in bounded steps: each step deletes up to
-// gcBatch rows of one orphan collection in its own transaction, and an
-// emptied collection is dropped. It stops once budget has passed after a
-// step (one step at least), so a call takes about budget plus one step.
-// Readers are not held: orphans are not what they read.
+// gcStats counts what gc did, for tests and the README measurement.
+type gcStats struct {
+	steps, rows int
+}
+
+// gc drops orphan generations in bounded steps. A step is one write
+// transaction on one orphan collection: it deletes rows one by one until
+// about half the budget has passed (one row at least), then commits; an
+// emptied collection is dropped. Steps repeat until the budget has
+// passed, so a call takes about the budget plus one commit. Readers are
+// not held: orphans are not what they read. An orphan whose step fails
+// goes to the back of the list and the call reports the failure as IO or
+// INTERNAL (never CORRUPT: it is not the active index).
 func (x *localIndex) gc(budget time.Duration) (bool, error) {
+	done, _, err := x.gcWithStats(budget)
+	return done, err
+}
+
+func (x *localIndex) gcWithStats(budget time.Duration) (bool, gcStats, error) {
 	x.gcMu.Lock()
 	defer x.gcMu.Unlock()
-	deadline := time.Now().Add(budget)
+	var st gcStats
+	start := time.Now()
+	deadline := start.Add(budget)
+	slice := max(budget/2, time.Millisecond)
 	for {
 		x.orphMu.Lock()
 		if len(x.orphans) == 0 {
 			x.orphMu.Unlock()
-			return true, nil
+			return true, st, nil
 		}
 		g := x.orphans[0]
 		x.orphMu.Unlock()
-		emptied, err := x.gcStep(g)
+		emptied, n, err := x.gcStep(g, slice)
+		st.steps++
+		st.rows += n
 		if err != nil {
-			return false, err
+			x.orphMu.Lock()
+			if len(x.orphans) > 0 && x.orphans[0] == g {
+				x.orphans = append(x.orphans[1:], g) // rotate: others go on
+			}
+			x.orphMu.Unlock()
+			if isIOErrno(err) {
+				return false, st, wrapCode(codeIO, fmt.Errorf("gc of orphan generation %d: %w", g, err))
+			}
+			return false, st, wrapCode(codeInternal, fmt.Errorf("gc of orphan generation %d: %w", g, err))
 		}
 		if emptied {
 			x.orphMu.Lock()
@@ -1197,17 +1327,17 @@ func (x *localIndex) gc(budget time.Duration) (bool, error) {
 			x.orphMu.Lock()
 			done := len(x.orphans) == 0
 			x.orphMu.Unlock()
-			return done, nil
+			return done, st, nil
 		}
 	}
 }
 
-// gcStep deletes one batch of generation g (docs first, then state), or
-// drops a collection of it that is empty. Reports true once both are gone.
-func (x *localIndex) gcStep(g int) (bool, error) {
+// gcStep works on generation g (docs first, then state) for about slice.
+// Reports true once both collections are gone, and the rows deleted.
+func (x *localIndex) gcStep(g int, slice time.Duration) (bool, int, error) {
 	names, err := x.db.GetCollectionNames(bg)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	have := map[string]bool{}
 	for _, n := range names {
@@ -1218,15 +1348,17 @@ func (x *localIndex) gcStep(g int) (bool, error) {
 		if !have[name] {
 			continue
 		}
-		return false, x.gcCollection(name)
+		n, err := x.gcCollection(name, slice)
+		return false, n, err
 	}
-	return true, nil
+	return true, 0, nil
 }
 
-func (x *localIndex) gcCollection(name string) (err error) {
+func (x *localIndex) gcCollection(name string, slice time.Duration) (deleted int, err error) {
+	stop := time.Now().Add(slice)
 	tx, err := x.db.WriteTx(bg)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer func() {
 		if err != nil {
@@ -1236,44 +1368,59 @@ func (x *localIndex) gcCollection(name string) (err error) {
 	ctx := tx.Context()
 	c, err := x.db.OpenCollection(ctx, name)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	it, err := c.Find(nil).Limit(gcBatch).Iter(ctx)
-	if err != nil {
-		return err
-	}
-	var ids []string
-	for it.Next() {
-		d, err := it.Doc()
+	dropped := false
+	for {
+		it, err := c.Find(nil).Limit(gcScan).Iter(ctx)
 		if err != nil {
+			return 0, err
+		}
+		var ids []string
+		for it.Next() {
+			d, err := it.Doc()
+			if err != nil {
+				it.Close()
+				return 0, err
+			}
+			ids = append(ids, string(d.Value().GetStringBytes("id")))
+		}
+		if err := it.Err(); err != nil {
 			it.Close()
-			return err
+			return 0, err
 		}
-		ids = append(ids, string(d.Value().GetStringBytes("id")))
-	}
-	if err := it.Err(); err != nil {
 		it.Close()
-		return err
-	}
-	it.Close()
-	if len(ids) == 0 {
-		if err := c.Drop(ctx); err != nil {
-			return err
+		if len(ids) == 0 {
+			if deleted == 0 {
+				if err := c.Drop(ctx); err != nil {
+					return 0, err
+				}
+				dropped = true
+			}
+			break
 		}
-	} else {
+		out := false
 		for _, id := range ids {
 			if err := c.DeleteId(ctx, id); err != nil && !errors.Is(err, anystore.ErrDocNotFound) {
-				return err
+				return 0, err
 			}
+			deleted++
+			if !time.Now().Before(stop) {
+				out = true
+				break
+			}
+		}
+		if out {
+			break
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return err
+		return 0, err
 	}
-	if len(ids) > 0 {
-		return c.Close()
+	if !dropped {
+		_ = c.Close()
 	}
-	return nil
+	return deleted, nil
 }
 
 func (x *localIndex) orphanCount() int {

@@ -279,7 +279,7 @@ func TestCloseStartOpAndCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 	a2.beginClose(true)
-	op := startOp(context.Background(), func(context.Context) (any, error) { return map[string]any{}, a2.finishClose(0) })
+	op := startOp(context.Background(), func(context.Context) (any, error) { return map[string]any{}, a2.finishClose(context.Background(), 0) })
 	r, err := waitOpDone(t, op, 30*time.Second)
 	if err != nil {
 		t.Fatalf("close op: %v", err)

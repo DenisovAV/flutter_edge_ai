@@ -71,8 +71,17 @@ not `.lock`, any-store's sentinel name). The SDK opens in the op.
 `account_cancel` cancels every call and space load, never blocks, and is
 terminal. `account_close_start(h, wait_loads_ms)`: a suspend passes 25000
 so a first space load in flight can finish (inside the iOS background
-task) before the cancel; a close passes 0. The release of the lock and
-the claims runs even when the SDK close fails or panics. `account_release(uintptr_t)` and
+task; clamped to 25 s, and on iOS to the background time left minus
+5 s; `op_cancel` of the close op cuts it short) before the cancel; a close
+passes 0. The close order is held by defers: whatever panics, the SDK
+closes before the lock and the claims are released. If the SDK close
+itself fails or panics, the claims are poisoned and the lock kept: later
+opens of that directory get `ERR_REFUSED` "the previous instance failed
+to close; restart the app" for the life of the process, never a second
+writer next to a half-closed SDK (the local index does the same for a
+failed database close). An account a dead hot-restart generation opened
+but never took (a finished, undelivered open op) is closed when the next
+generation opens the same directories. `account_release(uintptr_t)` and
 `index_release(uintptr_t)` have the `void(void*)` shape of a
 `NativeFinalizer`: they take the handle out of the registry (a stale one
 is a no-op), mark the directories closing at once and close on a
@@ -115,7 +124,14 @@ non-OK (`ERR_DELETED` for a deleted object or record, else
 `{generation, maxApplySeq}` read before the page. `object_derive_id`
 computes a derived object's id without a write (pinned to
 `Objects().Derive` by a test). `records_modify` /
-`records_read` work on a records dataset (the tombstones).
+`records_read` work on a records dataset (the tombstones). Tombstone
+records are never deleted (`DeleteBy: none`) and `revs` grows by one
+entry per remove of the same key: bundle v1 cannot compact them.
+
+**Before the `native-any-v0.2.0` tag** the ABI and the `/v1` bundles are
+not frozen and changed between development builds: spaces created with a
+development build (dev and LAN test spaces) must be discarded, not
+carried over.
 
 **Local index.** One any-store file per location: `meta` (format,
 fileId, active generation, bind config), `docs_<n>` (rows: `id`, `text`,
@@ -125,7 +141,15 @@ fills a new generation and swaps it in by flipping `meta.active` in one
 transaction (`shadowBegin`, `shadowSwap`), under an exclusive lock so no
 reader meets a closed collection. Old and unswapped generations become
 orphans; `index_gc` drops them in bounded steps (also those found at
-open). `index_bind_start` builds new indexes over every row in an op.
+open): a step deletes rows one by one in one transaction until half the
+budget has passed, then commits; a failing orphan goes to the back of the
+list and its error is IO or INTERNAL, never CORRUPT. Measured on an M-series
+Mac mini (`TestIndexGcStepMeasured`): 1000 rows of ~400-word texts at dim
+768 with text search, `index_gc(250)` takes ~262 ms and drops ~370 rows
+(two steps); the whole generation goes in 4 calls. `index_bind_start`
+builds new indexes over every row in an op. While a bind or a swap holds
+the index exclusively, every other index call answers `ERR_PENDING`
+("index busy") at once; the caller retries in slices.
 `index_apply` validates every op and every vector slot (slots tile the
 float buffer in order, dimension equals the bound one, finite values)
 before one write transaction, and checks its compare-and-set state keys

@@ -38,7 +38,10 @@ type accountState struct {
 	doc    accountStateDoc
 	saveMu sync.Mutex // one writer at a time; held across the file write
 	wg     sync.WaitGroup
-	err    error // the last failed background save, for close
+	err    error // the last save's error (nil when it succeeded)
+	// version counts changes; saved is the version the last successful
+	// save wrote. saved < version: the disk is behind (dirty).
+	version, saved uint64
 }
 
 func loadAccountState(dataDir string) (*accountState, error) {
@@ -88,9 +91,23 @@ func (s *accountState) update(spaceId string, sync bool, f func(st *spaceState))
 	changed := *st != before
 	if changed {
 		s.doc.Spaces[spaceId] = st
+		s.version++
 	}
+	dirty := s.version != s.saved
 	s.mu.Unlock()
-	if !changed {
+	if !changed && sync {
+		// Nothing new, but the caller needs the flag on disk: wait for
+		// saves in flight, and save again if the disk is still behind.
+		s.wg.Wait()
+		s.mu.Lock()
+		dirty = s.version != s.saved
+		s.mu.Unlock()
+		if !dirty {
+			return nil
+		}
+		return s.save()
+	}
+	if !dirty {
 		return nil
 	}
 	if sync {
@@ -111,6 +128,7 @@ func (s *accountState) save() error {
 	defer s.saveMu.Unlock()
 	s.mu.Lock()
 	b, err := json.Marshal(s.doc)
+	v := s.version
 	s.mu.Unlock()
 	if err == nil {
 		if werr := writeFileAtomic(s.path, b); werr != nil {
@@ -119,6 +137,9 @@ func (s *accountState) save() error {
 	}
 	s.mu.Lock()
 	s.err = err
+	if err == nil && v > s.saved {
+		s.saved = v
+	}
 	s.mu.Unlock()
 	return err
 }
@@ -130,12 +151,18 @@ func (s *accountState) saveError() error {
 	return s.err
 }
 
-// flush waits for background saves and reports the last save's error.
+// flush waits for background saves and, if the disk is still behind (a
+// background save failed), saves again; it reports that result.
 func (s *accountState) flush() error {
 	s.wg.Wait()
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.err
+	dirty := s.version != s.saved
+	err := s.err
+	s.mu.Unlock()
+	if dirty {
+		return s.save()
+	}
+	return err
 }
 
 // writeFileAtomic writes path through a temp file in its directory:

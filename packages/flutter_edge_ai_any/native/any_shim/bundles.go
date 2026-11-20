@@ -129,7 +129,9 @@ func readBundleIds(ctx context.Context, sp space.Space, req space.EnsureBundleRe
 	for _, d := range req.Properties {
 		defs := byX[d.XKey]
 		if len(defs) == 0 {
-			return out, withCode(codeNotFound, "bundle %s: property %q has not synced here", req.Id, d.XKey)
+			// The root has definitions, but not this one: it was removed
+			// (RemoveProperty), not "not synced yet".
+			return out, withCode(codeRefused, "bundle %s: property %q is declared by this build but missing from the root's definitions (removed)", req.Id, d.XKey)
 		}
 		// Two of one XKey only through AddProperty on another device;
 		// the smaller id is the one every device picks.

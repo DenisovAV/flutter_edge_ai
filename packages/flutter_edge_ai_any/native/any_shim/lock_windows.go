@@ -43,6 +43,6 @@ func unlockFile(f *os.File) error {
 	return f.Close()
 }
 
-// isPlatformIOErrno: ERROR_HANDLE_DISK_FULL (39) and ERROR_DISK_FULL
-// (112), which Go does not map to ENOSPC.
-func isPlatformIOErrno(e syscall.Errno) bool { return e == 39 || e == 112 }
+// isPlatformIOErrno: ERROR_WRITE_PROTECT (19), ERROR_HANDLE_DISK_FULL
+// (39) and ERROR_DISK_FULL (112), which Go does not map to POSIX errnos.
+func isPlatformIOErrno(e syscall.Errno) bool { return e == 19 || e == 39 || e == 112 }

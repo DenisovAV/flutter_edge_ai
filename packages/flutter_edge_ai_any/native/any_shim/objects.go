@@ -144,19 +144,22 @@ func typeProps(ctx context.Context, sp space.Space, typeId string) (map[string]s
 // declaredByOurBundle reports whether typeId is the derived root of one of
 // our bundles and that bundle declares xkey: such an xkey missing from a
 // synced type was removed (RemoveProperty), not "not ours".
-func declaredByOurBundle(ctx context.Context, sp space.Space, typeId, xkey string) bool {
+func declaredByOurBundle(ctx context.Context, sp space.Space, typeId, xkey string) (bool, error) {
 	for _, req := range []space.EnsureBundleRequest{ragLocationBundle(), ragDocumentBundle()} {
 		root, err := sp.Bundles().DerivedRootId(ctx, req.Id)
-		if err != nil || root != typeId {
+		if err != nil {
+			return false, fmt.Errorf("derived root of %s: %w", req.Id, err)
+		}
+		if root != typeId {
 			continue
 		}
 		for _, p := range req.Properties {
 			if p.XKey == xkey {
-				return true
+				return true, nil
 			}
 		}
 	}
-	return false
+	return false, nil
 }
 
 // ------------------------------------------------------------ object_patch
@@ -255,7 +258,11 @@ func resolveOps(ctx context.Context, sp space.Space, typeId string, ops []patchO
 			if !synced {
 				return nil, withCode(codeNotFound, "the definitions of type %s have not synced here (property %q)", typeId, o.XKey)
 			}
-			if declaredByOurBundle(ctx, sp, typeId, o.XKey) {
+			removed, err := declaredByOurBundle(ctx, sp, typeId, o.XKey)
+			if err != nil {
+				return nil, err
+			}
+			if removed {
 				return nil, withCode(codeRefused, "property %q of type %s was declared and has been removed", o.XKey, typeId)
 			}
 			return nil, invalid("type %s declares no property %q", typeId, o.XKey)
@@ -792,12 +799,9 @@ func deriveObjectId(spaceId, seed string) (string, error) {
 // ---------------------------------------------------------------- exports
 
 //export any_shim_object_derive_id
-func any_shim_object_derive_id(h C.uint64_t, spaceID, seed, typeID *C.char, outJSON, outErr **C.char) C.any_shim_status {
+func any_shim_object_derive_id(h C.uint64_t, spaceID, seed *C.char, outJSON, outErr **C.char) C.any_shim_status {
 	return guard(outErr, func() error {
 		return withAccount(h, func(a *account) error {
-			if goStr(typeID) == "" {
-				return invalid("type id is empty")
-			}
 			id, err := deriveObjectId(goStr(spaceID), goStr(seed))
 			if err != nil {
 				return err

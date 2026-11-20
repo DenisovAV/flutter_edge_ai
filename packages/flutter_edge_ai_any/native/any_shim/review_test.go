@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -17,6 +16,8 @@ import (
 	anystore "github.com/anyproto/any-store/v2"
 	"github.com/anyproto/any-store/v2/anyenc"
 	anysyncsdk "github.com/anyproto/any-sync-sdk"
+	"github.com/anyproto/any-sync-sdk/auth"
+	"github.com/anyproto/any-sync-sdk/config"
 	"github.com/anyproto/any-sync-sdk/space"
 )
 
@@ -154,10 +155,50 @@ func TestCloseStartWaitsForLoads(t *testing.T) {
 	_ = sid
 }
 
-// G1: a close that panics in the SDK still releases the claims and the
-// lock, and reports the panic.
-func TestClosePanicLeavesNoClaim(t *testing.T) {
+// G-R1: a panic anywhere in the close body cannot free the lock while
+// the SDK is open: the SDK closes first, then the lock and claims go.
+func TestClosePanicClosesSDKBeforeUnlock(t *testing.T) {
 	cfg := acctCfg{base: t.TempDir(), mnemonic: newMnemonic(t), nodeConf: deadNodeConf(t)}
+	a, err := openAccount(acctOpts(t, cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(cfg.base, "data", dataDirLockName)
+	a.stopStatus = func() { panic("simulated stopStatus panic") }
+	var lockedAtSDKClose, claimedAtSDKClose bool
+	orig := closeSDKHook
+	closeSDKHook = func(s *anysyncsdk.SDK) error {
+		f, lerr := lockFile(lockPath)
+		lockedAtSDKClose = codeOf(lerr) == codeBusy
+		if lerr == nil {
+			unlockFile(f)
+		}
+		claimedAtSDKClose = claimHeld(cfg.base)
+		return closeSDK(s)
+	}
+	defer func() { closeSDKHook = orig }()
+	err = a.closeNow()
+	if codeOf(err) != codePanic || !strings.Contains(err.Error(), "simulated stopStatus panic") {
+		t.Fatalf("close error %v, want the panic", err)
+	}
+	if !lockedAtSDKClose || !claimedAtSDKClose {
+		t.Fatalf("at the SDK close: lock held %v, claim held %v; both must be", lockedAtSDKClose, claimedAtSDKClose)
+	}
+	if claimHeld(cfg.base) {
+		t.Fatal("claims left after the close")
+	}
+	f, err := lockFile(lockPath)
+	if err != nil {
+		t.Fatalf("lock still held: %v", err)
+	}
+	unlockFile(f)
+}
+
+// G-R1: an SDK close that panics (or fails) poisons the claims: the
+// directory is refused for the life of the process, never reopened next
+// to a half-closed SDK.
+func TestFailedSDKClosePoisonsClaim(t *testing.T) {
+	cfg := acctCfg{base: t.TempDir(), mnemonic: newMnemonic(t), nodeConf: deadNodeConf(t), token: "p1"}
 	a, err := openAccount(acctOpts(t, cfg))
 	if err != nil {
 		t.Fatal(err)
@@ -168,18 +209,93 @@ func TestClosePanicLeavesNoClaim(t *testing.T) {
 		panic("simulated close panic")
 	}
 	defer func() { closeSDKHook = orig }()
-	err = a.closeNow()
-	if codeOf(err) != codePanic || !strings.Contains(err.Error(), "simulated close panic") {
-		t.Fatalf("close error %v, want the panic", err)
+	if err := a.closeNow(); codeOf(err) != codePanic {
+		t.Fatalf("close: %v", err)
+	}
+	for _, tok := range []string{"p1", "p2"} {
+		c := cfg
+		c.token = tok
+		_, err := accountOpenStart(acctOpts(t, c))
+		if codeOf(err) != codeRefused || !strings.Contains(err.Error(), "failed to close") {
+			t.Fatalf("token %s: %v, want REFUSED failed to close", tok, err)
+		}
+	}
+	if _, err := lockFile(filepath.Join(cfg.base, "data", dataDirLockName)); codeOf(err) != codeBusy {
+		t.Fatalf("the lock was released after a failed close: %v", err)
+	}
+}
+
+// G-R1, index side: a failed database close poisons the index claim.
+func TestFailedIndexClosePoisonsClaim(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "index.anystore")
+	x, err := openIndex(idxOpts(path, "", "t"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := closeDBHook
+	closeDBHook = func(db anystore.DB) error { _ = db.Close(); return errors.New("simulated close failure") }
+	defer func() { closeDBHook = orig }()
+	if err := x.close(); err == nil {
+		t.Fatal("close reported no error")
+	}
+	if _, err := openIndex(idxOpts(path, "", "t2")); codeOf(err) != codeRefused || !strings.Contains(err.Error(), "failed to close") {
+		t.Fatalf("reopen: %v", err)
+	}
+}
+
+// G-R2: a panic inside the open op releases the claims and the lock.
+func TestOpenPanicReleases(t *testing.T) {
+	cfg := acctCfg{base: t.TempDir(), mnemonic: newMnemonic(t), nodeConf: deadNodeConf(t)}
+	orig := openSDKHook
+	openSDKHook = func(context.Context, config.Config, auth.Provider) (*anysyncsdk.SDK, error) {
+		panic("simulated open panic")
+	}
+	h, err := accountOpenStart(acctOpts(t, cfg))
+	if err != nil {
+		openSDKHook = orig
+		t.Fatal(err)
+	}
+	_, err = waitOpDone(t, h, 10*time.Second)
+	openSDKHook = orig
+	if codeOf(err) != codePanic {
+		t.Fatalf("open op: %v", err)
 	}
 	if claimHeld(cfg.base) {
-		t.Fatal("claims left after a panicking close")
+		t.Fatal("claims left after a panicking open")
 	}
-	f, err := lockFile(filepath.Join(cfg.base, "data", dataDirLockName))
+	openAt(t, cfg) // the directory opens again
+}
+
+// G-R3: op_cancel of the close op cuts the load wait short; the wait is
+// clamped.
+func TestCloseWaitCutByCancel(t *testing.T) {
+	if boundLoadWait(time.Hour) != maxWaitLoads || boundLoadWait(-time.Second) != 0 {
+		t.Fatal("boundLoadWait does not clamp")
+	}
+	a, err := openAccount(acctOpts(t, acctCfg{base: t.TempDir(), mnemonic: newMnemonic(t), nodeConf: deadNodeConf(t)}))
 	if err != nil {
-		t.Fatalf("lock still held: %v", err)
+		t.Fatal(err)
 	}
-	unlockFile(f)
+	a.loadWG.Add(1) // a load that never ends
+	h := handles.add(a)
+	ch, err := accountCloseStart(h, 25000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	start := time.Now()
+	o, _ := take[*op](ch, "an op")
+	o.abandon()
+	select {
+	case <-a.closeDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the close did not go on after op_cancel")
+	}
+	// The cut wait, then at most 2 s for loads that ignore the cancel.
+	if took := time.Since(start); took > 4*time.Second {
+		t.Fatalf("close after cancel took %v", took)
+	}
+	a.loadWG.Done()
 }
 
 // G7: the close drops the account's ops.
@@ -329,28 +445,31 @@ func TestStateSaveErrors(t *testing.T) {
 	}
 }
 
-// G3: any-store's "full" error is ERR_IO; its text is pinned to the
-// any-store source (the sentinel is in an internal package).
-func TestAnystoreFullTextIsCurrent(t *testing.T) {
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/anyproto/any-store/v2").Output()
-	if err != nil {
-		t.Skipf("go list: %v", err)
+// G-R9: a real *os.PathError carrying ENOSPC (as a write on a full disk
+// returns it) is ERR_IO through storeErr; so are any-store's corrupt and
+// "full" errors classified (the latter by its text: its sentinel is in an
+// internal package; this is not coverage of a real full database).
+func TestStoreErrClassification(t *testing.T) {
+	pe := &os.PathError{Op: "write", Path: "/x/index.anystore-wal", Err: syscall.ENOSPC}
+	if codeOf(storeErr(fmt.Errorf("commit: %w", pe))) != codeIO {
+		t.Fatal("ENOSPC PathError is not IO")
 	}
-	src, err := os.ReadFile(filepath.Join(strings.TrimSpace(string(out)), "internal", "btree", "errors.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(src), `ErrFull = errors.New("`+anystoreFullText+`")`) {
-		t.Fatalf("any-store's ErrFull text is no longer %q", anystoreFullText)
-	}
-	if codeOf(storeErr(fmt.Errorf("commit: %w", errors.New(anystoreFullText)))) != codeIO {
-		t.Fatal("full is not IO")
-	}
-	if codeOf(storeErr(fmt.Errorf("write: %w", syscall.ENOSPC))) != codeIO {
-		t.Fatal("ENOSPC is not IO")
+	for _, e := range []syscall.Errno{syscall.EACCES, syscall.EROFS, syscall.EDQUOT} {
+		if codeOf(storeErr(&os.PathError{Op: "open", Path: "/x", Err: e})) != codeIO {
+			t.Fatalf("%v is not IO", e)
+		}
 	}
 	if codeOf(storeErr(fmt.Errorf("read: %w", anystore.ErrCorrupt))) != codeCorrupt {
 		t.Fatal("ErrCorrupt is not CORRUPT")
+	}
+	if codeOf(storeErr(errors.New(anystoreFullText))) != codeIO {
+		t.Fatal("full text is not IO")
+	}
+	if codeOf(storeErr(errors.New("something else"))) != codeInternal {
+		t.Fatal("an unknown error is not INTERNAL")
+	}
+	if codeOf(openStoreErr(anystore.ErrIncompatibleVersion, "open")) != codeInternal {
+		t.Fatal("incompatible version is not INTERNAL")
 	}
 }
 

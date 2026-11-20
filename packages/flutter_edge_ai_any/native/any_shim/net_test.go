@@ -80,7 +80,7 @@ func TestOpsNeverBlockAgainstBlackhole(t *testing.T) {
 	ah := handles.add(a)
 	a2, _ := take[*account](ah, "an account")
 	a2.beginClose(true)
-	closeOp := startOp(context.Background(), func(context.Context) (any, error) { return nil, a2.finishClose(0) })
+	closeOp := startOp(context.Background(), func(context.Context) (any, error) { return nil, a2.finishClose(context.Background(), 0) })
 	if _, err := waitOpDone(t, h, 5*time.Second); codeOf(err) != codeClosed {
 		t.Fatalf("blocked sync after close: %v, want CLOSED", err)
 	}

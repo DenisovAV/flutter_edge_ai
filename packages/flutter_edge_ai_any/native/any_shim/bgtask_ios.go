@@ -15,30 +15,32 @@ package main
 #import <objc/message.h>
 #import <objc/runtime.h>
 
-#include <pthread.h>
 #include <stdatomic.h>
 
-// One task: the id is stored before the expiration handler may read it
-// (the handler takes the mutex the begin call holds), and the task is
-// ended exactly once, by whichever of the handler and the Go side comes
-// first. The struct is never freed: after an end the handler may still
-// be running; it is under 100 bytes per close.
+// One task, lock-free. The expiration handler may run before begin has
+// returned the id: it then only marks the task expired, and the begin
+// side ends it once the id is stored. "ended" makes the end happen once,
+// whichever side gets there. The struct is never freed: after an end the
+// handler may still be running; it is a few bytes per close.
 typedef struct {
-	pthread_mutex_t mu;
-	unsigned long task; // UIBackgroundTaskInvalid is 0
+	atomic_ulong task; // UIBackgroundTaskInvalid is 0
+	atomic_int expired;
 	atomic_int ended;
 } any_shim_bg;
 
+static id any_shim_app(void) {
+	Class cls = NSClassFromString(@"UIApplication");
+	SEL shared = sel_registerName("sharedApplication");
+	if (cls == nil || ![cls respondsToSelector:shared]) return nil;
+	return ((id (*)(id, SEL))objc_msgSend)((id)cls, shared);
+}
+
 static void any_shim_bg_finish(any_shim_bg *b) {
-	if (b == NULL || atomic_exchange(&b->ended, 1) != 0) return;
-	pthread_mutex_lock(&b->mu);
-	unsigned long t = b->task;
-	pthread_mutex_unlock(&b->mu);
-	if (t == 0) return;
+	if (b == NULL) return;
+	unsigned long t = atomic_load(&b->task);
+	if (t == 0 || atomic_exchange(&b->ended, 1) != 0) return;
 	@autoreleasepool {
-		Class cls = NSClassFromString(@"UIApplication");
-		if (cls == nil) return;
-		id app = ((id (*)(id, SEL))objc_msgSend)((id)cls, sel_registerName("sharedApplication"));
+		id app = any_shim_app();
 		if (app == nil) return;
 		((void (*)(id, SEL, unsigned long))objc_msgSend)(app, sel_registerName("endBackgroundTask:"), t);
 	}
@@ -46,29 +48,40 @@ static void any_shim_bg_finish(any_shim_bg *b) {
 
 static any_shim_bg *any_shim_bg_begin(const char *name) {
 	@autoreleasepool {
-		Class cls = NSClassFromString(@"UIApplication");
-		SEL shared = sel_registerName("sharedApplication");
-		if (cls == nil || ![cls respondsToSelector:shared]) return NULL;
-		id app = ((id (*)(id, SEL))objc_msgSend)((id)cls, shared);
+		id app = any_shim_app();
 		SEL begin = sel_registerName("beginBackgroundTaskWithName:expirationHandler:");
 		if (app == nil || ![app respondsToSelector:begin]) return NULL;
 		any_shim_bg *b = calloc(1, sizeof(any_shim_bg));
 		if (b == NULL) return NULL;
-		pthread_mutex_init(&b->mu, NULL);
 		NSString *n = [NSString stringWithUTF8String:name];
-		pthread_mutex_lock(&b->mu);
-		b->task = ((unsigned long (*)(id, SEL, id, void (^)(void)))objc_msgSend)(app, begin, n, ^{
+		unsigned long t = ((unsigned long (*)(id, SEL, id, void (^)(void)))objc_msgSend)(app, begin, n, ^{
 			// Out of time: the close goes on, iOS may suspend it.
-			any_shim_bg_finish(b);
+			atomic_store(&b->expired, 1);
+			any_shim_bg_finish(b); // a no-op until the id is stored
 		});
-		pthread_mutex_unlock(&b->mu);
+		atomic_store(&b->task, t);
+		if (atomic_load(&b->expired)) any_shim_bg_finish(b);
 		return b;
+	}
+}
+
+// Seconds of background time left, or < 0 when unknown (no
+// UIApplication). In the foreground UIKit answers DBL_MAX.
+static double any_shim_bg_remaining(void) {
+	@autoreleasepool {
+		id app = any_shim_app();
+		SEL sel = sel_registerName("backgroundTimeRemaining");
+		if (app == nil || ![app respondsToSelector:sel]) return -1;
+		return ((double (*)(id, SEL))objc_msgSend)(app, sel);
 	}
 }
 */
 import "C"
 
-import "unsafe"
+import (
+	"time"
+	"unsafe"
+)
 
 // beginBackgroundTask asks iOS for time to finish name; the returned
 // func ends the task. Without a UIApplication (an extension, a test
@@ -78,4 +91,14 @@ func beginBackgroundTask(name string) (end func()) {
 	defer C.free(unsafe.Pointer(cs))
 	b := C.any_shim_bg_begin(cs)
 	return func() { C.any_shim_bg_finish(b) }
+}
+
+// backgroundTimeRemaining is UIApplication.backgroundTimeRemaining; ok is
+// false without a UIApplication or in the foreground (unbounded).
+func backgroundTimeRemaining() (time.Duration, bool) {
+	r := float64(C.any_shim_bg_remaining())
+	if r < 0 || r > 1e6 {
+		return 0, false
+	}
+	return time.Duration(r * float64(time.Second)), true
 }

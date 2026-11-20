@@ -149,6 +149,9 @@ type dirClaim struct {
 	token   string
 	holder  string // what holds it, for messages
 	closing atomic.Bool
+	// poisoned: the holder's close failed with the SDK or the database
+	// possibly still open; the claim stays for the life of the process.
+	poisoned atomic.Bool
 }
 
 var claims = struct {
@@ -180,6 +183,8 @@ func claim(token, holder string, keys ...string) ([]*dirClaim, error) {
 		}
 		what := strings.SplitN(k, ":", 2)
 		switch {
+		case c.poisoned.Load():
+			return nil, withCode(codeRefused, "%s %s: the previous instance failed to close; restart the app", what[0], what[1])
 		case c.closing.Load():
 			return nil, withCode(codeBusy, "%s %s is still closing (held by %s); retry", what[0], what[1], c.holder)
 		case c.token != token:
@@ -200,6 +205,14 @@ func claim(token, holder string, keys ...string) ([]*dirClaim, error) {
 func markClosing(cs []*dirClaim) {
 	for _, c := range cs {
 		c.closing.Store(true)
+	}
+}
+
+// poison keeps the claims, refusing every later open of their
+// directories in this process (see dirClaim.poisoned).
+func poison(cs []*dirClaim) {
+	for _, c := range cs {
+		c.poisoned.Store(true)
 	}
 }
 
@@ -307,10 +320,21 @@ func prepareAccount(optsJSON string) (_ *pendingAccount, err error) {
 // opened anyway is closed again. On any failure the claims and the lock
 // are released.
 func (p *pendingAccount) open(opCtx context.Context) (_ *account, err error) {
+	// A success flag, not err: a panic (recovered by the op) leaves err
+	// nil and must release too, after closing an SDK it opened.
+	opened := false
+	var sdk *anysyncsdk.SDK
 	defer func() {
-		if err != nil {
-			p.release()
+		if opened {
+			return
 		}
+		if sdk != nil {
+			if closeSDK(sdk) != nil {
+				poison(p.claims) // possibly still open: no second writer
+				return
+			}
+		}
+		p.release()
 	}()
 	o := p.o
 	loggerOnce.Do(func() {
@@ -348,7 +372,7 @@ func (p *pendingAccount) open(opCtx context.Context) (_ *account, err error) {
 	// open only while it runs.
 	ctx, cancel := context.WithCancel(context.Background())
 	stop := context.AfterFunc(opCtx, cancel)
-	s, err := anysyncsdk.Open(ctx, cfg, prov)
+	s, err := openSDKHook(ctx, cfg, prov)
 	cancelledByOp := !stop()
 	if err != nil {
 		cancel()
@@ -357,10 +381,10 @@ func (p *pendingAccount) open(opCtx context.Context) (_ *account, err error) {
 		}
 		return nil, err
 	}
+	sdk = s
 	if cancelledByOp {
 		cancel()
-		_ = s.Close()
-		return nil, opCtx.Err()
+		return nil, opCtx.Err() // the deferred release closes the SDK
 	}
 	a := &account{
 		sdk:       s,
@@ -382,8 +406,13 @@ func (p *pendingAccount) open(opCtx context.Context) (_ *account, err error) {
 			_ = a.markPeerSynced(st.SpaceId, false)
 		}
 	})
+	opened = true
 	return a, nil
 }
+
+// openSDKHook is anysyncsdk.Open; a test replaces it to make the open
+// panic.
+var openSDKHook = anysyncsdk.Open
 
 // openAccount prepares and opens on the calling goroutine (tests).
 func openAccount(optsJSON string) (*account, error) {
@@ -446,26 +475,45 @@ func (a *account) beginClose(cancelNow bool) bool {
 	return true
 }
 
+// maxWaitLoads bounds a suspend's wait for space loads in flight.
+const maxWaitLoads = 25 * time.Second
+
 // finishClose optionally waits up to waitLoads for space loads in flight
-// (a suspend lets a joining device finish its first load), then cancels,
-// waits for the calls in flight, stops watches, ops and loads, closes the
-// SDK and releases the lock and the directories. The release runs
-// whatever happens before it, a failed or panicking SDK close included.
+// (a suspend lets a joining device finish its first load; ctx, the close
+// op's, cuts the wait short), then cancels, waits for the calls in
+// flight, stops watches, ops and loads, closes the SDK and releases the
+// lock and the directories.
+//
+// The order is held by defers, so a panic anywhere cannot reorder it:
+// the body's panic is recovered first, then the SDK closes, then the
+// background task ends, then the lock and the claims go. If the SDK close
+// itself failed or panicked, the claims are poisoned and the lock kept:
+// a later open of the directory is refused rather than becoming a second
+// writer next to a half-closed SDK.
 // Runs once; later callers wait for the first and get its result.
-func (a *account) finishClose(waitLoads time.Duration) error {
+func (a *account) finishClose(ctx context.Context, waitLoads time.Duration) error {
 	a.closeOnce.Do(func() {
 		defer close(a.closeDone)
 		var errs []error
 		defer func() { a.closeErr = errors.Join(errs...) }()
-		// First registered, so it runs last: the lock and the claims go
-		// even when anything below panics.
+		sdkFailed := false
 		defer func() {
+			if sdkFailed {
+				poison(a.claims)
+				return
+			}
 			errs = append(errs, unlockFile(a.lock))
 			unclaim(a.claims)
 		}()
 		defer func() {
 			if a.bgEnd != nil {
 				a.bgEnd()
+			}
+		}()
+		defer func() {
+			if err := callRecovered("SDK close", func() error { return closeSDKHook(a.sdk) }); err != nil {
+				sdkFailed = true
+				errs = append(errs, err)
 			}
 		}()
 		defer func() {
@@ -478,51 +526,70 @@ func (a *account) finishClose(waitLoads time.Duration) error {
 		a.loadsMu.Unlock()
 		loadsDone := make(chan struct{})
 		go func() { a.loadWG.Wait(); close(loadsDone) }()
-		if waitLoads > 0 {
+		// A load that ignores its cancel gets 10 s after the cancel; 2 s
+		// when a load wait already ran.
+		after := 10 * time.Second
+		if waitLoads = boundLoadWait(waitLoads); waitLoads > 0 {
 			t := time.NewTimer(waitLoads)
 			select {
 			case <-loadsDone:
 			case <-t.C:
+			case <-ctx.Done():
 			}
 			t.Stop()
+			after = 2 * time.Second
 		}
 		a.cancel()
 		a.events.close()
-		a.dropOps()
 		a.ops.Lock()
 		defer a.ops.Unlock()
+		a.dropOps()
 		a.mu.Lock()
-		for _, stop := range a.watches {
-			stop()
-		}
+		watches := a.watches
 		a.watches = map[int64]func(){}
 		a.mu.Unlock()
+		for _, stop := range watches {
+			stop()
+		}
 		if a.stopStatus != nil {
 			a.stopStatus()
 		}
 		select {
 		case <-loadsDone:
-		case <-time.After(10 * time.Second):
-			// A load that ignores its cancelled context; the SDK close
-			// below cancels its bootstrap and joins its own work.
+		case <-time.After(after):
 		}
-		errs = append(errs, closeSDKHook(a.sdk), a.state.flush())
+		errs = append(errs, a.state.flush())
 	})
 	<-a.closeDone
 	return a.closeErr
+}
+
+// boundLoadWait clamps a suspend's load wait to 0..25 s and, on iOS, to
+// the background time left minus 5 s.
+func boundLoadWait(d time.Duration) time.Duration {
+	d = max(0, min(d, maxWaitLoads))
+	if left, ok := backgroundTimeRemaining(); ok {
+		d = max(0, min(d, left-5*time.Second))
+	}
+	return d
 }
 
 // closeSDKHook is closeSDK; a test replaces it to make the close panic.
 var closeSDKHook = func(s *anysyncsdk.SDK) error { return closeSDK(s) }
 
 // closeSDK closes the SDK, turning a panic into an error.
-func closeSDK(s interface{ Close() error }) (err error) {
+func closeSDK(s interface{ Close() error }) error {
+	return callRecovered("SDK close", s.Close)
+}
+
+// callRecovered runs f, turning a panic into a PANIC error.
+func callRecovered(what string, f func() error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = &shimError{code: codePanic, err: fmt.Errorf("panic in SDK close: %v\n%s", r, debug.Stack())}
+			err = &shimError{code: codePanic, err: fmt.Errorf("panic in %s: %v\n%s", what, r, debug.Stack())}
 		}
 	}()
-	return s.Close()
+	return f()
 }
 
 // startOp starts an op on the account's context and tracks it, so the
@@ -565,7 +632,7 @@ func (a *account) closeNow() error {
 		<-a.closeDone
 		return errClosed
 	}
-	return a.finishClose(0)
+	return a.finishClose(context.Background(), 0)
 }
 
 func (a *account) info() map[string]any {
@@ -631,6 +698,8 @@ func any_shim_account_cancel(h C.uint64_t, outErr **C.char) C.any_shim_status {
 
 // accountOpenStart is any_shim_account_open_start without the cgo types.
 func accountOpenStart(optsJSON string) (uint64, error) {
+	dropStaleOps()
+	releaseUndeliveredOpens(optsJSON)
 	p, err := prepareAccount(optsJSON)
 	if err != nil {
 		return 0, err
@@ -652,6 +721,54 @@ func accountOpenStart(optsJSON string) (uint64, error) {
 	return h, nil
 }
 
+// releaseUndeliveredOpens closes accounts that a finished open op holds
+// for directories this open names, under another owner token: the
+// previous generation of a hot restart opened them and died before it
+// took the result, so nobody ever will. The new open then sees the
+// directories closing (BUSY) and its retry gets in.
+func releaseUndeliveredOpens(optsJSON string) {
+	var o struct {
+		DataDir    string `json:"dataDir"`
+		IndexDir   string `json:"indexDir"`
+		OwnerToken string `json:"ownerToken"`
+	}
+	if json.Unmarshal([]byte(optsJSON), &o) != nil || o.OwnerToken == "" {
+		return
+	}
+	want := map[string]bool{}
+	if d, err := canonicalDir(o.DataDir); err == nil && o.DataDir != "" {
+		want["dataDir:"+d] = true
+	}
+	if d, err := canonicalDir(o.IndexDir); err == nil && o.IndexDir != "" {
+		want["indexDir:"+d] = true
+	}
+	var stale []*op
+	handles.mu.Lock()
+	for h, v := range handles.m {
+		o2, ok := v.(*op)
+		if !ok || o2.discard == nil || o2.finished.Load() == 0 || o2.err != nil {
+			continue
+		}
+		m, _ := o2.result.(map[string]any)
+		ah, _ := m["account"].(uint64)
+		a, _ := handles.m[ah].(*account)
+		if a == nil {
+			continue
+		}
+		for _, c := range a.claims {
+			if want[c.key] && c.token != o.OwnerToken {
+				delete(handles.m, h)
+				stale = append(stale, o2)
+				break
+			}
+		}
+	}
+	handles.mu.Unlock()
+	for _, o2 := range stale {
+		o2.abandon()
+	}
+}
+
 // accountCloseStart is any_shim_account_close_start without the cgo types.
 func accountCloseStart(h uint64, waitLoadsMs int32) (uint64, error) {
 	a, err := take[*account](h, "an account")
@@ -660,8 +777,8 @@ func accountCloseStart(h uint64, waitLoadsMs int32) (uint64, error) {
 	}
 	wait := time.Duration(max(waitLoadsMs, 0)) * time.Millisecond
 	a.beginClose(wait == 0)
-	return startOp(context.Background(), func(context.Context) (any, error) {
-		if err := a.finishClose(wait); err != nil {
+	return startOp(context.Background(), func(ctx context.Context) (any, error) {
+		if err := a.finishClose(ctx, wait); err != nil {
 			return nil, err
 		}
 		return map[string]any{}, nil
@@ -708,7 +825,7 @@ func releaseAccount(h uint64) {
 	a.beginClose(true)
 	go func() {
 		defer func() { _ = recover() }()
-		_ = a.finishClose(0)
+		_ = a.finishClose(context.Background(), 0)
 	}()
 }
 

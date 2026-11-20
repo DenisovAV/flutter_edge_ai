@@ -145,7 +145,11 @@ any_shim_status any_shim_op_cancel(uint64_t op, char **out_error);
  *                    restart generation) or still closing is
  *                    ANY_SHIM_ERR_BUSY at once; the caller retries. Held
  *                    by the same token (already open in this isolate
- *                    group): ANY_SHIM_ERR_REFUSED.
+ *                    group): ANY_SHIM_ERR_REFUSED. A directory whose
+ *                    previous instance failed to close (its SDK close
+ *                    failed or panicked): ANY_SHIM_ERR_REFUSED "the
+ *                    previous instance failed to close; restart the app",
+ *                    for the life of the process (never a second writer).
  *   mnemonic         string, required
  *   accountIndex     uint, optional
  *   deviceKeyHex     string, required
@@ -173,7 +177,9 @@ any_shim_status any_shim_account_cancel(uint64_t account, char **out_error);
  * result is {}. The handle is invalid at once. wait_loads_ms > 0: inside
  * the op (and inside the iOS background task), first waits up to that
  * long for space loads in flight to finish, then cancels and closes; a
- * suspend passes 25000, a close 0 (cancel at once). */
+ * suspend passes 25000, a close 0 (cancel at once). Clamped to 0..25000;
+ * on iOS also to the background time left minus 5 s; op_cancel of the
+ * close op cuts the wait short (the close still runs). */
 any_shim_status any_shim_account_close_start(uint64_t account,
                                              int32_t wait_loads_ms,
                                              uint64_t *out_op,
@@ -295,10 +301,9 @@ any_shim_status any_shim_object_read(uint64_t account, char *space_id,
 
 /* The id object_patch {"derive":{"seed","type"}} would produce, computed
  * without a write (a reader may call it; the space need not be loaded).
- * type_id must be non-empty; it does not enter the id. {"id"} */
+ * The type does not enter the id. {"id"} */
 any_shim_status any_shim_object_derive_id(uint64_t account, char *space_id,
-                                          char *seed, char *type_id,
-                                          char **out_json,
+                                          char *seed, char **out_json,
                                           char **out_error);
 
 /* Deletes an object for every device. A derived object is
@@ -397,7 +402,13 @@ any_shim_status any_shim_file_read_start(uint64_t account, char *space_id,
  *   EACCES/EPERM/ENOSPC          ANY_SHIM_ERR_IO
  * Takes flock/LockFileEx on <path>.shimlock; held by another process:
  * ANY_SHIM_ERR_BUSY. The same path open under another ownerToken, or
- * closing: ANY_SHIM_ERR_BUSY; under the same token: ANY_SHIM_ERR_REFUSED.
+ * closing: ANY_SHIM_ERR_BUSY; under the same token: ANY_SHIM_ERR_REFUSED;
+ * after a close whose database close failed: ANY_SHIM_ERR_REFUSED "the
+ * previous instance failed to close" (as for accounts).
+ * Index calls never wait behind a bind or a generation swap: while one
+ * holds the index exclusively, the other index calls (apply, get, scan,
+ * count, knn, text, flush, gc, info, bind_start) return
+ * ANY_SHIM_ERR_PENDING ("index busy") at once; retry in slices.
  * Orphan generation collections (an unswapped shadow included) are only
  * recorded; any_shim_index_gc drops them. */
 any_shim_status any_shim_index_open(char *opts_json, uint64_t *out_index,
@@ -415,7 +426,8 @@ void any_shim_index_release(uintptr_t index);
  *             "textSearch":bool}
  * Idempotent; fields and textSearch may only grow (a new field gets its
  * range index); another dim or metric, or a field key with another type,
- * is ANY_SHIM_ERR_CONFLICT (returned by the start call). The config lives
+ * is ANY_SHIM_ERR_CONFLICT (returned by the start call; also by the op
+ * when a concurrent bind got in first). The config lives
  * in meta and survives swaps. A bind that adds an index builds it over
  * every existing row, so it runs in an op. Op result:
  * {"dim","metric","fields","textSearch"} */

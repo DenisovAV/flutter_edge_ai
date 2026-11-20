@@ -561,6 +561,9 @@ func TestIndexSwapWithConcurrentReaders(t *testing.T) {
 				default:
 				}
 				leave, err := x.enter()
+				if codeOf(err) == codePending {
+					continue // a swap holds the index: the export answers PENDING
+				}
 				if err != nil {
 					errs <- err
 					return
@@ -718,7 +721,7 @@ func TestIndexKeycheckCrashMatrix(t *testing.T) {
 		{"sidecar plain, file encrypted", []setup{create(testKey), func(t *testing.T, p string) {
 			kc, _ := newKeycheck(nil)
 			writeKeycheck(p+".keycheck", kc)
-		}}, "", codeCorrupt, false},
+		}}, "", codeInternal, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -885,11 +888,22 @@ func TestIndexBindApplySwapConcurrently(t *testing.T) {
 			}
 		}
 	}()
+	// Index calls answer PENDING while a bind or a swap holds the index:
+	// they are retried, as the Dart side does.
+	retry := func(f func() error) error {
+		for {
+			err := f()
+			if codeOf(err) != codePending {
+				return err
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 40; i++ {
 			ops, buf := upserts(upsert{id: fmt.Sprint(i), text: "t", vec: []float32{1, float32(i)}})
-			if _, err := applyJSON(x, ops, buf); err != nil {
+			if err := retry(func() error { _, err := applyJSON(x, ops, buf); return err }); err != nil {
 				errs <- err
 			}
 		}
@@ -897,13 +911,22 @@ func TestIndexBindApplySwapConcurrently(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 10; i++ {
-			if _, err := applyJSON(x, map[string]any{"ops": []any{map[string]any{"op": "shadowBegin"}, map[string]any{"op": "shadowSwap"}}}, nil); err != nil {
+			if err := retry(func() error {
+				_, err := applyJSON(x, map[string]any{"ops": []any{map[string]any{"op": "shadowBegin"}, map[string]any{"op": "shadowSwap"}}}, nil)
+				return err
+			}); err != nil {
 				errs <- err
 			}
-			leave, _ := x.enter()
-			_, err := x.knn([]float32{1, 0}, 3, "")
-			_ = x.info()
-			leave()
+			err := retry(func() error {
+				leave, err := x.enter()
+				if err != nil {
+					return err
+				}
+				defer leave()
+				_ = x.info()
+				_, err = x.knn([]float32{1, 0}, 3, "")
+				return err
+			})
 			if err != nil {
 				errs <- err
 			}

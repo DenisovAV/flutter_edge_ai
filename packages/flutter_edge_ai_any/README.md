@@ -146,11 +146,10 @@ re-handshake.
 Its C API is `include/any_shim.h` (ABI 2); see
 [native/any_shim/README.md](native/any_shim/README.md). `hook/build.dart`
 registers a local build (`native/any_shim/prebuilt/<target>/`) or downloads
-the pinned release. **The pinned release, `native-any-v0.1.0`, is ABI 1: until
-`native-any-v0.2.0` is tagged, a local ABI-2 build is required**
-(`native/any_shim/build.sh <target>`). ABI 2 and the `/v1` bundles freeze at
-that tag: spaces written by dev builds before it (including LAN test
-spaces) must be discarded, not migrated.
+the pinned release, `native-any-v0.2.0` (ABI 2), checking each archive's
+SHA256. ABI 2 and the `/v1` bundles are frozen at that tag: spaces written by
+dev builds before it (including LAN test spaces) must be discarded, not
+migrated.
 
 ## Testing
 

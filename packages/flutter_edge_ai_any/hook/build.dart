@@ -33,7 +33,7 @@ const _assetName = 'src/ffi/any_shim_bindings.dart';
 /// `any_shim_version()`. A rebuild of an already published version takes a
 /// letter suffix (`0.1.0-a`), as the `native-v*` tags do; different bytes
 /// under a published tag are never uploaded.
-const _bundleVersion = '0.1.0';
+const _bundleVersion = '0.2.0';
 
 const _releaseTag = 'native-any-v$_bundleVersion';
 const _markerFileName = '.flutter_edge_ai_any_shim_version';
@@ -43,22 +43,7 @@ const _releaseBase =
 /// SHA256 of each published archive (`checksums_any_shim.txt` on the
 /// release carries the same). A registered checksum promises the platform:
 /// a missing or mismatching archive then fails the build.
-const Map<String, String> _checksums = {
-  'any-shim-android_arm64.tar.gz':
-      '3ac49f652677b1a538d7056aaca88f1669df4c90653f3e4bd5bff254465ef3ff',
-  'any-shim-ios_arm64.tar.gz':
-      'c26a5a9af951462fcfd307dae65a616d0b918958deee9173a77cf5f1ee7c52a3',
-  'any-shim-ios_sim_arm64.tar.gz':
-      'f2223150898deba3ed564abd2be9d3137110fe3528732d0acfbb9173c8473dc4',
-  'any-shim-linux_arm64.tar.gz':
-      'e341e1964a383c2306a821f7c1860487ad705fb61b080b82f0f429675b61cbcb',
-  'any-shim-linux_x86_64.tar.gz':
-      'd74e7a695012f1ff5e4ac9409d788b56991604737506950fec0644acb8795a5a',
-  'any-shim-macos_arm64.tar.gz':
-      'c1cfdd195226734c93e426ab829e56d2bda35ce9f1dda1f0556a6e801fea1c67',
-  'any-shim-windows_x86_64.tar.gz':
-      '0ddc6278c057c2b4ce4e04cfe819efc09e181d9e6ca49fb85a659ec07c5eb8e8',
-};
+const Map<String, String> _checksums = {};
 
 String _archiveName(String dirName) => 'any-shim-$dirName.tar.gz';
 

@@ -22,8 +22,8 @@ String? nativeSkipReason() {
   try {
     final abi = any_shim_abi_version();
     if (abi != anyShimAbiVersion) {
-      // The pinned release (native-any-v0.1.0) is ABI 1; these suites need
-      // a local build of this tree.
+      // A library of another ABI (an older release, or a stale local
+      // build); these suites need one built from this tree.
       return 'libany_shim implements ABI $abi, these bindings need '
           '$anyShimAbiVersion: run native/any_shim/build.sh ${hostTarget()}';
     }

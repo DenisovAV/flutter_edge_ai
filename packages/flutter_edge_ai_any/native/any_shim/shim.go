@@ -32,7 +32,7 @@ import (
 const abiVersion = 2
 
 // shimVersion names this shim's own release, independent of the SDK's.
-const shimVersion = "0.2.0-dev"
+const shimVersion = "0.2.0"
 
 //export any_shim_abi_version
 func any_shim_abi_version() C.uint32_t { return C.uint32_t(abiVersion) }

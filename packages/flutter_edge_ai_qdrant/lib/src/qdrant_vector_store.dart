@@ -66,7 +66,23 @@ class QdrantLegacyStoreException extends VectorStoreException {
 ///     1.x layout is present it refuses outright rather than removing data it
 ///     cannot read. Nothing the caller keeps alongside the store is ever
 ///     touched, by this package or by anything it tells the caller to do.
+///
+/// ### Text search
+///
+/// [searchText] ranks documents by BM25 over a full-text index on their
+/// content, which qdrant keeps in the shard itself (see [enableTextSearch]).
 final class QdrantVectorStore extends VectorStoreRepository {
+  QdrantVectorStore({this.enableTextSearch = false});
+
+  /// Gives the location a text index (`VectorStoreSpec.enableTextSearch`,
+  /// which the provider passes here).
+  ///
+  /// The index lives in the shard, so it is created with the shard on the
+  /// first write, or on [initialize] for a shard that already exists. Once
+  /// there, the engine keeps it in step with every write and [clear], also
+  /// for stores opened without this flag.
+  final bool enableTextSearch;
+
   QdrantEdgeClient? _client;
 
   /// Dimension is captured on the first `addDocument` call (matches the
@@ -344,6 +360,18 @@ final class QdrantVectorStore extends VectorStoreRepository {
           // from is not the one the caller now owns.
         }
         return;
+      }
+      // Before installing the client: an initialize() that throws must leave a
+      // store that refuses, not one that serves every read but text search.
+      try {
+        await _ensureTextIndex(opened.client);
+      } on VectorStoreException catch (e) {
+        await opened.client.close();
+        _unusableReason =
+            'The qdrant shard at $storeDir opened, but the text index '
+            'enableTextSearch asks for could not be created. Call initialize() '
+            'again once the cause is cleared. Underlying error: ${e.cause}';
+        throw VectorStoreException(_unusableReason!, e.cause);
       }
       _client = opened.client;
       _dim = opened.dim;
@@ -1095,11 +1123,7 @@ final class QdrantVectorStore extends VectorStoreRepository {
       );
     }
     try {
-      final future = QdrantEdgeClient.open(
-        path: storeDir,
-        dim: dim,
-        distance: _distance,
-      );
+      final future = _openShard(storeDir, dim);
       _opening = future;
       final QdrantEdgeClient c;
       try {
@@ -1141,6 +1165,41 @@ final class QdrantVectorStore extends VectorStoreRepository {
       _assertProfileLeaseCurrent(lease, 'addDocument');
       _latchOpenFailure(storeDir, e);
       throw VectorStoreException('Failed to open qdrant shard at $storeDir', e);
+    }
+  }
+
+  /// Creates the shard, with its text index when [enableTextSearch] is set —
+  /// inside the open that `_opening` shares, so a write joining it never
+  /// reaches a shard that is still missing the index.
+  Future<QdrantEdgeClient> _openShard(String storeDir, int dim) async {
+    final c = await QdrantEdgeClient.open(
+      path: storeDir,
+      dim: dim,
+      distance: _distance,
+    );
+    if (!enableTextSearch) return c;
+    try {
+      await c.createTextIndex(_contentKey);
+    } on QdrantException catch (e) {
+      // A client nobody receives would hold the WAL lock until exit.
+      await c.close();
+      // Said as what it is: the shard opened, the index did not.
+      throw QdrantException(
+        'Created the shard but could not give it a text index: ${e.message}',
+      );
+    }
+    return c;
+  }
+
+  /// Gives an existing shard the text index [enableTextSearch] asks for, when
+  /// it does not have one yet (the engine indexes the documents already in it).
+  Future<void> _ensureTextIndex(QdrantEdgeClient c) async {
+    if (!enableTextSearch) return;
+    try {
+      if (await c.hasTextIndex(_contentKey)) return;
+      await c.createTextIndex(_contentKey);
+    } on QdrantException catch (e) {
+      throw VectorStoreException('Failed to create the text index', e);
     }
   }
 
@@ -1298,6 +1357,51 @@ final class QdrantVectorStore extends VectorStoreRepository {
   }
 
   @override
+  bool get supportsTextSearch => true;
+
+  @override
+  Future<List<TextSearchResult>> searchText({
+    required String text,
+    required int topK,
+    Filter? filter,
+  }) async {
+    _assertUsable('searchText');
+    final c = _client;
+    if (c == null) {
+      // No shard yet. With the flag, the index comes with the shard on the
+      // first write, so the location has a text index and no documents.
+      if (enableTextSearch) return const [];
+      throw StateError(_noTextIndex);
+    }
+    final filterJson = FilterCodec.encode(filter, _filterSchema);
+    final List<SearchHit> hits;
+    try {
+      if (!await c.hasTextIndex(_contentKey)) throw StateError(_noTextIndex);
+      hits = await c.searchText(
+        field: _contentKey,
+        text: text,
+        topK: topK,
+        filterJson: filterJson,
+      );
+    } on QdrantException catch (e) {
+      throw VectorStoreException('searchText failed', e);
+    }
+    return [
+      for (final hit in hits)
+        TextSearchResult(
+          id: hit.payload?[_userIdKey] as String? ?? hit.id,
+          content: hit.payload?[_contentKey] as String? ?? '',
+          relevanceScore: hit.score,
+          metadata: hit.payload?[_metadataKey] as String?,
+        ),
+    ];
+  }
+
+  static const _noTextIndex =
+      'This qdrant location has no text index. Open it once with '
+      'VectorStoreSpec(enableTextSearch: true) to create one.';
+
+  @override
   Future<VectorStoreStats> getStats() async {
     _assertUsable('getStats');
     final c = _client;
@@ -1376,7 +1480,10 @@ final class QdrantVectorStore extends VectorStoreRepository {
       _client = opened.client;
       _dim = opened.dim;
       _unusableReason = null;
+      // Emptied first, so the index is built over nothing rather than over
+      // the documents this call is about to delete.
       await opened.client.deleteAll();
+      await _ensureTextIndex(opened.client);
     } on QdrantException catch (e) {
       _latchOpenFailure(_storeDirFor(databasePath), e);
       throw VectorStoreException('Failed to clear the qdrant shard', e);
@@ -1464,7 +1571,7 @@ class QdrantVectorStoreProvider implements VectorStoreProvider {
 
   @override
   Future<VectorStoreRepository> createStore(VectorStoreSpec spec) async =>
-      QdrantVectorStore();
+      QdrantVectorStore(enableTextSearch: spec.enableTextSearch);
 }
 
 /// What [QdrantVectorStore._whatIsAt] found at the bare `databasePath`.

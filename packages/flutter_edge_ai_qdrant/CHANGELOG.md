@@ -1,3 +1,6 @@
+## Unreleased
+- Text and hybrid search: `VectorStoreSpec.enableTextSearch` gives the shard a BM25 full-text index on the document content (`searchText`, `searchHybrid`).
+
 ## 2.1.1
 - README: the iOS simulator is arm64 only.
 

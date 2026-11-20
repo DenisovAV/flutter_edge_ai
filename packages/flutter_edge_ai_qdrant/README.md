@@ -147,6 +147,28 @@ refuses; if a schema must work on both, keep it inside sqlite's narrower set.
 - Every location is durably bound to one `EmbeddingProfile` and one document
   modality.
 
+## Text search (BM25)
+
+`VectorStoreSpec(enableTextSearch: true)` gives the shard a full-text index on
+the document `content`, so `RagIndex.searchText` ranks documents by BM25 and
+`RagIndex.searchHybrid` fuses it with the vector search (see the
+[flutter_edge_ai_rag README](https://pub.dev/packages/flutter_edge_ai_rag#text-and-hybrid-search)).
+The index and the ranking are qdrant's own; nothing is computed in Dart.
+
+- Words split on Unicode word boundaries, case- and diacritic-insensitive
+  (`café` = `cafe`), no stemming. The query matches documents with any of its
+  words; quotes and operators in it are plain text.
+- `relevanceScore` is the BM25 score: higher is better, comparable within one
+  search only.
+- The index lives in the shard, so the engine updates it with every write and
+  keeps it through `clear()`, also for opens without the flag.
+- It is created with the shard on the first write, or, for a shard that
+  already exists, on the first open with the flag, from the documents already
+  stored. That build runs inside `openVectors` and takes longer the larger the
+  corpus, so enable the flag when the location is created, or open a large
+  existing one off the UI's critical path. A location opened without the flag
+  and with no index refuses `searchText` with `StateError`.
+
 ## Adopting an existing profile-less store
 
 A nonempty `qdrant_edge_v1` shard created before 2.0.0 has vectors but no durable

@@ -272,6 +272,83 @@ class QdrantEdgeClient {
     }
   }
 
+  /// Whether [field] has a full-text index that can rank (BM25), i.e. one
+  /// [createTextIndex] made. A text index without ranking does not count:
+  /// [searchText] needs the document lengths only a ranking index records.
+  Future<bool> hasTextIndex(String field) async {
+    _checkOpen();
+    try {
+      final params = _shard.info().payloadSchema[field]?.params;
+      return params is qe.TextPayloadIndexParams &&
+          params.config.scoring != null;
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  /// Gives [field] a BM25-ranking full-text index, built over the points
+  /// already stored and kept in step by the engine on every later write.
+  ///
+  /// Words split on Unicode word boundaries, case- and diacritic-insensitive
+  /// (`café` matches `cafe`), no stemming.
+  Future<void> createTextIndex(String field) async {
+    _checkOpen();
+    try {
+      _shard.update(
+        operation: qe.UpdateOperation.createFieldIndexWithParams(
+          fieldName: field,
+          params: qe.TextPayloadIndexParams(
+            qe.TextIndexParams(
+              tokenizer: qe.TokenizerType.word,
+              lowercase: true,
+              asciiFolding: true,
+              scoring: qe.TextScoringParams(type: qe.TextScoringType.bm25),
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  /// Top-K points ranked by BM25 of [text] over [field]'s text index, higher
+  /// [SearchHit.score] first. Points without any of [text]'s words are not
+  /// returned, so a [text] with no words returns nothing. [filterJson] as in
+  /// [search].
+  Future<List<SearchHit>> searchText({
+    required String field,
+    required String text,
+    required int topK,
+    String? filterJson,
+  }) async {
+    _checkOpen();
+    try {
+      final results = _shard.query(
+        request: qe.QueryRequest(
+          limit: topK,
+          query: qe.TextScoringQuery(
+            field: field,
+            query: text,
+            scoring: qe.Bm25TextQueryScoring(qe.Bm25Params()),
+          ),
+          filter: _filterFromJson(filterJson),
+          withPayload: qe.BoolWithPayload(true),
+        ),
+      );
+      return [
+        for (final sp in results)
+          SearchHit(
+            id: _idString(sp.id),
+            score: sp.score,
+            payload: _decodePayload(sp.payload),
+          ),
+      ];
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
   /// Delete points by IDs. No-op for IDs that don't exist.
   Future<void> delete(List<String> ids) async {
     _checkOpen();

@@ -24,9 +24,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # ^1.1.0: the store implements `readBinding`/`bind(VectorStoreBinding)`,
-  # which rag 1.1.0 adds; with rag 1.0 it would resolve and fail to compile.
-  flutter_edge_ai_rag: ^1.1.0
+  # ^1.2.0: the store implements text search (`searchText`,
+  # `supportsTextSearch`, `VectorStoreSpec.enableTextSearch`), which rag 1.2.0
+  # adds.
+  flutter_edge_ai_rag: ^1.2.0
   uuid: ^4.0.0
   # For the store's owned-subdir path handling (qdrant_edge_v1).
   path: ^1.9.0

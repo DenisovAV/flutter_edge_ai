@@ -87,6 +87,12 @@ class QdrantEdgeClient {
   final qe.EdgeShard _shard;
   bool _closed = false;
 
+  /// Fields [hasTextIndex] has seen indexed or [createTextIndex] indexed.
+  /// Nothing this package does removes an index, so a positive answer stays
+  /// true for the client's lifetime and spares [searchText] an `info()` call,
+  /// which walks every segment.
+  final _textIndexedFields = <String>{};
+
   QdrantEdgeClient._(this._shard);
 
   /// Open (or create) a shard on disk.
@@ -133,39 +139,43 @@ class QdrantEdgeClient {
   static Future<({QdrantEdgeClient client, int dim})?> openExisting({
     required String path,
   }) async {
-    // `probeShard` (SDK 0.8.0-dev.3) answers the one question this method has
-    // to ask, and it is the SDK's to answer: is there a shard here, and will it
-    // load? Before it existed, `EdgeShard.load` raised the SAME error for "this
-    // directory holds no shard" and "this shard will not load", so this package
-    // guessed from the filesystem — looking for `edge_config.json` and parsing
-    // it. That guess reported a full corpus as an empty store, because the
-    // engine reads a shard whose config file is missing perfectly well. The
-    // heuristic is gone; the SDK is asked instead.
-    final qe.ShardProbe probe;
+    // `EdgeShard.load(path, config: null)` answers the one question this method
+    // has to ask, and it is the SDK's to answer: is there a shard here, and will
+    // it load? (SDK 0.8.0-dev.3 to 0.8.0-dev.5 asked a separate `probeShard`;
+    // 0.9 folds the answer into load's own errors, so it cannot disagree with
+    // load.) Before either existed, this package guessed from the filesystem —
+    // looking for `edge_config.json` and parsing it. That guess reported a full
+    // corpus as an empty store, because the engine reads a shard whose config
+    // file is missing perfectly well. The heuristic is gone; the SDK is asked.
     try {
-      probe = qe.probeShard(path: path);
+      if (!Directory(path).existsSync()) return null;
+    } on FileSystemException catch (e) {
+      // Not total: dart:io throws when the path cannot be inspected, and that
+      // must reach the caller as this package's type, not escape unwrapped.
+      throw QdrantException('Cannot inspect $path: $e');
+    }
+    final qe.EdgeShard shard;
+    try {
+      shard = qe.EdgeShard.load(path: path, config: null);
+    } on qe.UnreadableEdgeException catch (e) {
+      // Positive evidence that something of ours is here and will not open.
+      // Never report this as "no shard" — that is the silent-empty-index
+      // defect this method exists to prevent.
+      throw QdrantException(
+        'A qdrant shard is present at $path but cannot be read: ${e.reason}',
+      );
+    } on qe.OperationExceptionEdgeException catch (e) {
+      // The engine's "nothing stored here" (no config and no segments): an
+      // empty directory, unrelated files, or one a failed first open left.
+      if (e.reason.contains('no segments were loaded')) return null;
+      _rethrow(e);
     } catch (e) {
-      // The probe is an FFI call like any other: a Rust panic here arrives as
-      // UniffiInternalError, which is not an EdgeException, so without this it
-      // crossed the package boundary as a type the caller cannot name.
+      // A Rust panic arrives as UniffiInternalError, which is not an
+      // EdgeException, so without this it crossed the package boundary as a
+      // type the caller cannot name.
       _rethrow(e);
     }
-    switch (probe.presence) {
-      case qe.EdgeShardPresence.none:
-        return null;
-      case qe.EdgeShardPresence.unreadable:
-        // Positive evidence that something of ours is here and will not open.
-        // Never report this as "no shard" — that is the silent-empty-index
-        // defect this release exists to remove.
-        throw QdrantException(
-          'A qdrant shard is present at $path but cannot be read'
-          '${probe.reason == null ? '' : ': ${probe.reason}'}',
-        );
-      case qe.EdgeShardPresence.loadable:
-        break;
-    }
     try {
-      final shard = qe.EdgeShard.load(path: path, config: null);
       final cfg = shard.config();
       final size = cfg.vectorData['']?.size;
       if (size == null) {
@@ -257,6 +267,88 @@ class QdrantEdgeClient {
             using: null,
           ),
           limit: topK,
+          filter: _filterFromJson(filterJson),
+          withPayload: qe.BoolWithPayload(true),
+        ),
+      );
+      return [
+        for (final sp in results)
+          SearchHit(
+            id: _idString(sp.id),
+            score: sp.score,
+            payload: _decodePayload(sp.payload),
+          ),
+      ];
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  /// Whether [field] has a full-text index that can rank (BM25), i.e. one
+  /// [createTextIndex] made. A text index without ranking does not count:
+  /// [searchText] needs the document lengths only a ranking index records.
+  Future<bool> hasTextIndex(String field) async {
+    _checkOpen();
+    if (_textIndexedFields.contains(field)) return true;
+    try {
+      final params = _shard.info().payloadSchema[field]?.params;
+      final indexed =
+          params is qe.TextPayloadIndexParams && params.config.scoring != null;
+      if (indexed) _textIndexedFields.add(field);
+      return indexed;
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  /// Gives [field] a BM25-ranking full-text index, built over the points
+  /// already stored and kept in step by the engine on every later write.
+  ///
+  /// Text splits at every character that is not a letter or digit (`don't`
+  /// is `don` and `t`), lowercased, with Latin letters folded to ASCII
+  /// (`café` matches `cafe`), and no stemming.
+  Future<void> createTextIndex(String field) async {
+    _checkOpen();
+    try {
+      _shard.update(
+        operation: qe.UpdateOperation.createFieldIndexWithParams(
+          fieldName: field,
+          params: qe.TextPayloadIndexParams(
+            qe.TextIndexParams(
+              tokenizer: qe.TokenizerType.word,
+              lowercase: true,
+              asciiFolding: true,
+              scoring: qe.TextScoringParams(type: qe.TextScoringType.bm25),
+            ),
+          ),
+        ),
+      );
+      _textIndexedFields.add(field);
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  /// Top-K points ranked by BM25 of [text] over [field]'s text index, higher
+  /// [SearchHit.score] first. Points without any of [text]'s words are not
+  /// returned, so a [text] with no words returns nothing. [filterJson] as in
+  /// [search].
+  Future<List<SearchHit>> searchText({
+    required String field,
+    required String text,
+    required int topK,
+    String? filterJson,
+  }) async {
+    _checkOpen();
+    try {
+      final results = _shard.query(
+        request: qe.QueryRequest(
+          limit: topK,
+          query: qe.TextScoringQuery(
+            field: field,
+            query: text,
+            scoring: qe.Bm25TextQueryScoring(qe.Bm25Params()),
+          ),
           filter: _filterFromJson(filterJson),
           withPayload: qe.BoolWithPayload(true),
         ),
@@ -378,8 +470,9 @@ class QdrantEdgeClient {
     if (e is QdrantException) throw e;
     if (e is qe.ShardLockedEdgeException) {
       throw QdrantShardLockedException(
-        'The shard is already open elsewhere (its write-ahead log is held by '
-        'another handle). Close the other store, or wait for it to finish.',
+        'The shard is already open elsewhere (its directory is locked by '
+        'another handle, often one a hot restart left open). Close the other '
+        'store, or wait for it to finish.',
       );
     }
     if (e is qe.EdgeException) throw QdrantException(_flatten(e));

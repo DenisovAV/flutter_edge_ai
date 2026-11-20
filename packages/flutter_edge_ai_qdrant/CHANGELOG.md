@@ -1,3 +1,8 @@
+## Unreleased
+- Requires `qdrant_edge` ^0.9.0 (Qdrant Edge 0.9 engine).
+- Text and hybrid search (BM25) through `VectorStoreSpec.enableTextSearch`.
+- After writing with this version, do not downgrade to 2.1.1 or earlier.
+
 ## 2.1.1
 - README: the iOS simulator is arm64 only.
 

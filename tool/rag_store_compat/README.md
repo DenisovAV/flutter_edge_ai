@@ -20,6 +20,10 @@ of §9.3).
   (`enableTextSearch`); the published releases write to them without knowing
   it (an upsert, a remove and an add; a clear and a re-add of the same ids and
   count), and the train's text search must reflect exactly those writes.
+  Two qdrant stores (qdrant_edge 0.9, with a text index) go to the published
+  qdrant release: it only reads one, which must stay intact, and writes to
+  the other, on which the train must then fail with `VectorStoreException`
+  rather than answer (the move to 0.9 is one-way, see the qdrant README).
 - `generate_v2_0_1_fixtures.sh` — regenerates the committed fixtures read by
   `packages/flutter_edge_ai_{sqlite,qdrant}/test/fixture_v2_0_1_test.dart`.
 

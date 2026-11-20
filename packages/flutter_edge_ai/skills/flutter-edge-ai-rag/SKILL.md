@@ -792,7 +792,8 @@ final hybrid = await index.searchHybrid(text: 'unpaid invoice'); // RRF, k 60
 ```
 
 - Only stores whose `supportsTextSearch` is true can open with the flag:
-  SQLite (FTS5, all six platforms) can, qdrant cannot and fails the open with
+  SQLite (FTS5, all six platforms) and qdrant (its own BM25 index, from
+  `flutter_edge_ai_qdrant` 2.2.0) can; any other store fails the open with
   `VectorStoreException`. Never fall back to vector-only search silently.
 - `text` is plain user text. `TextSearchResult.relevanceScore` (SQLite:
   `-bm25()`) is higher-is-better and comparable within one call only; never
@@ -806,7 +807,12 @@ final hybrid = await index.searchHybrid(text: 'unpaid invoice'); // RRF, k 60
   porter | trigram)`, fixed when the index is created; `null` uses the stored
   one.
 - Once a location has a text index, every open keeps it in step (with or
-  without the flag) and repairs writes made without it.
+  without the flag). SQLite also repairs writes made without it.
+- qdrant splits text at every non-alphanumeric character and matches any
+  term (`2024-117` is `2024` OR `117`); SQLite matches each whitespace chunk
+  as a phrase.
+- qdrant stores written by `flutter_edge_ai_qdrant` 2.2.0 or later must not be
+  written by 2.1.1 or earlier: both versions then fail to read the shard.
 
 ## Image and audio documents
 

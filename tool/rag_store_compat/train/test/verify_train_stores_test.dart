@@ -80,4 +80,89 @@ void main() {
       'delta': ['doc-b'],
     });
   });
+
+  // The published release (engine 0.8) read one qdrant store and wrote to the
+  // other. Reading is harmless; writing breaks the shard for both engines,
+  // which the README documents as a one-way upgrade. What this pins is that
+  // the train then fails loudly instead of answering from the broken shard.
+  test(
+    'qdrant: a published read is harmless, a published write fails loudly',
+    () async {
+      final root = requireEnv('RAG_COMPAT_STORES');
+      final rag = FlutterEdgeAiRag(
+        providers: const [QdrantVectorStoreProvider()],
+      );
+      Future<RagIndex> open(String name) => rag.openVectors(
+        spec: VectorStoreSpec(
+          providerId: 'qdrant',
+          location: qdrantDowngradeLocation(root, name),
+        ),
+        profile: compatProfile,
+      );
+
+      final read = await open('read');
+      expect((await read.stats()).documentCount, compatDocuments.length);
+      expect(
+        [for (final h in await read.searchText(text: 'beta')) h.id],
+        ['doc-b'],
+      );
+      await read.dispose();
+
+      // Each read on its own must refuse: one that answers (even with []) is
+      // the failure this check exists to catch, whatever the other one does.
+      void expectFromShard(Object? error, String what) {
+        expect(
+          error,
+          isA<VectorStoreException>(),
+          reason:
+              '$what on a shard the published release wrote to must '
+              'not read as data',
+        );
+        // From the shard itself, not a refusal for another reason (binding,
+        // profile) that would stop this check proving anything.
+        final e = error! as VectorStoreException;
+        final detail = '${e.message} ${e.cause}';
+        expect(detail, isNot(contains('binding')), reason: what);
+        expect(detail, isNot(contains('profile')), reason: what);
+      }
+
+      Future<Object?> failureOf(Future<Object?> Function() read) async {
+        try {
+          await read();
+          return null;
+        } on VectorStoreException catch (e) {
+          return e;
+        }
+      }
+
+      RagIndex? written;
+      final openFailure = await failureOf(
+        () async => written = await open('write'),
+      );
+      if (written == null) {
+        // Refused at open: that is loud too.
+        expectFromShard(openFailure, 'open');
+      } else {
+        final index = written!;
+        try {
+          expectFromShard(
+            await failureOf(() => index.searchText(text: 'alpha')),
+            'searchText',
+          );
+          expectFromShard(
+            await failureOf(
+              () => index.searchVector(embedding: const [1, 0, 0, 0]),
+            ),
+            'searchVector',
+          );
+        } finally {
+          try {
+            await index.dispose();
+          } on VectorStoreException catch (_) {
+            // Closing a broken shard may report it too; the reads decided.
+          }
+        }
+      }
+    },
+  );
 }

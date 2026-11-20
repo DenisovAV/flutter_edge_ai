@@ -161,8 +161,8 @@ final vectors = await rag.openVectors(
 A text index ranks documents by the words they contain, which finds names,
 codes and rare terms an embedding can miss. Open a text location with
 `enableTextSearch: true` (the provider must support it: `flutter_edge_ai_sqlite`
-does, `flutter_edge_ai_qdrant` does not, and the open fails rather than
-dropping to vector-only search):
+and `flutter_edge_ai_qdrant` from 2.2.0 do; with one that does not, the open
+fails rather than dropping to vector-only search):
 
 ```dart
 final index = await rag.open(

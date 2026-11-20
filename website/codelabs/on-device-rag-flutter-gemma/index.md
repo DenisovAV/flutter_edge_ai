@@ -767,11 +767,12 @@ knows those vectors are vectors, and a prompt that keeps the answer honest.
   `SqliteVectorStoreProvider`. The `RagIndex` calls stay the same. You give up
   the web, for a store that can search an HNSW index instead of scanning
   once a corpus outgrows `fullScanThreshold`.
-* **Search by words too.** With the SQLite store, set
-  `enableTextSearch: true` in `VectorStoreSpec` and the index keeps an FTS5
-  text index beside the vectors: `searchText(text:)` ranks documents by BM25,
-  and `searchHybrid(text:)` fuses that ranking with the vector search
-  (reciprocal rank fusion). The qdrant store has no text search.
+* **Search by words too.** Set `enableTextSearch: true` in `VectorStoreSpec`
+  and the index keeps a text index beside the vectors (FTS5 in the SQLite
+  store, qdrant's own full-text index in the qdrant store from
+  `flutter_edge_ai_qdrant` 2.2.0):
+  `searchText(text:)` ranks documents by BM25, and `searchHybrid(text:)` fuses
+  that ranking with the vector search (reciprocal rank fusion).
 * **Bring your own corpus.** Nothing here is recipe-shaped except
   `recipes.dart`. Twelve constants become a folder of Markdown, and the only
   real design decision is what goes into `text` versus what becomes a filter

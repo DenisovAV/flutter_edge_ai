@@ -11,6 +11,12 @@ class QdrantLegacyStoreException extends VectorStoreException {
 }
 
 final class QdrantVectorStore extends VectorStoreRepository {
+  QdrantVectorStore({this.enableTextSearch = false});
+
+  /// Mirror of the native arm's parameter, so the constructor call compiles on
+  /// every platform.
+  final bool enableTextSearch;
+
   @override
   bool get isInitialized => false;
 

@@ -23,7 +23,14 @@ import (
 
 // Tests for the review round 1 fixes (FIXES.md H1-H7, B1-B2, G1-G13).
 
-func claimHeld(sub string) bool {
+// claimHeld reports a claim under dir. Claim keys hold the canonical
+// path (symlinks resolved; on Windows also 8.3 short names such as
+// RUNNER~1 expanded), so dir is canonicalised the same way first.
+func claimHeld(dir string) bool {
+	sub := dir
+	if c, err := filepath.EvalSymlinks(dir); err == nil {
+		sub = c
+	}
 	claims.Lock()
 	defer claims.Unlock()
 	for k := range claims.m {
@@ -32,6 +39,29 @@ func claimHeld(sub string) bool {
 		}
 	}
 	return false
+}
+
+// releasePoisoned drops the poisoned claims under dir at the end of the
+// test and closes the lock file they keep, so the test's TempDir can be
+// removed (Windows does not delete an open file). Registered after
+// TempDir, so it runs before TempDir's removal.
+func releasePoisoned(t *testing.T, dir string) {
+	t.Cleanup(func() {
+		sub := dir
+		if c, err := filepath.EvalSymlinks(dir); err == nil {
+			sub = c
+		}
+		claims.Lock()
+		defer claims.Unlock()
+		for k, c := range claims.m {
+			if strings.Contains(k, sub) && c.poisoned.Load() {
+				if f := c.heldLock.Load(); f != nil {
+					unlockFile(f)
+				}
+				delete(claims.m, k)
+			}
+		}
+	})
 }
 
 // H1: BUSY and REFUSED come back from the start call itself; the SDK
@@ -199,6 +229,7 @@ func TestClosePanicClosesSDKBeforeUnlock(t *testing.T) {
 // to a half-closed SDK.
 func TestFailedSDKClosePoisonsClaim(t *testing.T) {
 	cfg := acctCfg{base: t.TempDir(), mnemonic: newMnemonic(t), nodeConf: deadNodeConf(t), token: "p1"}
+	releasePoisoned(t, cfg.base)
 	a, err := openAccount(acctOpts(t, cfg))
 	if err != nil {
 		t.Fatal(err)
@@ -228,6 +259,7 @@ func TestFailedSDKClosePoisonsClaim(t *testing.T) {
 // G-R1, index side: a failed database close poisons the index claim.
 func TestFailedIndexClosePoisonsClaim(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "index.anystore")
+	releasePoisoned(t, filepath.Dir(path))
 	x, err := openIndex(idxOpts(path, "", "t"))
 	if err != nil {
 		t.Fatal(err)
@@ -292,6 +324,7 @@ func TestSDKCloseErrorReleases(t *testing.T) {
 // may have opened files and goroutines); a panic before it releases.
 func TestOpenPanicPoisons(t *testing.T) {
 	cfg := acctCfg{base: t.TempDir(), mnemonic: newMnemonic(t), nodeConf: deadNodeConf(t)}
+	releasePoisoned(t, cfg.base)
 	orig := openSDKHook
 	openSDKHook = func(context.Context, config.Config, auth.Provider) (*anysyncsdk.SDK, error) {
 		panic("simulated open panic")

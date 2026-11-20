@@ -154,6 +154,9 @@ type dirClaim struct {
 	// poisonedBy is that panic, quoted in every refusal.
 	poisoned   atomic.Bool
 	poisonedBy atomic.Pointer[error]
+	// heldLock is the lock file a poisoned claim keeps open (no second
+	// writer from another process either).
+	heldLock atomic.Pointer[os.File]
 }
 
 var claims = struct {
@@ -215,10 +218,14 @@ func markClosing(cs []*dirClaim) {
 }
 
 // poison keeps the claims, refusing every later open of their
-// directories in this process (see dirClaim.poisoned).
-func poison(cs []*dirClaim, cause error) {
-	for _, c := range cs {
+// directories in this process; lock (the directory's lock file) stays
+// held with them.
+func poison(cs []*dirClaim, cause error, lock *os.File) {
+	for i, c := range cs {
 		c.poisonedBy.Store(&cause)
+		if i == 0 && lock != nil {
+			c.heldLock.Store(lock)
+		}
 		c.poisoned.Store(true)
 	}
 }
@@ -341,14 +348,14 @@ func (p *pendingAccount) open(opCtx context.Context) (_ *account, err error) {
 			return
 		}
 		if openCalled && !openReturned {
-			poison(p.claims, errors.New("the SDK open panicked"))
+			poison(p.claims, errors.New("the SDK open panicked"), p.lock)
 			return
 		}
 		if sdk != nil {
 			if cerr := closeSDK(sdk); cerr != nil {
 				err = errors.Join(err, cerr)
 				if codeOf(cerr) == codePanic {
-					poison(p.claims, cerr) // possibly still open: no second writer
+					poison(p.claims, cerr, p.lock) // possibly still open: no second writer
 					return
 				}
 			}
@@ -523,7 +530,7 @@ func (a *account) finishClose(ctx context.Context, waitLoads time.Duration) erro
 		var sdkPanic error
 		defer func() {
 			if sdkPanic != nil {
-				poison(a.claims, sdkPanic)
+				poison(a.claims, sdkPanic, a.lock)
 				return
 			}
 			errs = append(errs, unlockFile(a.lock))

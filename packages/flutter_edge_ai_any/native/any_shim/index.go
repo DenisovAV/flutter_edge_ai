@@ -550,7 +550,7 @@ func (x *localIndex) close() (err error) {
 	var dbPanic error
 	defer func() {
 		if dbPanic != nil {
-			poison(x.claims, dbPanic)
+			poison(x.claims, dbPanic, x.lock)
 			return
 		}
 		errs = append(errs, unlockFile(x.lock))

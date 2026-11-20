@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -120,6 +121,7 @@ func TestTwoDevicesOverLAN(t *testing.T) {
 	}
 
 	B := openAt(t, acctCfg{base: filepath.Join(base, "B"), mnemonic: m, nodeConf: deadNodeConf(t), service: svc, p2p: true, token: "B"})
+	requireLANPeer(t, A, B)
 	t0 := time.Now()
 	// The space list first: B learns S from the tech space.
 	for {
@@ -227,4 +229,34 @@ func TestTwoDevicesOverLAN(t *testing.T) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+// requireLANPeer waits until each device has the other in its LAN peer
+// store (mDNS discovery). Without that the two-device test examines
+// nothing of the shim: on a CI host without usable multicast (a VM, or
+// macOS's Local Network privacy blocking an unsigned test binary) the
+// test is skipped there, with the reason; anywhere else it fails. A
+// failure after discovery is always a failure.
+func requireLANPeer(t *testing.T, a, b *account) {
+	t.Helper()
+	sees := func(x, y *account) bool {
+		for _, p := range x.sdk.P2PStatus().Peers {
+			if p.PeerId == y.sdk.PeerId() {
+				return true
+			}
+		}
+		return false
+	}
+	start := time.Now()
+	for !(sees(a, b) && sees(b, a)) {
+		if time.Since(start) > 90*time.Second {
+			msg := fmt.Sprintf("no LAN peer discovered in 90 s (A sees B: %v, B sees A: %v): mDNS does not work on this host", sees(a, b), sees(b, a))
+			if os.Getenv("CI") != "" {
+				t.Skip(msg + "; skipped on CI, where runners may block multicast")
+			}
+			t.Fatal(msg)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Logf("LAN peers discovered after %v", time.Since(start))
 }

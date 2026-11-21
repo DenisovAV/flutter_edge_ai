@@ -126,6 +126,62 @@ void main() {
         expect(await ids(q, c.filter), want, reason: 'qdrant-edge');
       });
     }
+
+    // removeWhere over the same table: a filter removes exactly what it
+    // returns from search, and the count says so, on both stores.
+    Future<List<String>> all(VectorStoreRepository store) async {
+      final hits = await store.searchSimilar(
+        queryEmbedding: embedding,
+        topK: docs.length,
+        threshold: -1,
+      );
+      return hits.map((h) => h.id).toList()..sort();
+    }
+
+    for (final c in cases) {
+      test('removeWhere: ${c.name}', () async {
+        final kept = [
+          for (final d in docs)
+            if (!c.expected.contains(d.id)) d.id,
+        ]..sort();
+        expect(
+          await sqlite.removeDocumentsWhere(c.filter),
+          c.expected.length,
+          reason: 'sqlite-vec',
+        );
+        expect(await all(sqlite), kept, reason: 'sqlite-vec');
+
+        final q = qdrant;
+        if (q == null) return;
+        expect(
+          await q.removeDocumentsWhere(c.filter),
+          c.expected.length,
+          reason: 'qdrant-edge',
+        );
+        expect(await all(q), kept, reason: 'qdrant-edge');
+      });
+    }
+
+    test(
+      'removeWhere: a filter that can match nothing removes nothing',
+      () async {
+        for (final store in [sqlite, ?qdrant]) {
+          for (final f in [
+            Filter(mustNot: [FieldRange(key: 'price')]),
+            Filter(
+              should: [FieldMatchAny(key: 'lang', values: [])],
+            ),
+          ]) {
+            expect(
+              await store.removeDocumentsWhere(f),
+              0,
+              reason: '${store.runtimeType} $f',
+            );
+            expect(await all(store), hasLength(docs.length));
+          }
+        }
+      },
+    );
   }, skip: vec0Skip);
 
   // Not a decoration. Three review passes found nine cross-backend defects, and

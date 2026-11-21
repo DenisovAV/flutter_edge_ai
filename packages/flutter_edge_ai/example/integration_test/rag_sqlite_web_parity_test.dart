@@ -104,6 +104,41 @@ void main() {
       });
     }
 
+    // removeWhere over the same table: each filter removes exactly what it
+    // returns from search, and the count says so, as on native and qdrant.
+    for (final c in cases) {
+      testWidgets('removeWhere: ${c.name}', (tester) async {
+        final store = await seededStore();
+        final kept = [
+          for (final d in docs)
+            if (!c.expected.contains(d.id)) d.id,
+        ]..sort();
+        expect(await store.removeDocumentsWhere(c.filter), c.expected.length);
+        final rows = await store.searchSimilar(
+          queryEmbedding: embedding,
+          topK: docs.length,
+          threshold: -1,
+        );
+        expect(rows.map((h) => h.id).toList()..sort(), kept);
+      });
+    }
+
+    testWidgets(
+      'removeWhere: a filter that can match nothing removes nothing',
+      (tester) async {
+        final store = await seededStore();
+        for (final f in [
+          Filter(mustNot: [FieldRange(key: 'price')]),
+          Filter(
+            should: [FieldMatchAny(key: 'lang', values: [])],
+          ),
+        ]) {
+          expect(await store.removeDocumentsWhere(f), 0);
+          expect((await store.getStats()).documentCount, docs.length);
+        }
+      },
+    );
+
     testWidgets('the shared table is not empty', (tester) async {
       // Both suites do `for (final c in cases)`. An empty `cases` generates
       // ZERO tests and leaves only the guard below — which is itself `0 == 0`

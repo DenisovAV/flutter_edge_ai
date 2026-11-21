@@ -520,6 +520,43 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
   }
 
   @override
+  bool get supportsRemoveWhere => true;
+
+  @override
+  Future<int> removeDocumentsWhere(Filter filter) async {
+    _refuseEmptyFilter(filter);
+    if (!isInitialized || _db == null) {
+      throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+    try {
+      if (_detectedDimension == null) return 0; // table not created yet
+      final translated = FilterToVec0.translate(filter, _filterSchema);
+      if (translated.matchesNothing) return 0;
+      // As on the native arm: the searchSimilar WHERE fragment over a plain
+      // scan, ids first so the text index loses the same set.
+      return SqliteTextIndex.runInTransaction<int>(_db!, () {
+        final where = translated.whereSql.isEmpty
+            ? ''
+            : ' WHERE ${translated.whereSql}';
+        final ids = [
+          for (final row in _db!.select(
+            'SELECT id FROM $_tableName$where',
+            translated.binds,
+          ))
+            row['id'] as String,
+        ];
+        for (final id in ids) {
+          _db!.execute('DELETE FROM $_tableName WHERE id = ?', [id]);
+          _text?.delete(id);
+        }
+        return ids.length;
+      });
+    } catch (e) {
+      throw VectorStoreException('Failed to remove documents', e);
+    }
+  }
+
+  @override
   Future<List<RetrievalResult>> searchSimilar({
     required List<double> queryEmbedding,
     required int topK,
@@ -865,6 +902,16 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
       buffer.setFloat32(i * 4, embedding[i].toDouble(), Endian.little);
     }
     return buffer.buffer.asUint8List();
+  }
+
+  static void _refuseEmptyFilter(Filter filter) {
+    if (filter.isEmpty) {
+      throw ArgumentError.value(
+        filter,
+        'filter',
+        'is empty, so it would match every document; use clear()',
+      );
+    }
   }
 }
 

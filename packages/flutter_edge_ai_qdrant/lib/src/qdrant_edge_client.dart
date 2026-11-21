@@ -381,11 +381,36 @@ class QdrantEdgeClient {
     }
   }
 
-  /// Exact total number of points currently in the shard.
-  Future<int> count() async {
+  /// Exact number of points currently in the shard, or of those matching
+  /// [filterJson] (the JSON envelope produced by `FilterCodec.encode`).
+  Future<int> count({String? filterJson}) async {
     _checkOpen();
     try {
-      return _shard.count(request: qe.CountRequest());
+      return _shard.count(
+        request: qe.CountRequest(filter: _filterFromJson(filterJson)),
+      );
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  /// Deletes every point matching [filterJson] (the JSON envelope produced by
+  /// `FilterCodec.encode`). Refuses a null envelope: an empty filter matches
+  /// every point, which is [deleteAll].
+  Future<void> deleteByFilter(String filterJson) async {
+    _checkOpen();
+    final filter = _filterFromJson(filterJson);
+    if (filter == null) {
+      throw ArgumentError.value(
+        filterJson,
+        'filterJson',
+        'matches every point',
+      );
+    }
+    try {
+      _shard.update(
+        operation: qe.UpdateOperation.deletePointsByFilter(filter: filter),
+      );
     } catch (e) {
       _rethrow(e);
     }

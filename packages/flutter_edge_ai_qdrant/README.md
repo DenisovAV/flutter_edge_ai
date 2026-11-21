@@ -146,6 +146,8 @@ refuses; if a schema must work on both, keep it inside sqlite's narrower set.
 - Distance defaults to cosine.
 - Every location is durably bound to one `EmbeddingProfile` and one document
   modality.
+- `RagIndex.removeWhere` (from 2.3.0) counts the points a filter matches
+  (exact), then deletes them by the same filter; the BM25 index follows.
 - **The move to `qdrant_edge` 0.9 is one-way.** Once this version has written
   to a store, do not go back to 2.1.1 or earlier and write to it: both
   versions then fail to read the shard. Reading it with the older version is

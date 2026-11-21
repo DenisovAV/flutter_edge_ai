@@ -81,6 +81,58 @@ void main() {
     );
   });
 
+  testWidgets('removeWhere drops both legs and persists through reopen', (
+    tester,
+  ) async {
+    final location = _location('remove_where');
+    Future<RagIndex> openWithSource() =>
+        FlutterEdgeAiRag(
+          providers: const [SqliteVectorStoreProvider()],
+        ).openVectors(
+          spec: VectorStoreSpec(
+            providerId: SqliteVectorStoreProvider.providerId,
+            location: location,
+            enableTextSearch: true,
+            filterSchema: FilterSchema(
+              fields: [
+                FilterField(name: 'source', type: FilterFieldType.string),
+              ],
+            ),
+          ),
+          profile: _profile,
+        );
+    Future<List<String>> textIds(RagIndex index) async =>
+        [for (final h in await index.searchText(text: 'rivers', topK: 20)) h.id]
+          ..sort();
+
+    final first = await openWithSource();
+    for (final (id, source) in [
+      ('a1', 'a.md'),
+      ('a2', 'a.md'),
+      ('b1', 'b.md'),
+    ]) {
+      await first.addVector(
+        id: id,
+        content: 'chunk $id about rivers',
+        embedding: _axis(0),
+        metadata: '{"source":"$source"}',
+      );
+    }
+    final aMd = Filter(
+      must: [FieldEquals(key: 'source', value: 'a.md')],
+    );
+    expect(await first.removeWhere(aMd), 2);
+    expect(await textIds(first), ['b1']);
+    expect((await first.stats()).documentCount, 1);
+    await first.flush();
+    await first.dispose();
+
+    final second = await openWithSource();
+    addTearDown(second.dispose);
+    expect(await textIds(second), ['b1']);
+    expect((await second.stats()).documentCount, 1);
+  });
+
   testWidgets('the text index persists through close and reopen', (
     tester,
   ) async {

@@ -444,6 +444,39 @@ final class SqliteVectorStore extends VectorStoreRepository {
   }
 
   @override
+  bool get supportsRemoveWhere => true;
+
+  @override
+  Future<int> removeDocumentsWhere(Filter filter) async {
+    _refuseEmptyFilter(filter);
+    if (!isInitialized) {
+      throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+    if (_detectedDimension == null) return 0; // table not created yet
+    final translated = FilterToVec0.translate(filter, _filterSchema);
+    if (translated.matchesNothing) return 0;
+    // The same WHERE fragment searchSimilar splices into its KNN, here over a
+    // plain scan; ids are selected first so the text index loses the same set.
+    return SqliteTextIndex.runInTransaction<int>(_db!, () {
+      final where = translated.whereSql.isEmpty
+          ? ''
+          : ' WHERE ${translated.whereSql}';
+      final ids = [
+        for (final row in _db!.select(
+          'SELECT id FROM $_tableName$where',
+          translated.binds,
+        ))
+          row['id'] as String,
+      ];
+      for (final id in ids) {
+        _db!.execute('DELETE FROM $_tableName WHERE id = ?', [id]);
+        _text?.delete(id);
+      }
+      return ids.length;
+    });
+  }
+
+  @override
   Future<List<RetrievalResult>> searchSimilar({
     required List<double> queryEmbedding,
     required int topK,
@@ -688,5 +721,15 @@ final class SqliteVectorStore extends VectorStoreRepository {
       buffer.setFloat32(i * 4, embedding[i].toDouble(), Endian.little);
     }
     return buffer.buffer.asUint8List();
+  }
+
+  static void _refuseEmptyFilter(Filter filter) {
+    if (filter.isEmpty) {
+      throw ArgumentError.value(
+        filter,
+        'filter',
+        'is empty, so it would match every document; use clear()',
+      );
+    }
   }
 }

@@ -117,8 +117,9 @@ String deciderSpaceId(
       'prefix=${deciderTaskType.prefix}';
 }
 
-/// Jev's confidence, `(N · pmax − 1) / (N − 1)`, for [n] ≥ 2 candidates,
-/// held to [0, 1]: a uniform distribution's `n · (1/n)` can round below 1
+/// [DeciderAnswer.confidence], `(N · pmax − 1) / (N − 1)` (Jev's confidence
+/// for a Choice answer only), for [n] ≥ 2 candidates, held to [0, 1]: a
+/// uniform distribution's `n · (1/n)` can round below 1
 /// (49 · (1/49) is 0.9999999999999999), which made it −2e-18.
 double deciderConfidence(double pmax, int n) =>
     ((n * pmax - 1) / (n - 1)).clamp(0.0, 1.0);

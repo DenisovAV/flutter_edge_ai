@@ -872,10 +872,13 @@ final class DeciderAnswer {
   /// [double.infinity] with a single candidate, 0 with none.
   final double margin;
 
-  /// Jev's confidence, `(N · pmax − 1) / (N − 1)` over the N candidates: 0
-  /// for a uniform distribution, 1 when one option takes all. A spread
-  /// measure, not an accuracy. Null unless probabilities are calibrated, and
-  /// with fewer than two candidates.
+  /// `(N · pmax − 1) / (N − 1)` over the N candidates, for every
+  /// [questionType]: 0 for a uniform distribution, 1 when one option takes
+  /// all. A spread measure, not an accuracy. It is TypeSafe AI's Jev
+  /// confidence for a Choice answer only: Jev computes a Score answer's
+  /// confidence with another formula, and other decision APIs report other
+  /// quantities, so a threshold on it does not carry over to them. Null
+  /// unless probabilities are calibrated, and with fewer than two candidates.
   final double? confidence;
 
   /// Why the decider abstained; null when it chose.
@@ -923,7 +926,8 @@ final class DeciderAnswer {
   /// - noul: `{"type": "noul", "noul": 0.82}`, the probability of `yes`;
   /// - score: `{"type": "score", "score": 2.4, "legend": {"0": ..., ...},
   ///   "probabilities": {...}, "confidence": 0.61}`, `score` the expected
-  ///   level.
+  ///   level. `confidence` is [confidence], the Choice formula, not the one
+  ///   Jev uses for a Score answer.
   Map<String, Object?> toJevJson() => switch (questionType) {
     DeciderQuestionType.noul => {'type': 'noul', 'noul': noul},
     DeciderQuestionType.score => {

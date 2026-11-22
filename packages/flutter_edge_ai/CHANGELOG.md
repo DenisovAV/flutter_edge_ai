@@ -1,3 +1,6 @@
+## Unreleased
+- `DeciderAnswer.confidence` docs: it equals Jev's confidence for Choice answers only.
+
 ## 2.7.1
 - Package skills match 2.7.0: llamadart companion 0.20.1, catalog installs, web cacheApi, EG2 GPU measurements.
 

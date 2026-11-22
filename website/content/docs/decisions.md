@@ -139,9 +139,11 @@ A cosine of 0.83 does not mean 83 %. `RankedOption.probability`,
 unless the decider was calibrated on held-out labelled requests
 (`EmbeddingDeciderCalibration.fromLabelled`), which fits a softmax temperature. One
 formula decodes every method's raw scores: `softmax(score / T)` over the
-candidates. `confidence` is Jev's spread measure, `(N · pmax − 1) / (N − 1)`:
+candidates. `confidence` is a spread measure, `(N · pmax − 1) / (N − 1)`:
 0 for a uniform distribution, 1 when one option takes everything, and null
-with fewer than two candidates. It is not an accuracy.
+with fewer than two candidates. It is not an accuracy. It equals Jev's
+confidence for a Choice answer only; Jev computes a Score answer's confidence
+with another formula.
 
 ## Calibration: when to say "none of these"
 
@@ -636,7 +638,8 @@ questions only: `noul` and `score` throw `ArgumentError`.
   abstention; an abstained answer has `"choice": null`.
 - Noul: `{"type": "noul", "noul": p}`, the probability of `yes`.
 - Score: `{"type": "score", "score": …, "legend": {…}, "probabilities": {…},
-  "confidence": …}`, `score` the expected level.
+  "confidence": …}`, `score` the expected level. `confidence` is the Choice
+  formula above, not the one Jev uses for a Score answer.
 
 ## Errors
 

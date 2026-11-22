@@ -193,7 +193,14 @@ class InferenceChat {
   }
 
   /// Tokens in use: the engine's count when its session keeps one
-  /// ([ChatTurnHooks.tokenCount]), else this chat's.
+  /// ([ChatTurnHooks.tokenCount]), else this chat's estimate — each queued
+  /// message's text as the session counts it, 257 per image, and each reply;
+  /// audio is not counted.
+  ///
+  /// When a message about to be queued, or a reply, takes the count to
+  /// `maxTokens - tokenBuffer`, the chat drops the oldest messages the model
+  /// holds and rebuilds its session from the rest, before the message is sent
+  /// or after the reply. [fullHistory] keeps every message.
   int get currentTokens {
     final current = _sessionIfAny;
     return (current == null ? null : _hooks.tokenCount(_engine(current))) ??
@@ -247,6 +254,42 @@ class InferenceChat {
     _throwIfRebuildFailed();
     final hooked = _hooks.addQueryChunk(_engine(session), message);
     if (hooked != null) return hooked;
+    var messageToSend = message;
+
+    // Qwen3: append /no_think to suppress thinking at model level when not
+    // requested. Only to a plain text turn: in a tool response it is noise,
+    // and next to audio a bundle may print the user's text as the start of
+    // its answer (Qwen3-ASR then returns an empty transcript).
+    // The suffix is for the model only: [fullHistory] keeps the caller's
+    // message, so replaying it through clearHistory(replayHistory:) appends
+    // exactly one suffix again. A text that already ends with it (a history
+    // saved before the suffix stayed out of it) is sent as is.
+    if (!enableThinking &&
+        modelType == ModelType.qwen3 &&
+        message.isUser &&
+        message.type == MessageType.text &&
+        !message.hasAudio &&
+        !message.text.endsWith(_noThinkSuffix)) {
+      messageToSend = messageToSend.copyWith(
+        text: '${messageToSend.text}$_noThinkSuffix',
+      );
+    }
+
+    // Before anything of this message reaches the session: a message that
+    // would take the count to the limit first drops the oldest history, as a
+    // reply that reaches it does. Messages already queued for the coming turn
+    // are kept.
+    final size = await _tokensOf(messageToSend);
+    final used = _hooks.tokenCount(_engine(session)) ?? _currentTokens;
+    if (used + size >= maxTokens - tokenBuffer &&
+        _hooks.history(_engine(session)) == null &&
+        _droppableMessages > 0) {
+      edgeAiLog(
+        'InferenceChat: Token limit reached before a turn, trimming...',
+      );
+      await _recreateSessionWithReducedChunks(incoming: size);
+    }
+
     _stagedFrom ??= (
       full: _fullHistory.length,
       model: _modelHistory.length,
@@ -254,7 +297,6 @@ class InferenceChat {
       tokens: _currentTokens,
       toolsInstructionSent: _toolsInstructionSent,
     );
-    var messageToSend = message;
 
     // Only add tools prompt for the first user text message (not a tool response)
     // and only if the model supports function calls.
@@ -280,6 +322,7 @@ class InferenceChat {
 
       // Send to session
       await session.addQueryChunk(toolsPromptMessage);
+      _currentTokens += await _tokensOf(toolsPromptMessage);
 
       // Store in _prefixes for replay
       _prefixes.add(toolsPromptMessage);
@@ -287,25 +330,6 @@ class InferenceChat {
       // Log warning if model doesn't support function calls but tools are provided
       edgeAiLog(
         'WARNING: Model does not support function calls, but tools were provided. Tools will be ignored.',
-      );
-    }
-
-    // Qwen3: append /no_think to suppress thinking at model level when not
-    // requested. Only to a plain text turn: in a tool response it is noise,
-    // and next to audio a bundle may print the user's text as the start of
-    // its answer (Qwen3-ASR then returns an empty transcript).
-    // The suffix is for the model only: [fullHistory] keeps the caller's
-    // message, so replaying it through clearHistory(replayHistory:) appends
-    // exactly one suffix again. A text that already ends with it (a history
-    // saved before the suffix stayed out of it) is sent as is.
-    if (!enableThinking &&
-        modelType == ModelType.qwen3 &&
-        message.isUser &&
-        message.type == MessageType.text &&
-        !message.hasAudio &&
-        !message.text.endsWith(_noThinkSuffix)) {
-      messageToSend = messageToSend.copyWith(
-        text: '${messageToSend.text}$_noThinkSuffix',
       );
     }
 
@@ -334,9 +358,7 @@ class InferenceChat {
       _modelHistory.add(messageToSend);
     }
 
-    if (message.hasImage) {
-      _currentTokens += 257;
-    }
+    _currentTokens += size;
   }
 
   /// Runs one generation and returns its answer: text or the tool call(s).
@@ -1509,7 +1531,31 @@ class InferenceChat {
     return message is String ? message : null;
   }
 
-  Future<void> _recreateSessionWithReducedChunks() async {
+  /// What one image adds to [currentTokens], whatever the engine: a rough
+  /// figure, the same when a message is queued and when it is dropped.
+  static const _tokensPerImage = 257;
+
+  /// The images [message] carries, read as the engines read them:
+  /// [Message.images] when it has any, else [Message.imageBytes].
+  static int _imageCount(Message message) => message.images.isNotEmpty
+      ? message.images.length
+      : (message.imageBytes != null ? 1 : 0);
+
+  /// What [message] adds to [currentTokens]: its text as the session counts
+  /// it, plus [_tokensPerImage] per image. Audio is not counted.
+  Future<int> _tokensOf(Message message) async =>
+      await session.sizeInTokens(message.text) +
+      _imageCount(message) * _tokensPerImage;
+
+  /// How many of the oldest [_modelHistory] messages a trim may drop: all of
+  /// them, except those queued for the coming turn.
+  int get _droppableMessages => _stagedFrom?.model ?? _modelHistory.length;
+
+  /// Rebuilds the session from the history left after dropping its oldest
+  /// messages until the count, plus [incoming] tokens about to be queued, is
+  /// below `maxTokens - tokenBuffer`. Messages queued for the coming turn are
+  /// never dropped; the take-back point of that turn moves with the drop.
+  Future<void> _recreateSessionWithReducedChunks({int incoming = 0}) async {
     // A session that keeps the transcript itself is rebuilt from it: the
     // engine owns what fits its context.
     final engineHistory = _hooks.history(_engine(session));
@@ -1525,17 +1571,24 @@ class InferenceChat {
       return;
     }
 
-    while (_currentTokens >= (maxTokens - tokenBuffer) &&
-        _modelHistory.isNotEmpty) {
-      final removedMessage = _modelHistory.removeAt(0);
-      final size = await session.sizeInTokens(removedMessage.text);
+    var dropped = 0;
+    var droppedTokens = 0;
+    final droppable = _droppableMessages;
+    while (_currentTokens + incoming >= (maxTokens - tokenBuffer) &&
+        dropped < droppable) {
+      final size = await _tokensOf(_modelHistory.removeAt(0));
       _currentTokens -= size;
-
-      // Count all images (message.images can have multiple)
-      final imageCount = removedMessage.images.length;
-      if (imageCount > 0) {
-        _currentTokens -= imageCount * 257;
-      }
+      droppedTokens += size;
+      dropped++;
+    }
+    if (_stagedFrom case final staged? when dropped > 0) {
+      _stagedFrom = (
+        full: staged.full,
+        model: staged.model - dropped,
+        prefixes: staged.prefixes,
+        tokens: staged.tokens - droppedTokens,
+        toolsInstructionSent: staged.toolsInstructionSent,
+      );
     }
 
     await session.close();

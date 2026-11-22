@@ -542,8 +542,9 @@ void main() {
             sessions.add(s);
             return s;
           },
-          // 'answer' (6) fills it; dropping the question (1) is enough.
-          maxTokens: 6,
+          // 'q' (1) and 'answer' (6) fill it; dropping the question is
+          // enough.
+          maxTokens: 7,
           tokenBuffer: 0,
         );
         await chat.initSession();

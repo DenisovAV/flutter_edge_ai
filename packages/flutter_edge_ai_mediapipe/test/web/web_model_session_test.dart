@@ -1014,6 +1014,9 @@ void main() {
         final chat = InferenceChat(
           sessionCreator: () async => _session(b),
           maxTokens: 1024,
+          // openChat's default; the constructor's 2000 is above maxTokens,
+          // and a limit below zero trims every turn.
+          tokenBuffer: 256,
           modelType: ModelType.gemma4,
         );
         await chat.initSession();

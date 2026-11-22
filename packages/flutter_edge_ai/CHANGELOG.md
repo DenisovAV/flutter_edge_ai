@@ -1,3 +1,6 @@
+## Unreleased
+- `InferenceChat` counts the user's text and every image, and trims before a turn too (#821).
+
 ## 2.7.2
 - `DeciderAnswer.confidence` docs: it equals Jev's confidence for Choice answers only.
 - Package skills: web `.litertlm` on `@litert-lm/core` 0.19.0 with `gemma4E2bIt.webGpu`.

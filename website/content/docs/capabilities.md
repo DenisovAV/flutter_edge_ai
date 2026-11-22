@@ -62,7 +62,7 @@ native platforms).
 | **Audio** | ✅ Native | — | — | — |
 | **Function calling** | ✅ Native/Prompt | ✅ Prompt | ✅ Prompt | ✅ Prompt |
 | **Thinking** | ✅ Full | ✅ Tags | ✅ Tags | — |
-| **Structured output (`responseFormat`)** | ✅ qualified native CPU/GPU rows | ❌ refused | ✅ native macOS arm64 and Windows x64 | ❌ no qualified platform yet |
+| **Structured output (`responseFormat`)** | ✅ qualified native CPU/GPU rows | ❌ refused | ✅ native macOS arm64, Linux x64 and Windows x64 | ❌ no qualified platform yet |
 
 `flutter_edge_ai_llama` also supports response formats on macOS arm64 CPU/Metal
 and in Chrome on macOS with dart2wasm + WebGPU; other GGUF hosts/backends are

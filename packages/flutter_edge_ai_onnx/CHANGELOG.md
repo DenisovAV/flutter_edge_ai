@@ -1,3 +1,6 @@
+## Unreleased
+- Response formats on Linux x64 (#858).
+
 ## 0.10.0
 - `OnnxHuggingFaceResolver` declares the `inference` role.
 - Bundle ORT-GenAI 0.20.0 and ONNX Runtime 1.32.0 (iOS: 1.30.0, needs iOS 15.1); telemetry off (#810).

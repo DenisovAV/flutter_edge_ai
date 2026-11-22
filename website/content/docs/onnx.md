@@ -168,12 +168,12 @@ x64: 0.10.0).
 
 Native ORT-GenAI can apply llguidance to each independent generator opened by
 `openSession(responseFormat: ...)` or `openChat(responseFormat: ...)`. It is
-enabled on macOS arm64 (0.9.0) and Windows x64 (0.10.0), after each host's run
-passed, and only when the model directory contains `tokenizer.json`. Linux
-x64, Windows ARM64, Android, iOS and ONNX Web return a reason from
-`structuredOutputSupport` and throw `ResponseFormatUnsupportedException` if a
-format is requested; the Linux x64 and Windows ARM64 archives contain guidance
-but stay disabled until their own runs pass.
+enabled on macOS arm64 (0.9.0), Windows x64 (0.10.0) and Linux x64
+(unreleased), after each host's run passed, and only when the model directory
+contains `tokenizer.json`. Windows ARM64, Android, iOS and ONNX Web return a
+reason from `structuredOutputSupport` and throw
+`ResponseFormatUnsupportedException` if a format is requested; the Windows
+ARM64 archive contains guidance but stays disabled until its own run passes.
 
 ```dart
 final format = ResponseFormat.jsonSchema({

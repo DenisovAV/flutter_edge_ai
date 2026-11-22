@@ -176,7 +176,8 @@ Supported operators: `=`, `!=`, `>`, `>=`, `<`, `<=`, `BETWEEN`, `IN`
 
 `RagIndex.removeWhere` (from 2.3.0, native and web) removes the documents a
 filter matches, in one transaction with the text index, and returns how many
-it removed. The filter means what it means for search.
+it removed. The filter means what it means for search; one that constrains
+nothing (no WHERE) is refused with `ArgumentError`, as an empty one is.
 
 ## Text search (FTS5)
 

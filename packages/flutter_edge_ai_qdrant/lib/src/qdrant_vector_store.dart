@@ -1327,6 +1327,17 @@ final class QdrantVectorStore extends VectorStoreRepository {
         'is empty, so it would match every document; use clear()',
       );
     }
+    // Null: every condition constrains nothing (a range with no bound, a
+    // range on a text field, excluding an empty set, or only undeclared
+    // fields), so every document would match: refused like an empty filter.
+    final filterJson = FilterCodec.encode(filter, _filterSchema);
+    if (filterJson == null) {
+      throw ArgumentError.value(
+        filter,
+        'filter',
+        'constrains nothing, so it would match every document; use clear()',
+      );
+    }
     _assertUsable('removeDocumentsWhere');
     final lease = await _requireEmbeddingProfile('removeDocumentsWhere');
     final checkpoint = qdrantProfileOperationCheckpointForTesting;
@@ -1334,19 +1345,12 @@ final class QdrantVectorStore extends VectorStoreRepository {
     _assertProfileLeaseCurrent(lease, 'removeDocumentsWhere');
     final c = _client;
     if (c == null) return 0; // nothing was ever written
-    // Null: every condition holds for every document (as an empty WHERE on
-    // the sqlite store), so every document matches.
-    final filterJson = FilterCodec.encode(filter, _filterSchema);
     try {
       // RagIndex runs this with no other operation on the index, so the count
       // is what the delete removes.
       final matched = await c.count(filterJson: filterJson);
       if (matched == 0) return 0;
-      if (filterJson == null) {
-        await c.deleteAll();
-      } else {
-        await c.deleteByFilter(filterJson);
-      }
+      await c.deleteByFilter(filterJson);
       return matched;
     } on QdrantException catch (e) {
       throw VectorStoreException('removeDocumentsWhere failed', e);

@@ -528,19 +528,17 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
     if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
+    final translated = FilterToVec0.translate(filter, _filterSchema);
+    if (translated.matchesNothing) return 0;
+    _refuseUnconstrained(filter, translated.whereSql);
+    if (_detectedDimension == null) return 0; // table not created yet
     try {
-      if (_detectedDimension == null) return 0; // table not created yet
-      final translated = FilterToVec0.translate(filter, _filterSchema);
-      if (translated.matchesNothing) return 0;
       // As on the native arm: the searchSimilar WHERE fragment over a plain
       // scan, ids first so the text index loses the same set.
       return SqliteTextIndex.runInTransaction<int>(_db!, () {
-        final where = translated.whereSql.isEmpty
-            ? ''
-            : ' WHERE ${translated.whereSql}';
         final ids = [
           for (final row in _db!.select(
-            'SELECT id FROM $_tableName$where',
+            'SELECT id FROM $_tableName WHERE ${translated.whereSql}',
             translated.binds,
           ))
             row['id'] as String,
@@ -910,6 +908,18 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
         filter,
         'filter',
         'is empty, so it would match every document; use clear()',
+      );
+    }
+  }
+
+  /// As on the native arm: a non-empty filter that translates to no WHERE
+  /// constrains nothing, so it is refused like an empty one.
+  static void _refuseUnconstrained(Filter filter, String whereSql) {
+    if (whereSql.isEmpty) {
+      throw ArgumentError.value(
+        filter,
+        'filter',
+        'constrains nothing, so it would match every document; use clear()',
       );
     }
   }

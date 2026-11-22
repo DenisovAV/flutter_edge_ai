@@ -115,4 +115,57 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  test('the store refuses a filter that constrains nothing', () async {
+    // FilterCodec encodes each to null (no constraint): refused like an empty
+    // filter, where the store used to call deleteAll().
+    final schema = FilterSchema(
+      fields: [
+        FilterField(name: 'source', type: FilterFieldType.string),
+        FilterField(name: 'page', type: FilterFieldType.number),
+      ],
+    );
+    final store = QdrantVectorStore();
+    addTearDown(store.close);
+    store.configure(schema);
+    await store.initialize(_tempLocation('qrw_unconstrained'));
+    await store.bind(VectorStoreBinding(profile: _profile));
+    for (final id in ['a1', 'a2', 'b1']) {
+      await store.addDocument(
+        id: id,
+        content: 'chunk $id',
+        embedding: const [1, 0, 0, 0],
+        metadata: jsonEncode({'source': '${id[0]}.md', 'page': 1}),
+      );
+    }
+    for (final filter in [
+      Filter(must: [FieldRange(key: 'page')]),
+      Filter(must: [FieldRange(key: 'source', gte: 1)]),
+      Filter(
+        should: [
+          FieldEquals(key: 'source', value: 'a.md'),
+          FieldRange(key: 'page'),
+        ],
+      ),
+      Filter(
+        mustNot: [FieldMatchAny(key: 'source', values: [])],
+      ),
+      Filter(
+        must: [FieldEquals(key: 'path', value: 'a.md')],
+      ),
+    ]) {
+      await expectLater(
+        store.removeDocumentsWhere(filter),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            contains('clear()'),
+          ),
+        ),
+        reason: '$filter',
+      );
+      expect((await store.getStats()).documentCount, 3, reason: '$filter');
+    }
+  });
 }

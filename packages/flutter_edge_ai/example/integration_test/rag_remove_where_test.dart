@@ -79,9 +79,9 @@ void main() {
           ...?f.should,
           ...?f.mustNot,
         ].any((condition) => parity.schema.fieldFor(condition.key) == null);
-        if (undeclared) {
-          // Through RagIndex an undeclared field is refused, not ignored as
-          // the store does when called directly; nothing is removed.
+        if (undeclared || parity.removeWhereRefused.contains(c.name)) {
+          // Through RagIndex an undeclared field is refused, and so is a
+          // filter that constrains nothing; nothing is removed.
           await expectLater(index.removeWhere(f), throwsArgumentError);
           expect(
             (await index.stats()).documentCount,
@@ -114,7 +114,11 @@ void main() {
         expect([for (final r in text) r.id]..sort(), kept, reason: c.name);
         await index.dispose();
       }
-      expect(refused, 2, reason: 'the two undeclared-key cases');
+      expect(
+        refused,
+        4,
+        reason: 'two undeclared-key cases, two that constrain nothing',
+      );
     }, timeout: const Timeout(Duration(minutes: 4)));
 
     testWidgets('$name: removes one file and survives reopen', (tester) async {

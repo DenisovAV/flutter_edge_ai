@@ -331,7 +331,9 @@ final class RagIndex {
   /// ([ArgumentError] otherwise), so removing what one source file produced
   /// needs a declared field such as `source`, set on every document added
   /// from it. An empty [filter] is an [ArgumentError]: [clear] removes every
-  /// document. Runs with no other operation on this index, so the count is
+  /// document. So is a filter that constrains nothing, which the store
+  /// refuses: a range with no bound, a range on a text field, excluding an
+  /// empty set. Runs with no other operation on this index, so the count is
   /// exactly what was removed.
   ///
   /// Fails with [UnsupportedError] when the index's store does not implement

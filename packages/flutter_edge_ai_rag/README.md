@@ -169,7 +169,9 @@ final removed = await index.removeWhere(
 );
 ```
 
-An empty filter throws `ArgumentError` (use `clear()` to remove everything).
+An empty filter throws `ArgumentError` (use `clear()` to remove everything),
+and so does one that constrains nothing: a range with no bound, a range on a
+text field, excluding an empty set.
 It runs with no other operation on the index, so the count is exactly what was
 removed, and a removed document also leaves the text index. A store that does
 not implement it throws `UnsupportedError`.

@@ -109,11 +109,20 @@ void main() {
     for (final c in cases) {
       testWidgets('removeWhere: ${c.name}', (tester) async {
         final store = await seededStore();
+        final refused = removeWhereRefused.contains(c.name);
         final kept = [
           for (final d in docs)
-            if (!c.expected.contains(d.id)) d.id,
+            if (refused || !c.expected.contains(d.id)) d.id,
         ]..sort();
-        expect(await store.removeDocumentsWhere(c.filter), c.expected.length);
+        if (refused) {
+          // Constrains nothing: refused as on native and qdrant.
+          await expectLater(
+            store.removeDocumentsWhere(c.filter),
+            throwsArgumentError,
+          );
+        } else {
+          expect(await store.removeDocumentsWhere(c.filter), c.expected.length);
+        }
         final rows = await store.searchSimilar(
           queryEmbedding: embedding,
           topK: docs.length,
@@ -122,6 +131,20 @@ void main() {
         expect(rows.map((h) => h.id).toList()..sort(), kept);
       });
     }
+
+    testWidgets('removeWhere: a filter that constrains nothing is refused', (
+      tester,
+    ) async {
+      final store = await seededStore();
+      for (final f in unconstrainedFilters) {
+        await expectLater(
+          store.removeDocumentsWhere(f),
+          throwsArgumentError,
+          reason: '$f',
+        );
+        expect((await store.getStats()).documentCount, docs.length);
+      }
+    });
 
     testWidgets(
       'removeWhere: a filter that can match nothing removes nothing',

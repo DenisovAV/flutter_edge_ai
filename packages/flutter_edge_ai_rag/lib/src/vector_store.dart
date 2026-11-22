@@ -222,12 +222,13 @@ abstract base class VectorStoreRepository {
   ///
   /// `RagIndex` calls this only with a non-empty [filter] whose fields are all
   /// declared in [filterSchema], and with no other operation on the index
-  /// running, so the count is exactly what was removed. Called directly with
-  /// an empty [filter], an implementation throws [ArgumentError] rather than
-  /// remove every document.
+  /// running, so the count is exactly what was removed. An implementation
+  /// throws [ArgumentError] rather than remove every document when [filter]
+  /// is empty or constrains nothing (a range with no bound, a range on a text
+  /// field, excluding an empty set, or only undeclared fields).
   ///
-  /// Throws [UnsupportedError] when [supportsRemoveWhere] is false (the
-  /// default).
+  /// Throws [UnsupportedError] when [supportsRemoveWhere] is false: the
+  /// default implementation throws it whatever the filter.
   Future<int> removeDocumentsWhere(Filter filter) => Future.error(
     UnsupportedError('$runtimeType does not implement removeWhere.'),
   );

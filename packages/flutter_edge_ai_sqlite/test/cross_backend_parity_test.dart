@@ -140,27 +140,47 @@ void main() {
 
     for (final c in cases) {
       test('removeWhere: ${c.name}', () async {
+        // A filter that constrains nothing is refused on both stores, with
+        // nothing removed; the rest remove exactly what search returns.
+        final refused = removeWhereRefused.contains(c.name);
         final kept = [
           for (final d in docs)
-            if (!c.expected.contains(d.id)) d.id,
+            if (refused || !c.expected.contains(d.id)) d.id,
         ]..sort();
-        expect(
-          await sqlite.removeDocumentsWhere(c.filter),
-          c.expected.length,
-          reason: 'sqlite-vec',
-        );
-        expect(await all(sqlite), kept, reason: 'sqlite-vec');
-
-        final q = qdrant;
-        if (q == null) return;
-        expect(
-          await q.removeDocumentsWhere(c.filter),
-          c.expected.length,
-          reason: 'qdrant-edge',
-        );
-        expect(await all(q), kept, reason: 'qdrant-edge');
+        for (final (store, name) in [
+          (sqlite, 'sqlite-vec'),
+          if (qdrant case final q?) (q, 'qdrant-edge'),
+        ]) {
+          if (refused) {
+            await expectLater(
+              store.removeDocumentsWhere(c.filter),
+              throwsArgumentError,
+              reason: name,
+            );
+          } else {
+            expect(
+              await store.removeDocumentsWhere(c.filter),
+              c.expected.length,
+              reason: name,
+            );
+          }
+          expect(await all(store), kept, reason: name);
+        }
       });
     }
+
+    test('removeWhere: a filter that constrains nothing is refused', () async {
+      for (final store in [sqlite, ?qdrant]) {
+        for (final f in unconstrainedFilters) {
+          await expectLater(
+            store.removeDocumentsWhere(f),
+            throwsArgumentError,
+            reason: '${store.runtimeType} $f',
+          );
+          expect(await all(store), hasLength(docs.length));
+        }
+      }
+    });
 
     test(
       'removeWhere: a filter that can match nothing removes nothing',

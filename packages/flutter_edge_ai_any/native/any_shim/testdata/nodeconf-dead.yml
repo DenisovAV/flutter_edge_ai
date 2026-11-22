@@ -1,0 +1,45 @@
+id: 64384a038e697b7fce2f447e
+networkId: N4N1wDHFpFpovXBqdbq2TDXE9tXdXbtV1eTJFpKJW4YeaJqR
+fileNetworkId: N94J2dKztjLWR3RM3nkmWg7Qp1KgCL49qKKgJ8XSyD3LpfBN
+nodes:
+- peerId: 12D3KooWKLCajM89S8unbt3tgGbRLgmiWnFZT3adn9A5pQciBSLa
+  addresses:
+  - 127.0.0.1:9
+  types:
+  - coordinator
+- peerId: 12D3KooWKnXTtbveMDUFfeSqR5dt9a4JW66tZQXG7C7PdDh3vqGu
+  addresses:
+  - 127.0.0.1:9
+  types:
+  - tree
+- peerId: 12D3KooWKgVN2kW8xw5Uvm2sLUnkeUNQYAvcWvF58maTzev7FjPi
+  addresses:
+  - 127.0.0.1:9
+  types:
+  - tree
+- peerId: 12D3KooWCUPYuMnQhu9yREJgQyjcz8zWY83rZGmDLwb9YR6QkbZX
+  addresses:
+  - 127.0.0.1:9
+  types:
+  - tree
+- peerId: 12D3KooWALugeH6MKUszcqczFTdHjL22YvGW3wsRDHkb6C2Pgtgk
+  addresses:
+  - 127.0.0.1:9
+  types:
+  - file
+- peerId: 12D3KooWCZ6ECPTSNz5ibuVg2qNYfkV6VFDkAqDRXMJcDfBiMsMK
+  addresses:
+  - 127.0.0.1:9
+  types:
+  - fileV2
+- peerId: 12D3KooWNT4hbNKXeFuDtdQ13ZbhQ1oJJ2AVWgAQVRrCj6Zb5wxk
+  addresses:
+  - 127.0.0.1:9
+  types:
+  - consensus
+- peerId: 12D3KooWJBKizwWxARVadgUcpXa4TthFTtKJQYECGFFrfpqyZ3t9
+  addresses:
+  - 127.0.0.1:9
+  types:
+  - paymentProcessingNode
+creationTime: '2023-04-13T20:29:23+02:00'

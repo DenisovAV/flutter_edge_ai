@@ -1,0 +1,180 @@
+name: any native (libany_shim)
+
+# Builds libany_shim (packages/flutter_edge_ai_any/native/any_shim) for every
+# target on its own host, runs the Go tests where they can run, gates each
+# library with check_exports.py, and uploads the libraries and their release
+# archives as artifacts. It never publishes: tagging and uploading a
+# native-any-v* release is a maintainer step (native/any_shim/README.md).
+
+on:
+  pull_request:
+    paths:
+      - 'packages/flutter_edge_ai_any/**'
+      - '.github/workflows/any-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: any-native-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+    working-directory: packages/flutter_edge_ai_any/native/any_shim
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux_x86_64, os: ubuntu-24.04, test: true }
+          - { target: linux_arm64, os: ubuntu-24.04-arm, test: true }
+          - { target: windows_x86_64, os: windows-2025, test: true }
+          - { target: android_arm64, os: ubuntu-24.04, test: false }
+          - { target: macos_arm64, os: macos-15, test: true }
+          - { target: ios_arm64, os: macos-15, test: false }
+          - { target: ios_sim_arm64, os: macos-15, test: false }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # The exact toolchain go.mod pins; build.sh refuses any other.
+      - name: Go version from go.mod
+        id: go
+        run: echo "version=$(sed -n 's/^toolchain go//p' go.mod)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache-dependency-path: packages/flutter_edge_ai_any/native/any_shim/go.sum
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # cgo needs a C compiler; the Windows image ships MinGW-w64, and this
+      # says which one the build used.
+      - name: C compiler
+        run: ${CC:-gcc} --version || clang --version
+
+      - name: NDK r29
+        if: matrix.target == 'android_arm64'
+        run: |
+          # `yes` dies of SIGPIPE when sdkmanager stops reading; under
+          # pipefail that would fail the step, so its status is dropped and
+          # the NDK itself is checked instead.
+          (yes || true) | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.14206865" > /dev/null
+          test -f "$ANDROID_SDK_ROOT/ndk/29.0.14206865/source.properties"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      - name: Go tests
+        if: matrix.test
+        run: go test -count=1 -skip '^TestTwoDevicesOverLAN$' ./...
+
+      # The two-device sync test on its own, verbose, so the log says whether
+      # it ran or was skipped (and why). Linux x86_64 must run it for real.
+      # The SDK logs every reconnect, so only the test's own lines are kept.
+      - name: Two-device LAN sync test
+        if: matrix.test
+        env:
+          ANY_REQUIRE_LAN: ${{ matrix.target == 'linux_x86_64' && '1' || '' }}
+        run: |
+          set +o pipefail
+          go test -count=1 -v -run '^TestTwoDevicesOverLAN$' . > "$RUNNER_TEMP/lan_test.log" 2>&1
+          status=$?
+          grep -E '^(=== RUN|--- (PASS|FAIL|SKIP)|ok|FAIL|PASS)|net_test\.go:' "$RUNNER_TEMP/lan_test.log"
+          exit $status
+
+      - name: Build ${{ matrix.target }}
+        run: ./build.sh ${{ matrix.target }} "$RUNNER_TEMP/out"
+
+      # The Dart suites against the library just built, through the hook's
+      # local-prebuilt path, so the bindings meet the library this commit
+      # builds, not the pinned release test.yml downloads.
+      # The package is pure Dart, but resolving the workspace needs a
+      # Flutter SDK (other members depend on it). Flutter publishes no
+      # Linux arm64 archive, so that runner clones the stable branch.
+      - name: Setup Flutter
+        if: matrix.test && matrix.target != 'linux_arm64'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Flutter (git, Linux arm64)
+        if: matrix.test && matrix.target == 'linux_arm64'
+        working-directory: ${{ runner.temp }}
+        run: |
+          git clone --depth 1 --branch stable https://github.com/flutter/flutter.git flutter
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/flutter/bin/flutter" --version
+
+      - name: Dart tests against this build
+        if: matrix.test
+        run: |
+          mkdir -p prebuilt/${{ matrix.target }}
+          cp "$RUNNER_TEMP/out/${{ matrix.target }}/"*any_shim.* prebuilt/${{ matrix.target }}/
+          cd ../../../.. && flutter pub get
+          # flutter test: the provider depends on flutter_edge_ai_rag (Flutter).
+          cd packages/flutter_edge_ai_any && flutter test --no-pub --reporter expanded 2>&1 | tee "$RUNNER_TEMP/dart_test.log"
+          # A run that skipped the native suites examined nothing.
+          if grep -qE "libany_shim is not built|libany_shim implements ABI" "$RUNNER_TEMP/dart_test.log"; then
+            echo "::error::the native suites skipped: the hook did not register the build"
+            exit 1
+          fi
+
+      # Two accounts in one process through RagIndex, over LAN p2p.
+      - name: Provider LAN sync test
+        if: matrix.test && matrix.target == 'linux_x86_64'
+        run: |
+          cd ../.. && flutter test --no-pub -t lan --run-skipped --reporter expanded test/lan 2>&1 | tee "$RUNNER_TEMP/lan_dart.log" | grep -vE "subscribeclient|net\.transport"
+          grep -qE "\+[1-9][0-9]*: All tests passed" "$RUNNER_TEMP/lan_dart.log" || { echo "::error::the provider LAN test did not pass"; exit 1; }
+
+      - name: Package the release archive
+        run: python release.py pack "$RUNNER_TEMP/out" "$RUNNER_TEMP/release" ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: any-shim-${{ matrix.target }}
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+
+  # One checksums file and manifest over all seven archives, verified the
+  # way a release is (release.py verify). Still an artifact, not a release.
+  release-layout:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: any-shim-*
+          path: ${{ runner.temp }}/release
+          merge-multiple: true
+      - name: Manifest and verify
+        run: |
+          version="$(sed -n "s/^const _bundleVersion = '\(.*\)';/\1/p" ../../hook/build.dart)"
+          shim="$(sed -n 's/^const shimVersion = "\(.*\)"$/\1/p' shim.go)"
+          if [ "$shim" = "$version" ]; then
+            # The release commit: shim.go and the hook agree; compare the pins.
+            python release.py manifest "$RUNNER_TEMP/release" "$version"
+            python release.py verify "$RUNNER_TEMP/release" "$version" --hook ../../hook/build.dart
+          else
+            # Between releases the hook still pins native-any-v$version; check
+            # the layout of this tree under its own -dev version.
+            echo "::notice::shim.go is $shim, the hook pins $version: hook pins not compared"
+            python release.py manifest "$RUNNER_TEMP/release" "$shim"
+            python release.py verify "$RUNNER_TEMP/release" "$shim" --dev
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: any-shim-release-layout
+          path: ${{ runner.temp }}/release/

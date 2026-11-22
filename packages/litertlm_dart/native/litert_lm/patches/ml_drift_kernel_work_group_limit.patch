@@ -1,0 +1,178 @@
+diff --git a/ml_drift/cl/BUILD b/ml_drift/cl/BUILD
+index 735fef6..fd3281a 100644
+--- a/ml_drift/cl/BUILD
++++ b/ml_drift/cl/BUILD
+@@ -498,6 +498,7 @@ cc_library(
+         "@com_google_absl//absl/status",
+         "@com_google_absl//absl/status:status_macros",
+         "@com_google_absl//absl/status:statusor",
++        "@com_google_absl//absl/strings:cord",
+         "@com_google_absl//absl/strings",
+         "@com_google_absl//absl/time",
+         "@com_google_absl//absl/types:span",
+diff --git a/ml_drift/cl/cl_operation.h b/ml_drift/cl/cl_operation.h
+index cb6a4ff..e476ba2 100644
+--- a/ml_drift/cl/cl_operation.h
++++ b/ml_drift/cl/cl_operation.h
+@@ -100,6 +100,12 @@ class ClOperation {
+                                    CLContext* context);
+ 
+   int3 GetWorkGroupSize() const { return operation_->work_group_size_; }
++  // The work-group size the driver allows for the compiled kernel
++  // (CL_KERNEL_WORK_GROUP_SIZE), which can be below the device limit when the
++  // kernel uses many registers. 0 when not known.
++  int GetKernelMaxWorkGroupSize() const {
++    return kernel_.info_.max_work_group_size;
++  }
+   void SetWorkGroupSize(const int3& wg_size);
+ 
+   uint64_t GetConstArgsSize() const { return operation_->const_args_size_; }
+diff --git a/ml_drift/cl/inference_context.cc b/ml_drift/cl/inference_context.cc
+index 2145ca6..a5be814 100644
+--- a/ml_drift/cl/inference_context.cc
++++ b/ml_drift/cl/inference_context.cc
+@@ -31,6 +31,7 @@
+ #include "absl/status/status.h"
+ #include "absl/status/status_macros.h"
+ #include "absl/status/statusor.h"
++#include "absl/strings/cord.h"
+ #include "absl/strings/str_cat.h"
+ #include "absl/time/time.h"
+ #include "absl/types/span.h"
+@@ -261,6 +262,18 @@ absl::Status InferenceContext::InitFromGpuModel(
+     }
+   }
+   ABSL_RETURN_IF_ERROR(Tune(tuning_type, gpu_info_, env->profiling_queue()));
++  if (absl::Status fit = CheckWorkGroupsFitKernels(); !fit.ok()) {
++    // The external tensors allocated temporarily above are freed on return:
++    // leave none of them in the memory manager, which the next partition (and
++    // the caller's rebuild) shares.
++    for (auto& external_tensor :
++         create_info.external_tensors.mutable_tensors) {
++      memory_manager_
++          ->SetExternalTensor(GetKey(external_tensor.first), nullptr)
++          .IgnoreError();
++    }
++    return fit;
++  }
+   ABSL_RETURN_IF_ERROR(
+       BuildExecutionPlan(env, create_info.options.allow_cl_khr_command_buffer));
+ 
+@@ -282,6 +295,40 @@ absl::Status InferenceContext::InitFromGpuModel(
+   return absl::OkStatus();
+ }
+ 
++absl::Status InferenceContext::CheckWorkGroupsFitKernels() const {
++  // Several ops choose their work group before compiling and write it into
++  // the kernel source (loop strides, local memory sizes), so it cannot be
++  // shrunk at dispatch. The driver can then compile the kernel for fewer work
++  // items than that (Adreno lowers CL_KERNEL_WORK_GROUP_SIZE by register
++  // use), and the first dispatch fails. Report it here, at creation, with the
++  // smallest limit as a payload so the caller can rebuild with a lower cap.
++  int over = 0;
++  int min_limit = 0;
++  std::string first;
++  for (const auto& node : nodes_) {
++    const int3 wg = node.cl_operation.GetWorkGroupSize();
++    const int limit = node.cl_operation.GetKernelMaxWorkGroupSize();
++    const int total = wg.x * wg.y * wg.z;
++    if (limit <= 0 || total <= limit) continue;
++    if (over == 0) {
++      first = absl::StrCat("'", node.name, "' uses a work group of {", wg.x,
++                           ", ", wg.y, ", ", wg.z, "} = ", total,
++                           " work items, the compiled kernel allows ", limit);
++    }
++    ++over;
++    min_limit = min_limit == 0 ? limit : std::min(min_limit, limit);
++  }
++  if (over == 0) return absl::OkStatus();
++  absl::Status status = absl::FailedPreconditionError(absl::StrCat(
++      "OpenCL work group larger than the driver allows for the compiled "
++      "kernel: ",
++      first,
++      over > 1 ? absl::StrCat(" (", over, " kernels in all)") : ""));
++  status.SetPayload(kKernelWorkGroupLimitPayload,
++                    absl::Cord(absl::StrCat(min_limit)));
++  return status;
++}
++
+ absl::Status InferenceContext::AddToCommandBuffer(cl_command_buffer_khr cb) {
+   for (auto& node : nodes_) {
+     ABSL_RETURN_IF_ERROR(node.cl_operation.AddToCommandBuffer(cb));
+@@ -343,6 +390,16 @@ absl::Status InferenceContext::RestoreDeserialized(
+         *env->program_cache(), fingerprint, env->GetDevicePtr()->GetInfo(),
+         wg_size, &env->context()));
+   }
++  if (absl::Status fit = CheckWorkGroupsFitKernels(); !fit.ok()) {
++    // As in InitFromGpuModel: no pointer to a temporarily allocated external
++    // tensor may outlive this call in the shared memory manager.
++    for (auto& external_tensor : create_info_copy.external_mutable_tensors) {
++      memory_manager_
++          ->SetExternalTensor(GetKey(external_tensor.first), nullptr)
++          .IgnoreError();
++    }
++    return fit;
++  }
+   ABSL_RETURN_IF_ERROR(BindMemoryToOperations());
+   ABSL_RETURN_IF_ERROR(UpdateParams());
+   ABSL_RETURN_IF_ERROR(BuildExecutionPlan(
+diff --git a/ml_drift/cl/inference_context.h b/ml_drift/cl/inference_context.h
+index 9203ee8..c0e0c51 100644
+--- a/ml_drift/cl/inference_context.h
++++ b/ml_drift/cl/inference_context.h
+@@ -167,6 +167,10 @@ class InferenceContext {
+   absl::Status SetTensor(const ValueId& tensor_id, Tensor* tensor_ptr);
+ 
+  private:
++  // Fails when a kernel's work group exceeds CL_KERNEL_WORK_GROUP_SIZE of the
++  // compiled kernel: the dispatch would fail with CL_INVALID_WORK_GROUP_SIZE.
++  absl::Status CheckWorkGroupsFitKernels() const;
++
+   absl::StatusOr<flatbuffers::Offset<data::InferenceContext>> Encode(
+       const CLDevice& device, const ProgramCache& program_cache,
+       flatbuffers::Offset<ml_drift::data::GpuModel> gpu_model_fb,
+diff --git a/ml_drift/common/gpu_info.h b/ml_drift/common/gpu_info.h
+index fb9bbe6..0046e8b 100644
+--- a/ml_drift/common/gpu_info.h
++++ b/ml_drift/common/gpu_info.h
+@@ -26,6 +26,14 @@
+ 
+ namespace ml_drift {
+ 
++// flutter_edge_ai: payload of the status the OpenCL InferenceContext returns
++// when a kernel's work group does not fit the compiled kernel
++// (CL_KERNEL_WORK_GROUP_SIZE): the smallest such limit, in decimal. A caller
++// can rebuild the GpuModel with opencl_info.max_work_group_total_size at or
++// below it. Here so the delegate reads the same key without an OpenCL header.
++inline constexpr char kKernelWorkGroupLimitPayload[] =
++    "flutter_edge_ai/kernel_work_group_limit";
++
+ // The VendorID returned by the GPU driver.
+ enum class GpuVendor {
+   // start
+diff --git a/ml_drift/common/kernels/fully_connected.cc b/ml_drift/common/kernels/fully_connected.cc
+index d7ec307..1c037b9 100644
+--- a/ml_drift/common/kernels/fully_connected.cc
++++ b/ml_drift/common/kernels/fully_connected.cc
+@@ -246,6 +246,13 @@ int3 GetWorkGroupSize(const FullyConnected::ConvParams& params,
+       wg_total_size = 128;
+     }
+   }
++  // The kernel is written for this work group (WG_SIZE_X/Y), so it must not
++  // exceed the device limit, which a caller may lower below the hardware's
++  // (see kKernelWorkGroupLimitPayload).
++  if (gpu_info.GetMaxWorkGroupTotalSize() > 0) {
++    wg_total_size =
++        std::min(wg_total_size, gpu_info.GetMaxWorkGroupTotalSize());
++  }
+   int y_size = 8;
+   if (is_quantized) {
+     if (params.weights_type == DataType::kInt2) {
+@@ -295,6 +302,7 @@ int3 GetWorkGroupSize(const FullyConnected::ConvParams& params,
+     y_size = 1;
+   }
+   y_size *= y_size_multiplier;
++  y_size = std::min(y_size, wg_total_size);
+   int x_size = wg_total_size / y_size;
+   if (dst_slices <= 64 && x_size >= 8) {
+     if (is_quantized) {

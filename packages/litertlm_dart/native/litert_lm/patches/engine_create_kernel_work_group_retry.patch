@@ -1,0 +1,58 @@
+--- a/c/engine.cc
++++ b/c/engine.cc
+@@ -1151,6 +1151,15 @@
+       advanced_settings);
+   return kLiteRtLmStatusOk;
+ }
++
++#if defined(__ANDROID__)
++// Defined in the ML Drift delegate (litert, patch_c_api.sh section 28), linked
++// into this library on Android, hidden.
++extern "C" int flutter_edge_ai_kernel_work_group_cap();
++extern "C" void flutter_edge_ai_kernel_work_group_begin_create();
++extern "C" void flutter_edge_ai_kernel_work_group_begin_attempt();
++extern "C" int flutter_edge_ai_kernel_work_group_recorded();
++#endif
+ 
+ LiteRtLmStatusCode litert_lm_engine_create(
+     const LiteRtLmEngineSettings* settings, LiteRtLmEngine** out_engine) {
+@@ -1161,8 +1170,39 @@
+                                       "Invalid engine settings.");
+   }
+ 
++#if defined(__ANDROID__)
++  // flutter_edge_ai (native-v0.19.1-d, patch_c_api.sh section 28): when an
++  // OpenCL kernel's work group exceeds what the driver allows for the compiled
++  // kernel, the ML Drift delegate lowers a process-wide work-group limit (or
++  // refuses a program-cache entry whose kernels do not fit) and the create
++  // fails. Create the engine again while each attempt makes progress: the
++  // limit ends below the one the attempt started with (powers of two, never
++  // below 64), or an entry not refused before in this create was refused (a
++  // finite set). An attempt with neither ends the loop. The failed engine is
++  // destroyed before the next attempt.
++  flutter_edge_ai_kernel_work_group_begin_create();
++  absl::StatusOr<std::unique_ptr<Engine>> engine;
++  for (int attempt = 1;; ++attempt) {
++    flutter_edge_ai_kernel_work_group_begin_attempt();
++    engine = EngineFactory::CreateDefault(*settings->settings);
++    const int reason = flutter_edge_ai_kernel_work_group_recorded();
++    if (engine.ok() || reason == 0) break;
++    ABSL_LOG(WARNING)
++        << "Engine create failed: " << engine.status()
++        << ". Creating the engine again (attempt " << attempt + 1 << "): "
++        << ((reason & 1) != 0
++                ? "OpenCL work groups are now limited to " +
++                      std::to_string(flutter_edge_ai_kernel_work_group_cap()) +
++                      " work items"
++                : std::string("a cached program whose work groups do not fit "
++                              "was refused and is rebuilt"))
++        << ".";
++    engine = absl::InternalError("superseded by the next attempt");
++  }
++#else
+   absl::StatusOr<std::unique_ptr<Engine>> engine =
+       EngineFactory::CreateDefault(*settings->settings);
++#endif
+ 
+   if (!engine.ok()) {
+     ABSL_LOG(ERROR) << "Failed to create engine: " << engine.status();

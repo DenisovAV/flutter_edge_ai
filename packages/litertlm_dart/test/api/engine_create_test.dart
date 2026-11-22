@@ -32,11 +32,54 @@ typedef _Create = ({
   NpuDispatch? npuDispatch,
 });
 
+/// A client whose conversations are fakes: one create can fail, a send on
+/// one fails (it has no native conversation), and [shutdowns] counts closes.
+class _BenchClient extends LiteRtLmFfiClient {
+  _BenchClient({this.failCreate = false});
+
+  final bool failCreate;
+  int shutdowns = 0;
+  int conversations = 0;
+
+  @override
+  BundleSampler get bundleSampler => const BundleSampler();
+
+  @override
+  Future<LiteRtLmConversationHandle> createConversationHandle({
+    String? systemMessage,
+    String? toolsJson,
+    String? messagesJson,
+    required Sampler sampling,
+    required bool samplingExplicit,
+    int? maxOutputTokens,
+    required MediaOrder multimodalOrder,
+    Constraint? constraint,
+    ConversationExtras extras = ConversationExtras.none,
+    required bool filterChannelContent,
+  }) async {
+    if (failCreate) throw StateError('no conversation');
+    conversations++;
+    return LiteRtLmConversationHandle.forTest(this);
+  }
+
+  @override
+  Future<void> shutdown() async {
+    shutdowns++;
+    await super.shutdown();
+  }
+}
+
 class _Host extends EngineHost implements LiteRtLmNpuHost {
-  _Host({this.abiName = 'macos_arm64', this.npuShips = false});
+  _Host({this.abiName = 'macos_arm64', this.npuShips = false, this.client});
 
   final String abiName;
   final bool npuShips;
+
+  /// The client every create gets; null: a fresh real one.
+  final LiteRtLmFfiClient? client;
+
+  @override
+  LiteRtLmFfiClient createClient() => client ?? super.createClient();
   final creates = <_Create>[];
   final nativeLevels = <LiteRtLmLogLevel?>[];
   final prepared = <NpuStack>[];
@@ -77,6 +120,7 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     required String modelPath,
     required String backend,
     required int? maxTokens,
+    int? contextWindow,
     required String? cacheDir,
     required bool enableVision,
     required String visionBackend,
@@ -350,8 +394,10 @@ void main() {
       null,
       (prefill: 256, decode: 128),
     ]);
+    // Timed from its turn: the fake create waits 10 ms.
+    expect(bench.createTime, greaterThanOrEqualTo(Duration(milliseconds: 10)));
     await plain.close();
-    await bench.close();
+    await bench.engine.close();
   });
 
   test("a benchmark result is LiteRT-LM's last prefill and last decode, with "
@@ -403,6 +449,90 @@ void main() {
       throwsStateError,
     );
     await engine.close();
+  });
+
+  test("benchmarkInfoOf sums a conversation's turns and keeps the last "
+      "decode's speed; a time native did not report is null", () {
+    final info = benchmarkInfoOf((
+      initSeconds: 0.5,
+      timeToFirstTokenSeconds: 0,
+      prefill: [
+        (tokens: 10, tokensPerSecond: 100.0),
+        (tokens: 20, tokensPerSecond: 200.0),
+      ],
+      decode: [
+        (tokens: 5, tokensPerSecond: 7.0),
+        (tokens: 6, tokensPerSecond: 9.0),
+      ],
+      maxNumTokens: 4096,
+    ));
+    expect(
+      [info.inputTokens, info.outputTokens, info.totalTokens],
+      [30, 11, 41],
+    );
+    expect(info.tokensPerSecond, 9.0);
+    expect(info.initTimeMs, 500.0);
+    expect(info.timeToFirstTokenMs, isNull);
+    final empty = benchmarkInfoOf((
+      initSeconds: 0,
+      timeToFirstTokenSeconds: 0,
+      prefill: const [],
+      decode: const [],
+      maxNumTokens: 0,
+    ));
+    expect(empty.tokensPerSecond, isNull);
+    expect(empty.totalTokens, 0);
+  });
+
+  test('benchmark() closes its engine when the conversation cannot be made '
+      'or the send fails, and the failure reaches the caller', () async {
+    final path = write('g.litertlm', _bundle());
+    for (final failCreate in [true, false]) {
+      final client = _BenchClient(failCreate: failCreate);
+      host = _Host(client: client);
+      debugEngineHost = host;
+      await expectLater(
+        benchmark(modelPath: path, backend: const Backend.cpu()),
+        throwsA(anything),
+        reason: failCreate ? 'create' : 'send',
+      );
+      expect(client.conversations, failCreate ? 0 : 1);
+      expect(client.shutdowns, 1, reason: failCreate ? 'create' : 'send');
+      expect(host.creates.single.benchmarkTokens, (prefill: 256, decode: 256));
+    }
+  });
+
+  test('a container the bundle reader refuses still has its declared context '
+      'read: one below the #318 floor is raised and sent', () async {
+    // A text model that is not a TFLite flatbuffer: the bundle reader refuses
+    // it (malformed), LiteRT-LM would still read the LlmMetadata.
+    final path = write(
+      'r.litertlm',
+      litertlmContainer([
+        (
+          type: sectionTfliteModel,
+          modelType: 'tf_lite_prefill_decode',
+          bytes: [1, 2, 3, 4, 5, 6, 7, 8],
+        ),
+        (type: 5, modelType: null, bytes: [0x28, ..._varint(512)]),
+      ]),
+    );
+    expect((await readEngineBundle(path)).info, isNull);
+    final engine = await create(path);
+    expect(engine.maxNumTokens, 1024);
+    expect(host.creates.single.maxTokens, 1024);
+    await engine.close();
+  });
+
+  test('a file whose declared context cannot be read gets 4096 sent on the '
+      'CPU and the GPU, and nothing on the NPU', () async {
+    final task = write('m.task', Uint8List.fromList(List.filled(64, 7)));
+    final cpu = await create(task);
+    final gpu = await create(task, backend: const Backend.gpu());
+    expect([cpu.maxNumTokens, gpu.maxNumTokens], [4096, 4096]);
+    expect(host.creates.map((c) => c.maxTokens), [4096, 4096]);
+    await cpu.close();
+    await gpu.close();
   });
 
   test('Gemma 4 on the GPU above 2,048 tokens runs float32; the CPU and a '

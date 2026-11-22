@@ -2517,6 +2517,10 @@ class LiteRtLmFfiClient {
   /// [thinkingTokenBudget] is what every send with thinking on hands
   /// LiteRT-LM (`LiteRtLmEngine.thinkingTokenBudget`); null sends none.
   ///
+  /// [maxTokens] is the `max_num_tokens` sent; null sends none and leaves it
+  /// to LiteRT-LM, whose choice the caller expects to be [contextWindow]: the
+  /// window turns are accounted against until the executor reports its own.
+  ///
   /// [npuDispatch] is what an `npu` [backend] hands LiteRT-LM: the dispatch
   /// directory of the vendor `chooseNpuVendor` chose, prepared by the caller,
   /// and whether that vendor turns the HW mask update path off. Required for
@@ -2525,6 +2529,7 @@ class LiteRtLmFfiClient {
     required String modelPath,
     String backend = 'gpu',
     int? maxTokens = 2048,
+    int? contextWindow,
     String? cacheDir,
     bool enableVision = false,
     String visionBackend = 'cpu',
@@ -2759,7 +2764,9 @@ class LiteRtLmFfiClient {
     );
     runtimeLog('[LiteRtLmFfi] Engine initialized successfully');
     _modelPath = modelPath;
-    _maxTokens = maxTokens;
+    // The window turns are accounted against until the executor reports its
+    // own: the one sent, else the one the engine expects LiteRT-LM to choose.
+    _maxTokens = maxTokens ?? contextWindow;
     _linearAttentionState = null;
 
     // Auto-dump the SDK's stderr log after successful engine_create so
@@ -4693,8 +4700,13 @@ class LiteRtLmFfiClient {
       ended.then((_) {
         final record = _lastTurnEnds[conv];
         _virtualTurnEnds[token] = record;
-        _virtualMetrics[token] = _getMetricsOn(conv);
-        _virtualBenchmarks[token] = _readBenchmarkOn(conv);
+        // One native read for both snapshots; the test seam replaces both.
+        final testMetrics = metricsForTest;
+        final turns = testMetrics == null ? _readBenchmarkOn(conv) : null;
+        _virtualMetrics[token] =
+            testMetrics?.call(conv) ??
+            (turns == null ? const BenchmarkInfo() : benchmarkInfoOf(turns));
+        _virtualBenchmarks[token] = turns;
         // A turn native ended context_full or failed (a decode error, a
         // resource other than the window): it is taken out of the session
         // (decision W), and the shared conversation, which still holds it or

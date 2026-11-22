@@ -33,15 +33,19 @@ final class LlmBenchmarkResult {
   /// The engine's load as LiteRT-LM timed it (its `total_init_time`), the
   /// number Gallery reports; [Duration.zero] when it reported none. It can
   /// exceed [createTime]: LiteRT-LM counts init phases that end after the
-  /// engine is returned (a cold Gemma 4 E2B on a Mac CPU: 4.05 s, with
-  /// [createTime] 3.2 s).
+  /// engine is returned (Gemma 4 E2B on a Mac CPU, empty cache directory:
+  /// 1.6 s, with [createTime] 1.0 s).
   final Duration initTime;
 
-  /// [Engine.create] measured in Dart: the bundle read, the load plan, the
-  /// isolate the engine is made on and `litert_lm_engine_create`.
+  /// [Engine.create] measured in Dart from its turn among the process's
+  /// creates (not the wait behind another one): the bundle read, the load
+  /// plan, the isolate the engine is made on and `litert_lm_engine_create`.
   final Duration createTime;
 
-  /// From the message's send to its first token, as LiteRT-LM timed it.
+  /// LiteRT-LM's `GetTimeToFirstToken`: the duration of the session's first
+  /// prefill turn plus its first decode turn's duration divided by that
+  /// turn's tokens (LiteRT-LM v0.19.1 `runtime/engine/io_types.cc`). The
+  /// prompt template, tokenization and the Dart stream are not in it.
   final Duration timeToFirstToken;
 
   /// The tokens of the last prefill and the last decode: the counts asked
@@ -87,15 +91,20 @@ final class LlmBenchmarkResult {
 ///
 /// In that mode the prompt's last text is cut or padded with token 0 to
 /// exactly [prefillTokens] tokens, and the reply runs exactly [decodeTokens]
-/// tokens, past the end of the turn: the default `'How are you'` padded to
-/// 256 and 256 decoded tokens is what AI Edge Gallery's benchmark measures.
-/// The reply's text means nothing.
+/// tokens, past the end of the turn. The defaults are the Kotlin API's: the
+/// prompt `'How are you'`, 256 and 256, which AI Edge Gallery's benchmark
+/// screen also starts from (it passes no contents). The reply's text means
+/// nothing.
 ///
-/// Each call loads the model anew, so the first call in a process with an
-/// empty [cacheDir] times a cold load and the next ones a load from the
-/// caches. [maxNumTokens] null leaves the context window to LiteRT-LM (the
-/// bundle's own), which [LlmBenchmarkResult.maxNumTokens] reports; it changes
-/// prefill and decode speed, so compare runs with the same window.
+/// Each call loads the model anew. Whether a load is cold is decided by the
+/// cache files LiteRT-LM finds (weights, compiled GPU programs), not by the
+/// process: with [cacheDir] null they are written beside the model and kept
+/// across processes and app runs. For a cold load, pass a new empty
+/// directory (the first call in it is cold, the next ones warm), or
+/// `':nocache'`, LiteRT-LM's value for writing none. [maxNumTokens] null
+/// leaves the context window to LiteRT-LM (the bundle's own), which
+/// [LlmBenchmarkResult.maxNumTokens] reports; it changes prefill and decode
+/// speed, so compare runs with the same window.
 /// [samplerConfig] null uses the model's own sampler.
 ///
 /// Throws what [Engine.create] throws, an [ArgumentError] for a count below
@@ -122,8 +131,7 @@ Future<LlmBenchmarkResult> benchmark({
   if (maxNumTokens != null && maxNumTokens < 1) {
     throw ArgumentError.value(maxNumTokens, 'maxNumTokens', 'must be 1+');
   }
-  final create = Stopwatch()..start();
-  final engine = await createBenchmarkEngine(
+  final (:engine, :createTime) = await createBenchmarkEngine(
     EngineConfig(
       modelPath: modelPath,
       backend: backend,
@@ -134,7 +142,6 @@ Future<LlmBenchmarkResult> benchmark({
     ),
     (prefill: prefillTokens, decode: decodeTokens),
   );
-  create.stop();
   try {
     final conversation = await engine.createConversation(
       ConversationConfig(samplerConfig: samplerConfig),
@@ -143,7 +150,7 @@ Future<LlmBenchmarkResult> benchmark({
       await conversation.sendMessage(Message.user(prompt));
       return llmBenchmarkResultOf(
         conversationNativeBenchmark(conversation),
-        createTime: create.elapsed,
+        createTime: createTime,
         engine: engine,
       );
     } finally {

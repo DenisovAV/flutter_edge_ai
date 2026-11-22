@@ -441,22 +441,26 @@ try {
 model in LiteRT-LM's benchmark mode, where the prompt is cut or padded to
 exactly `prefillTokens` and the reply runs exactly `decodeTokens` past its end,
 sends one message and closes the engine. The defaults (`'How are you'`, 256
-and 256) are what AI Edge Gallery measures.
+and 256) are Kotlin's; AI Edge Gallery's benchmark screen starts from the
+same (`BenchmarkScreen.kt` and `BenchmarkViewModel.kt` in
+google-ai-edge/gallery).
 
 ```dart
 final run = await benchmark(
   modelPath: modelPath,
   backend: const Backend.gpu(),
-  cacheDir: cacheDir, // empty for the first run: a cold load
+  cacheDir: cacheDir, // a new empty directory: the first run is a cold load
 );
 print('${run.prefillTokensPerSecond} / ${run.decodeTokensPerSecond} tok/s, '
     'first token ${run.timeToFirstToken}, init ${run.initTime}, '
     'context ${run.maxNumTokens}');
 ```
 
-Each call loads the model again. `maxNumTokens` unset leaves the context to
-the bundle; it changes the speeds, so compare runs with the same
-`run.maxNumTokens`.
+Each call loads the model again; the cache files decide whether a load is
+cold. Unset, `cacheDir` is the model's directory, and its caches outlive the
+process: pass a new empty directory, or `':nocache'`, for a cold run.
+`maxNumTokens` unset leaves the context to the bundle; it changes the speeds,
+so compare runs with the same `run.maxNumTokens`.
 
 ## Differences from the Kotlin and Swift APIs
 

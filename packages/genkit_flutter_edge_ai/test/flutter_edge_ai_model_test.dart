@@ -84,6 +84,65 @@ void main() {
       expect(response.message!.content.first.text, 'Hello world!');
     });
 
+    // Since genkit 1.0.1, Model(...) wraps a tool whose input schema is not
+    // an object as {input: <schema>} before our fn sees it, and unwraps the
+    // model's calls on the way out. Without it a `.string()` tool would reach
+    // the on-device model with a bare string as its parameters.
+    group('a tool with a primitive input schema', () {
+      ModelRequest toolRequest() => ModelRequest(
+        messages: simpleRequest('Weather in Moscow?').messages,
+        tools: [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Weather for a city.',
+            inputSchema: {'type': 'string'},
+          ),
+        ],
+      );
+
+      test('reaches the model as an object with an input property', () async {
+        final model = buildModel();
+        await model(toolRequest());
+
+        expect(fakeModel.lastTools.single.name, 'get_weather');
+        expect(fakeModel.lastTools.single.parameters, {
+          'type': 'object',
+          'properties': {
+            'input': {'type': 'string'},
+          },
+          'required': ['input'],
+        });
+      });
+
+      test('its call comes back with the bare value', () async {
+        fakeChat.blockingResponse = const gemma.FunctionCallResponse(
+          name: 'get_weather',
+          args: {'input': 'Moscow'},
+        );
+
+        final model = buildModel();
+        final response = await model(toolRequest());
+
+        expect(response.message!.content.single.toolRequest!.input, 'Moscow');
+      });
+
+      test('its streamed call comes back with the bare value', () async {
+        fakeChat.streamingResponses = [
+          const gemma.FunctionCallResponse(
+            name: 'get_weather',
+            args: {'input': 'Moscow'},
+          ),
+        ];
+
+        final model = buildModel();
+        final chunks = <ModelResponseChunk>[];
+        final response = await model(toolRequest(), onChunk: chunks.add);
+
+        expect(chunks.single.content.single.toolRequest!.input, 'Moscow');
+        expect(response.message!.content.single.toolRequest!.input, 'Moscow');
+      });
+    });
+
     test('streaming: handles function call in stream', () async {
       fakeChat.streamingResponses = [
         const gemma.FunctionCallResponse(name: 'search', args: {'q': 'dart'}),

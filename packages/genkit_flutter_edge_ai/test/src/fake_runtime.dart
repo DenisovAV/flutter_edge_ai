@@ -106,6 +106,7 @@ class FakeInferenceModel extends gemma.InferenceModel {
   gemma.InferenceChat? get chat => null;
 
   gemma.ToolChoice? lastToolChoice;
+  List<gemma.Tool> lastTools = const [];
   String? lastSystemInstruction;
   int? lastMaxFunctionBufferLength;
   int? lastMaxOutputTokens;
@@ -119,6 +120,7 @@ class FakeInferenceModel extends gemma.InferenceModel {
     }
     promptOpenChatCallCount++;
     lastToolChoice = request.toolChoice;
+    lastTools = request.tools;
     lastSystemInstruction = request.systemInstruction;
     lastMaxFunctionBufferLength = request.maxFunctionBufferLength;
     lastMaxOutputTokens = request.maxOutputTokens;

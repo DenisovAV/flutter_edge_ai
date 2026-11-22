@@ -1,3 +1,6 @@
+## Unreleased
+- Require `genkit` ^1.0.1, which wraps primitive tool inputs as `{input: …}`.
+
 ## 0.12.1
 - README: the showcase link is in the core package README only.
 

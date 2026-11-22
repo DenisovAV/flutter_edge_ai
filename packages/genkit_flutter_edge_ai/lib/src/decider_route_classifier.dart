@@ -1,5 +1,5 @@
-// The Decider API is experimental (flutter_edge_ai pins it below 2.6.0 for
-// this file); its use draws the experimental_member_use warning.
+// The Decider API is experimental in flutter_edge_ai and may change in a
+// minor release; its use draws the experimental_member_use warning.
 // ignore_for_file: experimental_member_use
 
 import 'dart:async';

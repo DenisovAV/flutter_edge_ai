@@ -293,10 +293,10 @@ packages:
     dependency: transitive
     description:
       name: dotprompt
-      sha256: d588959f509a67062874c4378085f982a7ed4d10ae521c9504cd9c3331f13304
+      sha256: "85d42c0fbfe015dacb7f46f3476fdec5c99af161cb21b37d05addfb7c1307efe"
       url: "https://pub.dev"
     source: hosted
-    version: "2.0.0"
+    version: "2.0.1"
   email_validator:
     dependency: transitive
     description:
@@ -497,10 +497,10 @@ packages:
     dependency: transitive
     description:
       name: genkit
-      sha256: "478f914efde52c6c1c0f2177b5a1632c2e5dc39e88cab29b48930d80137c1a2a"
+      sha256: d874741730a44ce0615630eac23a930b330056dd1dae1fc7e48fdf99c06c69e8
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.0"
+    version: "1.0.3"
   glob:
     dependency: transitive
     description:

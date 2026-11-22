@@ -20,7 +20,9 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-  genkit: ^1.0.0
+  # 1.0.1: Model(...) wraps a tool whose input schema is not an object as
+  # {input: ...} and unwraps its calls; convertTools relies on getting objects.
+  genkit: ^1.0.1
   # 2.6.0: deciderRouteClassifier uses the final decider SPI; tool
   # refs travel as `FunctionCallResponse.id` and `Message.toolCall(calls:)` /
   # `toolCallId` (2.4.0).

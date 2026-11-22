@@ -1,4 +1,5 @@
 ## Unreleased
+- `native-v0.19.1-d`: Android GPU no longer fails with "Invalid work group size" on Adreno 830 FP32 and Adreno 610.
 - `maxNumTokens` unset: the bundle's context or 4096 (was 2048), so Gemma 4 GPU runs float32 off Android; core unaffected.
 - Experimental `benchmark()`: exactly N prefill and N decode tokens, as in Kotlin.
 

@@ -1,0 +1,498 @@
+diff --git a/ml_drift_delegate/delegate/delegate_kernel.cc b/ml_drift_delegate/delegate/delegate_kernel.cc
+index f17862b27..c6b7342a8 100644
+--- a/ml_drift_delegate/delegate/delegate_kernel.cc
++++ b/ml_drift_delegate/delegate/delegate_kernel.cc
+@@ -17,10 +17,13 @@
+ #if defined(_WIN32)
+ #include <io.h>
+ #else
++#include <sys/stat.h>
+ #include <unistd.h>
+ #endif
+ 
+ #include <algorithm>
++#include <atomic>
++#include <mutex>
+ #include <any>
+ #include <cstdint>
+ #include <cstring>
+@@ -36,6 +39,7 @@
+ #include "absl/status/status.h"  // from @com_google_absl
+ #include "absl/status/status_macros.h"  // from @com_google_absl
+ #include "absl/status/statusor.h"  // from @com_google_absl
++#include "absl/strings/numbers.h"  // from @com_google_absl
+ #include "absl/strings/str_cat.h"  // from @com_google_absl
+ #include "absl/strings/string_view.h"  // from @com_google_absl
+ #include "absl/synchronization/blocking_counter.h"  // from @com_google_absl
+@@ -91,8 +95,175 @@
+ #include "tflite/kernels/kernel_util.h"
+ #include "tflite/profiling/memory_latency_logger.h"  // IWYU pragma: keep
+ 
++#if defined(__GNUC__) || defined(__clang__)
++#define FLUTTER_EDGE_AI_HIDDEN __attribute__((visibility("hidden")))
++#else
++#define FLUTTER_EDGE_AI_HIDDEN
++#endif
++
++namespace {
++// flutter_edge_ai (native-v0.19.1-d, patch_c_api.sh section 28): the OpenCL
++// work-group limit every GpuModel built in this process uses, once a kernel's
++// work group did not fit what the driver allows for the compiled kernel
++// (CL_KERNEL_WORK_GROUP_SIZE). 0 = the device's own limit. Only lowered.
++std::atomic<int> g_kernel_work_group_cap{0};
++// Program-cache entries (cache file, key) refused by that check in this
++// process: a later build skips the restore and overwrites the entry (Insert
++// updates a key), so an engine created again starts clean.
++std::mutex g_skip_restore_mutex;
++using CacheEntryId = std::pair<std::string, uint64_t>;  // (cache, key)
++absl::flat_hash_set<CacheEntryId>& SkipRestoreKeys() {
++  static auto* keys = new absl::flat_hash_set<CacheEntryId>();
++  return *keys;
++}
++// What this thread's current engine-create attempt found
++// (litert_lm_engine_create creates the engine on this thread): kLimitLowered =
++// the limit is now below the one the attempt started with, whoever lowered
++// it; kEntryRefused = a program-cache entry was refused. And the limit the
++// attempt started with.
++constexpr int kLimitLowered = 1;
++constexpr int kEntryRefused = 2;
++thread_local int t_kernel_work_group_recorded = 0;
++thread_local int t_attempt_cap = 0;
++// Entries refused during the current engine create (all its attempts): a
++// refusal counts as progress only the first time, so the retry loop ends.
++thread_local absl::flat_hash_set<CacheEntryId> t_refused_this_create;
++}  // namespace
++
++// Called by litert_lm_engine_create around each attempt; linked into
++// libLiteRtLm, hidden.
++extern "C" FLUTTER_EDGE_AI_HIDDEN int flutter_edge_ai_kernel_work_group_cap() {
++  return g_kernel_work_group_cap.load(std::memory_order_acquire);
++}
++extern "C" FLUTTER_EDGE_AI_HIDDEN void
++flutter_edge_ai_kernel_work_group_begin_create() {
++  t_refused_this_create.clear();
++}
++extern "C" FLUTTER_EDGE_AI_HIDDEN void
++flutter_edge_ai_kernel_work_group_begin_attempt() {
++  t_kernel_work_group_recorded = 0;
++  t_attempt_cap = g_kernel_work_group_cap.load(std::memory_order_acquire);
++}
++// Bit 1: the limit is now below the one the attempt started with; bit 2: a
++// program-cache entry not refused before in this create was refused. 0:
++// nothing an engine create again would change.
++extern "C" FLUTTER_EDGE_AI_HIDDEN int
++flutter_edge_ai_kernel_work_group_recorded() {
++  return t_kernel_work_group_recorded;
++}
++
+ namespace litert::ml_drift {
+ namespace {
++// flutter_edge_ai (native-v0.19.1-d): the smallest CL_KERNEL_WORK_GROUP_SIZE
++// among the kernels whose work group did not fit, from the payload ML Drift's
++// OpenCL InferenceContext puts on its status; 0 for any other status.
++int KernelWorkGroupLimit(const absl::Status& status) {
++  if (status.ok()) return 0;
++  const auto payload =
++      status.GetPayload(::ml_drift::kKernelWorkGroupLimitPayload);
++  int limit = 0;
++  if (!payload.has_value() ||
++      !absl::SimpleAtoi(std::string(*payload), &limit)) {
++    return 0;
++  }
++  return limit;
++}
++
++// Lowers the process-wide limit to the largest power of two that fits the
++// smallest kernel that did not (never below 64: some ops cannot lay out a
++// smaller work group, mean_stddev_normalization computes x = 0 under 32). The
++// GpuModel is not rebuilt here, since GraphToGpuModel cannot run twice on one
++// graph; the engine is created once more (litert_lm_engine_create).
++void RecordKernelWorkGroupLimit(const absl::Status& status) {
++  constexpr int kMinKernelWorkGroupCap = 64;
++  const int limit = KernelWorkGroupLimit(status);
++  if (limit < kMinKernelWorkGroupCap) return;
++  int cap = 1;
++  while (cap * 2 <= limit) cap *= 2;
++  int current = g_kernel_work_group_cap.load(std::memory_order_acquire);
++  bool lowered_here = false;
++  while (current == 0 || cap < current) {
++    if (g_kernel_work_group_cap.compare_exchange_weak(
++            current, cap, std::memory_order_acq_rel)) {
++      lowered_here = true;
++      break;
++    }
++  }
++  // A concurrent create may have lowered it first: what matters is that the
++  // limit is now below the one this attempt was built with.
++  const int now = g_kernel_work_group_cap.load(std::memory_order_acquire);
++  if (now > 0 && (t_attempt_cap == 0 || now < t_attempt_cap)) {
++    t_kernel_work_group_recorded |= kLimitLowered;
++  }
++  ABSL_LOG(WARNING) << status.message()
++                    << (lowered_here
++                            ? ". OpenCL work groups in this process are now "
++                              "limited to "
++                            : ". OpenCL work groups in this process are "
++                              "already limited to ")
++                    << now << " work items.";
++}
++
++bool RestoreSkipped(const CacheEntryId& entry) {
++  std::lock_guard<std::mutex> lock(g_skip_restore_mutex);
++  return SkipRestoreKeys().contains(entry);
++}
++
++void StopSkippingRestore(const CacheEntryId& entry) {
++  std::lock_guard<std::mutex> lock(g_skip_restore_mutex);
++  SkipRestoreKeys().erase(entry);
++}
++
++// A program-cache entry whose kernels do not fit (written before the limit was
++// lowered): record the limit, skip the entry until a rebuild of it is stored,
++// and fail this engine create, so the next attempt starts from a clean engine
++// instead of keeping the refused restore's allocations.
++absl::Status RefuseRestoredEntry(const CacheEntryId& entry,
++                                 const absl::Status& status) {
++  RecordKernelWorkGroupLimit(status);
++  {
++    std::lock_guard<std::mutex> lock(g_skip_restore_mutex);
++    SkipRestoreKeys().insert(entry);
++  }
++  if (t_refused_this_create.insert(entry).second) {
++    t_kernel_work_group_recorded |= kEntryRefused;
++  }
++  ABSL_LOG(WARNING) << "Refusing a program-cache entry whose kernels do not "
++                       "fit the driver's work-group limit; it is rebuilt.";
++  return status;
++}
++
++// Identifies the program-cache file a delegate reads, so a refused entry of
++// one cache never makes another skip the same key.
++std::string ProgramCacheIdentity(int fd, absl::string_view directory,
++                                 absl::string_view model_token) {
++#if !defined(_WIN32)
++  if (fd > 0) {
++    struct stat st;
++    if (fstat(fd, &st) == 0) {
++      return absl::StrCat("fd:", st.st_dev, ":", st.st_ino);
++    }
++    return absl::StrCat("fd:", fd);
++  }
++#else
++  if (fd > 0) return absl::StrCat("fd:", fd);
++#endif
++  return absl::StrCat(directory, "/", model_token);
++}
++
++// The device's GpuInfo with the process-wide OpenCL work-group limit, so ops
++// that write their work group into the kernel source pick a smaller one.
++absl::StatusOr<::ml_drift::GpuInfo> GetInfoWithKernelWorkGroupCap(
++    GpuBackend* backend) {
++  ABSL_ASSIGN_OR_RETURN(::ml_drift::GpuInfo gpu_info, backend->GetInfo());
++  const int cap = g_kernel_work_group_cap.load(std::memory_order_acquire);
++  if (cap > 0 && gpu_info.IsApiOpenCl()) {
++    int& total = gpu_info.opencl_info.max_work_group_total_size;
++    total = total > 0 ? std::min(total, cap) : cap;
++  }
++  return gpu_info;
++}
++
+ 
+ // When Perfetto tracing is enabled, it may be desirable to also force the
+ // commands to complete (CPU sync) so the time taken by each command on the GPU
+@@ -262,7 +433,7 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
+   // Build GraphFloat32. Custom parsers may specialize the graph for the
+   // target device (e.g. the SDPA parser only prunes the causal mask on Metal).
+   ABSL_ASSIGN_OR_RETURN(const ::ml_drift::GpuInfo gpu_info,
+-                        backend_->GetInfo());
++                        GetInfoWithKernelWorkGroupCap(backend_));
+   ::ml_drift::GraphFloat32 graph;
+   CustomOperationParserFactory custom_parser_factory(&gpu_info);
+   ABSL_RETURN_IF_ERROR(BuildFinalModel(
+@@ -427,7 +598,7 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
+ #endif  // __EMSCRIPTEN__
+   if (delegate_data_->options->convert_weights_on_gpu &&
+       delegate_data_->options->enable_constant_tensors_sharing) {
+-    ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
++    ABSL_ASSIGN_OR_RETURN(auto gpu_info, GetInfoWithKernelWorkGroupCap(backend_));
+     if (!::ml_drift::WeightsManager::IsGpuWeightsPreparationSupported(
+             gpu_info)) {
+       delegate_data_->options->convert_weights_on_gpu = false;
+@@ -489,7 +660,7 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
+   // GPU tensors for weights.
+   if (delegate_data_->options->convert_weights_on_gpu &&
+       delegate_data_->options->enable_constant_tensors_sharing) {
+-    ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
++    ABSL_ASSIGN_OR_RETURN(auto gpu_info, GetInfoWithKernelWorkGroupCap(backend_));
+     auto& buffer_map = GetBufferIdToSpatialTensorMap(*delegate_data_);
+     auto& quant_map = GetQuantParamIdToSpatialTensorMap(*delegate_data_);
+     // TODO: b/403337563 - Enable prepare_weights_in_batches with options.
+@@ -618,9 +789,13 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
+               gpu_info, &gpu_weights_conversion_model, &io_mapping,
+               &upload_weights_infos));
+       if (!upload_weights_infos.empty()) {
+-        ABSL_ASSIGN_OR_RETURN(conversion_context_,
+-                              backend_->CreateInferenceContext(
+-                                  create_info, gpu_weights_conversion_model));
++        auto conversion = backend_->CreateInferenceContext(
++            create_info, gpu_weights_conversion_model);
++        if (!conversion.ok()) {
++          RecordKernelWorkGroupLimit(conversion.status());
++          return conversion.status();
++        }
++        conversion_context_ = *std::move(conversion);
+         // The preferred number is picked based on the performance of Gemma3N
+         // 4B running on Linux + Nvidia GTX 4090 with WebGPU backend. We
+         // observed that the peak memory usage keeps dropping, as the
+@@ -835,6 +1010,10 @@ std::string DelegateKernel::ComputeOptionsFingerprint() const {
+   // Keeps entries built for one backend from being restored by another; the
+   // program cache file itself is keyed only by the model token.
+   absl::StrAppend(&options_fingerprint, backend_->GetBackendName());
++  // flutter_edge_ai (native-v0.19.1-d): entries written by a build without
++  // the work-group check (native-v0.19.1-c and earlier) are not looked up at
++  // all, so upgrading costs no refused restore per partition.
++  absl::StrAppend(&options_fingerprint, "|wgcheck1");
+   return options_fingerprint;
+ }
+ 
+@@ -847,6 +1026,9 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+ 
+   std::unique_ptr<tflite::delegates::SerializationEntry> data_key;
+   std::unique_ptr<::ml_drift::SerializationProgramCache> program_cache;
++  const std::string cache_identity = ProgramCacheIdentity(
++      delegate_data_->options->program_cache_fd,
++      delegate_data_->serialization_dir, delegate_data_->model_token);
+   uint64_t fingerprint_key;
+   ::ml_drift::MMapHandle program_data_handle;
+   if (delegate_data_->options->program_cache_fd > 0) {
+@@ -863,7 +1045,7 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+         delegate_data_->model_token, options_fingerprint, context,
+         delegate_params);
+     auto program_data = program_cache->LookUpHandle(fingerprint_key);
+-    if (program_data.ok()) {
++    if (program_data.ok() && !RestoreSkipped({cache_identity, fingerprint_key})) {
+       program_data_handle = std::move(program_data.value());
+     }
+   } else {
+@@ -873,7 +1055,7 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+         delegate_data_->model_token, options_fingerprint, context,
+         delegate_params);
+     auto program_data = program_cache->LookUpHandle(fingerprint_key);
+-    if (program_data.ok()) {
++    if (program_data.ok() && !RestoreSkipped({cache_identity, fingerprint_key})) {
+       program_data_handle = std::move(program_data.value());
+     }
+   }
+@@ -907,6 +1089,9 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+       // rebuilt context overwrites the stale entry under the same key.
+       ctx_.reset();
+       ABSL_LOG(WARNING) << "Discarding stale program cache entry: " << validity;
++    } else if (KernelWorkGroupLimit(res.status()) > 0) {
++      return RefuseRestoredEntry({cache_identity, fingerprint_key},
++                                 res.status());
+     } else {
+       ABSL_LOG(WARNING) << "Deserialization failed: " << res.status();
+     }
+@@ -923,7 +1108,12 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+       absl::string_view(reinterpret_cast<const char*>(serialized_model.data()),
+                         serialized_model.size()));
+   if (!save_status.ok()) {
+-    ABSL_LOG(WARNING) << "Failed to save serialized data: " << save_status;
++    ABSL_LOG(WARNING) << "Failed to save serialized data: " << save_status
++                      << ". If this key's cached entry was refused for its "
++                         "work groups, it stays skipped in this process and "
++                         "is refused and rebuilt again at the next launch.";
++  } else {
++    StopSkippingRestore({cache_identity, fingerprint_key});
+   }
+   return absl::OkStatus();
+ }
+@@ -932,7 +1122,7 @@ absl::Status DelegateKernel::GraphToGpuModelWithGpuConverters(
+     const ::ml_drift::GraphFloat32& graph,
+     ::ml_drift::CreateGpuModelInfo& create_info,
+     ::ml_drift::GpuModel* gpu_model, LiteRtOpSelector& op_selector) {
+-  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
++  ABSL_ASSIGN_OR_RETURN(auto gpu_info, GetInfoWithKernelWorkGroupCap(backend_));
+   ::ml_drift::CreateGpuModelInfo create_info_for_conversion = create_info;
+   ::ml_drift::GpuModel gpu_weights_conversion_model;
+   absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::ValueId> weights_mapping;
+@@ -943,9 +1133,15 @@ absl::Status DelegateKernel::GraphToGpuModelWithGpuConverters(
+       graph, create_info_for_conversion, gpu_info, gpu_model,
+       &gpu_weights_conversion_model, &weights_mapping, &upload_weights_info,
+       &op_selector));
+-  ABSL_ASSIGN_OR_RETURN(conversion_context_, backend_->CreateInferenceContext(
+-                                                 create_info_for_conversion,
+-                                                 gpu_weights_conversion_model));
++  {
++    auto conversion = backend_->CreateInferenceContext(
++        create_info_for_conversion, gpu_weights_conversion_model);
++    if (!conversion.ok()) {
++      RecordKernelWorkGroupLimit(conversion.status());
++      return conversion.status();
++    }
++    conversion_context_ = *std::move(conversion);
++  }
+ 
+   // this can be done in a separate thread. Need to sync then with
+   // main.enqueue. Upload data should be alive until completion of all
+@@ -983,7 +1179,7 @@ absl::Status DelegateKernel::InitInferenceContextFromGraph(
+     ::ml_drift::GraphFloat32* graph, LiteRtOpSelector& op_selector,
+     std::vector<uint8_t>* serialized_model) {
+   ::ml_drift::CreateGpuModelInfo create_info_main = create_info;
+-  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
++  ABSL_ASSIGN_OR_RETURN(auto gpu_info, GetInfoWithKernelWorkGroupCap(backend_));
+   ::ml_drift::GpuModel gpu_model;
+   if (delegate_data_->options->convert_weights_on_gpu &&
+       !delegate_data_->options->enable_constant_tensors_sharing &&
+@@ -994,9 +1190,14 @@ absl::Status DelegateKernel::InitInferenceContextFromGraph(
+     ABSL_RETURN_IF_ERROR(::ml_drift::GraphToGpuModel(
+         *graph, create_info, gpu_info, &gpu_model, &op_selector));
+   }
+-  ABSL_ASSIGN_OR_RETURN(ctx_, backend_->CreateInferenceContext(
+-                                  create_info_main, gpu_model, serialized_model,
+-                                  /*may_share_memory_manager=*/true));
++  auto ctx = backend_->CreateInferenceContext(create_info_main, gpu_model,
++                                              serialized_model,
++                                              /*may_share_memory_manager=*/true);
++  if (!ctx.ok()) {
++    RecordKernelWorkGroupLimit(ctx.status());
++    return ctx.status();
++  }
++  ctx_ = *std::move(ctx);
+   return absl::OkStatus();
+ }
+ 
+@@ -1009,7 +1210,7 @@ absl::Status DelegateKernel::InitInferenceContext(
+   logger.Start();
+ #endif  // ML_DRIFT_MEM_STATS
+ 
+-  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
++  ABSL_ASSIGN_OR_RETURN(auto gpu_info, GetInfoWithKernelWorkGroupCap(backend_));
+   LiteRtOpSelector op_selector(&create_info, &gpu_info);
+   if (ReadFromSerializedData()) {
+     ABSL_LOG(INFO) << "Initializing " << backend_->GetBackendName()
+@@ -1147,7 +1348,7 @@ absl::Status DelegateKernel::InitializeIrModel(
+   // Custom parsers may specialize the graph for the target device (e.g. the
+   // SDPA parser only prunes the causal mask on Metal).
+   ABSL_ASSIGN_OR_RETURN(const ::ml_drift::GpuInfo gpu_info,
+-                        backend_->GetInfo());
++                        GetInfoWithKernelWorkGroupCap(backend_));
+   const ::litert::ml_drift::ir::IrModelBuilderOptions ir_options = {
+       .enable_infinite_float_capping = options.enable_infinite_float_capping,
+       .enable_reduced_precision = options.enable_reduced_precision,
+@@ -1343,7 +1544,7 @@ absl::Status DelegateKernel::IrModelToGpuModelWithGpuConverters(
+     ::ml_drift::ir::IrModel* model, ::ml_drift::CreateGpuModelInfo& create_info,
+     ::ml_drift::GpuModel* gpu_model,
+     ::litert::ml_drift::ir::LiteRtOpSelector* op_selector) {
+-  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
++  ABSL_ASSIGN_OR_RETURN(auto gpu_info, GetInfoWithKernelWorkGroupCap(backend_));
+   ::ml_drift::CreateGpuModelInfo create_info_for_conversion = create_info;
+   ::ml_drift::GpuModel gpu_weights_conversion_model;
+   absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::ValueId> weights_mapping;
+@@ -1355,9 +1556,15 @@ absl::Status DelegateKernel::IrModelToGpuModelWithGpuConverters(
+       &gpu_weights_conversion_model, &weights_mapping, &upload_weights_info,
+       op_selector));
+ 
+-  ABSL_ASSIGN_OR_RETURN(conversion_context_, backend_->CreateInferenceContext(
+-                                                 create_info_for_conversion,
+-                                                 gpu_weights_conversion_model));
++  {
++    auto conversion = backend_->CreateInferenceContext(
++        create_info_for_conversion, gpu_weights_conversion_model);
++    if (!conversion.ok()) {
++      RecordKernelWorkGroupLimit(conversion.status());
++      return conversion.status();
++    }
++    conversion_context_ = *std::move(conversion);
++  }
+ 
+   // this can be done in a separate thread. Need to sync then with
+   // main.enqueue. Upload data should be alive until completion of all
+@@ -1398,6 +1605,9 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+ 
+   std::unique_ptr<tflite::delegates::SerializationEntry> data_key;
+   std::unique_ptr<::ml_drift::SerializationProgramCache> program_cache;
++  const std::string cache_identity = ProgramCacheIdentity(
++      delegate_data_->options->program_cache_fd,
++      delegate_data_->serialization_dir, delegate_data_->model_token);
+   uint64_t fingerprint_key;
+   ::ml_drift::MMapHandle program_data_handle;
+   if (delegate_data_->options->program_cache_fd > 0) {
+@@ -1414,7 +1624,7 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+         delegate_data_->model_token, options_fingerprint, context,
+         delegate_params);
+     auto program_data = program_cache->LookUpHandle(fingerprint_key);
+-    if (program_data.ok()) {
++    if (program_data.ok() && !RestoreSkipped({cache_identity, fingerprint_key})) {
+       program_data_handle = std::move(program_data.value());
+     }
+   } else {
+@@ -1424,7 +1634,7 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+         delegate_data_->model_token, options_fingerprint, context,
+         delegate_params);
+     auto program_data = program_cache->LookUpHandle(fingerprint_key);
+-    if (program_data.ok()) {
++    if (program_data.ok() && !RestoreSkipped({cache_identity, fingerprint_key})) {
+       program_data_handle = std::move(program_data.value());
+     }
+   }
+@@ -1458,6 +1668,9 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+       // rebuilt context overwrites the stale entry under the same key.
+       ctx_.reset();
+       ABSL_LOG(WARNING) << "Discarding stale program cache entry: " << validity;
++    } else if (KernelWorkGroupLimit(res.status()) > 0) {
++      return RefuseRestoredEntry({cache_identity, fingerprint_key},
++                                 res.status());
+     } else {
+       ABSL_LOG(WARNING) << "Deserialization failed: " << res.status();
+     }
+@@ -1474,7 +1687,12 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+       absl::string_view(reinterpret_cast<const char*>(serialized_model.data()),
+                         serialized_model.size()));
+   if (!save_status.ok()) {
+-    ABSL_LOG(WARNING) << "Failed to save serialized data: " << save_status;
++    ABSL_LOG(WARNING) << "Failed to save serialized data: " << save_status
++                      << ". If this key's cached entry was refused for its "
++                         "work groups, it stays skipped in this process and "
++                         "is refused and rebuilt again at the next launch.";
++  } else {
++    StopSkippingRestore({cache_identity, fingerprint_key});
+   }
+   return absl::OkStatus();
+ }
+@@ -1487,7 +1705,7 @@ absl::Status DelegateKernel::InitInferenceContextFromGraph(
+     ::litert::ml_drift::ir::LiteRtOpSelector* op_selector,
+     std::vector<uint8_t>* serialized_model) {
+   ::ml_drift::CreateGpuModelInfo create_info_main = create_info;
+-  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
++  ABSL_ASSIGN_OR_RETURN(auto gpu_info, GetInfoWithKernelWorkGroupCap(backend_));
+   ::ml_drift::GpuModel gpu_model;
+   if (delegate_data_->options->convert_weights_on_gpu &&
+       !delegate_data_->options->enable_constant_tensors_sharing &&
+@@ -1498,9 +1716,14 @@ absl::Status DelegateKernel::InitInferenceContextFromGraph(
+     ABSL_RETURN_IF_ERROR(::ml_drift::ir::IrModelToGpuModel(
+         *model, create_info, gpu_info, &gpu_model, op_selector));
+   }
+-  ABSL_ASSIGN_OR_RETURN(ctx_, backend_->CreateInferenceContext(
+-                                  create_info_main, gpu_model, serialized_model,
+-                                  /*may_share_memory_manager=*/true));
++  auto ctx = backend_->CreateInferenceContext(create_info_main, gpu_model,
++                                              serialized_model,
++                                              /*may_share_memory_manager=*/true);
++  if (!ctx.ok()) {
++    RecordKernelWorkGroupLimit(ctx.status());
++    return ctx.status();
++  }
++  ctx_ = *std::move(ctx);
+   return absl::OkStatus();
+ }
+ 
+@@ -1513,7 +1736,7 @@ absl::Status DelegateKernel::InitInferenceContext(
+   logger.Start();
+ #endif  // ML_DRIFT_MEM_STATS
+ 
+-  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
++  ABSL_ASSIGN_OR_RETURN(auto gpu_info, GetInfoWithKernelWorkGroupCap(backend_));
+ 
+   auto ir_op_selector =
+       std::make_unique<::litert::ml_drift::ir::LiteRtOpSelector>(&create_info,

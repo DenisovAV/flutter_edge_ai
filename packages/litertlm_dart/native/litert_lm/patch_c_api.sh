@@ -13,6 +13,9 @@
 #     size (Windows: the Gemma provider's vector is libc++, the runtime MSVC)
 # 27. The NPU executor aliases a multi-signature KV cache held in a custom
 #     tensor buffer (Intel OpenVINO) instead of refusing it (upstream 3db1cfd0ab)
+# 28. An OpenCL kernel whose work group does not fit the compiled kernel
+#     (CL_KERNEL_WORK_GROUP_SIZE) fails the engine create, which is then made
+#     once more with a lower work-group limit (Adreno 830 FP32, Adreno 610)
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -1177,6 +1180,146 @@ if ! grep -q 'IsUserCustomBuffer' \
     "$DIR/runtime/executor/npu/llm_litert_npu_compiled_model_executor_utils.cc"; then
   echo "  ERROR: section 27: CreateAliasBuffer has no custom-buffer branch" >&2
   exit 1
+fi
+
+# ── 28. OpenCL work groups that do not fit the compiled kernel ──
+# Some ML Drift ops choose their work group before the kernel is compiled and
+# write it into the source (loop strides, local memory sizes), so it cannot be
+# shrunk at dispatch. Adreno compiles a register-heavy kernel for fewer work
+# items than the device limit, and the first dispatch then failed with
+# CL_INVALID_WORK_GROUP_SIZE at the first decode, measured on DDP 2026-11-21
+# with a diagnostic build of native-v0.19.1-c: Gemma 4 E2B FP32 on a Galaxy
+# S25 Ultra (Adreno 830): FullyConnected int8 (fc1x1_int8_weights) 256 work
+# items, the compiled kernel allows 192, 35 of 1287 nodes; any precision on a
+# Galaxy A05s (Adreno 610): the RMSNorm reduction {1,1,512}, 384 at FP16 and
+# 320 at FP32, 176 of 1287 nodes. Upstream ML Drift main (a36de73) and LiteRT
+# main (cf14dd601) still choose those sizes; e420a73d9's dispatch clamp was
+# reverted in 0848ea1, and it would have run a kernel with fewer work items
+# than its source assumes.
+# patches/ml_drift_kernel_work_group_limit.patch (ml_drift archive): the
+# OpenCL InferenceContext checks every kernel after tuning and after a restore
+# from the program cache (optional and tagged nodes included), and fails with
+# the smallest limit as a status payload (key in ml_drift/common/gpu_info.h);
+# FullyConnected keeps its work group within the device limit (an explicit
+# ConvParams::wg_size still overrides it).
+# patches/litert_kernel_work_group_cap.patch (litert archive): the delegate
+# lowers a process-wide work-group limit (std::atomic, a power of two, never
+# below 64) and returns the error; every GpuModel built later in the process
+# starts from a GpuInfo with that limit. It does not rebuild in place:
+# GraphToGpuModel cannot run twice on one graph (a second run SIGSEGVed in it
+# on the S25, 2026-11-21). The weight-conversion contexts record the limit the
+# same way. The program-cache key carries "|wgcheck1", so entries written by
+# native-v0.19.1-c and earlier are not looked up at all. An entry whose
+# kernels do not fit the limit (written before a later lowering) is refused:
+# the limit is recorded, the entry (cache file identity, key) is skipped until
+# a rebuild of it is stored (Insert updates a key; a failed Insert leaves it
+# skipped, and the warning says the next launch refuses and rebuilds it
+# again), and the create fails,
+# so the next attempt starts from a clean engine instead of keeping the
+# refused restore's allocations in the shared memory manager. Only Android
+# links the OpenCL delegate (section 19); Apple (Metal), Linux and Windows
+# (dynamic) never see the payload, so nothing there is refused.
+# patches/engine_create_kernel_work_group_retry.patch (c/engine.cc, Android):
+# litert_lm_engine_create creates the engine again while each attempt makes
+# progress: the limit ends below the one the attempt started with (whoever
+# lowered it: thread_local state of the delegate, which runs on the creating
+# thread; a lowering by another isolate between attempts causes no retry), or
+# an entry not refused before in this create was refused. No error-text
+# matching and no fixed count: the limit only goes down (powers of two, never
+# below 64) and the entries are finite, so an attempt without progress ends
+# the loop. Each retry logs a WARNING with the error (kernel, both sizes) and
+# its reason. The accessors are hidden.
+# Not covered, and loud rather than silent: ops that ignore the limit
+# (reduce.cc keeps 256 on Adreno 4xx and later, softmax.cc 128), where a
+# retry regenerates the same kernel and the error stands; the OpenCL TopK
+# sampler (InitFromGpuModel returns FailedPrecondition, no CPU fallback);
+# GPU vision and audio encoders loaded lazily after the create and speech,
+# which get no create retry (an encoder load that lowers the limit fails, the
+# next attempt in the process builds with it).
+# Only the OpenCL InferenceContext reports the payload: Metal and WebGPU builds
+# compile the same sources and never take the rebuild.
+# Both patches are written against ML Drift 1b18771f and LiteRT dcb657e8: a
+# WORKSPACE that pins anything else fails here, before any fetch, so a pin
+# bump re-creates them instead of finding out from a Bazel patch error.
+# LITERTLM_KERNEL_WG_PATCH=0 leaves the section out (a build that must stay
+# byte-identical to an archive built without it).
+if [ "${LITERTLM_KERNEL_WG_PATCH:-1}" = "0" ]; then
+  echo "  SKIP: section 28 (LITERTLM_KERNEL_WG_PATCH=0)"
+else
+WG_SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+python3 << 'PYEOF' || exit 1
+import os, re
+ws = os.environ['WORKSPACE_FILE']
+c = open(ws).read()
+def fail(msg):
+    raise SystemExit("  ERROR: section 28: " + msg)
+pins = {
+    'ML_DRIFT_COMMIT': '1b18771f44c0be3d972847b31a80f6dc3d6964b5',
+    'LITERT_REF': 'dcb657e8a537b2dc944e53e14c7eb43bcd9ededa',
+}
+for name, want in pins.items():
+    m = re.search(r'^' + name + r' = "([0-9a-f]+)"', c, re.M)
+    if not m:
+        fail(f"{name} is not in WORKSPACE")
+    if m.group(1) != want:
+        fail(f"{name} is {m.group(1)}, the patches are written for {want}; "
+             "re-create patches/ml_drift_kernel_work_group_limit.patch and "
+             "patches/litert_kernel_work_group_cap.patch against the new pin")
+def block(name):
+    anchor = '    name = "' + name + '",\n'
+    if c.count(anchor) != 1:
+        fail(f"the {name} http_archive is not in WORKSPACE")
+    start = c.index(anchor)
+    return start, c.find('\n)', start)
+changed = False
+litert_patch = '        "//:flutter_gemma_litert_kernel_work_group_cap.patch",\n'
+if litert_patch not in c:
+    start, end = block('litert')
+    lst = c.find('    patches = [\n', start, end)
+    close = c.find('\n    ],\n', lst, end) if lst >= 0 else -1
+    if lst < 0 or close < 0:
+        fail("the litert archive has no patches list (section 10b)")
+    c = c[:close + 1] + litert_patch + c[close + 1:]
+    changed = True
+md_patch = '"//:flutter_gemma_ml_drift_kernel_work_group_limit.patch"'
+if md_patch not in c:
+    start, end = block('ml_drift')
+    if 'patches =' in c[start:end] or 'patch_args' in c[start:end]:
+        fail("the ml_drift archive already has patches or patch_args; merge ours into them")
+    anchor = '    name = "ml_drift",\n'
+    c = c.replace(anchor, anchor + '    patches = [' + md_patch + '],\n'
+                  '    patch_args = ["-p1"],\n', 1)
+    changed = True
+# Post-check: both entries inside their own archive's block.
+for name, entry in (('litert', litert_patch.strip()), ('ml_drift', md_patch)):
+    start, end = block(name)
+    if entry not in c[start:end]:
+        fail(f"the {name} archive does not list {entry}")
+if changed:
+    open(ws, 'w').write(c)
+    print("  OK: OpenCL kernels that do not fit their work group fail at create, "
+          "with a lower process-wide limit for the next build (ml_drift + litert patches)")
+else:
+    print("  SKIP: section 28 patches already hooked into WORKSPACE")
+PYEOF
+cp "$WG_SRC_DIR/patches/ml_drift_kernel_work_group_limit.patch" \
+  "$DIR/flutter_gemma_ml_drift_kernel_work_group_limit.patch"
+cp "$WG_SRC_DIR/patches/litert_kernel_work_group_cap.patch" \
+  "$DIR/flutter_gemma_litert_kernel_work_group_cap.patch"
+WG_RETRY_PATCH="$WG_SRC_DIR/patches/engine_create_kernel_work_group_retry.patch"
+if git -C "$DIR" apply --check "$WG_RETRY_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$WG_RETRY_PATCH"
+  echo "  OK: litert_lm_engine_create retries while an attempt lowered the work-group limit"
+elif git -C "$DIR" apply --reverse --check "$WG_RETRY_PATCH" 2>/dev/null; then
+  echo "  SKIP: engine create work-group retry already applied"
+else
+  echo "  ERROR: $WG_RETRY_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+if ! grep -q 'flutter_edge_ai_kernel_work_group_cap()' "$DIR/c/engine.cc"; then
+  echo "  ERROR: section 28: litert_lm_engine_create has no work-group retry" >&2
+  exit 1
+fi
 fi
 
 echo "Patch complete."

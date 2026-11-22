@@ -171,11 +171,21 @@ final _litertlmBundle = _NativeBundle(
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
-  // One directory per release tag (`<cacheBase>/native-v0.19.1-c/<platform>`),
+  // One directory per release tag (`<cacheBase>/native-v0.19.1-d/<platform>`),
   // so two tags never share files. The macOS Podfile block apps paste reads
   // the old flat `flutter_gemma/native/macos_arm64`; [_mirrorForPodfileStager]
   // keeps that working.
   useFlatLayout: true,
+  // 0.19.1-d changes the Android archive and nothing else: patch_c_api.sh
+  // section 28. An OpenCL kernel whose work group exceeds what the driver
+  // allows for the compiled kernel (Adreno lowers CL_KERNEL_WORK_GROUP_SIZE
+  // by register use) failed at the first decode with "Invalid work group
+  // size" (Gemma 4 E2B FP32 on Adreno 830, any precision on Adreno 610); it
+  // now fails at engine create, and litert_lm_engine_create creates the
+  // engine again with a lower OpenCL work-group limit. libLiteRtLm.so
+  // changes; the Qualcomm dispatch, rebuilt from the pin, and the other four
+  // Android files and the six other archives are byte-identical to 0.19.1-c.
+  //
   // 0.19.1-c changes the Android archive and nothing else: it adds
   // libLiteRtDispatch_MediaTek.so, our adapter (mediatek_dispatch_compat.c)
   // that gives Google's legacy MediaTek dispatch the versioned dispatch ABI
@@ -323,7 +333,7 @@ final _litertlmBundle = _NativeBundle(
     'litertlm-ios_sim_arm64.tar.gz':
         'cc2c2de4195692ce89c73451924ac6617bfe7557afddb3fdd81df9022795b5a2',
     'litertlm-android_arm64.tar.gz':
-        'b96972aa2fcab97572cdcf7b76e6f4d36412886220b133c85d54a7bc99d61169',
+        '93722ce37c6da005991322bee0074ed574d0de705ec525e8a377f6904c932834',
   },
   companions: [
     'GemmaModelConstraintProvider',

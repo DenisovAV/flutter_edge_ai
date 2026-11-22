@@ -36,6 +36,7 @@ LiteRtLmLibraryException
 LiteRtLmLog
 LiteRtLmLogLevel
 LiteRtLmNativeException
+LlmBenchmarkResult
 Message
 NoRepeatNgramConfig
 NpuBackend
@@ -56,6 +57,7 @@ Tool
 ToolCall
 ToolResponseContent
 TurnFailedException
+benchmark
 maxThinkingTokenBudget
 readBundleGenericData
 readBundleInfo

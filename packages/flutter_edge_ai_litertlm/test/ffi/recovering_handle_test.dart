@@ -129,6 +129,9 @@ class _Conversation implements ConversationHandle {
   @override
   BenchmarkInfo getSessionMetrics() => BenchmarkInfo();
 
+  @override
+  NativeBenchmark? getNativeBenchmark() => null;
+
   /// How native's last send ended, as the handle would read it.
   NativeLastTurnEnd? turnEnd;
 

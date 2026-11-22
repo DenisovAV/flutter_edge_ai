@@ -54,6 +54,9 @@ class _Handle implements ConversationHandle {
   BenchmarkInfo getSessionMetrics() => const BenchmarkInfo(outputTokens: 3);
 
   @override
+  NativeBenchmark? getNativeBenchmark() => null;
+
+  @override
   NativeLastTurnEnd? get lastTurnEnd => turnEnd;
 
   @override

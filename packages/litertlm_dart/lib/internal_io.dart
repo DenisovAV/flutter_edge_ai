@@ -76,6 +76,8 @@ export 'src/ffi/litert_default_scope.dart'
     show openLiteRtLmPreferringDefaultScope, openLiteRtLmRequiringDefaultScope;
 export 'src/ffi/litert_lm_client.dart'
     show
+        BenchmarkTokens,
+        benchmarkInfoOf,
         capturesNativeStderr,
         ConversationHandle,
         EngineCreateRequest,
@@ -84,6 +86,8 @@ export 'src/ffi/litert_lm_client.dart'
         LiteRtLmConversationHandle,
         LiteRtLmFfiClient,
         LiteRtLmLastErrorRead,
+        NativeBenchmark,
+        NativeBenchmarkTurn,
         NativeLastTurnEnd,
         ScoringStoppedError,
         ScoringStops,
@@ -198,6 +202,8 @@ export 'src/api/conversation.dart'
         conversationHandle,
         conversationTokenCount,
         turnFailureCause;
+export 'src/api/benchmark.dart' show llmBenchmarkResultOf;
+export 'src/api/conversation.dart' show conversationNativeBenchmark;
 export 'src/api/engine.dart'
     show
         minCpuGpuContextTokens,
@@ -208,7 +214,10 @@ export 'src/api/engine.dart'
         engineForTest,
         engineNoRewindReason,
         contextTokensFor,
+        engineContextFor,
+        liteRtLmDefaultContextTokens,
         EngineBundle,
+        createBenchmarkEngine,
         createEngineWithBundle,
         createConversationWithDefault,
         createOwnConversation,
@@ -229,7 +238,12 @@ export 'src/api/message.dart'
         messageRawJson,
         toolsJson;
 export 'src/bundle/litertlm_bundle_sampler.dart'
-    show LlmModelFamily, llmModelFamilyFrom, readLlmModelFamily;
+    show
+        LlmModelFamily,
+        llmMetadataMaxNumTokens,
+        llmModelFamilyFrom,
+        readLlmMaxNumTokens,
+        readLlmModelFamily;
 export 'src/bundle/litertlm_generic_section.dart'
     show genericDataRange, maxGenericDataBytes;
 export 'src/ffi/conversation_handles.dart'

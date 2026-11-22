@@ -92,6 +92,32 @@ Future<LlmModelFamily?> readLlmModelFamily(String modelPath) async {
   return metadata == null ? null : llmModelFamilyFrom(metadata);
 }
 
+/// The context window `LlmMetadata.max_num_tokens` (field 5) declares; null
+/// when the bundle has no `LlmMetadata`, or the field is absent or 0, which
+/// LiteRT-LM reads as "not set" (proto3 `int32`, LiteRT-LM v0.19.1
+/// `runtime/proto/llm_metadata.proto`).
+int? llmMetadataMaxNumTokens(Uint8List llmMetadata) {
+  try {
+    int? declared;
+    for (final f in _ProtoReader(llmMetadata).fields()) {
+      if (f.number == 5 && f.varint != null) declared = f.varint;
+    }
+    // A negative int32 is encoded as ten bytes and reads back as a large
+    // number here; LiteRT-LM takes only a positive value.
+    return declared != null && declared > 0 && declared <= 0x7fffffff
+        ? declared
+        : null;
+  } on RangeError {
+    throw const FormatException('LlmMetadata proto is truncated');
+  }
+}
+
+/// [llmMetadataMaxNumTokens] of the bundle at [modelPath].
+Future<int?> readLlmMaxNumTokens(String modelPath) async {
+  final metadata = await _readLlmMetadata(modelPath);
+  return metadata == null ? null : llmMetadataMaxNumTokens(metadata);
+}
+
 /// [readBundleSampler], with a file it cannot read or parse returned instead
 /// of thrown: a [FileSystemException], a [FormatException], or an
 /// [ArgumentError] (a [RangeError], or a value no engine can sample with).

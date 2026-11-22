@@ -635,6 +635,9 @@ class RecoveringConversationHandle implements ConversationHandle {
   @override
   BenchmarkInfo getSessionMetrics() => _live.getSessionMetrics();
 
+  @override
+  NativeBenchmark? getNativeBenchmark() => _live.getNativeBenchmark();
+
   /// The latest turn reached its send, so native's record is that turn's
   /// end; a turn that failed before it (a recovery that threw) has none.
   bool _latestSent = false;
@@ -929,6 +932,9 @@ class VirtualConversationHandle implements ConversationHandle {
 
   @override
   BenchmarkInfo getSessionMetrics() => client.virtualSessionMetrics(token);
+
+  @override
+  NativeBenchmark? getNativeBenchmark() => client.virtualNativeBenchmark(token);
 
   /// The latest turn reached native; a turn refused before it has no end of
   /// its own to report.

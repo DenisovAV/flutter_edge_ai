@@ -107,4 +107,82 @@ void main() {
       expect(contextTokensFor(4096, BackendKind.npu), 4096);
     });
   });
+
+  // An engine created with no maxNumTokens leaves it to LiteRT-LM, as its
+  // Kotlin API does. LiteRT-LM v0.19.1 (EngineSettings::MaybeUpdateAndValidate)
+  // takes the bundle's LlmMetadata.max_num_tokens, else 4096, and a declared
+  // value above 4096 on a GPU off Apple is 4096; the engine's own rules work
+  // with that number.
+  group('a context left to LiteRT-LM', () {
+    test("LiteRT-LM's choice: the bundle's, else 4096; 4096 at most on a "
+        'GPU off Apple', () {
+      int rule(int? declared, BackendKind backend, String abi) =>
+          liteRtLmDefaultContextTokens(
+            declared: declared,
+            backend: backend,
+            abi: abi,
+          );
+      expect(rule(null, BackendKind.cpu, 'macos_arm64'), 4096);
+      expect(rule(0, BackendKind.gpu, 'android_arm64'), 4096);
+      expect(rule(2048, BackendKind.cpu, 'android_arm64'), 2048);
+      expect(rule(32768, BackendKind.cpu, 'linux_x64'), 32768);
+      expect(rule(32768, BackendKind.npu, 'android_arm64'), 32768);
+      expect(rule(32768, BackendKind.gpu, 'android_arm64'), 4096);
+      expect(rule(32768, BackendKind.gpu, 'windows_x64'), 4096);
+      expect(rule(32768, BackendKind.gpu, 'macos_arm64'), 32768);
+      expect(rule(32768, BackendKind.gpu, 'ios_arm64'), 32768);
+    });
+
+    test('nothing is sent unless the CPU/GPU floor raises the choice', () {
+      expect(
+        engineContextFor(
+          asked: null,
+          declared: null,
+          backend: BackendKind.gpu,
+          abi: 'macos_arm64',
+        ),
+        (context: 4096, sent: null),
+      );
+      expect(
+        engineContextFor(
+          asked: null,
+          declared: 512,
+          backend: BackendKind.cpu,
+          abi: 'macos_arm64',
+        ),
+        (context: 1024, sent: 1024),
+        reason: 'a bundle declaring less than the #318 floor',
+      );
+      expect(
+        engineContextFor(
+          asked: null,
+          declared: 512,
+          backend: BackendKind.npu,
+          abi: 'android_arm64',
+        ),
+        (context: 512, sent: null),
+      );
+    });
+
+    test('a value asked for is sent, after the floor', () {
+      expect(
+        engineContextFor(
+          asked: 256,
+          declared: 8192,
+          backend: BackendKind.cpu,
+          abi: 'macos_arm64',
+        ),
+        (context: 1024, sent: 1024),
+      );
+      expect(
+        engineContextFor(
+          asked: 2048,
+          declared: null,
+          backend: BackendKind.gpu,
+          abi: 'android_arm64',
+        ),
+        (context: 2048, sent: 2048),
+      );
+    });
+  });
 }

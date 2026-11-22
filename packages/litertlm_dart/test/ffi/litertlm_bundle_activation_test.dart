@@ -98,6 +98,43 @@ void main() {
     });
   });
 
+  group('llmMetadataMaxNumTokens (LlmMetadata.max_num_tokens)', () {
+    Uint8List declaring(List<int> varint) =>
+        Uint8List.fromList([0x28, ...varint, ..._metadataOfType(8)]);
+
+    test('the declared value; none, 0 or a negative one is null', () {
+      expect(llmMetadataMaxNumTokens(declaring([0x80, 0x20])), 4096);
+      expect(llmMetadataMaxNumTokens(declaring([0x80, 0x80, 0x02])), 32768);
+      expect(llmMetadataMaxNumTokens(_metadataOfType(8)), isNull);
+      expect(llmMetadataMaxNumTokens(declaring([0])), isNull);
+      expect(
+        llmMetadataMaxNumTokens(
+          declaring([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1]),
+        ),
+        isNull,
+        reason: 'int32 -1',
+      );
+    });
+
+    test('a truncated proto is a FormatException', () {
+      expect(
+        () => llmMetadataMaxNumTokens(Uint8List.fromList([0x28, 0x80])),
+        throwsFormatException,
+      );
+    });
+
+    test('real bundles: Gemma 3 1B declares none, Qwen3 0.6B 4096', () async {
+      expect(
+        await readLlmMaxNumTokens('$_fixtures/gemma3_1b_prefix.litertlm'),
+        isNull,
+      );
+      expect(
+        await readLlmMaxNumTokens('$_fixtures/qwen3_0_6b_prefix.litertlm'),
+        4096,
+      );
+    });
+  });
+
   group('llmModelFamilyFrom (LlmMetadata.llm_model_type)', () {
     test('gemma4 = 8 and function_gemma = 3 are the families with rules', () {
       expect(llmModelFamilyFrom(_metadataOfType(8)), LlmModelFamily.gemma4);

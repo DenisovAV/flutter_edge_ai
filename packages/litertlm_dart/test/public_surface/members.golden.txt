@@ -268,6 +268,20 @@ final class LiteRtLmNativeException extends LiteRtLmException
   constructor const LiteRtLmNativeException(String message)
   method String toString()
 
+final class LlmBenchmarkResult
+  constructor const LlmBenchmarkResult({required Duration initTime, required Duration createTime, required Duration timeToFirstToken, required int prefillTokenCount, required int decodeTokenCount, required double prefillTokensPerSecond, required double decodeTokensPerSecond, required int maxNumTokens, required Backend backend, required ActivationDataType? activationDataType})
+  field final ActivationDataType? activationDataType
+  field final Backend backend
+  field final Duration createTime
+  field final int decodeTokenCount
+  field final double decodeTokensPerSecond
+  field final Duration initTime
+  field final int maxNumTokens
+  field final int prefillTokenCount
+  field final double prefillTokensPerSecond
+  field final Duration timeToFirstToken
+  method String toString()
+
 final class Message
   constructor Message({required Role role, List<Content> contents = const [], List<ToolCall> toolCalls = const [], Map<String, String> channels = const {}})
   constructor factory Message.model(String text)
@@ -390,6 +404,8 @@ final class ToolResponseContent extends Content
 
 final class TurnFailedException extends LiteRtLmException
   constructor const TurnFailedException(String message, {Object? cause})
+
+function Future<LlmBenchmarkResult> benchmark({required String modelPath, required Backend backend, Backend? visionBackend, Backend? audioBackend, int prefillTokens = 256, int decodeTokens = 256, String prompt = 'How are you', int? maxNumTokens, String? cacheDir, SamplerConfig? samplerConfig})
 
 variable const int maxThinkingTokenBudget
 

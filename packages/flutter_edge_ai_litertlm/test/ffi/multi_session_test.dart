@@ -100,6 +100,9 @@ class _FakeConversationHandle implements ConversationHandle {
   BenchmarkInfo getSessionMetrics() => const BenchmarkInfo();
 
   @override
+  NativeBenchmark? getNativeBenchmark() => null;
+
+  @override
   NativeLastTurnEnd? get lastTurnEnd => null;
 
   @override

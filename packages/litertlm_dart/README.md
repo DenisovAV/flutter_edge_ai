@@ -79,7 +79,8 @@ await engine.close();
 - **`maxNumTokens`** is the context window: the prompt, the history and every
   reply. The reply length is `ConversationConfig.maxOutputTokens`. On the CPU
   and the GPU a value below 1024 is raised to 1024 (the cache length those
-  bundles bake); unset, it is 2048.
+  bundles bake). Unset, LiteRT-LM chooses, as in its Kotlin API: the bundle's
+  `max_num_tokens`, else 4096 (at most 4096 on a GPU other than Apple's).
 - **`Backend.cpu(threadCount:)`**, **`Backend.gpu()`**, **`Backend.npu()`**.
   The NPU vendor (Qualcomm, Google Tensor, MediaTek, Intel) is read from the
   bundle, which must be compiled for that NPU; `Backend.npu(dispatchDir:)`
@@ -434,6 +435,33 @@ try {
 }
 ```
 
+## Benchmark
+
+`benchmark()` is the Kotlin API's `benchmark()` (experimental): it loads the
+model in LiteRT-LM's benchmark mode, where the prompt is cut or padded to
+exactly `prefillTokens` and the reply runs exactly `decodeTokens` past its end,
+sends one message and closes the engine. The defaults (`'How are you'`, 256
+and 256) are Kotlin's; AI Edge Gallery's benchmark screen starts from the
+same (`BenchmarkScreen.kt` and `BenchmarkViewModel.kt` in
+google-ai-edge/gallery).
+
+```dart
+final run = await benchmark(
+  modelPath: modelPath,
+  backend: const Backend.gpu(),
+  cacheDir: cacheDir, // a new empty directory: the first run is a cold load
+);
+print('${run.prefillTokensPerSecond} / ${run.decodeTokensPerSecond} tok/s, '
+    'first token ${run.timeToFirstToken}, init ${run.initTime}, '
+    'context ${run.maxNumTokens}');
+```
+
+Each call loads the model again; the cache files decide whether a load is
+cold. Unset, `cacheDir` is the model's directory, and its caches outlive the
+process: pass a new empty directory, or `':nocache'`, for a cold run.
+`maxNumTokens` unset leaves the context to the bundle; it changes the speeds,
+so compare runs with the same `run.maxNumTokens`.
+
 ## Differences from the Kotlin and Swift APIs
 
 | | Kotlin / Swift | litertlm_dart |
@@ -449,6 +477,7 @@ try {
 | Tokenizer | — | `Engine.tokenize`, `detokenize` |
 | Option scoring | — | `Engine.scoreTargets`: the exact log-probability of each target as a continuation |
 | Constrained decoding | C++ API | `ResponseFormat.json`, `.regex` |
+| `benchmark()` | `BenchmarkInfo` with mark durations | `LlmBenchmarkResult`, plus the whole create's time, the backend and the GPU activation type; no media contents |
 | EmbeddingGemma 2 | text, images, audio | the same, text with images and audio in one vector, per-SoC NPU bundles |
 | LoRA, `tool_choice`, the LiteRT-LM 0.20 additions | | not yet |
 

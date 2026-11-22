@@ -11,6 +11,7 @@ library;
 
 export 'src/api/backend.dart'
     show Backend, CpuBackend, GpuBackend, NpuBackend, SpeculativeDecodingMode;
+export 'src/api/benchmark.dart' show LlmBenchmarkResult, benchmark;
 export 'src/api/bundle.dart' show BundleInfoBackends;
 export 'src/api/config.dart'
     show

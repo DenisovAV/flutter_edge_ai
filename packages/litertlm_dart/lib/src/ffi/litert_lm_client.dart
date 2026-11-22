@@ -484,6 +484,10 @@ abstract class ConversationHandle {
 
   BenchmarkInfo getSessionMetrics();
 
+  /// LiteRT-LM's benchmark record of this conversation, turn by turn; null
+  /// when native gives none.
+  NativeBenchmark? getNativeBenchmark();
+
   /// How native's last send on this conversation ended (§23's record, read
   /// when the send ended), or null before one has ended here.
   NativeLastTurnEnd? get lastTurnEnd;
@@ -697,6 +701,12 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     if (_conversation == null) return const BenchmarkInfo();
     return _client._getMetricsOn(_conversation!);
   }
+
+  @override
+  NativeBenchmark? getNativeBenchmark() => switch (_conversation) {
+    final conv? => _client._readBenchmarkOn(conv),
+    null => null,
+  };
 
   @override
   NativeLastTurnEnd? get lastTurnEnd {
@@ -1128,6 +1138,8 @@ class EngineCreateRequest {
     this.kernelBatchSize,
     this.blockSigprof = false,
     this.listWeightBanks = false,
+    this.benchmarkPrefillTokens,
+    this.benchmarkDecodeTokens,
   });
 
   final String modelPath;
@@ -1135,7 +1147,9 @@ class EngineCreateRequest {
   /// Text backend wire name: 'cpu', 'gpu' or 'npu'.
   final String backend;
 
-  final int maxTokens;
+  /// `max_num_tokens`; null leaves it to LiteRT-LM, which takes the bundle's
+  /// `LlmMetadata.max_num_tokens`, else 4096.
+  final int? maxTokens;
 
   /// The caller's [currentRuntimeLogLevel]: a spawned isolate starts with its own
   /// copy at the default level.
@@ -1186,7 +1200,57 @@ class EngineCreateRequest {
   /// Lists the Intel NPU weight banks before and after the create, so the
   /// caller can claim the ones it wrote.
   final bool listWeightBanks;
+
+  /// LiteRT-LM's benchmark mode: every prefill is cut or padded with token 0
+  /// to this many tokens. Null (as for every engine but a benchmark's) sets
+  /// nothing. The engine is then for benchmarking only.
+  final int? benchmarkPrefillTokens;
+
+  /// LiteRT-LM's benchmark mode: every decode runs this many tokens, past the
+  /// end-of-turn token. Null sets nothing.
+  final int? benchmarkDecodeTokens;
 }
+
+/// One prefill or decode turn of LiteRT-LM's benchmark record: its tokens
+/// and its speed (0 when the turn has no measurable duration).
+typedef NativeBenchmarkTurn = ({int tokens, double tokensPerSecond});
+
+/// LiteRT-LM's benchmark record of a conversation (`LiteRtLmBenchmarkInfo`),
+/// turn by turn: the engine's init time, the first token's latency, every
+/// prefill and decode turn, and the context window the executor uses (0
+/// before the first prefill).
+typedef NativeBenchmark = ({
+  double initSeconds,
+  double timeToFirstTokenSeconds,
+  List<NativeBenchmarkTurn> prefill,
+  List<NativeBenchmarkTurn> decode,
+  int maxNumTokens,
+});
+
+/// The [BenchmarkInfo] of [turns]: tokens summed over every turn, the last
+/// decode's speed, times in milliseconds, and null for a time native did not
+/// report.
+BenchmarkInfo benchmarkInfoOf(NativeBenchmark turns) {
+  final input = turns.prefill.fold(0, (sum, t) => sum + t.tokens);
+  final output = turns.decode.fold(0, (sum, t) => sum + t.tokens);
+  final lastDecode = turns.decode.isEmpty
+      ? 0.0
+      : turns.decode.last.tokensPerSecond;
+  return BenchmarkInfo(
+    inputTokens: input,
+    outputTokens: output,
+    totalTokens: input + output,
+    timeToFirstTokenMs: turns.timeToFirstTokenSeconds > 0
+        ? turns.timeToFirstTokenSeconds * 1000
+        : null,
+    tokensPerSecond: lastDecode > 0 ? lastDecode : null,
+    initTimeMs: turns.initSeconds > 0 ? turns.initSeconds * 1000 : null,
+  );
+}
+
+/// The token counts of LiteRT-LM's benchmark mode, for an engine created
+/// only to be benchmarked.
+typedef BenchmarkTokens = ({int prefill, int decode});
 
 /// What the engine's isolate hands back: the engine's address (0 when
 /// `litert_lm_engine_create` returned NULL), LiteRT-LM's last error for a
@@ -1295,16 +1359,32 @@ EngineCreateResult createEngineWith(
     }
 
     try {
-      setter(
-        'litert_lm_engine_settings_set_max_num_tokens',
-        b.litert_lm_engine_settings_set_max_num_tokens(settings, r.maxTokens),
-      );
+      // Unset, LiteRT-LM takes the bundle's own context (its Kotlin API's
+      // behaviour for a null maxNumTokens).
+      if (r.maxTokens case final maxTokens?) {
+        setter(
+          'litert_lm_engine_settings_set_max_num_tokens',
+          b.litert_lm_engine_settings_set_max_num_tokens(settings, maxTokens),
+        );
+      }
 
       // Enable benchmarking for session metrics (token counts, timing)
       setter(
         'litert_lm_engine_settings_enable_benchmark',
         b.litert_lm_engine_settings_enable_benchmark(settings),
       );
+      if (r.benchmarkPrefillTokens case final tokens?) {
+        setter(
+          'litert_lm_engine_settings_set_num_prefill_tokens',
+          b.litert_lm_engine_settings_set_num_prefill_tokens(settings, tokens),
+        );
+      }
+      if (r.benchmarkDecodeTokens case final tokens?) {
+        setter(
+          'litert_lm_engine_settings_set_num_decode_tokens',
+          b.litert_lm_engine_settings_set_num_decode_tokens(settings, tokens),
+        );
+      }
 
       final cacheDir = r.cacheDir;
       if (cacheDir != null) {
@@ -2437,6 +2517,10 @@ class LiteRtLmFfiClient {
   /// [thinkingTokenBudget] is what every send with thinking on hands
   /// LiteRT-LM (`LiteRtLmEngine.thinkingTokenBudget`); null sends none.
   ///
+  /// [maxTokens] is the `max_num_tokens` sent; null sends none and leaves it
+  /// to LiteRT-LM, whose choice the caller expects to be [contextWindow]: the
+  /// window turns are accounted against until the executor reports its own.
+  ///
   /// [npuDispatch] is what an `npu` [backend] hands LiteRT-LM: the dispatch
   /// directory of the vendor `chooseNpuVendor` chose, prepared by the caller,
   /// and whether that vendor turns the HW mask update path off. Required for
@@ -2444,7 +2528,8 @@ class LiteRtLmFfiClient {
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
-    int maxTokens = 2048,
+    int? maxTokens = 2048,
+    int? contextWindow,
     String? cacheDir,
     bool enableVision = false,
     String visionBackend = 'cpu',
@@ -2459,6 +2544,7 @@ class LiteRtLmFfiClient {
     NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
+    BenchmarkTokens? benchmarkTokens,
   }) async {
     if (backend == 'npu' && npuDispatch == null) {
       throw ArgumentError.notNull('npuDispatch');
@@ -2557,7 +2643,7 @@ class LiteRtLmFfiClient {
     // a frame started 98 ms late around the settings create on the calling
     // isolate of an S25 Ultra, and the engine create takes seconds.
     runtimeLog(
-      '[LiteRtLmFfi] Creating engine from $modelPath (backend=$backend, maxTokens=$maxTokens) ...',
+      '[LiteRtLmFfi] Creating engine from $modelPath (backend=$backend, maxTokens=${maxTokens ?? "the bundle's"}) ...',
     );
     runtimeLog(
       '[LiteRtLmFfi/perf] === START litert_lm_engine_create (native — settings + model load + accelerator init + KV cache prefill) ===',
@@ -2598,6 +2684,8 @@ class LiteRtLmFfiClient {
         // Listed on the create's isolate; claimed here, where the lock handles
         // live as long as the engine.
         listWeightBanks: backend == 'npu' && npuDispatch!.stagesWeightBanks,
+        benchmarkPrefillTokens: benchmarkTokens?.prefill,
+        benchmarkDecodeTokens: benchmarkTokens?.decode,
       ),
     );
     _engine = Pointer<LiteRtLmEngine>.fromAddress(engineAddr.address);
@@ -2676,7 +2764,9 @@ class LiteRtLmFfiClient {
     );
     runtimeLog('[LiteRtLmFfi] Engine initialized successfully');
     _modelPath = modelPath;
-    _maxTokens = maxTokens;
+    // The window turns are accounted against until the executor reports its
+    // own: the one sent, else the one the engine expects LiteRT-LM to choose.
+    _maxTokens = maxTokens ?? contextWindow;
     _linearAttentionState = null;
 
     // Auto-dump the SDK's stderr log after successful engine_create so
@@ -3615,6 +3705,7 @@ class LiteRtLmFfiClient {
       // the session's previous end or metrics for it.
       _virtualTurnEnds[conversationToken] = null;
       _virtualMetrics[conversationToken] = null;
+      _virtualBenchmarks[conversationToken] = null;
       try {
         await _acquireNativeMutex();
         mutexHeld = true;
@@ -4576,6 +4667,11 @@ class LiteRtLmFfiClient {
   BenchmarkInfo virtualSessionMetrics(Object token) =>
       _virtualMetrics[token] ?? const BenchmarkInfo();
 
+  /// The native benchmark record of the last completed turn of the virtual
+  /// session holding [token]; null before one has ended.
+  NativeBenchmark? virtualNativeBenchmark(Object token) =>
+      _virtualBenchmarks[token];
+
   /// The end of each virtual session's last turn, snapshot when native ended
   /// it ([watchVirtualTurnEnd]): the shared conversation's own record goes
   /// with it when another session takes it over. Keyed weakly by the
@@ -4584,6 +4680,7 @@ class LiteRtLmFfiClient {
       Expando();
 
   final Expando<BenchmarkInfo> _virtualMetrics = Expando();
+  final Expando<NativeBenchmark> _virtualBenchmarks = Expando();
 
   /// When native ends the virtual turn [ended] of the session holding
   /// [token] on [conv], keeps how it ended for that session, and marks the
@@ -4603,7 +4700,13 @@ class LiteRtLmFfiClient {
       ended.then((_) {
         final record = _lastTurnEnds[conv];
         _virtualTurnEnds[token] = record;
-        _virtualMetrics[token] = _getMetricsOn(conv);
+        // One native read for both snapshots; the test seam replaces both.
+        final testMetrics = metricsForTest;
+        final turns = testMetrics == null ? _readBenchmarkOn(conv) : null;
+        _virtualMetrics[token] =
+            testMetrics?.call(conv) ??
+            (turns == null ? const BenchmarkInfo() : benchmarkInfoOf(turns));
+        _virtualBenchmarks[token] = turns;
         // A turn native ended context_full or failed (a decode error, a
         // resource other than the window): it is taken out of the session
         // (decision W), and the shared conversation, which still holds it or
@@ -5099,8 +5202,16 @@ class LiteRtLmFfiClient {
   BenchmarkInfo _getMetricsOn(Pointer<LiteRtLmConversation> conv) {
     final testMetrics = metricsForTest;
     if (testMetrics != null) return testMetrics(conv);
+    final turns = _readBenchmarkOn(conv);
+    return turns == null ? const BenchmarkInfo() : benchmarkInfoOf(turns);
+  }
+
+  /// LiteRT-LM's benchmark record of [conv], turn by turn; null when native
+  /// gives none (no bindings, no record, or a getter that failed, which is
+  /// logged).
+  NativeBenchmark? _readBenchmarkOn(Pointer<LiteRtLmConversation> conv) {
     final b = _bindings;
-    if (b == null) return const BenchmarkInfo();
+    if (b == null) return null;
 
     final out = calloc<Pointer<LiteRtLmBenchmarkInfo>>();
     final Pointer<LiteRtLmBenchmarkInfo> info;
@@ -5110,12 +5221,12 @@ class LiteRtLmFfiClient {
     } finally {
       calloc.free(out);
     }
-    if (info == nullptr) return const BenchmarkInfo();
+    if (info == nullptr) return null;
 
     try {
       int size(String call, int Function(Pointer<Size>) get) =>
           readLiteRtLmSize(call, get, b.lastError);
-      double seconds(String call, int Function(Pointer<Double>) get) =>
+      double number(String call, int Function(Pointer<Double>) get) =>
           readLiteRtLmDouble(call, get, b.lastError);
 
       final numPrefillTurns = size(
@@ -5126,62 +5237,76 @@ class LiteRtLmFfiClient {
         'litert_lm_benchmark_info_get_num_decode_turns',
         (o) => b.litert_lm_benchmark_info_get_num_decode_turns(info, o),
       );
-
-      // Sum up tokens from all turns
-      var inputTokens = 0;
-      var outputTokens = 0;
-      for (var i = 0; i < numPrefillTurns; i++) {
-        inputTokens += size(
-          'litert_lm_benchmark_info_get_prefill_token_count_at',
-          (o) =>
-              b.litert_lm_benchmark_info_get_prefill_token_count_at(info, i, o),
-        );
-      }
-      for (var i = 0; i < numDecodeTurns; i++) {
-        outputTokens += size(
-          'litert_lm_benchmark_info_get_decode_token_count_at',
-          (o) =>
-              b.litert_lm_benchmark_info_get_decode_token_count_at(info, i, o),
-        );
-      }
-
-      final timeToFirstToken = seconds(
-        'litert_lm_benchmark_info_get_time_to_first_token',
-        (o) => b.litert_lm_benchmark_info_get_time_to_first_token(info, o),
-      );
-      final initTime = seconds(
-        'litert_lm_benchmark_info_get_total_init_time_in_second',
-        (o) =>
-            b.litert_lm_benchmark_info_get_total_init_time_in_second(info, o),
-      );
-
-      // Tokens per second of the last decode turn, if there is one.
-      double? tokensPerSecond;
-      if (numDecodeTurns > 0) {
-        final last = seconds(
-          'litert_lm_benchmark_info_get_decode_tokens_per_sec_at',
-          (o) => b.litert_lm_benchmark_info_get_decode_tokens_per_sec_at(
-            info,
-            numDecodeTurns - 1,
-            o,
+      final prefill = [
+        for (var i = 0; i < numPrefillTurns; i++)
+          (
+            tokens: size(
+              'litert_lm_benchmark_info_get_prefill_token_count_at',
+              (o) => b.litert_lm_benchmark_info_get_prefill_token_count_at(
+                info,
+                i,
+                o,
+              ),
+            ),
+            tokensPerSecond: number(
+              'litert_lm_benchmark_info_get_prefill_tokens_per_sec_at',
+              (o) => b.litert_lm_benchmark_info_get_prefill_tokens_per_sec_at(
+                info,
+                i,
+                o,
+              ),
+            ),
           ),
-        );
-        if (last > 0) tokensPerSecond = last;
+      ];
+      final decode = [
+        for (var i = 0; i < numDecodeTurns; i++)
+          (
+            tokens: size(
+              'litert_lm_benchmark_info_get_decode_token_count_at',
+              (o) => b.litert_lm_benchmark_info_get_decode_token_count_at(
+                info,
+                i,
+                o,
+              ),
+            ),
+            tokensPerSecond: number(
+              'litert_lm_benchmark_info_get_decode_tokens_per_sec_at',
+              (o) => b.litert_lm_benchmark_info_get_decode_tokens_per_sec_at(
+                info,
+                i,
+                o,
+              ),
+            ),
+          ),
+      ];
+      final window = calloc<Int>();
+      final int maxNumTokens;
+      try {
+        maxNumTokens =
+            b.litert_lm_benchmark_info_get_max_num_tokens(info, window) ==
+                liteRtLmStatusOk
+            ? window.value
+            : 0;
+      } finally {
+        calloc.free(window);
       }
-
-      return BenchmarkInfo(
-        inputTokens: inputTokens,
-        outputTokens: outputTokens,
-        totalTokens: inputTokens + outputTokens,
-        timeToFirstTokenMs: timeToFirstToken > 0
-            ? timeToFirstToken * 1000
-            : null,
-        tokensPerSecond: tokensPerSecond,
-        initTimeMs: initTime > 0 ? initTime * 1000 : null,
+      return (
+        initSeconds: number(
+          'litert_lm_benchmark_info_get_total_init_time_in_second',
+          (o) =>
+              b.litert_lm_benchmark_info_get_total_init_time_in_second(info, o),
+        ),
+        timeToFirstTokenSeconds: number(
+          'litert_lm_benchmark_info_get_time_to_first_token',
+          (o) => b.litert_lm_benchmark_info_get_time_to_first_token(info, o),
+        ),
+        prefill: prefill,
+        decode: decode,
+        maxNumTokens: maxNumTokens,
       );
     } on LiteRtLmCallException catch (e) {
       runtimeLog('[LiteRtLmFfiClient] Error getting metrics: $e');
-      return const BenchmarkInfo();
+      return null;
     } finally {
       b.litert_lm_benchmark_info_delete(info);
     }

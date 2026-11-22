@@ -116,7 +116,8 @@ class _FakeHost extends EngineHost implements LiteRtLmNpuHost {
     LiteRtLmFfiClient client, {
     required String modelPath,
     required String backend,
-    required int maxTokens,
+    required int? maxTokens,
+    int? contextWindow,
     required String? cacheDir,
     required bool enableVision,
     required String visionBackend,
@@ -130,6 +131,7 @@ class _FakeHost extends EngineHost implements LiteRtLmNpuHost {
     required GpuActivationReason? gpuActivationReason,
     required NpuDispatch? npuDispatch,
     required LiteRtLmLogLevel? nativeLogLevel,
+    BenchmarkTokens? benchmarkTokens,
   }) async {
     gpuActivationReasons.add(gpuActivationReason);
     nativeLogLevels.add(nativeLogLevel);
@@ -181,7 +183,8 @@ class _InitCapturingClient extends LiteRtLmFfiClient {
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
-    int maxTokens = 2048,
+    int? maxTokens = 2048,
+    int? contextWindow,
     String? cacheDir,
     bool enableVision = false,
     String visionBackend = 'cpu',
@@ -196,6 +199,7 @@ class _InitCapturingClient extends LiteRtLmFfiClient {
     NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
+    BenchmarkTokens? benchmarkTokens,
   }) async {
     this.gpuActivationReason = gpuActivationReason;
     this.nativeLogLevel = nativeLogLevel;

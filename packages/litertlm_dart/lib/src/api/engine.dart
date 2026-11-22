@@ -16,7 +16,7 @@ import '../bundle/litertlm_bundle_activation.dart';
 import '../bundle/litertlm_bundle_info.dart';
 import '../bundle/litertlm_bundle_reader.dart';
 import '../bundle/litertlm_bundle_sampler.dart'
-    show LlmModelFamily, readLlmModelFamily;
+    show LlmModelFamily, readLlmMaxNumTokens, readLlmModelFamily;
 import '../bundle/litertlm_load_plan.dart';
 import '../ffi/backend_preference.dart'
     show
@@ -66,6 +66,59 @@ int contextTokensFor(int maxNumTokens, BackendKind backend) {
     'how many tokens are generated.',
   );
   return minCpuGpuContextTokens;
+}
+
+/// The context window LiteRT-LM creates an engine with when it is given none:
+/// the bundle's `LlmMetadata.max_num_tokens` ([declared]), else 4096; a
+/// declared value above 4096 on a GPU off Apple is 4096 (LiteRT-LM v0.19.1
+/// `EngineSettings::MaybeUpdateAndValidate`, the C API passing no prompt
+/// hint). A compiled model's executor can still lower it to its KV cache
+/// (`ClampMaxNumTokens`), which only the engine reports, after a prefill.
+int liteRtLmDefaultContextTokens({
+  required int? declared,
+  required BackendKind backend,
+  required String abi,
+}) {
+  const fallback = 4096;
+  if (declared == null || declared <= 0) return fallback;
+  final apple = abi.startsWith('macos') || abi.startsWith('ios');
+  return backend == BackendKind.gpu && !apple && declared > fallback
+      ? fallback
+      : declared;
+}
+
+/// The context [Engine.create] decides for [asked] (null: the caller set
+/// none): [context] is the window its own rules (the CPU/GPU floor, the
+/// Gemma 4 float32 rule) work with, and [sent] the value handed to
+/// LiteRT-LM, null when LiteRT-LM is left to choose, as in its Kotlin API.
+/// With [asked] null, LiteRT-LM's choice ([liteRtLmDefaultContextTokens]) is
+/// sent only when the CPU/GPU floor raises it. When the file's declared
+/// context could not be read ([declaredRead] false: a `.task`, a container
+/// this package does not parse), LiteRT-LM may still read one below the
+/// floor, so the CPU and the GPU are sent the 4096 the rules assume; the NPU,
+/// whose bundle has one compiled cache, is left to LiteRT-LM.
+({int context, int? sent}) engineContextFor({
+  required int? asked,
+  required int? declared,
+  bool declaredRead = true,
+  required BackendKind backend,
+  required String abi,
+}) {
+  if (asked != null) {
+    final context = contextTokensFor(asked, backend);
+    return (context: context, sent: context);
+  }
+  final native = liteRtLmDefaultContextTokens(
+    declared: declared,
+    backend: backend,
+    abi: abi,
+  );
+  final context = contextTokensFor(native, backend);
+  final unknown = !declaredRead && backend != BackendKind.npu;
+  return (
+    context: context,
+    sent: context == native && !unknown ? null : context,
+  );
 }
 
 /// A GPU activation the caller decided by a rule of its own, for
@@ -184,7 +237,8 @@ class EngineHost {
     LiteRtLmFfiClient client, {
     required String modelPath,
     required String backend,
-    required int maxTokens,
+    required int? maxTokens,
+    int? contextWindow,
     required String? cacheDir,
     required bool enableVision,
     required String visionBackend,
@@ -198,10 +252,12 @@ class EngineHost {
     required GpuActivationReason? gpuActivationReason,
     required NpuDispatch? npuDispatch,
     required LiteRtLmLogLevel? nativeLogLevel,
+    BenchmarkTokens? benchmarkTokens,
   }) => client.initialize(
     modelPath: modelPath,
     backend: backend,
     maxTokens: maxTokens,
+    contextWindow: contextWindow,
     cacheDir: cacheDir,
     enableVision: enableVision,
     visionBackend: visionBackend,
@@ -215,6 +271,7 @@ class EngineHost {
     gpuActivationReason: gpuActivationReason,
     npuDispatch: npuDispatch,
     nativeLogLevel: nativeLogLevel,
+    benchmarkTokens: benchmarkTokens,
   );
 
   /// Whether the model at [path] keeps linear attention state; null when the
@@ -290,7 +347,11 @@ final class Engine {
   final Backend? audioBackend;
 
   /// The context window the engine was created with, after the CPU/GPU
-  /// floor.
+  /// floor. With no [EngineConfig.maxNumTokens], LiteRT-LM chooses it, and
+  /// this is what its rule gives ([liteRtLmDefaultContextTokens]); a compiled
+  /// model's executor can still lower it to its KV cache, as an NPU bundle's
+  /// does. The window the engine runs with is reported after a prefill, as
+  /// [LlmBenchmarkResult.maxNumTokens] for a benchmark.
   final int maxNumTokens;
 
   /// The activation type sent to the GPU executor; null left the bundle's.
@@ -324,13 +385,29 @@ final class Engine {
   /// build this release drives. A bad argument is an [ArgumentError].
   /// Creations run one at a time in the process: what one touches is
   /// process-wide (the Qualcomm dispatch's environment, the cache files).
-  static Future<Engine> create(EngineConfig config) {
+  static Future<Engine> create(EngineConfig config) => _createPublic(config);
+
+  static Future<Engine> _createPublic(
+    EngineConfig config, {
+    BenchmarkTokens? benchmarkTokens,
+    void Function(Duration)? onCreated,
+  }) {
     // Read when the caller asks, not when the create's turn comes: a caller
     // that sets the level and then creates gets its own level.
     final nativeLevel = liteRtLmNativeLogLevel;
-    return _oneCreateAtATime(
-      () => _create(config, _host, nativeLevel, null),
-    ).catchError(
+    return _oneCreateAtATime(() async {
+      // Timed from the create's turn: not the wait behind another create.
+      final took = Stopwatch()..start();
+      final engine = await _create(
+        config,
+        _host,
+        nativeLevel,
+        null,
+        benchmarkTokens: benchmarkTokens,
+      );
+      onCreated?.call(took.elapsed);
+      return engine;
+    }).catchError(
       (Object error, StackTrace stack) => Error.throwWithStackTrace(
         LiteRtLmLibraryException((error as LibraryLoadFailure).loadMessage),
         stack,
@@ -350,6 +427,7 @@ final class Engine {
     EngineBundle? read, {
     ToolCallReader toolCallsOf = nativeToolCalls,
     GpuActivationDecision? gpuActivation,
+    BenchmarkTokens? benchmarkTokens,
   }) async {
     if (config.backend case CpuBackend(
       :final threadCount?,
@@ -434,7 +512,20 @@ final class Engine {
       _ => null,
     };
 
-    final maxTokens = contextTokensFor(config.maxNumTokens ?? 2048, kind);
+    // Read whenever the caller set none, also when the bundle reader refused
+    // the file: LiteRT-LM reads the metadata of a container it parses
+    // whatever this package's reader made of its sections.
+    final declared = config.maxNumTokens == null
+        ? await _readDeclaredContext(path)
+        : (tokens: null, read: true);
+    final resolved = engineContextFor(
+      asked: config.maxNumTokens,
+      declared: declared.tokens,
+      declaredRead: declared.read,
+      backend: kind,
+      abi: abi,
+    );
+    final maxTokens = resolved.context;
 
     // Only the GPU executor reads the activation type: the caller's wins, else
     // the engine's rule for a GPU load.
@@ -518,7 +609,8 @@ final class Engine {
         client,
         modelPath: path,
         backend: ffiBackendWireName(kind),
-        maxTokens: maxTokens,
+        maxTokens: resolved.sent,
+        contextWindow: resolved.context,
         cacheDir: config.cacheDir,
         enableVision: supportImage,
         // The plan's choice, else the request (a file that was not read).
@@ -556,6 +648,7 @@ final class Engine {
         gpuActivationReason: reason,
         npuDispatch: dispatch,
         nativeLogLevel: nativeLevel,
+        benchmarkTokens: benchmarkTokens,
       );
     } on LiteRtLmEngineCreateException catch (e, st) {
       await _shutdownAfterFailure(client);
@@ -624,6 +717,49 @@ final class Engine {
       // caller.
       await _shutdownAfterFailure(client);
       rethrow;
+    }
+  }
+
+  /// The bundle's `LlmMetadata.max_num_tokens`, for an engine created with no
+  /// `maxNumTokens`: [tokens] null when it declares none, [read] false when
+  /// the file could not be read for it ([engineContextFor] then sends 4096 on
+  /// the CPU and the GPU). A `.litertlm` container that could not be read is
+  /// said in a warning; another file (a `.task`) is not one to read.
+  static Future<({int? tokens, bool read})> _readDeclaredContext(
+    String path,
+  ) async {
+    try {
+      return (tokens: await readLlmMaxNumTokens(path), read: true);
+    } on Object catch (e) {
+      if (e is! FileSystemException &&
+          e is! FormatException &&
+          e is! RangeError) {
+        rethrow;
+      }
+      if (await _isLitertlmContainer(path)) {
+        // ignore: avoid_print
+        print(
+          '[litertlm_dart] WARNING: could not read the context window this '
+          '.litertlm declares ($e), so a CPU or GPU engine is created with '
+          '4096; pass maxNumTokens to choose.',
+        );
+      }
+      return (tokens: null, read: false);
+    }
+  }
+
+  /// Whether [path] starts with the `LITERTLM` magic; false when it cannot be
+  /// read.
+  static Future<bool> _isLitertlmContainer(String path) async {
+    try {
+      final file = await File(path).open();
+      try {
+        return String.fromCharCodes(await file.read(8)) == 'LITERTLM';
+      } finally {
+        await file.close();
+      }
+    } on FileSystemException {
+      return false;
     }
   }
 
@@ -885,6 +1021,24 @@ final class EngineBundle {
 
   /// Null when the file is not one this package reads.
   final BundleInfo? info;
+}
+
+/// [Engine.create] in LiteRT-LM's benchmark mode ([benchmarkTokens]): every
+/// prefill of the engine is cut or padded to `prefill` tokens and every
+/// decode runs `decode` tokens past the end of the turn, so the engine is for
+/// one benchmark only. For `benchmark`: [createTime] is the create from its
+/// turn among the process's creates, not the wait behind another one.
+Future<({Engine engine, Duration createTime})> createBenchmarkEngine(
+  EngineConfig config,
+  BenchmarkTokens benchmarkTokens,
+) async {
+  var createTime = Duration.zero;
+  final engine = await Engine._createPublic(
+    config,
+    benchmarkTokens: benchmarkTokens,
+    onCreated: (took) => createTime = took,
+  );
+  return (engine: engine, createTime: createTime);
 }
 
 /// [Engine.create] with the file already read: a caller that reads it to plan

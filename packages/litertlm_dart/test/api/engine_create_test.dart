@@ -18,7 +18,8 @@ import '../litertlm_container_fixture.dart';
 
 typedef _Create = ({
   String backend,
-  int maxTokens,
+  int? maxTokens,
+  BenchmarkTokens? benchmarkTokens,
   bool enableVision,
   String visionBackend,
   bool enableAudio,
@@ -31,11 +32,54 @@ typedef _Create = ({
   NpuDispatch? npuDispatch,
 });
 
+/// A client whose conversations are fakes: one create can fail, a send on
+/// one fails (it has no native conversation), and [shutdowns] counts closes.
+class _BenchClient extends LiteRtLmFfiClient {
+  _BenchClient({this.failCreate = false});
+
+  final bool failCreate;
+  int shutdowns = 0;
+  int conversations = 0;
+
+  @override
+  BundleSampler get bundleSampler => const BundleSampler();
+
+  @override
+  Future<LiteRtLmConversationHandle> createConversationHandle({
+    String? systemMessage,
+    String? toolsJson,
+    String? messagesJson,
+    required Sampler sampling,
+    required bool samplingExplicit,
+    int? maxOutputTokens,
+    required MediaOrder multimodalOrder,
+    Constraint? constraint,
+    ConversationExtras extras = ConversationExtras.none,
+    required bool filterChannelContent,
+  }) async {
+    if (failCreate) throw StateError('no conversation');
+    conversations++;
+    return LiteRtLmConversationHandle.forTest(this);
+  }
+
+  @override
+  Future<void> shutdown() async {
+    shutdowns++;
+    await super.shutdown();
+  }
+}
+
 class _Host extends EngineHost implements LiteRtLmNpuHost {
-  _Host({this.abiName = 'macos_arm64', this.npuShips = false});
+  _Host({this.abiName = 'macos_arm64', this.npuShips = false, this.client});
 
   final String abiName;
   final bool npuShips;
+
+  /// The client every create gets; null: a fresh real one.
+  final LiteRtLmFfiClient? client;
+
+  @override
+  LiteRtLmFfiClient createClient() => client ?? super.createClient();
   final creates = <_Create>[];
   final nativeLevels = <LiteRtLmLogLevel?>[];
   final prepared = <NpuStack>[];
@@ -75,7 +119,8 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     LiteRtLmFfiClient client, {
     required String modelPath,
     required String backend,
-    required int maxTokens,
+    required int? maxTokens,
+    int? contextWindow,
     required String? cacheDir,
     required bool enableVision,
     required String visionBackend,
@@ -89,6 +134,7 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     required GpuActivationReason? gpuActivationReason,
     required NpuDispatch? npuDispatch,
     required LiteRtLmLogLevel? nativeLogLevel,
+    BenchmarkTokens? benchmarkTokens,
   }) async {
     if (initializeError case final e?) throw e;
     nativeLevels.add(nativeLogLevel);
@@ -98,6 +144,7 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     creates.add((
       backend: backend,
       maxTokens: maxTokens,
+      benchmarkTokens: benchmarkTokens,
       enableVision: enableVision,
       visionBackend: visionBackend,
       enableAudio: enableAudio,
@@ -120,6 +167,7 @@ Uint8List _bundle({
   String? text,
   String? vision,
   int? family,
+  int? maxNumTokens,
   (String, String)? npu,
 }) => litertlmContainer(
   [
@@ -140,14 +188,31 @@ Uint8List _bundle({
       modelType: 'tf_lite_audio_encoder_hw',
       bytes: tfliteModel({}),
     ),
-    if (family != null)
-      (type: 5, modelType: null, bytes: [0x32, 2, (family << 3) | 2, 0]),
+    if (family != null || maxNumTokens != null)
+      (
+        type: 5,
+        modelType: null,
+        bytes: [
+          if (maxNumTokens != null) ...[0x28, ..._varint(maxNumTokens)],
+          if (family != null) ...[0x32, 2, (family << 3) | 2, 0],
+        ],
+      ),
   ],
   items: {
     0: {'backend_constraint': ?text},
     1: {'backend_constraint': ?vision},
   },
 );
+
+List<int> _varint(int value) {
+  final bytes = <int>[];
+  var v = value;
+  while (v >= 0x80) {
+    bytes.add((v & 0x7f) | 0x80);
+    v >>= 7;
+  }
+  return bytes..add(v);
+}
 
 void main() {
   late Directory dir;
@@ -265,6 +330,210 @@ void main() {
       }
     },
   );
+
+  test('no maxNumTokens is left to LiteRT-LM: nothing is sent, and the '
+      "engine's rules use the bundle's value, else 4096", () async {
+    final declared = write('d.litertlm', _bundle(maxNumTokens: 2048));
+    final none = write('n.litertlm', _bundle());
+    final small = write('s.litertlm', _bundle(maxNumTokens: 512));
+    final engines = [
+      await create(declared),
+      await create(none),
+      await create(small),
+      await create(declared, maxNumTokens: 2048),
+    ];
+    expect(engines.map((e) => e.maxNumTokens), [2048, 4096, 1024, 2048]);
+    expect(host.creates.map((c) => c.maxTokens), [
+      null,
+      null,
+      1024,
+      2048,
+    ], reason: 'a value below the #318 floor is raised and so sent');
+    for (final e in engines) {
+      await e.close();
+    }
+  });
+
+  test("a GPU off Apple caps a bundle's context above 4096, as LiteRT-LM "
+      'does; Apple keeps it', () async {
+    final big = write('b.litertlm', _bundle(maxNumTokens: 32768));
+    final mac = await create(big, backend: const Backend.gpu());
+    host = _Host(abiName: 'android_arm64');
+    debugEngineHost = host;
+    final android = await create(big, backend: const Backend.gpu());
+    final androidCpu = await create(big);
+    expect(
+      [mac.maxNumTokens, android.maxNumTokens, androidCpu.maxNumTokens],
+      [32768, 4096, 32768],
+    );
+    expect(host.creates.map((c) => c.maxTokens), [null, null]);
+    for (final e in [mac, android, androidCpu]) {
+      await e.close();
+    }
+  });
+
+  test('Gemma 4 with no maxNumTokens and none declared gets 4096, so a GPU '
+      'load off Android runs float32', () async {
+    final path = write('g4.litertlm', _bundle(family: 8));
+    final gpu = await create(path, backend: const Backend.gpu());
+    expect(gpu.maxNumTokens, 4096);
+    expect(gpu.activationDataType, ActivationDataType.float32);
+    expect(host.creates.single.maxTokens, isNull);
+    await gpu.close();
+  });
+
+  test('a benchmark engine hands LiteRT-LM its token counts; Engine.create '
+      'none', () async {
+    final path = write('g.litertlm', _bundle());
+    final plain = await create(path);
+    final bench = await createBenchmarkEngine(EngineConfig(modelPath: path), (
+      prefill: 256,
+      decode: 128,
+    ));
+    expect(host.creates.map((c) => c.benchmarkTokens), [
+      null,
+      (prefill: 256, decode: 128),
+    ]);
+    // Timed from its turn: the fake create waits 10 ms.
+    expect(bench.createTime, greaterThanOrEqualTo(Duration(milliseconds: 10)));
+    await plain.close();
+    await bench.engine.close();
+  });
+
+  test("a benchmark result is LiteRT-LM's last prefill and last decode, with "
+      'the engine it ran on; a run without both is a StateError', () async {
+    final path = write('g4.litertlm', _bundle(family: 8));
+    final engine = await create(path, backend: const Backend.gpu());
+    final result = llmBenchmarkResultOf(
+      (
+        initSeconds: 1.5,
+        timeToFirstTokenSeconds: 0.25,
+        prefill: [
+          (tokens: 3, tokensPerSecond: 10.0),
+          (tokens: 256, tokensPerSecond: 800.0),
+        ],
+        decode: [(tokens: 256, tokensPerSecond: 40.0)],
+        maxNumTokens: 4096,
+      ),
+      createTime: const Duration(seconds: 2),
+      engine: engine,
+    );
+    expect(result.initTime, const Duration(milliseconds: 1500));
+    expect(result.createTime, const Duration(seconds: 2));
+    expect(result.timeToFirstToken, const Duration(milliseconds: 250));
+    expect([result.prefillTokenCount, result.decodeTokenCount], [256, 256]);
+    expect(
+      [result.prefillTokensPerSecond, result.decodeTokensPerSecond],
+      [800.0, 40.0],
+    );
+    expect(result.maxNumTokens, 4096);
+    expect(result.backend, const Backend.gpu());
+    expect(result.activationDataType, ActivationDataType.float32);
+    expect(
+      () =>
+          llmBenchmarkResultOf(null, createTime: Duration.zero, engine: engine),
+      throwsStateError,
+    );
+    expect(
+      () => llmBenchmarkResultOf(
+        (
+          initSeconds: 0,
+          timeToFirstTokenSeconds: 0,
+          prefill: [(tokens: 256, tokensPerSecond: 1.0)],
+          decode: const [],
+          maxNumTokens: 0,
+        ),
+        createTime: Duration.zero,
+        engine: engine,
+      ),
+      throwsStateError,
+    );
+    await engine.close();
+  });
+
+  test("benchmarkInfoOf sums a conversation's turns and keeps the last "
+      "decode's speed; a time native did not report is null", () {
+    final info = benchmarkInfoOf((
+      initSeconds: 0.5,
+      timeToFirstTokenSeconds: 0,
+      prefill: [
+        (tokens: 10, tokensPerSecond: 100.0),
+        (tokens: 20, tokensPerSecond: 200.0),
+      ],
+      decode: [
+        (tokens: 5, tokensPerSecond: 7.0),
+        (tokens: 6, tokensPerSecond: 9.0),
+      ],
+      maxNumTokens: 4096,
+    ));
+    expect(
+      [info.inputTokens, info.outputTokens, info.totalTokens],
+      [30, 11, 41],
+    );
+    expect(info.tokensPerSecond, 9.0);
+    expect(info.initTimeMs, 500.0);
+    expect(info.timeToFirstTokenMs, isNull);
+    final empty = benchmarkInfoOf((
+      initSeconds: 0,
+      timeToFirstTokenSeconds: 0,
+      prefill: const [],
+      decode: const [],
+      maxNumTokens: 0,
+    ));
+    expect(empty.tokensPerSecond, isNull);
+    expect(empty.totalTokens, 0);
+  });
+
+  test('benchmark() closes its engine when the conversation cannot be made '
+      'or the send fails, and the failure reaches the caller', () async {
+    final path = write('g.litertlm', _bundle());
+    for (final failCreate in [true, false]) {
+      final client = _BenchClient(failCreate: failCreate);
+      host = _Host(client: client);
+      debugEngineHost = host;
+      await expectLater(
+        benchmark(modelPath: path, backend: const Backend.cpu()),
+        throwsA(anything),
+        reason: failCreate ? 'create' : 'send',
+      );
+      expect(client.conversations, failCreate ? 0 : 1);
+      expect(client.shutdowns, 1, reason: failCreate ? 'create' : 'send');
+      expect(host.creates.single.benchmarkTokens, (prefill: 256, decode: 256));
+    }
+  });
+
+  test('a container the bundle reader refuses still has its declared context '
+      'read: one below the #318 floor is raised and sent', () async {
+    // A text model that is not a TFLite flatbuffer: the bundle reader refuses
+    // it (malformed), LiteRT-LM would still read the LlmMetadata.
+    final path = write(
+      'r.litertlm',
+      litertlmContainer([
+        (
+          type: sectionTfliteModel,
+          modelType: 'tf_lite_prefill_decode',
+          bytes: [1, 2, 3, 4, 5, 6, 7, 8],
+        ),
+        (type: 5, modelType: null, bytes: [0x28, ..._varint(512)]),
+      ]),
+    );
+    expect((await readEngineBundle(path)).info, isNull);
+    final engine = await create(path);
+    expect(engine.maxNumTokens, 1024);
+    expect(host.creates.single.maxTokens, 1024);
+    await engine.close();
+  });
+
+  test('a file whose declared context cannot be read gets 4096 sent on the '
+      'CPU and the GPU, and nothing on the NPU', () async {
+    final task = write('m.task', Uint8List.fromList(List.filled(64, 7)));
+    final cpu = await create(task);
+    final gpu = await create(task, backend: const Backend.gpu());
+    expect([cpu.maxNumTokens, gpu.maxNumTokens], [4096, 4096]);
+    expect(host.creates.map((c) => c.maxTokens), [4096, 4096]);
+    await cpu.close();
+    await gpu.close();
+  });
 
   test('Gemma 4 on the GPU above 2,048 tokens runs float32; the CPU and a '
       'set value are left alone', () async {

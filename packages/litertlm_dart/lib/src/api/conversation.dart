@@ -6,7 +6,7 @@ import 'dart:async';
 import 'dart:convert' show JsonUnsupportedObjectError, jsonEncode;
 
 import '../ffi/litert_lm_client.dart'
-    show ConversationHandle, NativeLastTurnEnd;
+    show ConversationHandle, NativeBenchmark, NativeLastTurnEnd;
 import '../ffi/native_turns.dart'
     show LiteRtLmTurnCancelledException, LiteRtLmTurnClosedException;
 import '../ffi/send_options.dart';
@@ -365,3 +365,8 @@ Future<int?> conversationTokenCount(Conversation conversation, String text) =>
 /// The handle under [conversation].
 ConversationHandle conversationHandle(Conversation conversation) =>
     conversation._handle;
+
+/// LiteRT-LM's benchmark record of [conversation], turn by turn; null when
+/// native gives none. For `benchmark`.
+NativeBenchmark? conversationNativeBenchmark(Conversation conversation) =>
+    conversation._handle.getNativeBenchmark();

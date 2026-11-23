@@ -12,8 +12,11 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:flutter_edge_ai/engine_web.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/tool_calls.dart';
 import 'package:flutter_edge_ai_litertlm/src/web/web_llm_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/internal_web.dart'
+    show WebConversationHandle, conversationHandle, webConversationMembers;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
 /// Resolves the active model to a blob URL; nothing is read from it.
@@ -35,12 +38,12 @@ List<Map<String, Object?>> _installEngine() {
     // As 0.19.0 reports them: the encoders asked for, resolved.
     ..['settings'] = {
       'backend': 2,
-      if (asked['visionBackend'] case final vision?) 'visionBackend': vision,
-      if (asked['audioBackend'] case final audio?) 'audioBackend': audio,
+      'visionBackend': ?asked['visionBackend'],
+      'audioBackend': ?asked['audioBackend'],
       'mainExecutorSettings': {'maxNumTokens': 8192},
     }.jsify()
     ..['createConversation'] = ((JSAny? _) => Future.value(
-      JSObject(),
+      _conversation(),
     ).toJS).toJS
     ..['delete'] = (() => Future<void>.value().toJS).toJS;
   final constructor =
@@ -62,6 +65,16 @@ List<Map<String, Object?>> _installEngine() {
   globalContext['litertLmReady'] = Future<void>.value().toJS;
   globalContext['Engine'] = constructor;
   return settings;
+}
+
+/// A runtime conversation with every member litertlm_dart calls; none is
+/// called here.
+JSObject _conversation() {
+  final conversation = JSObject();
+  for (final member in webConversationMembers) {
+    conversation[member] = (() {}).toJS;
+  }
+  return conversation;
 }
 
 Map<String, Object?> _executor(Map<String, Object?> settings) =>
@@ -109,6 +122,23 @@ void main() {
     await engine.close();
   });
 
+  test('a conversation reads a stopped reply\'s tool calls with core\'s '
+      'parser, as natively', () async {
+    _installEngine();
+    final engine = await createLiteRtLmWebEngine(_Resolver(), maxTokens: 2048);
+
+    final conversation = await engine.openConversation(
+      lm.ConversationConfig(),
+      null,
+    );
+
+    expect(
+      (conversationHandle(conversation) as WebConversationHandle).toolCallsOf,
+      same(liteRtLmToolCallsOf),
+    );
+    await engine.close();
+  });
+
   test('maxNumImages without supportImage reserves nothing', () async {
     final settings = _installEngine();
 
@@ -152,6 +182,20 @@ void main() {
       await engine.close();
     },
   );
+
+  test('a streamed model\'s conversation reads tool calls with core\'s '
+      'parser', () async {
+    _installEngine();
+    final engine = await createWebEngineFromStream(streamed(), openStream());
+
+    final conversation = await engine.createConversation();
+
+    expect(
+      (conversationHandle(conversation) as WebConversationHandle).toolCallsOf,
+      same(liteRtLmToolCallsOf),
+    );
+    await engine.close();
+  });
 
   test('a refused load cancels the OPFS stream it was given', () async {
     _installEngine();

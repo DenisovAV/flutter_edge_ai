@@ -17,104 +17,14 @@ import '../runtime/types.dart';
 import 'litert_lm_client.dart';
 import 'native_turns.dart' show LiteRtLmTurnCancelledException;
 import 'send_options.dart';
-import '../api/message.dart' show messageFromJson;
+import '../runtime/tool_calls.dart';
 
-/// The tool calls in a raw LiteRT-LM reply: each call's name and arguments.
-/// Reading them is chat-template knowledge (a model can write a call as
-/// text), which the caller owns; the Flutter adapter passes core's parser.
-typedef ToolCallReader =
-    List<({String name, Map<String, Object?> arguments})> Function(
-      String rawReply,
-    );
-
-/// The calls native converted itself: the `tool_calls` of every JSON object
-/// in [rawReply] (a streamed reply is several, concatenated). A call the model
-/// wrote as text stays text, as the native conversation keeps it.
-List<({String name, Map<String, Object?> arguments})> nativeToolCalls(
-  String rawReply,
-) => [
-  for (final message in concatenatedJsonObjects(rawReply)) ..._callsIn(message),
-];
-
-/// The calls of one reply object; one this release cannot read has none (the
-/// turn's text is replayed instead, as native keeps an unconverted call).
-List<({String name, Map<String, Object?> arguments})> _callsIn(
-  Map<String, Object?> message,
-) {
-  try {
-    return [
-      for (final call in messageFromJson(message).toolCalls)
-        (name: call.name, arguments: call.arguments),
-    ];
-  } on FormatException {
-    return const [];
-  } on StateError {
-    return const [];
-  }
-}
-
-/// The JSON objects of [text], a run of concatenated JSON values; anything
-/// that is not an object, or not JSON, is skipped.
-Iterable<Map<String, Object?>> concatenatedJsonObjects(String text) sync* {
-  var depth = 0, start = -1;
-  var inString = false, escaped = false;
-  for (var i = 0; i < text.length; i++) {
-    final c = text.codeUnitAt(i);
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (c == 0x5C) {
-        escaped = true;
-      } else if (c == 0x22) {
-        inString = false;
-      }
-      continue;
-    }
-    if (c == 0x22) {
-      inString = true;
-    } else if (c == 0x7B) {
-      if (depth++ == 0) start = i;
-    } else if (c == 0x7D && depth > 0 && --depth == 0) {
-      try {
-        if (jsonDecode(text.substring(start, i + 1))
-            case final Map<String, Object?> object) {
-          yield object;
-        }
-      } on FormatException {
-        // Not JSON after all: skipped.
-      }
-    }
-  }
-}
-
-/// The assistant turn to replay: its tool calls when it made any, so the
-/// tool results recorded after it still answer something, and its text
-/// otherwise.
-Map<String, Object?> assistantTurnMessage(
-  ToolCallReader toolCallsOf,
-  String text,
-  String raw,
-) {
-  final calls = toolCallsOf(raw);
-  if (calls.isEmpty) {
-    return {
-      'role': 'assistant',
-      'content': [
-        {'type': 'text', 'text': text},
-      ],
-    };
-  }
-  return {
-    'role': 'assistant',
-    'tool_calls': [
-      for (final call in calls)
-        {
-          'type': 'function',
-          'function': {'name': call.name, 'arguments': call.arguments},
-        },
-    ],
-  };
-}
+export '../runtime/tool_calls.dart'
+    show
+        ToolCallReader,
+        assistantTurnMessage,
+        concatenatedJsonObjects,
+        nativeToolCalls;
 
 /// How long a turn waits for a stopped one to wind down before going ahead —
 /// the same bound VoiceSession gives a stopped reply to drain.

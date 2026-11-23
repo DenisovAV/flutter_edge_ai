@@ -100,8 +100,8 @@ void main() {
       },
     );
 
-    test('a stop mid tool call, with no text yet, keeps nothing of the '
-        'stopped turn', () async {
+    test('a stop mid tool call, with no text yet, keeps the message and '
+        'the call, as natively', () async {
       final conversation = await engine.createConversation(
         ConversationConfig(tools: [_tool]),
       );
@@ -120,8 +120,93 @@ void main() {
 
       await exchange(conversation, 'Next', 'Ok');
 
+      expect(prefaceMessages(1), [
+        userPart('Call f'),
+        {
+          'role': 'assistant',
+          'tool_calls': [
+            {
+              'type': 'function',
+              'function': {'name': 'f', 'arguments': <String, Object?>{}},
+            },
+          ],
+        },
+      ]);
+    });
+
+    test('a stop keeps a call the engine\'s toolCallsOf reads in the reply\'s '
+        'text', () async {
+      final reading = await web.createWebEngine(
+        webConfig(),
+        pageLock: web.LiteRtLmPageLock(),
+        toolCallsOf: (raw) => [
+          if (raw.contains('<call g>')) (name: 'g', arguments: {'n': 1}),
+        ],
+      );
+      final conversation = await reading.createConversation(
+        ConversationConfig(tools: [_tool]),
+      );
+      await stoppedExchange(conversation, 'Call g', '<call g>');
+
+      await exchange(conversation, 'Next', 'Ok');
+
+      expect(prefaceMessages(1)!.last, {
+        'role': 'assistant',
+        'tool_calls': [
+          {
+            'type': 'function',
+            'function': {
+              'name': 'g',
+              'arguments': {'n': 1},
+            },
+          },
+        ],
+      });
+      await reading.close();
+    });
+
+    test('a stop before any chunk keeps nothing of the stopped turn', () async {
+      final conversation = await engine.createConversation();
+      final stopped = conversation
+          .sendMessageStream(Message.user('Gone'))
+          .drain<void>();
+      await settle();
+      conversation.cancel();
+      await stopped;
+
+      await exchange(conversation, 'Next', 'Ok');
+
       expect(prefaceMessages(1), isNull);
     });
+  });
+
+  test('a stop after thoughts only keeps the message with an empty reply, '
+      'as natively', () async {
+    final engine = await webEngine();
+    final conversation = await engine.createConversation(
+      ConversationConfig(thinkingConfig: ThinkingConfig()),
+    );
+    final stopped = conversation
+        .sendMessageStream(
+          Message.user('Why?'),
+          thinkingConfig: ThinkingConfig(),
+        )
+        .drain<void>();
+    await settle();
+    js('__chunk', '{"role":"assistant","channels":{"thought":"Hmm"}}');
+    await settle();
+    conversation.cancel();
+    await stopped;
+
+    final next = conversation
+        .sendMessageStream(Message.user('Ok'), thinkingConfig: ThinkingConfig())
+        .drain<void>();
+    await settle();
+    js('__end');
+    await next;
+
+    expect(prefaceMessages(1), [userPart('Why?'), assistantPart('')]);
+    await engine.close();
   });
 
   test(

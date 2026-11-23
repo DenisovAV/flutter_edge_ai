@@ -28,6 +28,7 @@ import '../ffi/thinking_context.dart';
 import '../runtime/errors.dart';
 import '../runtime/load_errors.dart' show LiteRtLmEngineCreateException;
 import '../runtime/runtime_log.dart';
+import '../runtime/tool_calls.dart';
 import '../runtime/types.dart';
 import 'litert_lm_js.dart';
 import 'page_lock.dart';
@@ -45,7 +46,12 @@ final class Engine {
     required this.maxNumTokens,
     required this._pageLock,
     this._maxNumImages,
+    this._toolCallsOf = nativeToolCalls,
   });
+
+  /// Reads the tool calls of a stopped reply, which a rebuilt conversation
+  /// replays as calls.
+  final ToolCallReader _toolCallsOf;
 
   /// The images a conversation reserves (`maxNumImages`, unset 1).
   final int? _maxNumImages;
@@ -205,7 +211,7 @@ final class Engine {
       // Strips the thinking channel from the KV cache so it does not pollute
       // later turns, as natively. A rebuild replays the runtime's history,
       // which then holds no thinking either; the stopped exchange is put
-      // back as its text only.
+      // back as natively: its text without thoughts, or its tool calls.
       if (enableThinking) js['filterChannelContentFromKvCache'] = true.toJS;
       // Constrained decoding stays off, unlike natively. 0.17.0 and 0.18.0
       // aborted the decode round after a tool-call block with it on
@@ -288,6 +294,7 @@ final class Engine {
       vision: visionBackend != null,
       maxImages: visionBackend == null ? null : _maxNumImages,
       audio: audioBackend != null,
+      toolCallsOf: _toolCallsOf,
       onClose: () => _handles.remove(handle),
       pageLock: _pageLock,
     );
@@ -394,9 +401,15 @@ String _incompleteRuntime(String what, List<String> missing) =>
 /// than 2 GB needs, which a `blob:` URL fetch cannot carry
 /// (`ERR_BLOB_OUT_OF_MEMORY`). [EngineConfig.modelPath] then only names it
 /// in the log.
+///
+/// [toolCallsOf] reads the tool calls of a reply stopped mid-turn, which the
+/// rebuilt conversation replays as calls, as natively
+/// (`createEngineWithBundle`). The default reads the calls the runtime
+/// converted.
 Future<Engine> createWebEngine(
   EngineConfig config, {
   JSAny? model,
+  ToolCallReader toolCallsOf = nativeToolCalls,
   @visibleForTesting LiteRtLmPageLock? pageLock,
 }) async {
   _refuseOnWeb(config);
@@ -546,6 +559,7 @@ Future<Engine> createWebEngine(
         ? (tokens as JSNumber).toDartInt
         : (config.maxNumTokens ?? 0),
     pageLock: lock,
+    toolCallsOf: toolCallsOf,
   );
 }
 

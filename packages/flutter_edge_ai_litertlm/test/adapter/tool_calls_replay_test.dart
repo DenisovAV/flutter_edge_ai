@@ -2,7 +2,7 @@
 // core's parser, so a call the model wrote as text is replayed as that call.
 import 'dart:convert';
 
-import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine.dart'
+import 'package:flutter_edge_ai_litertlm/src/adapter/tool_calls.dart'
     show liteRtLmToolCallsOf;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:litertlm_dart/internal_io.dart' show nativeToolCalls;

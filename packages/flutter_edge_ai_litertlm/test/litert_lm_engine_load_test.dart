@@ -16,7 +16,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
-import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine.dart'
+import 'package:flutter_edge_ai_litertlm/src/adapter/tool_calls.dart'
     show liteRtLmToolCallsOf;
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
 import 'package:litertlm_dart/internal.dart' show NpuStack;

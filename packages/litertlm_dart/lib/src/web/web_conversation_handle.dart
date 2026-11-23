@@ -53,6 +53,7 @@ import '../runtime/errors.dart' show LiteRtLmNativeException;
 import '../runtime/response_text.dart';
 import '../runtime/runtime_log.dart';
 import '../runtime/send_options.dart';
+import '../runtime/tool_calls.dart';
 import '../runtime/types.dart' show BenchmarkInfo;
 import 'litert_lm_js.dart';
 import 'page_lock.dart';
@@ -70,6 +71,7 @@ final class WebConversationHandle implements ConversationHandle {
     this._vision = false,
     this._maxImages,
     this._audio = false,
+    this.toolCallsOf = nativeToolCalls,
     this._onClose,
     LiteRtLmPageLock? pageLock,
   }) : _pageLock = pageLock ?? liteRtLmPageLock;
@@ -126,12 +128,15 @@ final class WebConversationHandle implements ConversationHandle {
   /// ([_rebuildConversation]).
   bool _mustRebuild = false;
 
-  /// The exchange a stop cut short, kept as natively: its message and the
-  /// text generated before the stop, put back after the runtime's history
-  /// (which drops a cancelled turn). Its text only: a tool call or thinking
-  /// cut short is not kept. Null when the stopped turn produced no text: it
-  /// is taken back.
-  ({Map<String, Object?> message, String reply})? _stopped;
+  /// The exchange a stop cut short, kept as natively: its message and what
+  /// was generated before the stop ([assistantTurnMessage]: the tool calls
+  /// it made, else its text without thoughts), put back after the runtime's
+  /// history (which drops a cancelled turn). Null when the stopped turn
+  /// streamed nothing: it is taken back.
+  ({Map<String, Object?> message, Map<String, Object?> reply})? _stopped;
+
+  /// Reads a stopped reply's tool calls ([createWebEngine]'s `toolCallsOf`).
+  final ToolCallReader toolCallsOf;
 
   Future<void>? _closedFuture;
 
@@ -306,7 +311,11 @@ final class WebConversationHandle implements ConversationHandle {
               final json = _stringify(value);
               // Bookkeeping for a stop only: a chunk it cannot read keeps
               // nothing, and the chunk still goes to the listener.
+              turn.raw.write(json);
               try {
+                // As natively: any chunk with text, a thought or a tool call
+                // counts, and the kept reply is the text without thoughts.
+                if (extractResponseText(json).isNotEmpty) turn.streamed = true;
                 turn.reply.write(messageFromChunk(json).text);
               } catch (e) {
                 runtimeLog('[WebConversationHandle] unreadable chunk: $e');
@@ -337,8 +346,15 @@ final class WebConversationHandle implements ConversationHandle {
           // send ("Task cancelled" after a stop, measured on 0.18.0 and
           // 0.19.0).
           _mustRebuild = true;
-          if (turn.stopAsked && turn.reply.isNotEmpty) {
-            _stopped = (message: turn.message, reply: turn.reply.toString());
+          if (turn.stopAsked && turn.streamed) {
+            _stopped = (
+              message: turn.message,
+              reply: assistantTurnMessage(
+                toolCallsOf,
+                turn.reply.toString(),
+                turn.raw.toString(),
+              ),
+            );
           } else {
             // The rebuilt conversation will not hold this turn's images.
             _images -= _imagesIn([turn.message]);
@@ -598,15 +614,7 @@ final class WebConversationHandle implements ConversationHandle {
     final replay = [
       ..._replayed,
       ...exchanges,
-      if (_stopped case (:final message, :final reply)) ...[
-        message,
-        {
-          'role': 'assistant',
-          'content': [
-            {'type': 'text', 'text': reply},
-          ],
-        },
-      ],
+      if (_stopped case (:final message, :final reply)) ...[message, reply],
     ];
     final JsLiteRtLmConversation next;
     try {
@@ -759,8 +767,14 @@ final class _Turn {
   /// The message, as the conversation API JSON.
   final Map<String, Object?> message;
 
-  /// The text the runtime streamed for it so far.
+  /// The text the runtime streamed for it so far, without thoughts.
   final reply = StringBuffer();
+
+  /// Every chunk as the runtime sent it, for the tool calls of a stop.
+  final raw = StringBuffer();
+
+  /// A chunk with text, a thought or a tool call has arrived.
+  bool streamed = false;
 
   /// `sendMessageStreaming` was called for it.
   bool sent = false;

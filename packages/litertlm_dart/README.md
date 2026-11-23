@@ -586,8 +586,10 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   subscription) stops a reply before its end, the runtime refuses every later
   send on that conversation ("Task cancelled"), so the next message goes to a
   new conversation built from the preface, the exchanges so far (images and
-  audio included) and the stopped one (its text). A stop with nothing in
-  flight, or after the last chunk, changes nothing. A turn the runtime fails
+  audio included) and the stopped one, kept as natively: its text without
+  thoughts, or the tool calls it made. A turn stopped before any output is
+  taken back, as natively. A stop with nothing in flight, or after the last
+  chunk, changes nothing. A turn the runtime fails
   leaves the conversation refusing every later send too; the next message
   goes to one rebuilt without the failed message. A stopped generation that
   does not end within 30 s, after a stop or a close, makes the page unusable

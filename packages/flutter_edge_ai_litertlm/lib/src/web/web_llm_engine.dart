@@ -13,6 +13,7 @@ import 'package:litertlm_dart/internal_web.dart'
     show Engine, createConversationWithDefault, createWebEngine;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
+import '../adapter/tool_calls.dart';
 import '../adapter/web_inference_model.dart';
 
 /// Loads the model [resolver] resolves on WebGPU, as `@litert-lm/core` does
@@ -46,7 +47,10 @@ Future<WebLlmEngine> createLiteRtLmWebEngine(
   final Engine engine;
   switch (resolved.model) {
     case BlobUrlModelSource(:final url):
-      engine = await createWebEngine(config(url));
+      engine = await createWebEngine(
+        config(url),
+        toolCallsOf: liteRtLmToolCallsOf,
+      );
     case final OpfsStreamModelSource source:
       engine = await createWebEngineFromStream(
         config(source.filename),
@@ -65,7 +69,11 @@ Future<Engine> createWebEngineFromStream(
   JSAny stream,
 ) async {
   try {
-    return await createWebEngine(config, model: stream);
+    return await createWebEngine(
+      config,
+      model: stream,
+      toolCallsOf: liteRtLmToolCallsOf,
+    );
   } catch (_) {
     _cancelStream(stream);
     rethrow;

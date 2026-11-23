@@ -118,7 +118,7 @@
   status: documented
   source: website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:251
 - what: Gemma 4 on the web
-  variants: [gemma-4-e2b-it/web, gemma-4-e4b-it/web]
+  variants: [gemma-4-e2b-it/web-gpu]
   hosts: [web]
   backends: [gpu]
   status: documented

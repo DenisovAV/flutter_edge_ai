@@ -18,6 +18,8 @@ LiteRtLmWebSession webSessionOver(
   Mutex? generationMutex,
   int? maxOutputTokens,
   void Function()? onClose,
+  bool supportImage = false,
+  bool supportAudio = false,
 }) {
   final handle = WebConversationHandle(
     conversation as JsLiteRtLmConversation,
@@ -27,6 +29,8 @@ LiteRtLmWebSession webSessionOver(
     // A stop marks the conversation for a rebuild before its NEXT turn; these
     // suites send none after a stop.
     rebuild: (_) => throw StateError('no rebuild in this fixture'),
+    vision: supportImage,
+    audio: supportAudio,
   );
   return LiteRtLmWebSession(
     conversation: conversationForTest(handle),
@@ -35,5 +39,8 @@ LiteRtLmWebSession webSessionOver(
     generationMutex: generationMutex ?? Mutex(),
     maxOutputTokens: maxOutputTokens,
     onClose: onClose ?? () {},
+    supportImage: supportImage,
+    supportAudio: supportAudio,
+    multimodalOrder: MultimodalOrder.forModelType(modelType),
   );
 }

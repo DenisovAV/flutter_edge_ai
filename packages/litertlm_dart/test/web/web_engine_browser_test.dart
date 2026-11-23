@@ -40,9 +40,8 @@ void main() {
     test('refuses what the web does not run, before touching the runtime', () {
       for (final config in [
         webConfig(backend: const Backend.npu()),
-        EngineConfig(modelPath: 'blob:x', visionBackend: const Backend.gpu()),
-        EngineConfig(modelPath: 'blob:x', audioBackend: const Backend.cpu()),
-        EngineConfig(modelPath: 'blob:x', maxNumImages: 1),
+        EngineConfig(modelPath: 'blob:x', visionBackend: const Backend.npu()),
+        EngineConfig(modelPath: 'blob:x', audioBackend: const Backend.npu()),
         EngineConfig(modelPath: 'blob:x', cacheDir: '/tmp'),
         EngineConfig(
           modelPath: 'blob:x',
@@ -67,29 +66,63 @@ void main() {
       expect(list('createSettings'), isEmpty);
     });
 
+    test('a vision encoder goes to the runtime with one image reserved per '
+        'conversation by default, which a GPU_ARTISAN model needs', () async {
+      final engine = await Engine.create(
+        EngineConfig(
+          modelPath: 'blob:x',
+          backend: const Backend.gpu(),
+          visionBackend: const Backend.gpu(),
+          audioBackend: const Backend.cpu(),
+        ),
+      );
+
+      final settings = asMap(list('createSettings').single);
+      expect(settings['visionBackend'], 4);
+      expect(settings['audioBackend'], 3);
+      expect(asMap(settings['mainExecutorSettings'])['maxNumImages'], 1);
+      await engine.close();
+    });
+
     test(
-      'vision and audio are refused with what 0.18.0 was measured doing',
-      () {
-        expect(
-          () => Engine.create(
-            EngineConfig(
-              modelPath: 'blob:x',
-              visionBackend: const Backend.gpu(),
-            ),
-          ),
-          throwsA(
-            isA<UnsupportedError>().having(
-              (e) => e.message,
-              'message',
-              allOf(
-                contains('Audio or image item must contain a path or blob.'),
-                contains('measured'),
-              ),
-            ),
+      'maxNumImages, when set, is the images a conversation reserves',
+      () async {
+        final engine = await Engine.create(
+          EngineConfig(
+            modelPath: 'blob:x',
+            backend: const Backend.gpu(),
+            visionBackend: const Backend.gpu(),
+            maxNumImages: 3,
           ),
         );
+
+        expect(
+          asMap(
+            asMap(list('createSettings').single)['mainExecutorSettings'],
+          )['maxNumImages'],
+          3,
+        );
+        await engine.close();
       },
     );
+
+    test('the encoders the runtime resolved are read back', () async {
+      setOnPage('resolvedVisionBackend', 4);
+      setOnPage('resolvedAudioBackend', 3);
+
+      final engine = await Engine.create(
+        EngineConfig(
+          modelPath: 'blob:x',
+          backend: const Backend.gpu(),
+          visionBackend: const Backend.gpu(),
+          audioBackend: const Backend.cpu(),
+        ),
+      );
+
+      expect(engine.visionBackend, const Backend.gpu());
+      expect(engine.audioBackend, const Backend.cpu());
+      await engine.close();
+    });
 
     test(
       'a page without the loader, without window.Engine or with a runtime '
@@ -140,14 +173,14 @@ void main() {
       },
     );
 
-    test('hands Engine.create the model, the context and the thread count '
-        '(the GPU by leaving the backend out, which 0.18.0 needs for a web '
-        'export); reads back what the runtime resolved', () async {
+    test('hands Engine.create the model, the backend, the context and the '
+        'thread count; reads back what the runtime resolved', () async {
       setOnPage('resolvedBackend', 2); // GPU_ARTISAN: a web export on the GPU
       setOnPage('maxNumTokens', 2048);
       final engine = await Engine.create(webConfig(tokens: 2048));
       expect(asMap(list('createSettings').single), {
         'model': 'blob:https://example.com/model',
+        'backend': 4,
         'mainExecutorSettings': {'maxNumTokens': 2048},
       });
       expect(engine.backend, const Backend.gpu());
@@ -335,7 +368,7 @@ void main() {
         expect(list('conversationOptions'), isEmpty);
       });
 
-      test('an initial message with an image', () async {
+      test('an initial image on an engine without a vision encoder', () async {
         await expectLater(
           engine.createConversation(
             ConversationConfig(
@@ -347,7 +380,24 @@ void main() {
               ],
             ),
           ),
-          refusal('Audio or image item must contain a path or blob.'),
+          refusal('loaded no vision encoder'),
+        );
+        expect(list('conversationOptions'), isEmpty);
+      });
+
+      test('an initial image by file path', () async {
+        await expectLater(
+          engine.createConversation(
+            ConversationConfig(
+              initialMessages: [
+                Message(
+                  role: Role.user,
+                  contents: [Content.imageFile('/photo.png')],
+                ),
+              ],
+            ),
+          ),
+          refusal('cannot read a file path'),
         );
         expect(list('conversationOptions'), isEmpty);
       });

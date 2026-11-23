@@ -68,17 +68,21 @@ class LiteRtLmEngine
   ) async {
     checkThinkingTokenBudget(thinkingTokenBudget);
     if (thinkingTokenBudget != null) noticeThinkingTokenBudgetIgnoredOnWeb();
-    // config.multimodalOrder is not read: the web session sends text only and
-    // throws on an image or audio message (LiteRtLmWebSession.addQueryChunk).
-    // A web path that sends media must put them where the order says.
     bindRuntimeLogToCore();
     final sourceResolver = WebModelSourceResolver.forActiveModel();
     return LiteRtLmWebInferenceModel(
-      createEngine: () =>
-          createLiteRtLmWebEngine(sourceResolver, maxTokens: config.maxTokens),
+      createEngine: () => createLiteRtLmWebEngine(
+        sourceResolver,
+        maxTokens: config.maxTokens,
+        supportImage: config.supportImage,
+        supportAudio: config.supportAudio,
+      ),
       maxTokens: config.maxTokens,
       modelType: spec.modelType,
       maxConcurrentSessions: config.maxConcurrentSessions,
+      supportImage: config.supportImage,
+      supportAudio: config.supportAudio,
+      multimodalOrder: config.multimodalOrder,
       onClose: () {}, // core resets its state via addCloseListener
     );
   }

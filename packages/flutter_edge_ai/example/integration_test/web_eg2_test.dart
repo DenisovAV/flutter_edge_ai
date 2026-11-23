@@ -10,12 +10,12 @@
 ///
 /// What it holds the browser to:
 /// - 768 dimensions, unit norm, finite; `maxInputTokens` 1024; `{text}`; GPU;
-/// - the native golden as of LiteRT-LM 0.18, which the page runs
-///   (integration_test/goldens/eg2_text_golden_web.dart, frozen from
-///   native-v0.18.0-d on macOS arm64, CPU): every vector finite and non-zero,
+/// - the native golden (integration_test/goldens/eg2_text_golden.dart,
+///   LiteRT-LM 0.19, as the page's 0.19.0): every vector finite and non-zero,
 ///   cos >= 0.99 against `vector` (WebGPU drifts from the native CPU, measured
-///   about 0.995), >= 0.97 against Sentence Transformers fp32; every query
-///   ranks its document first;
+///   about 0.995 on a Tesla T4 with 0.18.0, 0.997 on an Apple GPU with
+///   0.19.0), >= 0.97 against Sentence Transformers fp32; every query ranks
+///   its document first;
 /// - the 9 TaskTypes give 9 different vectors; empty text embeds;
 /// - W2 and the exact overflow counts: a text of exactly 1024 tokens (prefix,
 ///   BOS and EOS included) embeds, 1025 and 3000 are
@@ -111,7 +111,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'goldens/eg2_image_golden.dart';
-import 'goldens/eg2_text_golden_web.dart';
+import 'goldens/eg2_text_golden.dart';
 import 'web_embeddings_support.dart';
 
 /// Every test in this file, in order; the last one checks they all started.
@@ -261,7 +261,7 @@ List<double> _f32(String encoded) {
 
 final List<_GoldenItem> _golden = [
   for (final item
-      in ((jsonDecode(eg2TextGoldenWebJson) as Map)['items'] as List)
+      in ((jsonDecode(eg2TextGoldenJson) as Map)['items'] as List)
           .cast<Map<String, dynamic>>())
     (
       id: item['id'] as String,

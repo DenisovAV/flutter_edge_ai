@@ -1,15 +1,20 @@
 /// What the pinned `@litert-lm/core` (litertlm_dart's
-/// `liteRtLmWebRuntimeVersion`) does on this page with a Gemma 4 E2B web
-/// export, asked through its own JS API, below litertlm_dart: the record the
+/// `liteRtLmWebRuntimeVersion`) does on this page with Gemma 4 E2B's GPU
+/// export (the registry's gemma-4-e2b-it/web-gpu), asked through its own JS
+/// API, below litertlm_dart: the record the
 /// web arm's refusals and wiring are decided from. Measured, never asserted,
 /// except that every probe ran (Rule 6b):
 /// - a text engine with `benchmarkEnabled`: a reply, `getTokenCount()`,
 ///   `getBenchmarkInfo()`;
 /// - how a stream ends when `conversation.cancel()` stops it after its first
 ///   chunk (done, or rejected), and whether the next send then answers;
-/// - a vision engine (`visionBackend: GPU`) and an image part (`data`);
-/// - an audio engine (`audioBackend: CPU`, the Gemma 4 audio encoder's
-///   declared backend) and an audio part;
+/// - vision engines (`visionBackend` GPU and CPU, with and without
+///   `maxNumImages`) and an image part (`data`); a second image in the same
+///   conversation; an image as base64 `blob` in a message and in a preface;
+///   the history after an image, and a conversation rebuilt from it with the
+///   image as base64;
+/// - audio engines (`audioBackend` CPU and GPU) and an audio part, and the
+///   history after it; vision and audio in one engine;
 /// - `backendConfig.number_of_threads` on the CPU (WebAssembly) backend;
 /// - constrained decoding on (`enableConstrainedDecoding`) through a tool call
 ///   and the turn after its result (google-ai-edge/LiteRT-LM#2434);
@@ -18,8 +23,10 @@
 /// - `cancel()` with nothing in flight, then a send;
 /// - a stop at the very end: every chunk read, `cancel()`, then the stream's
 ///   end, and whether the completed exchange is in `getHistory()`;
-/// - `backend: GPU` named explicitly for the web export.
-/// The model is fetched once into a Blob and handed to every `Engine.create`.
+/// - `backend: GPU` and `GPU_ARTISAN` named explicitly.
+/// The model (2.34 GB) is fetched for every `Engine.create` and handed to it
+/// as the response's ReadableStream: a Blob of it would need a `blob:` fetch
+/// past Chrome's limit. A local copy (LLM_MODEL_URL) keeps that cheap.
 ///
 /// Run from packages/flutter_edge_ai/example:
 ///   chromedriver --port=4444 &
@@ -45,11 +52,12 @@ const _modelUrl = String.fromEnvironment(
   'LLM_MODEL_URL',
   defaultValue:
       'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
-      'resolve/main/gemma-4-E2B-it-web.litertlm',
+      'resolve/cccc664ea93091c52eeb7867ad4e5466357e14f3/'
+      'gemma-4-E2B-it-gpu.litertlm',
 );
 
-// The GPU engines leave `backend` out (the runtime's default): 0.18.0
-// refuses the web export asked for `backend: GPU` ("Unsupported backend: 2").
+// The GPU engines leave `backend` out (the runtime's default, GPU); the
+// explicit forms are probed on their own.
 const _probe = r'''
 window.__litertlmProbe = async (url, image, audio) => {
   await window.litertLmReady;
@@ -67,12 +75,12 @@ window.__litertlmProbe = async (url, image, audio) => {
     return t.slice(0, 400);
   };
   const greedy = {sessionConfig: {samplerParams: {type: 2, k: 1, p: 1, temperature: 1, seed: 1}}};
-  const model = await (await fetch(url)).blob();
-  r.modelBytes = model.size;
+  const stream = async () => (await fetch(url)).body;
+  r.modelBytes = Number((await fetch(url, {method: 'HEAD'})).headers.get('content-length'));
 
   let e;
   await attempt('create_text_benchmark', async () => {
-    e = await Engine.create({model, benchmarkEnabled: true});
+    e = await Engine.create({model: await stream(), benchmarkEnabled: true});
     return {backend: e.settings.backend,
             maxNumTokens: e.settings.mainExecutorSettings.maxNumTokens,
             deleteIsPromise: typeof Engine.prototype.delete === 'function'};
@@ -171,9 +179,16 @@ window.__litertlmProbe = async (url, image, audio) => {
     await deleted;
   }
 
-  // P4: the GPU named explicitly for the web export.
+  // P4: the GPU named explicitly.
   await attempt('explicit_gpu_backend', async () => {
-    const x = await Engine.create({model, backend: 4});
+    const x = await Engine.create({model: await stream(), backend: 4});
+    const s = {backend: x.settings.backend};
+    await x.delete();
+    return s;
+  });
+
+  await attempt('explicit_gpu_artisan_backend', async () => {
+    const x = await Engine.create({model: await stream(), backend: 2});
     const s = {backend: x.settings.backend};
     await x.delete();
     return s;
@@ -181,7 +196,7 @@ window.__litertlmProbe = async (url, image, audio) => {
 
   let t;
   await attempt('constrained_decoding_tool_round_trip', async () => {
-    t = await Engine.create({model});
+    t = await Engine.create({model: await stream()});
     const c = await t.createConversation({
       ...greedy,
       enableConstrainedDecoding: true,
@@ -198,36 +213,115 @@ window.__litertlmProbe = async (url, image, audio) => {
   });
   if (t) await t.delete();
 
-  let v;
-  await attempt('create_vision', async () => {
-    v = await Engine.create({model, visionBackend: 4, maxNumImages: 1});
-    return {visionBackend: v.settings.visionBackend};
-  });
-  if (v) {
-    const c = await v.createConversation(greedy);
-    await attempt('image_and_text', () => text(c, {role: 'user', content: [
-      {type: 'image', data: image},
-      {type: 'text', text: 'What shape is drawn in this image? Answer in one word.'}]}));
-    await c.delete();
-    await v.delete();
+  // Vision: GPU_ARTISAN models reserve image space up front (maxNumImages).
+  for (const [name, settings] of [
+    ['vision_gpu', {visionBackend: 4, mainExecutorSettings: {maxNumImages: 1}}],
+    ['vision_gpu_no_max_images', {visionBackend: 4}],
+    ['vision_cpu', {visionBackend: 3, mainExecutorSettings: {maxNumImages: 1}}],
+  ]) {
+    let v;
+    await attempt('create_' + name, async () => {
+      v = await Engine.create({model: await stream(), ...settings});
+      return JSON.parse(JSON.stringify(v.settings));
+    });
+    if (v) {
+      const c = await v.createConversation(greedy);
+      await attempt(name + '_image_and_text', () => text(c, {role: 'user', content: [
+        {type: 'image', data: image},
+        {type: 'text', text: 'What shape is drawn in this image? Answer in one word.'}]}));
+      await attempt(name + '_text_after_image', () => text(c, 'And its colour, in one word?'));
+      if (name === 'vision_gpu') {
+        let b64 = '';
+        for (const x of image) b64 += String.fromCharCode(x);
+        b64 = btoa(b64);
+        // The native message form: the image as base64 in `blob`.
+        await attempt('image_as_base64_blob', async () => {
+          const c2 = await v.createConversation(greedy);
+          const answer = await text(c2, {role: 'user', content: [
+            {type: 'image', blob: b64},
+            {type: 'text', text: 'Which shape? One word.'}]});
+          await c2.delete();
+          return answer;
+        });
+        await attempt('preface_with_image_blob', async () => {
+          const r3 = await v.createConversation({...greedy, preface: {messages: [
+            {role: 'user', content: [{type: 'image', blob: b64},
+              {type: 'text', text: 'Remember this image.'}]},
+            {role: 'assistant', content: [{type: 'text', text: 'Done.'}]}]}});
+          const answer = await text(r3, 'What shape was in the image? One word.');
+          await r3.delete();
+          return answer;
+        });
+        let history;
+        await attempt('history_with_image', async () => {
+          history = await c.getHistory();
+          return JSON.stringify(history).slice(0, 300);
+        });
+        // The history's image as its bytes ({bytes: [...]}) turned into the
+        // base64 `blob` a message takes.
+        await attempt('rebuilt_from_history_with_image_as_base64', async () => {
+          const converted = history.map((m) => !Array.isArray(m.content) ? m : {
+            ...m,
+            content: m.content.map((p) => p.blob && p.blob.bytes
+              ? {...p, blob: btoa(String.fromCharCode(...p.blob.bytes))}
+              : p),
+          });
+          const r2 = await v.createConversation({...greedy, preface: {messages: converted}});
+          const answer = await text(r2, 'What shape was in the image? One word.');
+          await r2.delete();
+          return answer;
+        });
+        // maxNumImages counts the images of a conversation, not of a message.
+        await attempt('second_image_same_conversation', () => text(c, {role: 'user', content: [
+          {type: 'image', data: image},
+          {type: 'text', text: 'And this one, which shape? One word.'}]}));
+      }
+      await c.delete();
+      await v.delete();
+    }
   }
 
-  let a;
-  await attempt('create_audio', async () => {
-    a = await Engine.create({model, audioBackend: 3});
-    return {audioBackend: a.settings.audioBackend};
+  for (const [name, settings] of [
+    ['audio_cpu', {audioBackend: 3}],
+    ['audio_gpu', {audioBackend: 4}],
+  ]) {
+    let a;
+    await attempt('create_' + name, async () => {
+      a = await Engine.create({model: await stream(), ...settings});
+      return JSON.parse(JSON.stringify(a.settings));
+    });
+    if (a) {
+      const c = await a.createConversation(greedy);
+      await attempt(name + '_and_text', () => text(c, {role: 'user', content: [
+        {type: 'audio', data: audio},
+        {type: 'text', text: 'Transcribe this audio.'}]}));
+      if (name === 'audio_cpu') {
+        await attempt('history_with_audio', async () =>
+          JSON.stringify(await c.getHistory()).slice(0, 200));
+      }
+      await c.delete();
+      await a.delete();
+    }
+  }
+
+  // Vision and audio in one engine, as a native multimodal load.
+  let va;
+  await attempt('create_vision_and_audio', async () => {
+    va = await Engine.create({model: await stream(), visionBackend: 4,
+      audioBackend: 3, mainExecutorSettings: {maxNumImages: 1}});
+    return JSON.parse(JSON.stringify(va.settings));
   });
-  if (a) {
-    const c = await a.createConversation(greedy);
-    await attempt('audio_and_text', () => text(c, {role: 'user', content: [
-      {type: 'audio', data: audio},
-      {type: 'text', text: 'Transcribe this audio.'}]}));
+  if (va) {
+    const c = await va.createConversation(greedy);
+    await attempt('vision_and_audio_both', () => text(c, {role: 'user', content: [
+      {type: 'image', data: image}, {type: 'audio', data: audio},
+      {type: 'text', text: 'Describe the image and transcribe the audio.'}]}));
     await c.delete();
-    await a.delete();
+    await va.delete();
   }
 
   await attempt('cpu_default', async () => {
-    const x = await Engine.create({model, backend: 3});
+    const x = await Engine.create({model: await stream(), backend: 3});
     const c = await x.createConversation(greedy);
     const s = {backend: x.settings.backend, reply: await text(c, 'Say hi.')};
     await c.delete();
@@ -235,7 +329,7 @@ window.__litertlmProbe = async (url, image, audio) => {
     return s;
   });
   await attempt('cpu_number_of_threads', async () => {
-    const x = await Engine.create({model, backend: 3,
+    const x = await Engine.create({model: await stream(), backend: 3,
       mainExecutorSettings: {backendConfig: {number_of_threads: 2}}});
     const s = {backend: x.settings.backend,
                backendConfig: JSON.parse(JSON.stringify(x.settings.mainExecutorSettings.backendConfig))};
@@ -245,6 +339,9 @@ window.__litertlmProbe = async (url, image, audio) => {
     await x.delete();
     return s;
   });
+  // Not probed: replaying the history as the runtime returns it, its image
+  // as {bytes: [...]}, aborted the module on 0.19.0 ("Aborted()", 2026-11-23),
+  // and the CPU probes above end the page's module too.
   return JSON.stringify(r);
 };
 ''';
@@ -288,9 +385,19 @@ void main() {
       'idle_cancel_then_send',
       'cancel_at_end',
       'explicit_gpu_backend',
+      'explicit_gpu_artisan_backend',
       'constrained_decoding_tool_round_trip',
-      'create_vision',
-      'create_audio',
+      'create_vision_gpu',
+      'create_vision_gpu_no_max_images',
+      'create_vision_cpu',
+      'create_audio_cpu',
+      'create_audio_gpu',
+      'create_vision_and_audio',
+      'history_with_image',
+      'image_as_base64_blob',
+      'preface_with_image_blob',
+      'second_image_same_conversation',
+      'rebuilt_from_history_with_image_as_base64',
       'cpu_default',
       'cpu_number_of_threads',
     ]) {

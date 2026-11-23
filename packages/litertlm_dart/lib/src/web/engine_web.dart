@@ -40,6 +40,8 @@ final class Engine {
   Engine._(
     this._js, {
     required this.backend,
+    required this.visionBackend,
+    required this.audioBackend,
     required this.maxNumTokens,
     required this._pageLock,
   });
@@ -52,11 +54,32 @@ final class Engine {
   /// legacy GPU executor) or WebAssembly ([Backend.cpu]).
   final Backend backend;
 
-  /// Always null on the web: the engine loads no vision encoder.
-  final Backend? visionBackend = null;
+  /// Where the vision encoder runs, as the runtime resolved it; null when the
+  /// engine loaded none.
+  final Backend? visionBackend;
 
-  /// Always null on the web: the engine loads no audio encoder.
-  final Backend? audioBackend = null;
+  /// Where the audio encoder runs, as the runtime resolved it; null when the
+  /// engine loaded none.
+  final Backend? audioBackend;
+
+  /// Refuses [contents] that need an encoder this engine did not load, as
+  /// natively: the runtime would fail the message later.
+  void _checkMediaLoaded(List<Content> contents) {
+    if (visionBackend == null &&
+        contents.any((p) => p is ImageBytesContent || p is ImageFileContent)) {
+      throw UnsupportedError(
+        'This engine loaded no vision encoder: create it with a '
+        'visionBackend to send images.',
+      );
+    }
+    if (audioBackend == null &&
+        contents.any((p) => p is AudioBytesContent || p is AudioFileContent)) {
+      throw UnsupportedError(
+        'This engine loaded no audio encoder: create it with an '
+        'audioBackend to send audio.',
+      );
+    }
+  }
 
   /// The context window the runtime resolved: the one asked for, else the
   /// bundle's own (4096 for Gemma 4 E2B's web export); 0 when it reported
@@ -81,8 +104,8 @@ final class Engine {
   /// — on [config.backend]: WebGPU for [Backend.gpu], WebAssembly for
   /// [Backend.cpu] (whose `threadCount` becomes the runtime's
   /// `number_of_threads`). One attempt, no fallback. Pass [Backend.gpu] for
-  /// Gemma 4's web export: the default [Backend.cpu] fails it (0.18.0:
-  /// "tf_lite_prefill_decode not found in the model.").
+  /// Gemma 4's GPU export: the default [Backend.cpu] fails it at the first
+  /// send (0.19.0: "Environment was not initialized during streaming.").
   ///
   /// Throws [UnsupportedError] for what does not run on the web (see the
   /// library comment), [StateError] when the page did not load
@@ -140,14 +163,11 @@ final class Engine {
     }
     for (final message in c.initialMessages) {
       if (message.contents.any(
-        (part) =>
-            part is ImageBytesContent ||
-            part is ImageFileContent ||
-            part is AudioBytesContent ||
-            part is AudioFileContent,
+        (part) => part is ImageFileContent || part is AudioFileContent,
       )) {
-        throw UnsupportedError(webNoMediaMessage);
+        throw UnsupportedError(webMediaPathMessage);
       }
+      _checkMediaLoaded(message.contents);
     }
     final sampling = samplerFor(
       c.samplerConfig ?? defaultSamplerConfig,
@@ -182,13 +202,13 @@ final class Engine {
       // which then holds no thinking either; the stopped exchange is put
       // back as its text only.
       if (enableThinking) js['filterChannelContentFromKvCache'] = true.toJS;
-      // Constrained decoding stays off, unlike natively: with it on, the WASM
-      // grammar does not return to its start state after a tool-call block,
-      // so the next decode round aborts with `Invalid token at state N`
-      // (google-ai-edge/LiteRT-LM#2434; 0.17.0 in web_function_calling_test
-      // .dart, and 0.18.0 in web_litertlm_runtime_probe_test.dart on
-      // 2026-11-23: "Invalid token at state 35"). Gemma 4 emits well-formed
-      // tool-call blocks without the grammar.
+      // Constrained decoding stays off, unlike natively. 0.17.0 and 0.18.0
+      // aborted the decode round after a tool-call block with it on
+      // (`Invalid token at state N`, google-ai-edge/LiteRT-LM#2434); 0.19.0
+      // with Gemma 4 E2B's GPU export completes that round trip with it on
+      // (web_litertlm_runtime_probe_test.dart, 2026-11-23), but every web
+      // suite runs with it off, and Gemma 4 writes well-formed tool-call
+      // blocks without the grammar.
       return js;
     }
 
@@ -261,6 +281,8 @@ final class Engine {
       onGeneration: () => _noteGeneration(sampling, explicit: explicit),
       rebuild: create,
       preface: base,
+      vision: visionBackend != null,
+      audio: audioBackend != null,
       onClose: () => _handles.remove(handle),
       pageLock: _pageLock,
     );
@@ -375,12 +397,22 @@ Future<Engine> createWebEngine(
   _refuseOnWeb(config);
   final constructor = await _awaitRuntime();
   final settings = JSObject()..['model'] = model ?? config.modelPath.toJS;
-  // The GPU is the runtime's default: asked for by name, 0.18.0 refuses a web
-  // export it runs on its legacy GPU executor ("Unsupported backend: 2").
-  if (config.backend is CpuBackend) {
-    settings['backend'] = liteRtLmWebBackendCpu.toJS;
+  settings['backend'] = _webBackendValue(config.backend).toJS;
+  if (config.visionBackend case final vision?) {
+    settings['visionBackend'] = _webBackendValue(vision).toJS;
+  }
+  if (config.audioBackend case final audio?) {
+    settings['audioBackend'] = _webBackendValue(audio).toJS;
   }
   final executor = JSObject();
+  // A GPU_ARTISAN model (Gemma 4's web exports) reserves its images' space
+  // per conversation up front: with none reserved the first image fails
+  // ("Media embedding cache was not set.", 0.19.0, measured 2026-11-23). As
+  // natively, unset is 1 with a vision encoder.
+  if (config.maxNumImages ?? (config.visionBackend == null ? null : 1)
+      case final images?) {
+    executor['maxNumImages'] = images.toJS;
+  }
   if (config.maxNumTokens case final tokens?) {
     executor['maxNumTokens'] = tokens.toJS;
   }
@@ -459,9 +491,22 @@ Future<Engine> createWebEngine(
     rethrow;
   }
   noteOtherWebRuntimeVersion();
+  Backend? encoder(String key) {
+    final value = resolved?[key];
+    if (!value.isA<JSNumber>()) return null;
+    return switch ((value as JSNumber).toDartInt) {
+      liteRtLmWebBackendCpu => const Backend.cpu(),
+      liteRtLmWebBackendGpu ||
+      liteRtLmWebBackendGpuArtisan => const Backend.gpu(),
+      _ => null,
+    };
+  }
+
   return Engine._(
     js,
     backend: backend,
+    visionBackend: encoder('visionBackend'),
+    audioBackend: encoder('audioBackend'),
     maxNumTokens: tokens.isA<JSNumber>()
         ? (tokens as JSNumber).toDartInt
         : (config.maxNumTokens ?? 0),
@@ -486,14 +531,20 @@ Future<Conversation> createConversationWithDefault(
   defaultSamplerConfig: defaultSamplerConfig,
 );
 
+/// `@litert-lm/core`'s `Backend` value for [backend]: CPU (WebAssembly) or
+/// GPU (WebGPU). A Gemma 4 web export asked for the GPU resolves to
+/// GPU_ARTISAN, the same WebGPU (0.19.0, measured 2026-11-23).
+int _webBackendValue(Backend backend) => switch (backend) {
+  CpuBackend() => liteRtLmWebBackendCpu,
+  GpuBackend() => liteRtLmWebBackendGpu,
+  NpuBackend() => throw UnsupportedError('No NPU on the web.'),
+};
+
 void _refuseOnWeb(EngineConfig config) {
-  if (config.visionBackend != null ||
-      config.audioBackend != null ||
-      config.maxNumImages != null) {
-    throw UnsupportedError(webNoMediaMessage);
-  }
   final refused = [
     if (config.backend is NpuBackend) 'the NPU (Backend.npu)',
+    if (config.visionBackend is NpuBackend) 'an NPU vision encoder',
+    if (config.audioBackend is NpuBackend) 'an NPU audio encoder',
     if (config.cacheDir != null) 'a cache directory (cacheDir)',
     if (config.activationDataType != null) 'an activationDataType',
     if (config.speculativeDecoding != null) 'speculative decoding',

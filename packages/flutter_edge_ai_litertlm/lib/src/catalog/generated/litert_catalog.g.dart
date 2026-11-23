@@ -941,6 +941,7 @@ final class LiteRtLmGemma4E2bIt extends LiteRtLmModel {
           _gemma4E2bIt$generic,
           _gemma4E2bIt$gpu,
           _gemma4E2bIt$web,
+          _gemma4E2bIt$webGpu,
           _gemma4E2bIt$npuTensorG5,
           _gemma4E2bIt$npuTensorG6,
           _gemma4E2bIt$npuLnl,
@@ -960,7 +961,13 @@ final class LiteRtLmGemma4E2bIt extends LiteRtLmModel {
   LiteRtLmVariant get gpu => _gemma4E2bIt$gpu;
 
   /// `gemma-4-E2B-it-web.litertlm`, 2.01 GB.
+  @Deprecated(
+    'Withheld: The web export of 2026-05-19 answers a tool result with an empty reply on @litert-lm/core 0.19.0, which the packages load on the web from this release (web_function_calling_test.dart, case 5, 2 of 2 runs, 2026-11-23). Use the web-gpu variant. (https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/commit/cccc664ea93091c52eeb7867ad4e5466357e14f3) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
+  )
   LiteRtLmVariant get web => _gemma4E2bIt$web;
+
+  /// `gemma-4-E2B-it-gpu.litertlm`, 2.34 GB.
+  LiteRtLmVariant get webGpu => _gemma4E2bIt$webGpu;
 
   /// `gemma-4-E2B-it_Google_Tensor_G5.litertlm`, 3.11 GB.
   LiteRtLmVariant get npuTensorG5 => _gemma4E2bIt$npuTensorG5;
@@ -1054,6 +1061,33 @@ const _gemma4E2bIt$web = LiteRtLmVariant._(
   ),
   supportsImage: false,
   supportsAudio: false,
+  supportsFunctionCalls: true,
+  supportsThinking: true,
+  isWebBundle: true,
+  textBackends: {PreferredBackend.gpu, PreferredBackend.cpu},
+  withheld: {PreferredBackend.cpu, PreferredBackend.gpu, PreferredBackend.npu},
+);
+
+const _gemma4E2bIt$webGpu = LiteRtLmVariant._(
+  id: 'gemma-4-e2b-it/web-gpu',
+  modelId: 'gemma-4-e2b-it',
+  file: ModelArtifact(
+    repo: 'litert-community/gemma-4-E2B-it-litert-lm',
+    revision: 'cccc664ea93091c52eeb7867ad4e5466357e14f3',
+    path: 'gemma-4-E2B-it-gpu.litertlm',
+    sha256: 'd3cfec6ae2e027a994e51366d44dbf522ec7531a4a35fbbfcd3e9cc9b927afc1',
+    sizeBytes: 2340870772,
+    installFilename: 'gemma-4-E2B-it-gpu__rev-cccc664ea930.litertlm',
+  ),
+  modelType: ModelType.gemma4,
+  runtimeDefaults: ModelRuntimeDefaults(
+    maxTokens: 4096,
+    preferredBackend: PreferredBackend.gpu,
+    supportImage: true,
+    supportAudio: true,
+  ),
+  supportsImage: true,
+  supportsAudio: true,
   supportsFunctionCalls: true,
   supportsThinking: true,
   isWebBundle: true,
@@ -1255,6 +1289,9 @@ final class LiteRtLmGemma4E4bIt extends LiteRtLmModel {
   LiteRtLmVariant get gpu => _gemma4E4bIt$gpu;
 
   /// `gemma-4-E4B-it-web.litertlm`, 2.97 GB.
+  @Deprecated(
+    'Withheld: Not measured on @litert-lm/core 0.19.0, which the packages load on the web from this release. The Gemma 4 E2B web export of the same date answers a tool result with an empty reply there (measured, 2026-11-23), so this one is withheld until a newer E4B web export is measured. (https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/commit/cccc664ea93091c52eeb7867ad4e5466357e14f3) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
+  )
   LiteRtLmVariant get web => _gemma4E4bIt$web;
 }
 
@@ -1335,6 +1372,7 @@ const _gemma4E4bIt$web = LiteRtLmVariant._(
   supportsThinking: true,
   isWebBundle: true,
   textBackends: {PreferredBackend.gpu, PreferredBackend.cpu},
+  withheld: {PreferredBackend.cpu, PreferredBackend.gpu, PreferredBackend.npu},
 );
 
 /// LFM2.5 230M (`lfm2.5-230m`), other.

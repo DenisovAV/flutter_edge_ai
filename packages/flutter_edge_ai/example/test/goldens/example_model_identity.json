@@ -2,7 +2,7 @@
   "Model": {
     "gemma4_E2B_litertlm": {
       "baseUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm",
-      "webUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-web.litertlm",
+      "webUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/cccc664ea93091c52eeb7867ad4e5466357e14f3/gemma-4-E2B-it-gpu.litertlm",
       "desktopUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm",
       "hfRepo": null,
       "filename": "gemma-4-E2B-it.litertlm",
@@ -41,7 +41,7 @@
     },
     "gemma4_E4B_litertlm": {
       "baseUrl": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm",
-      "webUrl": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it-web.litertlm",
+      "webUrl": null,
       "desktopUrl": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm",
       "hfRepo": null,
       "filename": "gemma-4-E4B-it.litertlm",

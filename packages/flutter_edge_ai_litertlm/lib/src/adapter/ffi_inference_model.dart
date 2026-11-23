@@ -33,6 +33,9 @@ import '../option_scoring_self_check.dart';
 import '../reported_engine_turn.dart';
 import 'runtime_log_binding.dart';
 import 'core_hints.dart';
+import 'user_message.dart';
+
+export 'user_message.dart' show liteRtLmUserMessage;
 import 'runtime_mapping.dart';
 
 /// Whether the scoring self-check is skipped as in a release build:
@@ -80,28 +83,6 @@ String _rebuiltChunkJson(lm.Message chunk) => jsonEncode({
     ],
   if (chunk.channels.isNotEmpty) 'channels': chunk.channels,
 });
-
-/// A user message of [text] with its media placed by [order]: images, then
-/// audio, before the text or after it, as each [MediaPosition] says.
-lm.Message liteRtLmUserMessage(
-  String text, {
-  List<Uint8List> images = const [],
-  Uint8List? audio,
-  required MultimodalOrder order,
-}) {
-  final before = <lm.Content>[];
-  final after = <lm.Content>[];
-  List<lm.Content> side(MediaPosition position) =>
-      position == MediaPosition.beforeText ? before : after;
-  for (final image in images) {
-    side(order.images).add(lm.Content.imageBytes(image));
-  }
-  if (audio != null) side(order.audio).add(lm.Content.audioBytes(audio));
-  return lm.Message(
-    role: lm.Role.user,
-    contents: [...before, lm.Content.text(text), ...after],
-  );
-}
 
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.

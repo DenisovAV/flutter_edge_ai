@@ -35,9 +35,8 @@ LiteRtLmVariant _gemma4E2bItNpuLnl() => LiteRtLmModels.gemma4E2bIt.npuLnl;
 LiteRtLmVariant _gemma4E2bItNpuPtl() => LiteRtLmModels.gemma4E2bIt.npuPtl;
 LiteRtLmVariant _gemma4E2bItNpuTensorG6() =>
     LiteRtLmModels.gemma4E2bIt.npuTensorG6;
-LiteRtLmVariant _gemma4E2bItWeb() => LiteRtLmModels.gemma4E2bIt.web;
+LiteRtLmVariant _gemma4E2bItWeb() => LiteRtLmModels.gemma4E2bIt.webGpu;
 LiteRtLmVariant _gemma4E4bItGeneric() => LiteRtLmModels.gemma4E4bIt.generic;
-LiteRtLmVariant _gemma4E4bItWeb() => LiteRtLmModels.gemma4E4bIt.web;
 LiteRtLmVariant _lfm2_5_230mInt4() => LiteRtLmModels.lfm2_5_230m.int4;
 LiteRtLmVariant _llavaOnevision0_5bGeneric() =>
     LiteRtLmModels.llavaOnevision0_5b.generic;
@@ -61,9 +60,9 @@ enum Model implements InferenceModelInterface {
   // the primary entries (litertlm everywhere incl. web -web.litertlm). The
   // web-only MediaPipe (.task) twins live further down as *_web.
 
-  // Gemma 4 E2B LiteRT-LM. On web, uses the `-web.litertlm` build optimised for
-  // WebGPU/WASM via @litert-lm/core. Text-only on web; full
-  // multimodal on native.
+  // Gemma 4 E2B LiteRT-LM. On web, the GPU export (`-gpu.litertlm` of
+  // 2026-11-11) via @litert-lm/core 0.19.0, with images and audio; 2.34 GB,
+  // which the app's WebStorageMode.streaming installs.
   gemma4_E2B_litertlm(
     catalog: _gemma4E2bItGeneric,
     catalogWeb: _gemma4E2bItWeb,
@@ -84,10 +83,10 @@ enum Model implements InferenceModelInterface {
     agentic: true,
   ),
 
-  // Gemma 4 E4B LiteRT-LM.
+  // Gemma 4 E4B LiteRT-LM. Not on web: its web export is withheld (not
+  // measured on @litert-lm/core 0.19.0); gemma4_E4B_web (.task) runs there.
   gemma4_E4B_litertlm(
     catalog: _gemma4E4bItGeneric,
-    catalogWeb: _gemma4E4bItWeb,
     displayName: 'Gemma 4 E4B IT',
     size: '3.7GB',
     licenseUrl: '',
@@ -892,25 +891,25 @@ enum Model implements InferenceModelInterface {
   final int topK;
   @override
   final double topP;
-  // Raw capability flags from the enum literal. The public [supportImage] /
-  // [supportAudio] getters below suppress these on web for .litertlm models,
-  // where the web engine is text only (litertlm_dart refuses vision and
-  // audio there: @litert-lm/core 0.18.0's Engine takes no vision or audio
-  // backend), so an image or audio message throws UnsupportedError.
-  // Advertising them in the UI would offer a picker that only produces that
-  // error. Native and web MediaPipe (.task) keep the declared value.
+  // Raw capability flags from the enum literal. On the web a .litertlm model
+  // takes images or audio only when its web build does (the registry's
+  // capabilities: Gemma 4 E2B's GPU export does on @litert-lm/core 0.19.0;
+  // a text-only web build does not), so the public [supportImage] /
+  // [supportAudio] getters below follow the web variant there. Native and
+  // web MediaPipe (.task) keep the declared value.
   final bool _supportImageRaw;
   final bool _supportAudioRaw;
 
   @override
-  bool get supportImage =>
-      _webLitertlmMultimodalBlocked ? false : _supportImageRaw;
+  bool get supportImage => _onWebLitertlm
+      ? _supportImageRaw && (catalogVariant?.supportsImage ?? false)
+      : _supportImageRaw;
 
-  bool get supportAudio =>
-      _webLitertlmMultimodalBlocked ? false : _supportAudioRaw;
+  bool get supportAudio => _onWebLitertlm
+      ? _supportAudioRaw && (catalogVariant?.supportsAudio ?? false)
+      : _supportAudioRaw;
 
-  bool get _webLitertlmMultimodalBlocked =>
-      kIsWeb && fileType == ModelFileType.litertlm;
+  bool get _onWebLitertlm => kIsWeb && fileType == ModelFileType.litertlm;
   @override
   final int maxTokens;
   @override

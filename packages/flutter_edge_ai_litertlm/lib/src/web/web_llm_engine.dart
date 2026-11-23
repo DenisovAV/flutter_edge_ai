@@ -18,9 +18,15 @@ import '../adapter/web_inference_model.dart';
 ///
 /// [maxTokens] is the context window, passed through as natively: the web
 /// runtime takes it as given (no 1024-token floor there).
+///
+/// [supportImage] loads the vision encoder on the GPU, [supportAudio] the
+/// audio encoder on the CPU, as the native Gemma 4 bundles declare it; both
+/// ran on 0.19.0 with Gemma 4 E2B's GPU export (2026-11-23).
 Future<WebLlmEngine> createLiteRtLmWebEngine(
   WebModelSourceResolver resolver, {
   required int maxTokens,
+  bool supportImage = false,
+  bool supportAudio = false,
 }) async {
   final resolved = await resolver.resolveActiveInferenceModel();
   final Engine engine;
@@ -31,6 +37,8 @@ Future<WebLlmEngine> createLiteRtLmWebEngine(
           modelPath: url,
           backend: const lm.Backend.gpu(),
           maxNumTokens: maxTokens,
+          visionBackend: supportImage ? const lm.Backend.gpu() : null,
+          audioBackend: supportAudio ? const lm.Backend.cpu() : null,
         ),
       );
     case final OpfsStreamModelSource source:
@@ -39,6 +47,8 @@ Future<WebLlmEngine> createLiteRtLmWebEngine(
           modelPath: source.filename,
           backend: const lm.Backend.gpu(),
           maxNumTokens: maxTokens,
+          visionBackend: supportImage ? const lm.Backend.gpu() : null,
+          audioBackend: supportAudio ? const lm.Backend.cpu() : null,
         ),
         model: await source.openStream(),
       );

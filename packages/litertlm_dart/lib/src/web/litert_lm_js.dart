@@ -31,12 +31,11 @@ import 'web_runtime_version.dart';
 const liteRtLmWebBackendCpu = 3;
 const liteRtLmWebBackendGpu = 4;
 
-/// `Backend.GPU_ARTISAN`: what `engine.settings.backend` reports for a web
-/// export such as `gemma-4-E2B-it-web.litertlm` on the GPU (0.18.0 and
-/// 0.19.0, measured 2026-11-23): the same WebGPU, through the runtime's
-/// legacy executor. 0.18.0 refuses such a model when asked for `backend: GPU`
-/// ("Unsupported backend: 2"), so the GPU is asked for by leaving `backend`
-/// out, the runtime's default.
+/// `Backend.GPU_ARTISAN`: what `engine.settings.backend` reports for a
+/// Gemma 4 web or GPU export asked for the GPU (0.18.0 and 0.19.0, measured
+/// 2026-11-23): the same WebGPU, through the runtime's legacy executor.
+/// 0.19.0 takes `backend: GPU` (or GPU_ARTISAN) for it; 0.18.0 refused
+/// `backend: GPU` ("Unsupported backend: 2").
 const liteRtLmWebBackendGpuArtisan = 2;
 
 /// What the page's `Engine` (or `EmbeddingEngine`) constructor lacks of what
@@ -165,22 +164,25 @@ extension type JsLiteRtLmConversation._(JSObject _) implements JSObject {
   external JSObject sendMessageStreaming(JSAny message);
 
   /// Asks the generation in flight to stop (`cancelProcess()`). Measured on
-  /// 0.18.0 (2026-11-23, web_litertlm_runtime_probe_test.dart): a generation
+  /// 0.18.0 and 0.19.0 (2026-11-23, web_litertlm_runtime_probe_test.dart): a
+  /// generation
   /// stopped before its end rejects with "Task cancelled", and so does every
   /// later send on this conversation, so it is replaced by one rebuilt from
   /// [getHistory]; with nothing in flight, or after the last chunk, the
   /// conversation keeps working.
   external void cancel();
 
-  /// The conversation's completed exchanges, without its preface (0.18.0,
-  /// measured 2026-11-23): a cancelled turn is not in it. A user message
-  /// sent as a string comes back with its content as that string.
+  /// The conversation's completed exchanges, without its preface (0.18.0 and
+  /// 0.19.0, measured 2026-11-23): a cancelled turn is not in it. A user
+  /// message sent as a string comes back with its content as that string,
+  /// and an image or audio part's bytes as `blob: {bytes: [...]}` (0.19.0).
   external JSPromise<JSArray<JSObject>> getHistory();
 
   /// The conversation's token count. It runs on the engine's executor mutex,
   /// as a generation does, so it resolves only once the generation in flight
   /// has left the module: a stream that rejected may still be inside it
-  /// (0.18.0 rejects from its chunk callback, before `waitUntilDone`).
+  /// (0.18.0 and 0.19.0 reject from the chunk callback, before
+  /// `waitUntilDone`).
   external JSPromise<JSNumber> getTokenCount();
 
   /// Frees the conversation once its executor is free ([awaitIfThenable]).

@@ -134,5 +134,5 @@ export 'src/web/web_runtime_version.dart'
         liteRtLmWebModuleUrl,
         liteRtLmWebRuntime,
         liteRtLmWebRuntimeVersion,
-        webNoMediaMessage;
+        webMediaPathMessage;
 export 'src/web/web_session_config.dart' show samplerTypeTopP, webSessionConfig;

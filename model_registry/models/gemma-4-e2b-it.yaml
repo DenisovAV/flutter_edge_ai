@@ -60,6 +60,29 @@ variants:
     audio: false
     function_calls: true
     thinking: true
+  withhold:
+    reason: The web export of 2026-05-19 answers a tool result with an empty reply on
+      @litert-lm/core 0.19.0, which the packages load on the web from this release
+      (web_function_calling_test.dart, case 5, 2 of 2 runs, 2026-11-23). Use the web-gpu
+      variant.
+    issue: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/commit/cccc664ea93091c52eeb7867ad4e5466357e14f3
+- slug: web-gpu
+  file_type: litertlm
+  web_bundle: true
+  # The GPU export of 2026-11-11. 2.34 GB: the web installs it with
+  # WebStorageMode.streaming.
+  file:
+    repo: litert-community/gemma-4-E2B-it-litert-lm
+    revision: cccc664ea93091c52eeb7867ad4e5466357e14f3
+    path: gemma-4-E2B-it-gpu.litertlm
+    sha256: d3cfec6ae2e027a994e51366d44dbf522ec7531a4a35fbbfcd3e9cc9b927afc1
+    size: 2340870772
+    install_filename: gemma-4-E2B-it-gpu__rev-cccc664ea930.litertlm
+  capabilities:
+    image: true
+    audio: true
+    function_calls: true
+    thinking: true
   example:
   - gemma4_E2B_litertlm
 - slug: npu-tensor-g5

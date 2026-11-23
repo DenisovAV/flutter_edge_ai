@@ -17,16 +17,12 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:litertlm_dart/internal.dart'
-    show
-        liteRtLmWebRuntime,
-        messageJson,
-        messageRawJson,
-        turnFailureCause,
-        webNoMediaMessage;
+    show liteRtLmWebRuntime, messageJson, messageRawJson, turnFailureCause;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'package:mutex/mutex.dart';
 
 import '../reported_engine_turn.dart';
+import 'user_message.dart';
 
 /// What the web model needs of a loaded engine: conversations with the
 /// adapter's resolved sampler, and the engine's close.
@@ -66,8 +62,20 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     required this.modelType,
     this.fileType = ModelFileType.litertlm,
     this.maxConcurrentSessions,
+    this.supportImage = false,
+    this.supportAudio = false,
+    MultimodalOrder? multimodalOrder,
     required this.onClose,
-  });
+  }) : multimodalOrder =
+           multimodalOrder ?? MultimodalOrder.forModelType(modelType);
+
+  /// The engine loads a vision, an audio encoder (core's `supportImage`,
+  /// `supportAudio`); a session sends images or audio only then.
+  final bool supportImage;
+  final bool supportAudio;
+
+  /// Where a message's images and audio go around its text.
+  final MultimodalOrder multimodalOrder;
 
   /// Loads the engine, at the first session: the active model's source
   /// resolved by core and handed to litertlm_dart (web/web_llm_engine.dart).
@@ -176,12 +184,6 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         'loraPath or use a MediaPipe .task web model.',
       );
     }
-    // No vision or audio on web: the web engine is created without a vision
-    // or an audio executor, so the modality flags are not forwarded, and an
-    // image or audio message throws in [LiteRtLmWebSession.addQueryChunk]
-    // rather than being dropped, which left the model answering about media
-    // it never received.
-    _noteModalityRequested(enableVisionModality, enableAudioModality);
     // Resolved before anything loads: values it rejects must not load the
     // engine.
     final explicit = SamplingParams(
@@ -221,6 +223,9 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         fileType: fileType,
         generationMutex: generationMutex,
         maxOutputTokens: maxOutputTokens,
+        supportImage: enableVisionModality ?? supportImage,
+        supportAudio: enableAudioModality ?? supportAudio,
+        multimodalOrder: multimodalOrder,
         onClose: () {
           _session = null;
           _createCompleter = null;
@@ -278,8 +283,6 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         'before opening a new one.',
       );
     }
-    // No vision or audio on web — see the comment in createSession.
-    _noteModalityRequested(enableVisionModality, enableAudioModality);
 
     // Resolved before anything loads: values it rejects must not load the
     // engine.
@@ -321,6 +324,9 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       fileType: fileType,
       generationMutex: generationMutex,
       maxOutputTokens: maxOutputTokens,
+      supportImage: enableVisionModality ?? supportImage,
+      supportAudio: enableAudioModality ?? supportAudio,
+      multimodalOrder: multimodalOrder,
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);
@@ -339,20 +345,6 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     modelType: modelType,
     thinking: thinking,
   );
-
-  /// Says, in debug builds, that a requested vision/audio modality will not be
-  /// honoured. The session still opens: a text-only conversation is valid,
-  /// and an app that passes `supportImage: true` on every platform should keep
-  /// working on web for text. The media message itself is what throws.
-  void _noteModalityRequested(bool? vision, bool? audio) {
-    if (kDebugMode && (vision == true || audio == true)) {
-      edgeAiLog(
-        '[LiteRtLmWebInferenceModel] Warning: vision/audio modality was '
-        'requested, but web LiteRT-LM runs LLMs text-only; an image or audio '
-        'message will throw UnsupportedError.',
-      );
-    }
-  }
 
   /// A conversation for a session. The resolved sampling is the caller's
   /// choice when [explicit] sets any of it, else the model's default, which
@@ -459,7 +451,20 @@ class LiteRtLmWebSession extends InferenceModelSession
     required this.generationMutex,
     required this.onClose,
     this.maxOutputTokens,
+    this.supportImage = false,
+    this.supportAudio = false,
+    this.multimodalOrder = const MultimodalOrder(),
   });
+
+  /// This session sends images, audio: its engine loaded that encoder.
+  final bool supportImage;
+  final bool supportAudio;
+
+  /// Where a message's images and audio go around its text.
+  final MultimodalOrder multimodalOrder;
+
+  final List<Uint8List> _pendingImages = [];
+  Uint8List? _pendingAudio;
 
   final lm.Conversation conversation;
   final ModelType modelType;
@@ -507,18 +512,18 @@ class LiteRtLmWebSession extends InferenceModelSession
     if (_isClosed) throw StateError('Session is closed');
   }
 
-  /// The error for an image or audio message. The engine has no vision or
-  /// audio executor, so the bytes could reach no encoder; dropping them
-  /// instead let the model answer about media it never received.
+  /// The error for an image or audio message a session cannot send: its
+  /// engine loaded no such encoder. Dropping the bytes instead would let the
+  /// model answer about media it never received.
   static UnsupportedError _unsupportedMedia(Message message) {
     final kinds = [
       if (message.hasImage) 'image',
       if (message.hasAudio) 'audio',
     ].join(' and ');
     return UnsupportedError(
-      'Web LiteRT-LM does not support $kinds input for LLMs yet. '
-      '$webNoMediaMessage Send text only to a web .litertlm model'
-      '${message.hasImage ? ', or use a MediaPipe .task web model for images' : ''}.',
+      'This web .litertlm model was loaded without $kinds input: load it with '
+      '${[if (message.hasImage) 'supportImage: true', if (message.hasAudio) 'supportAudio: true'].join(' and ')} '
+      'to send it.',
     );
   }
 
@@ -528,7 +533,8 @@ class LiteRtLmWebSession extends InferenceModelSession
   @override
   Future<void> addQueryChunk(Message message) async {
     _assertNotClosed();
-    if (message.hasImage || message.hasAudio) {
+    if ((message.hasImage && !supportImage) ||
+        (message.hasAudio && !supportAudio)) {
       throw _unsupportedMedia(message);
     }
     final prompt = message.transformToChatPrompt(
@@ -550,8 +556,20 @@ class LiteRtLmWebSession extends InferenceModelSession
         name: name,
         response: SdkResponseParser.toolResponsePayload(message.text),
       ));
-    } else if (prompt.isNotEmpty) {
+    } else if (prompt.isNotEmpty || message.hasImage || message.hasAudio) {
       _stagedNonToolContent = true;
+    }
+    // As natively: a message's images are [Message.images] when it has any,
+    // else its [Message.imageBytes] (the factories set both to one photo).
+    if (message.hasImage) {
+      if (message.images.isNotEmpty) {
+        _pendingImages.addAll(message.images);
+      } else if (message.imageBytes case final image?) {
+        _pendingImages.add(image);
+      }
+    }
+    if (message.audioBytes case final audio? when message.hasAudio) {
+      _pendingAudio = audio;
     }
   }
 
@@ -568,7 +586,14 @@ class LiteRtLmWebSession extends InferenceModelSession
             for (final r in _pendingToolResponses)
               lm.Content.toolResponse(r.name, r.response),
           ])
-        : lm.Message.user(text);
+        : liteRtLmUserMessage(
+            text,
+            images: List.of(_pendingImages),
+            audio: _pendingAudio,
+            order: multimodalOrder,
+          );
+    _pendingImages.clear();
+    _pendingAudio = null;
     _pendingToolResponses.clear();
     _stagedNonToolContent = false;
     return message;

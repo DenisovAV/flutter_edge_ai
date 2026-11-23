@@ -32,6 +32,7 @@ const _stub = r'''
     historyError: null, holdFence: false, holdHistory: false,
     stuckOnCancel: false, deleteError: null, missingMember: null,
     noSettingsBackend: false, noSettingsTokens: false, prefaceInHistory: false,
+    resolvedVisionBackend: null, resolvedAudioBackend: null,
   };
   const open = () => p.streams.find((s) => !s.closed);
   const conversation = (options) => {
@@ -88,11 +89,18 @@ const _stub = r'''
     return c;
   };
   // Every chunk generated, the stream not ended yet.
+  // 0.19.0 returns an image or audio part's bytes as {bytes: [...]}.
+  const asHistory = (message) => typeof message === 'string' ? message : {
+    ...message,
+    content: message.content.map((p) => typeof p.blob === 'string'
+      ? {...p, blob: {bytes: Array.from(atob(p.blob), (c) => c.charCodeAt(0))}}
+      : p),
+  };
   window.__generated = () => {
     const s = open();
     s.generated = true;
     s.conversation.history.push(
-      {role: 'user', content: s.message},
+      {role: 'user', content: asHistory(s.message).content ?? s.message},
       {role: 'assistant', content: [{type: 'text', text: s.text}]});
   };
   window.__step = (text) => {
@@ -125,6 +133,8 @@ const _stub = r'''
     const settingsOut = {mainExecutorSettings: {}};
     if (!p.noSettingsBackend) settingsOut.backend = p.resolvedBackend;
     if (!p.noSettingsTokens) settingsOut.mainExecutorSettings.maxNumTokens = p.maxNumTokens;
+    if (p.resolvedVisionBackend !== null) settingsOut.visionBackend = p.resolvedVisionBackend;
+    if (p.resolvedAudioBackend !== null) settingsOut.audioBackend = p.resolvedAudioBackend;
     return {
       settings: settingsOut,
       createConversation: async (options) => {

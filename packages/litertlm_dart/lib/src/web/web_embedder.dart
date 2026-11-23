@@ -39,9 +39,9 @@
 //   per image (D25). The web runtime has no ModelInfo, so whether the bundle
 //   HAS a vision encoder is read from its container header, as for audio
 //   below, and the load error names the bundle that embeds images.
-//   `EmbeddingEngine.create` of 0.18.0 refuses the 270m's missing vision
-//   tower itself; the header check keeps that answer the package's own, since
-//   0.19.0 creates the engine anyway (measured 2026-11-23).
+//   `EmbeddingEngine.create` of 0.19.0 creates the 270m with a vision tower
+//   and only the first image fails (0.18.0 refused it at create; measured
+//   2026-11-23), so the header is what refuses it.
 // - The audio tower is created only when audio is declared (`audioBackend`
 //   unset = audio disabled), on WebGPU like the rest (see
 //   [liteRtLmWebAudioBackend] for the measurement behind it). Whether the
@@ -532,8 +532,8 @@ final class LiteRtLmWebEmbedder {
       // both towers. Audio: describe() has asked already; this is the
       // backstop for an embedder built another way. Images: the header
       // decides, as ModelInfo does natively; `EmbeddingEngine.create` of
-      // 0.18.0 refuses a vision tower the bundle lacks, 0.19.0 does not
-      // (measured on the 270m, Chrome 157, 2026-11-23).
+      // 0.19.0 creates a vision tower the bundle lacks (0.18.0 refused it;
+      // measured on the 270m, Chrome 157, 2026-11-23).
       if (audio || images) {
         final types = await _modelTypes(
           _config.runtime,

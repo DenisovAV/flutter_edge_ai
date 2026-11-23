@@ -22,7 +22,7 @@
 ///
 /// Prerequisites:
 ///   * Chrome with WebGPU enabled (`chrome://flags/#enable-unsafe-webgpu`)
-///   * ~600 MB free disk + network bandwidth for `gemma-4-E2B-it-web.litertlm`
+///   * ~2.4 GB free disk + network bandwidth for `gemma-4-E2B-it-gpu.litertlm`
 ///     (first run only — cached afterwards by `WebStorageMode.cacheApi`)
 ///   * Optional `HUGGINGFACE_TOKEN` if the upstream model becomes gated
 ///     (`--dart-define=HUGGINGFACE_TOKEN=hf_...`)
@@ -45,10 +45,14 @@ import 'dart:async';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'inference_test_helpers.dart' show registerTestEngines;
+import 'inference_test_helpers.dart' show kWebGemma4E2bUrl, registerTestEngines;
 
-const _webModelUrl =
-    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm';
+// A local copy keeps back-to-back runs off the network, e.g.
+// --dart-define=WEB_MODEL_URL=http://127.0.0.1:8765/gemma-4-E2B-it-gpu.litertlm
+const _webModelUrl = String.fromEnvironment(
+  'WEB_MODEL_URL',
+  defaultValue: kWebGemma4E2bUrl,
+);
 
 const _hfToken = String.fromEnvironment('HUGGINGFACE_TOKEN');
 

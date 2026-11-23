@@ -1,42 +1,33 @@
-/// Image and audio on the web `.litertlm` path are refused with a clear error.
-///
-/// litertlm_dart creates the web LLM engine with no vision or audio executor:
-/// on 0.18.0 `EngineSettings.createDefault(modelAssets, backend)` takes no
-/// vision or audio backend (only `EmbeddingEngine` has
-/// `createDefaultMultimodal`); a `visionBackend`/`audioBackend` passed to
-/// `Engine.create` is ignored, and an image part still fails "Audio or image
-/// item must contain a path or blob." (Chrome 157, 2026-11-23,
-/// web_litertlm_runtime_probe_test.dart). Measured on Gemma 4 E2B against the
-/// raw JS API in Chrome 155 on Linux (WebGPU on a Tesla T4):
-///   - `visionModalityEnabled` / `audioModalityEnabled: true`:
-///     `createConversation` throws "Vision options should not be null." /
-///     "Audio options should not be null.";
-///   - a content part with the typed `data` field (base64 or bytes):
-///     "Audio or image item must contain a path or blob.";
-///   - the same part with the runtime's `blob` field: "Vision executor should
-///     not be null, please TryLoadingVisionExecutor() first." (and the audio
-///     equivalent).
-/// The web session used to drop the bytes with a debug warning, and the model
-/// then answered about a picture it never received. It now throws
-/// [UnsupportedError] instead; these tests pin that on the real engine, and
-/// that the refusal does not break the conversation that follows.
+/// Images and audio on the web `.litertlm` path, through core: Gemma 4 E2B's
+/// GPU export on @litert-lm/core 0.19.0, loaded with its vision encoder on
+/// WebGPU and its audio encoder on the CPU. Measured below the packages in
+/// web_litertlm_runtime_probe_test.dart (2026-11-23): an image and a clip are
+/// answered; the runtime's history returns an image's bytes as
+/// `blob: {bytes: [...]}`, which a preface aborts the module on, so a
+/// conversation stopped after an image is rebuilt with the image as base64.
 ///
 /// Run: chromedriver --port=4444 & ; from example/
 ///   flutter drive --driver=test_driver/integration_test.dart \
-///     --target=integration_test/web_multimodal_test.dart -d web-server
+///     --target=integration_test/web_multimodal_test.dart -d web-server \
+///     --dart-define=WEB_MODEL_URL=<a local copy of the GPU export>
 @TestOn('chrome')
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'inference_test_helpers.dart' show registerTestEngines;
+import 'inference_test_helpers.dart' show kWebGemma4E2bUrl, registerTestEngines;
 
-const _webModelUrl =
-    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm';
+// A local copy keeps back-to-back runs off the network, e.g.
+// --dart-define=WEB_MODEL_URL=http://127.0.0.1:8765/gemma-4-E2B-it-gpu.litertlm
+const _webModelUrl = String.fromEnvironment(
+  'WEB_MODEL_URL',
+  defaultValue: kWebGemma4E2bUrl,
+);
 
 const _hfToken = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
@@ -58,19 +49,15 @@ Future<InferenceModel> _ensureModel() async {
       )
       .fromNetwork(_webModelUrl, token: _hfToken.isEmpty ? null : _hfToken)
       .install();
-  return _model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+  return _model = await FlutterEdgeAi.getActiveModel(
+    maxTokens: 2048,
+    supportImage: true,
+    supportAudio: true,
+  );
 }
 
 Future<Uint8List> _asset(String path) async =>
     (await rootBundle.load(path)).buffer.asUint8List();
-
-Matcher _refused(String kind) => throwsA(
-  isA<UnsupportedError>().having(
-    (e) => e.message,
-    'message',
-    contains('Web LiteRT-LM does not support $kind input for LLMs yet'),
-  ),
-);
 
 /// The tests that started (Rule 6b).
 final _started = <int>{};
@@ -78,90 +65,124 @@ final _started = <int>{};
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  group(
-    'web .litertlm image/audio (@litert-lm/core, litertlm_dart\'s pin)',
-    () {
-      tearDownAll(() async {
-        await _model?.close();
-        _model = null;
-      });
+  group('web .litertlm images and audio (@litert-lm/core, litertlm_dart\'s '
+      'pin)', () {
+    tearDownAll(() async {
+      await _model?.close();
+      _model = null;
+    });
 
-      testWidgets('chat: an image throws, and the chat still answers text', (
-        tester,
-      ) async {
-        _started.add(0);
-        final model = await _ensureModel();
-        final image = await _asset('assets/test/test_image.jpg');
-        // supportImage: true is what a cross-platform app passes; the chat must
-        // still open, because a text-only conversation is valid on web.
-        final chat = await model.openChat(
-          modelType: ModelType.gemma4,
-          supportImage: true,
+    testWidgets('chat: an image is answered, and the next text turn too', (
+      tester,
+    ) async {
+      _started.add(0);
+      final model = await _ensureModel();
+      final image = await _asset('assets/test/test_image.jpg');
+      final chat = await model.openChat(
+        modelType: ModelType.gemma4,
+        supportImage: true,
+      );
+      try {
+        await chat.addQueryChunk(
+          Message.withImage(
+            text: 'What animal is in this image? Answer in one word.',
+            imageBytes: image,
+            isUser: true,
+          ),
         );
-        try {
-          await expectLater(
-            chat.addQueryChunk(
-              Message.withImage(
-                text: 'What animal is in this image? Answer in one word.',
-                imageBytes: image,
-                isUser: true,
-              ),
-            ),
-            _refused('image'),
-          );
+        final response = await chat.generateChatResponse();
 
-          await chat.addQueryChunk(
-            const Message(text: 'Say hello in one word.', isUser: true),
-          );
-          final response = await chat.generateChatResponse();
-          expect(response, isA<TextResponse>(), reason: '$response');
-          final text = (response as TextResponse).token;
-          expect(text.trim(), isNotEmpty);
-          expect(
-            text.toLowerCase(),
-            isNot(anyOf(contains('dog'), contains('puppy'))),
-            reason:
-                'the refused image must not reach the model (got "$text"); the '
-                'test picture is a black puppy',
-          );
-        } finally {
-          await chat.close();
-        }
-      });
+        expect(response, isA<TextResponse>(), reason: '$response');
+        final text = (response as TextResponse).token.toLowerCase();
+        expect(
+          text,
+          anyOf(contains('dog'), contains('puppy')),
+          reason: 'the test picture is a black puppy (got "$text")',
+        );
 
-      testWidgets('session: audio throws, and the session still answers text', (
-        tester,
-      ) async {
-        _started.add(1);
-        final model = await _ensureModel();
-        final audio = await _asset('assets/test/test_audio.wav');
-        final session = await model.openSession(enableAudioModality: true);
-        try {
-          await expectLater(
-            session.addQueryChunk(
-              Message.withAudio(
-                text: 'Transcribe this audio.',
-                audioBytes: audio,
-                isUser: true,
-              ),
-            ),
-            _refused('audio'),
-          );
+        await chat.addQueryChunk(
+          const Message(text: 'Say hello in one word.', isUser: true),
+        );
+        final next = await chat.generateChatResponse();
+        expect((next as TextResponse).token.trim(), isNotEmpty);
+      } finally {
+        await chat.close();
+      }
+    });
 
-          await session.addQueryChunk(
-            const Message(text: 'Say goodbye in one word.', isUser: true),
-          );
-          final response = await session.getResponse();
-          expect(response.trim(), isNotEmpty);
-        } finally {
-          await session.close();
-        }
-      });
-    },
-  );
+    testWidgets('session: an audio clip is answered', (tester) async {
+      _started.add(1);
+      final model = await _ensureModel();
+      final audio = await _asset('assets/test/test_audio.wav');
+      final session = await model.openSession(enableAudioModality: true);
+      try {
+        await session.addQueryChunk(
+          Message.withAudio(
+            text: 'Transcribe this audio.',
+            audioBytes: audio,
+            isUser: true,
+          ),
+        );
+        final response = await session.getResponse();
+
+        expect(response.trim(), isNotEmpty);
+      } finally {
+        await session.close();
+      }
+    });
+
+    testWidgets('a stop after an image turn: the next message goes to the '
+        'rebuilt conversation, which still holds the image', (tester) async {
+      _started.add(2);
+      final model = await _ensureModel();
+      final image = await _asset('assets/test/test_image.jpg');
+      final session = await model.openSession(enableVisionModality: true);
+      try {
+        await session.addQueryChunk(
+          Message.withImage(
+            text: 'What animal is in this image? Answer in one word.',
+            imageBytes: image,
+            isUser: true,
+          ),
+        );
+        await session.getResponse();
+        await session.addQueryChunk(
+          const Message(
+            text: 'Count from 1 to 300, one number per line.',
+            isUser: true,
+          ),
+        );
+        final stopped = Completer<void>();
+        final sub = session.getResponseAsync().listen((_) async {
+          if (!stopped.isCompleted) {
+            stopped.complete();
+            await session.stopGeneration();
+          }
+        }, onError: (Object _) {});
+        await stopped.future;
+        await sub.asFuture<void>().catchError((Object _) {});
+
+        await session.addQueryChunk(
+          const Message(
+            text: 'What animal was in the image I sent first? One word.',
+            isUser: true,
+          ),
+        );
+        final answer = (await session.getResponse()).toLowerCase();
+
+        expect(
+          answer,
+          anyOf(contains('dog'), contains('puppy')),
+          reason: 'the rebuilt conversation lost the image (got "$answer")',
+        );
+      } finally {
+        await session.close();
+      }
+    });
+  });
 
   // Rule 6b: under flutter drive a test that never ran reads as a pass.
   testWidgets('every test above started', (tester) async {
-    expect(_started, hasLength(2));
+    expect(_started, hasLength(3));
   });
 }

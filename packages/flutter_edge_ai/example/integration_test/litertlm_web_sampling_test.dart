@@ -29,14 +29,13 @@ library;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'inference_test_helpers.dart' show registerTestEngines;
+import 'inference_test_helpers.dart' show kWebGemma4E2bUrl, registerTestEngines;
 
 // A local copy keeps back-to-back runs off the network, e.g.
-// --dart-define=WEB_MODEL_URL=http://127.0.0.1:8765/gemma-4-E2B-it-web.litertlm
+// --dart-define=WEB_MODEL_URL=http://127.0.0.1:8765/gemma-4-E2B-it-gpu.litertlm
 const _webModelUrl = String.fromEnvironment(
   'WEB_MODEL_URL',
-  defaultValue:
-      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm',
+  defaultValue: kWebGemma4E2bUrl,
 );
 
 const _hfToken = String.fromEnvironment('HUGGINGFACE_TOKEN');

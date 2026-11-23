@@ -96,7 +96,7 @@ void main() {
         Object.defineProperty(performance, 'getEntriesByType', {
           configurable: true,
           value: (type) => type !== 'resource' ? [] : [
-            {name: 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm'},
+            {name: 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm'},
             {name: 'https://example.com/app.js'},
           ],
         });''');
@@ -107,7 +107,7 @@ void main() {
     });
 
     test('are read from the resource URLs', () {
-      expect(web.liteRtLmWebFetchedVersions(), {'0.19.0'});
+      expect(web.liteRtLmWebFetchedVersions(), {'0.20.0'});
     });
 
     test('another than the pinned one is printed once per page', () async {
@@ -119,7 +119,7 @@ void main() {
       expect(printed, hasLength(1));
       expect(
         printed.single,
-        allOf(contains('0.19.0'), contains(web.liteRtLmWebRuntimeVersion)),
+        allOf(contains('0.20.0'), contains(web.liteRtLmWebRuntimeVersion)),
       );
     });
   });

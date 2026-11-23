@@ -21,7 +21,7 @@
 //   within [WebConversationHandle.drainTimeout] poisons the page lock, stop
 //   or close alike: the module may still be suspended in it.
 // - A stream that rejects keeps the page until a call on the engine's
-//   executor mutex (`getTokenCount()`) resolves: 0.18.0 rejects from its
+//   executor mutex (`getTokenCount()`) resolves: 0.19.0 rejects from its
 //   chunk callback, before the generation has left the module. Chrome 157
 //   runs the JSPI build, where that is harmless; the Asyncify builds (no
 //   JSPI) hold one suspended call per module, and another call entering then
@@ -33,8 +33,10 @@
 // - The web runtime takes thinking and the template variables per
 //   conversation (its `preface.extra_context`), not per message, and has no
 //   per-message decoding options: a send that asks for either differently is
-//   an [UnsupportedError], never silently ignored. Images and audio are
-//   refused the same way: the web `Engine` loads no vision or audio executor.
+//   an [UnsupportedError], never silently ignored. Images and audio go as
+//   their bytes in base64 (`blob`), the form 0.19.0 takes in a message and in
+//   a preface (measured 2026-11-23); a file path is refused, and so is media
+//   for an encoder the engine did not load.
 
 import 'dart:async';
 import 'dart:convert';
@@ -65,6 +67,8 @@ final class WebConversationHandle implements ConversationHandle {
     required this._onGeneration,
     required this._rebuild,
     this._preface = const [],
+    this._vision = false,
+    this._audio = false,
     this._onClose,
     LiteRtLmPageLock? pageLock,
   }) : _pageLock = pageLock ?? liteRtLmPageLock;
@@ -84,6 +88,10 @@ final class WebConversationHandle implements ConversationHandle {
   /// The messages replayed after [_preface] into the current runtime
   /// conversation: the exchanges of the conversations it replaced.
   List<Object?> _replayed = const [];
+
+  /// The engine loaded a vision, an audio encoder.
+  final bool _vision;
+  final bool _audio;
 
   final bool _enableThinking;
   final Map<String, Object?> _extraContext;
@@ -155,13 +163,14 @@ final class WebConversationHandle implements ConversationHandle {
     Uint8List? audioBytes,
     bool enableThinking = false,
   }) {
-    if ((imageBytes?.isNotEmpty ?? false) || audioBytes != null) {
-      return Stream.error(_unsupportedMedia());
-    }
     return chatRawMessage(
       jsonEncode({
         'role': 'user',
         'content': [
+          for (final image in imageBytes ?? const <Uint8List>[])
+            {'type': 'image', 'blob': base64Encode(image)},
+          if (audioBytes != null)
+            {'type': 'audio', 'blob': base64Encode(audioBytes)},
           {'type': 'text', 'text': text},
         ],
       }),
@@ -297,12 +306,13 @@ final class WebConversationHandle implements ConversationHandle {
         void onError(Object error, StackTrace stack) {
           if (turn.finished) return;
           // A rejected stream: the runtime conversation refuses every later
-          // send ("Task cancelled" after a stop, measured on 0.18.0).
+          // send ("Task cancelled" after a stop, measured on 0.18.0 and
+          // 0.19.0).
           _mustRebuild = true;
           if (turn.stopAsked && turn.reply.isNotEmpty) {
             _stopped = (message: turn.message, reply: turn.reply.toString());
           }
-          // 0.18.0 rejects from inside the generation's chunk callback:
+          // 0.19.0 rejects from inside the generation's chunk callback:
           // wait until it has left the module before the page is let go.
           _fence().then((_) {
             if (turn.asked || turn.fault != null) {
@@ -438,14 +448,25 @@ final class WebConversationHandle implements ConversationHandle {
     final json = jsonDecode(messageJson);
     if (json case {'content': final List<Object?> parts}) {
       for (final part in parts) {
-        if (part case {'type': 'image' || 'audio'}) return _unsupportedMedia();
+        if (part case {'type': 'image' || 'audio', 'path': _}) {
+          return UnsupportedError(webMediaPathMessage);
+        }
+        if (part case {'type': 'image'} when !_vision) {
+          return UnsupportedError(
+            'This engine loaded no vision encoder: create it with a '
+            'visionBackend to send images.',
+          );
+        }
+        if (part case {'type': 'audio'} when !_audio) {
+          return UnsupportedError(
+            'This engine loaded no audio encoder: create it with an '
+            'audioBackend to send audio.',
+          );
+        }
       }
     }
     return null;
   }
-
-  static UnsupportedError _unsupportedMedia() =>
-      UnsupportedError(webNoMediaMessage);
 
   /// The message as `sendMessageStreaming` takes it: a user message of one
   /// text part as its bare string, which `@litert-lm/core` turns into a user
@@ -463,7 +484,7 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// Marks every live turn stopped and stops the one streaming, if it was
   /// sent. With nothing in flight the runtime is not asked: a cancel there
-  /// changes nothing (0.18.0, measured).
+  /// changes nothing (0.18.0 and 0.19.0, measured).
   @override
   void cancelGeneration() {
     for (final turn in _liveTurns) {
@@ -506,7 +527,7 @@ final class WebConversationHandle implements ConversationHandle {
     try {
       history = [
         for (final message in (await _conversation.getHistory().toDart).toDart)
-          message.dartify(),
+          _replayable(message.dartify()),
       ];
     } catch (e) {
       throw LiteRtLmNativeException(
@@ -514,7 +535,7 @@ final class WebConversationHandle implements ConversationHandle {
         '$_untilRebuilt',
       );
     }
-    // 0.18.0's history holds no preface (measured); should a runtime start
+    // 0.19.0's history holds no preface (measured); should a runtime start
     // to return it, it is not replayed twice.
     final current = [..._preface, ..._replayed];
     final exchanges = _startsWith(history, current)
@@ -619,6 +640,34 @@ final class WebConversationHandle implements ConversationHandle {
       _onClose?.call();
     }
   }
+}
+
+/// [message] of a runtime history as a preface takes it. 0.19.0 returns an
+/// image or audio part's bytes as `blob: {bytes: [...]}`, which a preface
+/// aborts the module on; the base64 `blob` of a message replays it (measured
+/// 2026-11-23, web_litertlm_runtime_probe_test.dart).
+Object? _replayable(Object? message) {
+  if (message case {'content': final List<Object?> parts}) {
+    return {
+      ...(message as Map),
+      'content': [
+        for (final part in parts)
+          if (part case {'blob': {'bytes': final List<Object?> bytes}})
+            {
+              ...(part as Map),
+              // dartify gives a JS number as a double under dart2wasm.
+              'blob': base64Encode(
+                Uint8List.fromList([
+                  for (final b in bytes) (b! as num).toInt(),
+                ]),
+              ),
+            }
+          else
+            part,
+      ],
+    };
+  }
+  return message;
 }
 
 /// Whether [list] begins with [prefix], compared as JSON.

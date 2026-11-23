@@ -28,6 +28,11 @@ import '../adapter/web_inference_model.dart';
 /// audio encoder on the CPU, as the native Gemma 4 bundles declare it; both
 /// ran on 0.19.0 with Gemma 4 E2B's GPU export (2026-11-23). [maxNumImages]
 /// is the images a conversation reserves there (unset: 1).
+/// Where `LiteRtLmEngine.createModel` reads core's active web model from;
+/// a test hands it a resolver of its own.
+WebModelSourceResolver Function() activeWebModelSource =
+    WebModelSourceResolver.forActiveModel;
+
 Future<WebLlmEngine> createLiteRtLmWebEngine(
   WebModelSourceResolver resolver, {
   required int maxTokens,

@@ -194,6 +194,38 @@ void main() {
       await throwing.close();
     });
 
+    test('a stop after text and a tool call keeps the call, not the text, '
+        'as natively', () async {
+      final conversation = await engine.createConversation(
+        ConversationConfig(tools: [_tool]),
+      );
+      final stopped = conversation
+          .sendMessageStream(Message.user('Call f'))
+          .drain<void>();
+      await settle();
+      js('__step', 'Let me check.');
+      js(
+        '__chunk',
+        '{"role":"assistant","tool_calls":[{"type":"function",'
+            '"function":{"name":"f","arguments":{}}}]}',
+      );
+      await settle();
+      conversation.cancel();
+      await stopped;
+
+      await exchange(conversation, 'Next', 'Ok');
+
+      expect(prefaceMessages(1)!.last, {
+        'role': 'assistant',
+        'tool_calls': [
+          {
+            'type': 'function',
+            'function': {'name': 'f', 'arguments': <String, Object?>{}},
+          },
+        ],
+      });
+    });
+
     test('a stop before any chunk keeps nothing of the stopped turn', () async {
       final conversation = await engine.createConversation();
       final stopped = conversation
@@ -504,7 +536,7 @@ void main() {
                   .then<Object?>((_) => null, onError: (Object e) => e)
               as TurnFailedException,
         ),
-        isA<LiteRtLmNativeException>(),
+        errorWith<LiteRtLmNativeException>('History unavailable'),
       );
     });
 
@@ -770,6 +802,24 @@ void main() {
         ),
       ),
     );
+    await engine.close();
+  });
+
+  test('the message after a stream that could not be read goes to a rebuilt '
+      'conversation', () async {
+    final engine = await webEngine();
+    final conversation = await engine.createConversation();
+    setOnPage('unreadable', true);
+    await conversation
+        .sendMessageStream(Message.user('Hello'))
+        .drain<void>()
+        .catchError((Object _) {});
+    setOnPage('unreadable', false);
+
+    await exchange(conversation, 'Again', 'Ok');
+
+    expect(list('conversationOptions'), hasLength(2));
+    expect(list('sent').last, 'Again');
     await engine.close();
   });
 

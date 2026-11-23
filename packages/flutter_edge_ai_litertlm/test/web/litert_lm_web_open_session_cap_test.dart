@@ -96,7 +96,16 @@ void main() {
     );
     final first = model.openSession();
     // The first is still creating its conversation when the second checks.
-    await expectLater(model.openSession(), throwsStateError);
+    await expectLater(
+      model.openSession(),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Max concurrent sessions (1) reached'),
+        ),
+      ),
+    );
     gate.complete();
     await first;
     expect(model.sessions, hasLength(1));
@@ -105,7 +114,15 @@ void main() {
     await model.sessions.single.close();
     gate = Completer<void>()..complete();
     failNext = true;
-    await expectLater(model.openSession(), throwsA(anything));
+    await expectLater(
+      model.openSession(),
+      throwsA(
+        predicate<Object>(
+          (e) => '$e'.contains('createConversation failed'),
+          'the runtime\'s refusal',
+        ),
+      ),
+    );
     await model.openSession();
     expect(model.sessions, hasLength(1));
   });
@@ -132,7 +149,16 @@ void main() {
     await pumpEventQueue();
     // close() waits for the conversation being created: it finishes once the
     // runtime answers, and is deleted rather than handed out.
-    final opened = expectLater(open, throwsStateError);
+    final opened = expectLater(
+      open,
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('closed'),
+        ),
+      ),
+    );
     final closing = model.close();
     gate.complete();
     await closing;

@@ -14,6 +14,8 @@ import 'dart:js_interop_unsafe';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/web_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/internal_web.dart' show WebConversationHandle;
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
 import 'web_session_fixture.dart';
 
@@ -80,4 +82,58 @@ void main() {
       expect(await turn.end, expected);
     });
   }
+
+  test('a model closed mid-turn, its session left open, is TurnEnd.closed '
+      'with the partial text', () async {
+    late WebConversationHandle handle;
+    final session = webSessionOver(
+      _conversation(),
+      onHandle: (h) => handle = h,
+    );
+    await session.addQueryChunk(const Message(text: 'Hi', isUser: true));
+    final turn = _turn(session);
+    final first = Completer<void>();
+    final text = <String>[];
+    final done = turn.text.forEach((chunk) {
+      text.add(chunk);
+      if (!first.isCompleted) first.complete();
+    });
+    await first.future;
+
+    // What the model's close does to each conversation it opened.
+    await handle.close();
+    await done;
+
+    expect(text, ['Par']);
+    expect(await turn.end, TurnEnd.closed);
+  });
+
+  test('a turn the runtime fails reaches core as a plain Exception with the '
+      'runtime\'s text, as natively', () async {
+    final iterator = JSObject()
+      ..['next'] = (() => Future<JSObject>.error(
+        StateError('Task failed with state: 7'),
+      ).toJS).toJS;
+    final conversation = JSObject()
+      ..['sendMessageStreaming'] = ((JSAny? message) => iterator).toJS
+      ..['cancel'] = (() {}).toJS
+      ..['getTokenCount'] = (() => Future<JSNumber>.value(1.toJS).toJS).toJS
+      ..['delete'] = (() => Future<void>.value().toJS).toJS;
+    final session = webSessionOver(conversation);
+    await session.addQueryChunk(const Message(text: 'Hi', isUser: true));
+
+    await expectLater(
+      _turn(session).text.toList(),
+      throwsA(
+        allOf(
+          isNot(isA<lm.LiteRtLmException>()),
+          isA<Exception>().having(
+            (e) => '$e',
+            'message',
+            contains('Task failed with state: 7'),
+          ),
+        ),
+      ),
+    );
+  });
 }

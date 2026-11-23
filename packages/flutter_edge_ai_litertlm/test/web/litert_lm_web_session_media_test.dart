@@ -127,6 +127,33 @@ void main() {
       );
     });
 
+    test('the runtime\'s refusal of more images than maxNumImages reaches '
+        'core with the line in core\'s terms', () async {
+      final session = webSessionOver(
+        _stubConversation().conversation,
+        modelType: ModelType.gemma4,
+        supportImage: true,
+        maxImages: 1,
+      );
+      await session.addQueryChunk(
+        Message(text: 'Both?', images: [_jpeg, _jpeg], isUser: true),
+      );
+
+      await expectLater(
+        session.getResponse(),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('maxNumImages: 1'),
+              contains('getActiveModel(maxNumImages'),
+            ),
+          ),
+        ),
+      );
+    });
+
     test('a refused message leaves the next turn unchanged', () async {
       final stub = _stubConversation();
       final session = _session(stub.conversation);
@@ -139,7 +166,7 @@ void main() {
             isUser: true,
           ),
         ),
-        throwsA(isA<UnsupportedError>()),
+        _refused('supportImage: true'),
       );
       await session.addQueryChunk(
         const Message(text: 'Hello there', isUser: true),

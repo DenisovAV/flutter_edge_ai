@@ -69,7 +69,7 @@ class LiteRtLmEngine
     checkThinkingTokenBudget(thinkingTokenBudget);
     if (thinkingTokenBudget != null) noticeThinkingTokenBudgetIgnoredOnWeb();
     bindRuntimeLogToCore();
-    final sourceResolver = WebModelSourceResolver.forActiveModel();
+    final sourceResolver = activeWebModelSource();
     return LiteRtLmWebInferenceModel(
       createEngine: () => createLiteRtLmWebEngine(
         sourceResolver,

@@ -21,6 +21,8 @@ LiteRtLmWebSession webSessionOver(
   bool supportImage = false,
   bool supportAudio = false,
   bool? engineVision,
+  void Function(WebConversationHandle handle)? onHandle,
+  int? maxImages,
 }) {
   final handle = WebConversationHandle(
     conversation as JsLiteRtLmConversation,
@@ -32,8 +34,10 @@ LiteRtLmWebSession webSessionOver(
     rebuild: (_) => throw StateError('no rebuild in this fixture'),
     // The engine's encoder, when it differs from what the session was told.
     vision: engineVision ?? supportImage,
+    maxImages: maxImages,
     audio: supportAudio,
   );
+  onHandle?.call(handle);
   return LiteRtLmWebSession(
     conversation: conversationForTest(handle),
     modelType: modelType,

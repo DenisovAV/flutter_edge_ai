@@ -595,15 +595,17 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   tried again by the next message, except where it cannot succeed: a
   history holding a part it cannot replay ends the conversation with a
   `TurnFailedException` that says to open a new one.
-- **A full context window.** When the runtime refuses a message because the
-  window is full ("Max number of tokens reached, the context window is
-  full.", 0.19.0), it refuses every later one, and a rebuild would replay the
-  same history. That turn and every later one fail with
-  `ContextFullException`, without being sent, as natively a conversation
-  with no room left ends every turn at the context limit; nothing is
-  truncated. Open a new conversation, or load the model with a larger
-  `maxNumTokens`. A reply that fills the window ends normally (0.19.0 reports
-  nothing), so the turn after it is the one refused. A stopped generation that
+- **A message that does not fit.** When the runtime refuses a message for
+  its size ("Input token ids are too long." or "Max number of tokens
+  reached, the context window is full.", 0.19.0), the turn fails with
+  `ContextFullException`, as natively, and the message is left out: the next
+  message goes to a conversation rebuilt without it, so a shorter one is
+  answered. When the history alone fills the window (the conversation held
+  `maxNumTokens` tokens), no rebuild can take it, and that turn and every
+  later one fail with `ContextFullException` without being sent, as natively
+  a conversation with no room left ends every turn at the context limit;
+  nothing is truncated. A reply that fills the window ends normally (0.19.0
+  reports nothing), so the turn after it is the one refused. A stopped generation that
   does not end within 30 s, after a stop or a close, makes the page unusable
   for LiteRT-LM (the module may still be suspended in it): the turn,
   `close()` and every later call fail and say so.

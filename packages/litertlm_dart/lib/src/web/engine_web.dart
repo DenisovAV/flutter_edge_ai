@@ -301,6 +301,7 @@ final class Engine {
       preface: base,
       vision: visionBackend != null,
       maxImages: visionBackend == null ? null : _maxNumImages,
+      maxTokens: maxNumTokens,
       audio: audioBackend != null,
       toolCallsOf: _toolCallsOf,
       onClose: () => _handles.remove(handle),

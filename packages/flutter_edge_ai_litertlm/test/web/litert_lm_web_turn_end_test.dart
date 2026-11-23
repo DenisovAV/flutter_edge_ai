@@ -137,7 +137,7 @@ void main() {
     );
   });
 
-  test('a message the runtime refuses for a full context window is '
+  test('a message refused while the history fills the context window is '
       'ContextLimitException and TurnEnd.contextLimit, and so is the next '
       'one, never sent', () async {
     var sent = 0;
@@ -151,9 +151,10 @@ void main() {
         return iterator;
       }).toJS
       ..['cancel'] = (() {}).toJS
-      ..['getTokenCount'] = (() => Future<JSNumber>.value(1.toJS).toJS).toJS
+      // The history holds the whole window.
+      ..['getTokenCount'] = (() => Future<JSNumber>.value(4096.toJS).toJS).toJS
       ..['delete'] = (() => Future<void>.value().toJS).toJS;
-    final session = webSessionOver(conversation);
+    final session = webSessionOver(conversation, maxTokens: 4096);
 
     for (final text in ['A long message.', 'Short.']) {
       await session.addQueryChunk(Message(text: text, isUser: true));

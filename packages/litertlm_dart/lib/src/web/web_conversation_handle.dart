@@ -42,6 +42,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
+import 'dart:math' show max;
 import 'dart:typed_data';
 
 import '../ffi/native_turns.dart' show LiteRtLmTurnClosedException;
@@ -71,6 +72,7 @@ final class WebConversationHandle implements ConversationHandle {
     this._preface = const [],
     this._vision = false,
     this._maxImages,
+    this._maxTokens = 0,
     this._audio = false,
     this.toolCallsOf = nativeToolCalls,
     this._onClose,
@@ -101,6 +103,15 @@ final class WebConversationHandle implements ConversationHandle {
   /// without a vision encoder.
   final int? _maxImages;
 
+  /// The engine's context window (`maxNumTokens`); 0 when unknown, which
+  /// makes no conversation final for its size.
+  final int _maxTokens;
+
+  /// The tokens the conversation this one was rebuilt from held, read when
+  /// it was replaced: the runtime prefills a preface only at the first send,
+  /// so a new conversation counts 0 until then (N5, 0.19.0).
+  int _replayedTokens = 0;
+
   /// The images the current runtime conversation holds: its preface's, its
   /// replayed exchanges' and every message sent on it since. A turn that
   /// failed or was stopped still counts until the rebuild it forces recounts
@@ -115,12 +126,15 @@ final class WebConversationHandle implements ConversationHandle {
   /// Why the conversation must be rebuilt, for the errors of a rebuild.
   String _rebuildCause = 'a stopped reply';
 
-  /// Set once the runtime refused a message because the context window is
-  /// full (N3, 0.19.0: "Max number of tokens reached, the context window is
-  /// full."): it then refuses every later message, and a rebuild would replay
-  /// the same history. Every later turn fails with [ContextFullException]
-  /// without being sent, as natively a session with no room left ends every
-  /// turn at the context limit; nothing is truncated.
+  /// Set once the history alone fills the context window: the runtime
+  /// refused a message for its size ("Max number of tokens reached, the
+  /// context window is full." or "Input token ids are too long.", 0.19.0)
+  /// while the conversation already held [_maxTokens] tokens (N6: 128 of
+  /// 128), so a rebuild replaying that history is refused too. Every later
+  /// turn fails with [ContextFullException] without being sent, as natively
+  /// a session with no room left ends every turn at the context limit;
+  /// nothing is truncated. A message refused with room left is only left
+  /// out (N5).
   String? _contextFull;
 
   /// Why the conversation cannot continue (a history no rebuild can
@@ -142,7 +156,13 @@ final class WebConversationHandle implements ConversationHandle {
   }
 
   static bool _isContextFull(Object error) =>
-      '$error'.contains('Max number of tokens reached');
+      '$error'.contains('Max number of tokens reached') ||
+      '$error'.contains('Input token ids are too long');
+
+  static String _tooLongMessage(Object error) =>
+      'The message did not fit the room the context window has left: '
+      '$liteRtLmWebRuntime refused it ($error), and it is left out of the '
+      'conversation. Send a shorter message, or open a new conversation.';
 
   static String _contextFullMessage(Object error) =>
       'The context window of this conversation is full: $liteRtLmWebRuntime '
@@ -405,18 +425,28 @@ final class WebConversationHandle implements ConversationHandle {
               ),
             );
           } else if (!turn.asked && turn.fault == null) {
+            // The runtime keeps a refused message at the end of its history
+            // (M1, N5): the rebuild leaves it out.
+            _failed = turn.message;
             if (_isContextFull(error)) {
-              _contextFull = _contextFullMessage(error);
+              _rebuildCause = 'a message too long for the context window';
               _lastTurnEnd = NativeLastTurnEnd.contextFull;
             } else {
               _rebuildCause = 'a failed turn';
-              _failed = turn.message;
             }
           }
           // 0.19.0 rejects from inside the generation's chunk callback:
           // wait until it has left the module before the page is let go.
           _armDrain(turn, 'its stream failed');
-          _fence().then((_) {
+          _fence().then((held) {
+            // What the conversation held before this message (the runtime
+            // does not count a refused one, N5): the history alone fills the
+            // window, so no rebuild can take it.
+            if (_lastTurnEnd == NativeLastTurnEnd.contextFull &&
+                _maxTokens > 0 &&
+                max(held ?? 0, _replayedTokens) >= _maxTokens) {
+              _contextFull = _contextFullMessage(error);
+            }
             if (turn.asked || turn.fault != null) {
               // How the runtime ends a stopped generation is its business:
               // the turn was asked to end, and it did.
@@ -428,7 +458,9 @@ final class WebConversationHandle implements ConversationHandle {
             } else {
               finish(
                 error: _lastTurnEnd == NativeLastTurnEnd.contextFull
-                    ? ContextFullException(_contextFull!)
+                    ? ContextFullException(
+                        _contextFull ?? _tooLongMessage(error),
+                      )
                     : _typed(error),
                 stack: stack,
               );
@@ -463,6 +495,7 @@ final class WebConversationHandle implements ConversationHandle {
         }
         return;
       }
+      if (_contextFull == null) _lastTurnEnd = null;
       // A conversation at a dead end (also one reached while this turn was
       // queued) sends nothing more.
       if (_deadEnd() case final error?) {
@@ -524,13 +557,18 @@ final class WebConversationHandle implements ConversationHandle {
   }
 
   /// Completes once a call serialised on the engine's executor mutex has run:
-  /// the generation that just rejected has then left the module. Its result
-  /// and its failure do not matter; a fence that never completes is covered
-  /// by the drain timer of a stop or close.
-  Future<void> _fence() async {
+  /// the generation that just rejected has then left the module. Gives the
+  /// tokens the conversation holds (`getTokenCount()`), or null when it
+  /// failed; a fence that never completes is covered by the drain timer of a
+  /// stop or close.
+  Future<int?> _fence() async {
     try {
-      await _conversation.getTokenCount().toDart;
-    } catch (_) {}
+      final count = await _conversation.getTokenCount().toDart;
+      // A JS number is a double under dart2wasm.
+      return count.isA<JSNumber>() ? count.toDartDouble.toInt() : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Why the web runtime cannot send [messageJson] with these options; null
@@ -721,6 +759,7 @@ final class WebConversationHandle implements ConversationHandle {
       );
     }
     final old = _conversation;
+    _replayedTokens = await _fence() ?? 0;
     _conversation = next;
     _replayed = replay;
     _images = _imagesIn([..._preface, ...replay]);

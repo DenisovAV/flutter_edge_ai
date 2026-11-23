@@ -236,11 +236,61 @@ window.__litertlmProbe = async (url, image, audio) => {
         end = 'done';
       } catch (err) { end = 'rejected: ' + ((err && err.message) || err); }
       const h = await k.getHistory();
+      const tokensFull = await k.getTokenCount();
       let next;
       try { next = 'answered: ' + await text(k, 'Say yes.'); }
       catch (err) { next = 'rejected: ' + ((err && err.message) || err); }
+      const tokensAfter = await k.getTokenCount();
+      const after = await k.getHistory();
       await k.delete();
-      return {chunks, end, roles: h.map((m) => m.role), history: JSON.stringify(h).slice(0, 800), next};
+      // N6: that history, its unanswered tail dropped, as a new
+      // conversation's preface: is it refused, and does a send answer?
+      const kept = [...after];
+      while (kept.length && kept[kept.length - 1].role !== 'assistant') kept.pop();
+      let rebuilt, rebuiltTokens;
+      try {
+        const r = await x.createConversation({...greedy, preface: {messages: kept}});
+        rebuiltTokens = await r.getTokenCount();
+        try { rebuilt = 'answered: ' + await text(r, 'Say yes.'); }
+        catch (err) { rebuilt = 'send rejected: ' + ((err && err.message) || err); }
+        await r.delete();
+      } catch (err) { rebuilt = 'create rejected: ' + ((err && err.message) || err); }
+      return {chunks, end, roles: h.map((m) => m.role), history: JSON.stringify(h).slice(0, 800), next,
+              tokensFull, tokensAfter, rolesAfter: after.map((m) => m.role), rebuilt, rebuiltTokens};
+    } finally { await x.delete(); }
+  });
+
+  // N5: a message longer than the window, after an exchange: is it refused,
+  // what does the history keep, and does the conversation rebuilt without it
+  // answer a shorter one?
+  await attempt('oversized_prompt_then_shorter', async () => {
+    const x = await Engine.create({model: await stream(), mainExecutorSettings: {maxNumTokens: 256}});
+    try {
+      const k = await x.createConversation(greedy);
+      const first = await text(k, 'Say yes.');
+      const tokensBefore = await k.getTokenCount();
+      let oversized;
+      try { oversized = 'answered: ' + await text(k, 'Repeat this. ' + 'word '.repeat(600)); }
+      catch (err) { oversized = 'rejected: ' + ((err && err.message) || err); }
+      const tokensAfter = await k.getTokenCount();
+      let same;
+      try { same = 'answered: ' + await text(k, 'Say no.'); }
+      catch (err) { same = 'rejected: ' + ((err && err.message) || err); }
+      const h = await k.getHistory();
+      await k.delete();
+      const kept = [...h];
+      while (kept.length && kept[kept.length - 1].role !== 'assistant') kept.pop();
+      let rebuilt, rebuiltTokens, rebuiltTokensAfter;
+      try {
+        const r = await x.createConversation({...greedy, preface: {messages: kept}});
+        rebuiltTokens = await r.getTokenCount();
+        try { rebuilt = 'answered: ' + await text(r, 'Say no.'); }
+        catch (err) { rebuilt = 'send rejected: ' + ((err && err.message) || err); }
+        rebuiltTokensAfter = await r.getTokenCount();
+        await r.delete();
+      } catch (err) { rebuilt = 'create rejected: ' + ((err && err.message) || err); }
+      return {first, tokensBefore, oversized, tokensAfter, same, roles: h.map((m) => m.role),
+              kept: kept.length, rebuilt, rebuiltTokens, rebuiltTokensAfter};
     } finally { await x.delete(); }
   });
 
@@ -521,6 +571,7 @@ void main() {
       'preface_empty_assistant_text',
       'history_after_empty_reply',
       'history_after_failure_mid_decode',
+      'oversized_prompt_then_shorter',
       'create_from_blob_url_over_2gib',
       'history_with_audio',
       'rebuilt_from_history_with_audio_as_base64',
@@ -559,6 +610,17 @@ void main() {
         reason: '$probe failed: ${record[probe]}',
       );
     }
+    // N5: an oversized message is refused and kept in the history; the
+    // conversation rebuilt without it answers a shorter one. N6: a history
+    // that filled the window is refused again when replayed.
+    final oversized =
+        (record['oversized_prompt_then_shorter']! as Map)['value'] as Map;
+    expect(oversized['oversized'], startsWith('rejected: Input token ids'));
+    expect(oversized['rebuilt'], startsWith('answered:'));
+    final full =
+        (record['history_after_failure_mid_decode']! as Map)['value'] as Map;
+    expect(full['tokensFull'], full['tokensAfter']);
+    expect(full['rebuilt'], startsWith('send rejected: Input token ids'));
     // M1/N1: the failed message stays at the end of the history with no
     // reply, a rebuild with it fails again, and one without it answers.
     final failed =

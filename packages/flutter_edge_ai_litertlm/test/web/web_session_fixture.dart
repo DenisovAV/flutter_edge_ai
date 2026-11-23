@@ -23,6 +23,7 @@ LiteRtLmWebSession webSessionOver(
   bool? engineVision,
   void Function(WebConversationHandle handle)? onHandle,
   int? maxImages,
+  int maxTokens = 0,
 }) {
   final handle = WebConversationHandle(
     conversation as JsLiteRtLmConversation,
@@ -35,6 +36,7 @@ LiteRtLmWebSession webSessionOver(
     // The engine's encoder, when it differs from what the session was told.
     vision: engineVision ?? supportImage,
     maxImages: maxImages,
+    maxTokens: maxTokens,
     audio: supportAudio,
   );
   onHandle?.call(handle);

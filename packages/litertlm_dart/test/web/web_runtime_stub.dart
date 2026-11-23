@@ -34,6 +34,8 @@ const _stub = r'''
     stuckOnCancel: false, deleteError: null, missingMember: null,
     noSettingsBackend: false, noSettingsTokens: false,
     resolvedVisionBackend: null, resolvedAudioBackend: null,
+    // What getTokenCount() answers: the tokens a conversation holds.
+    tokenCount: 7,
   };
   const open = () => p.streams.find((s) => !s.closed);
   const contextFull = 'Max number of tokens reached, the context window is full.';
@@ -109,8 +111,8 @@ const _stub = r'''
     };
     c.getTokenCount = () => {
       p.tokenCounts++;
-      if (p.holdFence) return new Promise((resolve) => p.fences.push(() => resolve(7)));
-      return Promise.resolve(7);
+      if (p.holdFence) return new Promise((resolve) => p.fences.push(() => resolve(p.tokenCount)));
+      return Promise.resolve(p.tokenCount);
     };
     c.delete = () => {
       p.conversationDeletes++;
@@ -166,6 +168,17 @@ const _stub = r'''
     s.closed = true;
     s.conversation.full = true;
     s.controller.error(new Error(contextFull));
+  };
+  // A message longer than the room the window has left: as 0.19.0 (N5), it
+  // is refused, kept at the end of the history, and the conversation refuses
+  // every later send.
+  window.__tooLong = () => {
+    const s = open();
+    s.closed = true;
+    s.conversation.failed = true;
+    s.conversation.history.push(asHistory(s.message));
+    s.controller.error(new Error(
+      'Input token ids are too long. Exceeding the maximum number of tokens allowed: 611 >= 256'));
   };
   window.__releaseFences = () => { for (const f of p.fences.splice(0)) f(); };
   window.__releaseHistories = () => { for (const f of p.histories.splice(0)) f(); };

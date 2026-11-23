@@ -535,45 +535,83 @@ void main() {
     });
     tearDown(() => engine.close());
 
-    /// Sends [text] and has the runtime refuse it for a full context window.
-    Future<Object?> refusedForContext(String text) async {
+    web.NativeLastTurnEnd? lastEnd() =>
+        web.conversationHandle(conversation).lastTurnEnd;
+
+    /// Sends [text] and has the runtime refuse it for its size, as [how]
+    /// (`__tooLong` or `__contextFull`).
+    Future<Object?> refused(String text, String how) async {
       final reply = conversation
           .sendMessageStream(Message.user(text))
           .drain<void>()
           .then<Object?>((_) => null, onError: (Object e) => e);
       await settle();
-      js('__contextFull');
+      js(how);
       return reply;
     }
 
-    test('a message the runtime refuses for it is a ContextFullException, '
+    test('a message too long for the room left is a ContextFullException, '
         'and the turn ends at the context limit', () async {
       expect(
-        await refusedForContext('Long'),
+        await refused('Long', '__tooLong'),
+        errorWith<ContextFullException>('Send a shorter message'),
+      );
+      expect(lastEnd(), web.NativeLastTurnEnd.contextFull);
+    });
+
+    test('the next, shorter message goes to a conversation rebuilt without '
+        'the refused one, and is answered', () async {
+      await exchange(conversation, 'One', 'Uno');
+      await refused('Long', '__tooLong');
+
+      await exchange(conversation, 'Short', 'Ok');
+
+      expect(prefaceMessages(1), [
+        {'role': 'user', 'content': 'One'},
+        assistantPart('Uno'),
+      ]);
+      expect(list('sent').last, 'Short');
+      expect(lastEnd(), isNull);
+    });
+
+    test('a message refused while the history fills the window ends the '
+        'conversation: every later message fails without being sent', () async {
+      setOnPage('tokenCount', 4096);
+      expect(
+        await refused('Long', '__contextFull'),
         errorWith<ContextFullException>(
           'The context window of this conversation is full',
         ),
       );
-      expect(
-        web.conversationHandle(conversation).lastTurnEnd,
-        web.NativeLastTurnEnd.contextFull,
-      );
-    });
-
-    test('every later message fails the same way, without being sent or '
-        'rebuilt', () async {
-      await refusedForContext('Long');
 
       await expectLater(
         conversation.sendMessageStream(Message.user('Short')),
         emitsError(errorWith<ContextFullException>('Open a new conversation')),
       );
-      expect(
-        web.conversationHandle(conversation).lastTurnEnd,
-        web.NativeLastTurnEnd.contextFull,
-      );
+      expect(lastEnd(), web.NativeLastTurnEnd.contextFull);
       expect(list('sent'), ['Long']);
       expect(list('conversationOptions'), hasLength(1));
+    });
+
+    test('a rebuilt conversation whose replayed history fills the window '
+        'ends at its first refusal, though it counts nothing yet', () async {
+      await stoppedExchange(conversation, 'One', 'Un');
+      setOnPage('tokenCount', 4096);
+      final reply = conversation
+          .sendMessageStream(Message.user('Two'))
+          .drain<void>()
+          .then<Object?>((_) => null, onError: (Object e) => e);
+      await settle();
+      // The runtime prefills a preface only at the first send (N5).
+      setOnPage('tokenCount', 0);
+      js('__tooLong');
+
+      expect(await reply, errorWith<ContextFullException>('is full'));
+      await expectLater(
+        conversation.sendMessageStream(Message.user('Three')),
+        emitsError(errorWith<ContextFullException>('is full')),
+      );
+      expect(list('sent'), ['One', 'Two']);
     });
 
     test('a rebuild the runtime refuses for it is a ContextFullException, '
@@ -604,6 +642,7 @@ void main() {
 
     test('a turn queued on the handle while the window filled fails without '
         'being sent', () async {
+      setOnPage('tokenCount', 4096);
       final handle = web.conversationHandle(conversation);
       final first = handle
           .chatRawMessage(jsonEncode(userPart('Long')))
@@ -624,7 +663,7 @@ void main() {
     test('a turn that ends normally records no end', () async {
       await exchange(conversation, 'One', 'Uno');
 
-      expect(web.conversationHandle(conversation).lastTurnEnd, isNull);
+      expect(lastEnd(), isNull);
     });
   });
 

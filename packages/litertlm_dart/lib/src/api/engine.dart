@@ -373,6 +373,8 @@ final class Engine {
   bool _channelWarned = false;
 
   /// Loads [config.modelPath] on [config.backend]: one attempt, no fallback.
+  /// On the web the same call loads a web export over the page's
+  /// `@litert-lm/core`, on [Backend.gpu] (see the README, "On the web").
   ///
   /// Throws [LiteRtLmBundleException] when the file is incomplete or cannot
   /// run as asked, [NpuDispatchUnavailableException] when the NPU cannot be
@@ -968,8 +970,8 @@ final class Engine {
   /// [UnsupportedError]: the NPU executor rolls back one token, not a
   /// target. Whether a rewind on this LiteRT-LM build scores a target as a
   /// fresh session would (LiteRT-LM #3561) is for the caller to check before
-  /// trusting the scores; flutter_edge_ai_litertlm runs that check once per
-  /// model.
+  /// trusting the scores, once per model: a fixed pair must score
+  /// differently, and repeats must be bit-identical.
   Future<ScoringRun> scoreTargets(
     String prompt,
     List<String> targets, {

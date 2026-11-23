@@ -33,7 +33,8 @@ class LiteRtLmEngine
   final LiteRtLmLogLevel? nativeLogLevel;
 
   /// Checked as natively, then ignored: the web runtime takes no thinking
-  /// budget (litertlm_dart refuses one there). A load with one set says so once per isolate, in debug.
+  /// budget (litertlm_dart refuses one there). A load with one set says so
+  /// once per isolate, in debug.
   final int? thinkingTokenBudget;
 
   @override

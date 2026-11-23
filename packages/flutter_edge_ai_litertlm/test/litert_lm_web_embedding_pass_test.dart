@@ -629,8 +629,7 @@ void main() {
     });
 
     test('images declared on the 270m: refused from its container header, '
-        'naming the 440m, before any engine exists (@litert-lm/core 0.19.0 '
-        'creates one anyway)', () async {
+        'naming the 440m, before any engine exists', () async {
       final runtime = _FakeRuntime()..file = _header('270m');
       await expectLater(
         _pass(runtime, media: {EmbeddingModality.image}).load(),

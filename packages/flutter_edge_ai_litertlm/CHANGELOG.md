@@ -1,5 +1,6 @@
 ## Unreleased
-- Web: a cancelled reply stops generation, and the next message no longer fails ("Task cancelled").
+- Web: the message after a stopped reply no longer fails with "Task cancelled".
+- Web: maxTokens now reaches the runtime; the default context is 1024 tokens, as on native.
 
 ## 1.21.0
 - Android GPU keeps Gemma 4 at FP16 above 2,048 tokens; Adreno GPU failures name the CPU.

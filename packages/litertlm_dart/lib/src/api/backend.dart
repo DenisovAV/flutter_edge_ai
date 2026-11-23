@@ -31,9 +31,9 @@ sealed class Backend {
   ///
   /// On Android the libraries are inside the APK: an app's
   /// `nativeLibraryDir` holds them only with `extractNativeLibs="true"`, and
-  /// then holds every vendor the app ships. flutter_edge_ai_litertlm
-  /// prepares a directory per vendor through flutter_edge_ai's platform
-  /// channel; a plain Dart program on Android has to do the same.
+  /// then holds every vendor the app ships. An app copies one vendor's
+  /// libraries out of the APK into a directory of their own and passes it
+  /// here.
   const factory Backend.npu({String? dispatchDir}) = NpuBackend;
 }
 
@@ -115,8 +115,8 @@ Backend backendOf(BackendKind kind, {NpuPlatform? platform}) => switch (kind) {
 
 /// The NPU, with [platform] answering what plain Dart cannot: the build's
 /// `NativeAssetsManifest.json`, and on Android a directory prepared with the
-/// dispatch libraries of the vendor the bundle names. flutter_edge_ai_litertlm
-/// passes its Flutter implementation.
+/// dispatch libraries of the vendor the bundle names. A package built on this
+/// one passes its own implementation.
 NpuBackend npuBackendOn(NpuPlatform platform) => NpuBackend._on(platform);
 
 /// [backend]'s platform layer ([npuBackendOn]); null for any other backend.

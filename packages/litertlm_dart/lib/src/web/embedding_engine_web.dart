@@ -29,8 +29,9 @@ final class EmbeddingEngine {
   final EmbedderInfo info;
 
   /// Loads [config.modelPath], a URL the page can fetch (`blob:`, `https:`),
-  /// on WebGPU ([Backend.gpu]; a page without WebGPU is refused). The vision tower, when [config.visionBackend]
-  /// is set, runs on the text tower's backend; the audio tower on
+  /// on WebGPU ([Backend.gpu]; a page without WebGPU is refused). The vision
+  /// tower, when [config.visionBackend] is set, runs on the text tower's
+  /// backend; the audio tower on
   /// [config.audioBackend].
   ///
   /// Throws [UnsupportedError] for what does not run here: the CPU text

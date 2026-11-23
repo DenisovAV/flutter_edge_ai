@@ -144,9 +144,9 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider
 /// audio on a bundle without an audio encoder (the 270m, the 440m) is refused
 /// here, from the container header — a few KB of the installed file, read
 /// through the page's `fetch()` — as natively: core calls describe() before
-/// it closes the embedder it holds, so that embedder keeps working. Whether
-/// the bundle has a vision encoder for declared images is answered by the
-/// runtime when the pass creates the engine.
+/// it closes the embedder it holds, so that embedder keeps working. Declared
+/// images on a bundle without a vision encoder (the 270m) are refused from
+/// the same header when the pass loads, before any engine exists.
 Future<EmbeddingPassDescriptor<LiteRtLmWebEmbedderConfig>> _describeBundle(
   RuntimeConfig config,
   String fileName,

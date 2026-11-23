@@ -14,8 +14,8 @@
 //   `window.EmbeddingEngine = m.EmbeddingEngine;`. Without that line there is
 //   no engine to create; the load fails with an EmbedderLoadException that
 //   names the missing line instead of a JS `undefined` deep in the runtime.
-// - One `EmbeddingEngine` per embedder, created at load and deleted at close. The runtime's WebAssembly module
-//   is page-global and shared with the `.litertlm` LLM engine, whose calls the
+// - One `EmbeddingEngine` per embedder, created at load and deleted at
+//   close. The runtime's WebAssembly module is page-global and shared with the `.litertlm` LLM engine, whose calls the
 //   runtime does not order against these: the create + probe and every
 //   `computeEmbedding` take `liteRtLmPageLock`, as the LLM's create,
 //   conversation and generation do (see that file for why). The two engines

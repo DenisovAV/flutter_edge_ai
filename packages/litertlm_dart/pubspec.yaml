@@ -36,7 +36,7 @@ dependencies:
 
 dev_dependencies:
   # The member golden (test/public_surface/) resolves the public library
-  # with the analyzer; the range is flutter_edge_ai's.
+  # with the analyzer; the range is the workspace's.
   analyzer: '>=13.0.0 <15.0.0'
   lints: ^6.0.0
   test: ^1.25.0

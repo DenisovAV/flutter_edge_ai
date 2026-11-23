@@ -43,8 +43,8 @@ From the diff, detect which package(s)/area(s) are affected:
 
 **Packages (`packages/<pkg>/`):**
 - `flutter_edge_ai/` — core: registry, contracts, shells, ModelSource, slim native plugin (its `android/` `ios/` host only the bundled channel)
-- `litertlm_dart/` — pure-Dart LiteRT-LM runtime: `lib/src/ffi/` (FFI client, bindings), `hook/build.dart` (the sole libLiteRtLm hook), `native/litert_lm/` build scripts
-- `flutter_edge_ai_litertlm/` — `.litertlm` engine adapter over `litertlm_dart` (`lib/src/adapter/`, `lib/src/embedding/`, web arm)
+- `litertlm_dart/` — pure-Dart LiteRT-LM runtime, native and web: `lib/src/ffi/` (FFI client, bindings), `lib/src/web/` (the `@litert-lm/core` runtime: web `Engine`, conversation handle, page lock, EmbeddingGemma 2 embedder), `hook/build.dart` (the sole libLiteRtLm hook), `native/litert_lm/` build scripts
+- `flutter_edge_ai_litertlm/` — `.litertlm` engine adapter over `litertlm_dart` (`lib/src/adapter/`, `lib/src/embedding/`; on the web thin files over litertlm_dart's web runtime, plus the LiteRT.js `.tflite` embedding bundle)
 - `flutter_edge_ai_embeddings/` — embedding tokenizers (pure Dart; the app registers them)
 - `flutter_edge_ai_mediapipe/` — `.task` MediaPipe; owns pigeon (`lib/pigeon.g.dart`) + Kotlin/Swift + web JS
 - `flutter_edge_ai_rag/` — instance-scoped RAG orchestration and contracts.
@@ -283,9 +283,17 @@ You are reviewing the web layer of flutter_edge_ai. Two independent engines have
 web arms, plus embeddings and RAG:
 
 - packages/flutter_edge_ai_mediapipe/lib/src/web/ — `.task` via @mediapipe/tasks-genai
-- packages/flutter_edge_ai_litertlm/lib/src/web/ — `.litertlm` via @litert-lm/core.
-  EARLY PREVIEW: text only. Function calling is wired; vision, audio, verified
-  thinking and LoRA are not supported.
+- packages/litertlm_dart/lib/src/web/ — the `.litertlm` web RUNTIME over
+  @litert-lm/core: engine_web.dart, web_conversation_handle.dart (stops,
+  rebuilds, drain timer, page poisoning), litert_lm_js.dart (interop, member
+  checks), page_lock.dart, web_embedder.dart and embedding_runtime_js.dart
+  (EmbeddingGemma 2), web_runtime_version.dart (the pin). EARLY PREVIEW:
+  text only. Function calling and thinking are wired; vision, audio and LoRA
+  are refused with the measured reason.
+- packages/flutter_edge_ai_litertlm/lib/src/web/ and lib/src/adapter/web_* —
+  the adapter's thin web files over that runtime (web_llm_engine.dart,
+  web_inference_model.dart, litert_lm_engine_web.dart) and the web EG2 pass
+  (lib/src/embedding/web/).
 - packages/flutter_edge_ai_onnx/lib/src/web/ — `.onnx` text generation and
   embeddings through Transformers.js / ONNX Runtime Web (WebGPU with WASM CPU
   fallback).
@@ -310,9 +318,37 @@ CHECKLIST
    none. MediaPipe and LiteRT-LM are GPU-first web paths; ONNX Runtime Web also
    has a WASM CPU fallback. Do not describe the whole Web platform as GPU-only.
 5. CDN pins: @mediapipe/tasks-genai, @litert-lm/core and @litertjs/core must
-   agree between the code and any documented script tag. @litertjs/core has
-   THREE places to keep in step: `LiteRtWebRuntime.pinnedVersion`,
-   `tool/web_build/package.json` and the committed `web/litert.js`.
+   agree between the code and any documented script tag. @litert-lm/core's
+   one source is `liteRtLmWebRuntimeVersion`
+   (packages/litertlm_dart/lib/src/web/web_runtime_version.dart): every
+   index.html, README snippet and skill must import exactly it, and the frozen
+   web goldens (packages/flutter_edge_ai/example/integration_test/goldens/*_web.dart) must come from
+   its major.minor — test/web/web_runtime_version_test.dart checks both.
+   Moving it means re-running the probe and every web drive suite and
+   re-measuring every refusal text, not editing the constant alone.
+   @litertjs/core has THREE places to keep in step:
+   `LiteRtWebRuntime.pinnedVersion`,
+   `packages/flutter_edge_ai_litertlm/tool/web_build/package.json` and the
+   committed `web/litert.js`.
+6. RUNTIME SURFACE: the web runtime checks the page for every member it
+   calls (Engine: create, createConversation, delete; a conversation:
+   sendMessageStreaming, cancel, getHistory, getTokenCount, delete;
+   EmbeddingEngine: create, computeEmbedding, delete). A new call on a
+   runtime object must join that list and the parametrized tests, and a test
+   stub must model the measured 0.18.0 surface
+   (packages/litertlm_dart/test/web/web_runtime_stub.dart), not an easier one.
+   Behaviour claims about @litert-lm/core must cite a record of
+   packages/flutter_edge_ai/example/integration_test/web_litertlm_runtime_probe_test.dart.
+7. TESTS RUN IN BOTH COMPILERS: `dart test -p chrome` AND
+   `dart test -p chrome -c dart2wasm` for litertlm_dart, `flutter test
+   --platform chrome` with and without `--wasm` for the adapter;
+   `tool/test_all.sh` runs them. A JS exception surfaces differently in the
+   two.
+8. DRIVE SUITES (Rule 6b): web integration tests run under `flutter drive`,
+   where a throwing setUp reads as "All tests passed". Anything that can fail
+   is in the test body, and every suite ends with a sentinel test checking
+   that every test started. A green drive run of a suite without that
+   sentinel is not evidence.
 
 Report CRITICAL / IMPORTANT / MINOR with file:line.
 ```
@@ -335,6 +371,8 @@ task description mentions any of those, it predates 0.14.0.
   through their litertlm_dart dependency and have no hook of their own.
 - packages/litertlm_dart/native/litert_lm/ — build_*.sh, patch_c_api.sh,
   stream_proxy.c
+- packages/litertlm_dart/lib/src/{api,runtime,bundle,embedder,hook}/ — the
+  public API, the load plan, the EG2 embedder and the hook's helpers
 - packages/flutter_edge_ai/{linux,windows}/ — thin plugin registration C++
 - packages/flutter_edge_ai/lib/src/desktop/ — the registry-dispatch shell
 

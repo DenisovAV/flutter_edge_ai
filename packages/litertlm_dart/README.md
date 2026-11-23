@@ -10,12 +10,7 @@ the page's [`@litert-lm/core`](https://www.npmjs.com/package/@litert-lm/core)
 loads a `.litertlm` model, a `Conversation` sends it messages, an
 `EmbeddingEngine` embeds with EmbeddingGemma 2.
 
-It is the runtime under
-[`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm)
-and [`flutter_edge_ai_speech`](https://pub.dev/packages/flutter_edge_ai_speech).
-A Flutter app normally uses those, through
-[`flutter_edge_ai`](https://pub.dev/packages/flutter_edge_ai); today this
-package runs inside Flutter apps (see
+Today it runs inside Flutter apps, and in a browser (see
 [Where it runs today](#where-it-runs-today)).
 
 ```dart
@@ -50,7 +45,8 @@ This release runs:
 |---|---|
 | Native | LiteRT-LM 0.19.1, our build `native-v0.19.1-c` |
 | Web | `@litert-lm/core` 0.18.0 |
- `dart pub add litertlm_dart` writes `^0.19.1+1`, which for a 0.x
+
+`dart pub add litertlm_dart` writes `^0.19.1+1`, which for a 0.x
 version also takes later 0.19.x releases; those follow newer LiteRT-LM
 releases and may change the Dart API, so bound it at the next upstream patch,
 as above, to stay on one.
@@ -60,8 +56,8 @@ releases of this repository, SHA256-verified) for Android arm64, iOS, macOS
 arm64, Linux x64/arm64 and Windows x64.
 
 `Message`, `Tool`, `ResponseFormat` and `ActivationDataType` have the names
-of LiteRT-LM's Kotlin and Swift types, and `flutter_edge_ai` has types of the
-same names. In code that imports both, import this package with a prefix:
+of LiteRT-LM's Kotlin and Swift types. In code that also imports a library
+with types of those names, import this package with a prefix:
 `import 'package:litertlm_dart/litertlm_dart.dart' as lm;`.
 
 ## Initialize the Engine
@@ -79,6 +75,8 @@ final engine = await Engine.create(
     maxNumTokens: 4096, // the context window, not the reply length
     cacheDir: cacheDir, // optional: compiled programs, weight caches
   ),
+  // On the web pass Backend.gpu(): the default Backend.cpu() fails a web
+  // export of Gemma 4 there (see On the web).
 );
 // ... create conversations ...
 await engine.close();
@@ -376,7 +374,8 @@ import 'package:litertlm_dart/litertlm_dart.dart';
 final embedder = await EmbeddingEngine.create(
   EmbeddingEngineConfig(
     modelPath: embeddingModelPath,
-    cacheDir: cacheDir, // one weight cache per bundle; not backed up
+    cacheDir: cacheDir, // required natively: one weight cache per bundle,
+    // in a directory that is not backed up; refused on the web
     visionBackend: const Backend.cpu(), // takes images; null: text only
   ),
 );
@@ -391,6 +390,8 @@ final vector = await embedder.computeEmbedding([
 await embedder.close();
 ```
 
+- `cacheDir` is a `String?` since 0.19.1+2 (it was a `String`): natively a
+  null one is refused with an `ArgumentError`, on the web a set one.
 - The text tower runs on the CPU, on the NPU for a per-SoC bundle (and only
   there), and on the GPU on Linux x64, Windows x64 and macOS arm64 for the
   bundles measured there; elsewhere the GPU is refused. Nothing moves to
@@ -491,24 +492,26 @@ so compare runs with the same `run.maxNumTokens`.
 
 ## Where it runs today
 
-The runtime and the hook are what `flutter_edge_ai_litertlm` runs on Android,
-iOS, macOS, Linux and Windows. On its own, without that package:
+The runtime and the hook run in Flutter apps on Android, iOS, macOS, Linux
+and Windows, and the web arm in a browser page. What an app does itself:
 
-- **Android:** the GPU and the NPU load vendor libraries an app must declare
-  as `uses-native-library` (`libOpenCL.so`, `libvndksupport.so`,
-  `libcdsprpc.so`, the Google Tensor and NeuroPilot libraries;
-  `flutter_edge_ai`'s manifest declares them). For `Backend.npu`, pass a
-  `dispatchDir` holding one vendor's dispatch libraries, copied out of the
-  APK; `flutter_edge_ai_litertlm` does this through a platform channel.
-- **macOS:** two companion libraries (the constraint provider and the Metal
-  accelerator) are embedded by `flutter_edge_ai_litertlm`'s Swift package or
-  Podfile step. A macOS app that depends on `litertlm_dart` alone, and a
-  plain Dart program on macOS, cannot load the engine yet.
+- **Android:** the GPU and the NPU load vendor libraries Android hands out
+  only when the app's manifest declares them as `<uses-native-library
+  android:required="false">`: `libOpenCL.so`, `libOpenCL-car.so`,
+  `libOpenCL-pixel.so` and `libvndksupport.so` for the GPU, `libcdsprpc.so`
+  for the Qualcomm NPU, `libedgetpu_litert.so` and `libedgetpu_util.so` for
+  Google Tensor, and MediaTek's NeuroPilot libraries for MediaTek. For
+  `Backend.npu`, pass a `dispatchDir` holding one vendor's dispatch
+  libraries, copied out of the APK by the app.
+- **macOS:** two companion frameworks, `GemmaModelConstraintProvider` and
+  `LiteRtLmMetalAccelerator` (on the `native-v*` release as xcframework
+  zips), must be embedded in the app's `Frameworks`; the hook does not do it
+  yet. Without them, and in a plain Dart program on macOS, the engine does
+  not load.
 - **Library lookup** follows a Flutter app bundle; `dart run` and
   `dart build cli` layouts are not looked up yet.
-- **With `flutter_edge_ai_litertlm` 1.20.x or older** in the same app, both
-  build hooks bundle `libLiteRtLm` and which build runs is not defined. Use
-  `flutter_edge_ai_litertlm` 1.21.0 or newer, which builds on this package.
+- **One `libLiteRtLm` per app:** another package that bundles its own
+  `libLiteRtLm` through a build hook leaves which build runs undefined.
 
 A plain Dart program and the macOS companions are planned with a
 command-line example.
@@ -530,9 +533,6 @@ hooks:
 On the MediaTek NPU every turn runs in a fresh native conversation that
 replays the history: there a conversation answers its second message empty
 (MT6989, LiteRT-LM #4256).
-
-The key apps set before this package existed, `flutter_edge_ai_litertlm:`, is
-still read, with a warning, until the next upstream LiteRT-LM version.
 
 The native libraries are cached per release under
 `~/Library/Caches/litertlm_dart/native/` (macOS), `~/.cache/litertlm_dart/native/`
@@ -558,10 +558,14 @@ window.litertLmReady = (async () => {
 ```
 
 `EngineConfig.modelPath` is then a URL the page can fetch (`blob:`, `https:`):
-a `.litertlm` web export such as `gemma-4-E2B-it-web.litertlm`. A page that
-does not load the module, lacks `window.Engine`, or loads a runtime without
-the calls this release makes is refused with a `StateError` naming the
-version above.
+a `.litertlm` web export such as `gemma-4-E2B-it-web.litertlm`, with
+`backend: Backend.gpu()` (the default `Backend.cpu()` fails it, below).
+Import exactly the version above: this release is measured on it, and
+another (0.19.0 answers empty after a tool result with Gemma 4 E2B's web
+export) is said once with `print` when the page fetched it by a versioned
+URL. A page that does not load the module, lacks `window.Engine`, or loads a
+runtime without a call this release makes is refused with a `StateError`
+naming what is missing and the version above.
 
 What differs on the web, measured on `@litert-lm/core` 0.18.0 with Gemma 4
 E2B's web export in Chrome 157 (2026-11-23):
@@ -570,12 +574,15 @@ E2B's web export in Chrome 157 (2026-11-23):
   image or audio part fails ("Audio or image item must contain a path or
   blob."), so `visionBackend`, `audioBackend` and `maxNumImages` are refused,
   and so is a message with an image or audio.
-- **A stop is a rebuild.** After `cancel()` (or a cancelled subscription) the
-  runtime refuses every later send on that conversation ("Task cancelled"),
-  so the next message goes to a new conversation built from the old one's
-  history, the stopped exchange put back. A stopped generation that does not
-  end within 30 s makes the page unusable for LiteRT-LM (the module may still
-  be suspended in it): `close()` and every later call fail and say so.
+- **A stop mid-reply is a rebuild.** After `cancel()` (or a cancelled
+  subscription) stops a reply before its end, the runtime refuses every later
+  send on that conversation ("Task cancelled"), so the next message goes to a
+  new conversation built from the preface, the exchanges so far and the
+  stopped one (its text). A stop with nothing in flight, or after the last
+  chunk, changes nothing. A stopped generation that does not end within 30 s,
+  after a stop or a close, makes the page unusable for LiteRT-LM (the module
+  may still be suspended in it): the turn, `close()` and every later call
+  fail and say so.
 - **Per conversation, not per message:** thinking and the template variables
   (`extraContext`). Repetition penalties, no-repeat n-grams, suppressed
   tokens, a thinking token budget, response formats and speculative decoding
@@ -588,9 +595,10 @@ E2B's web export in Chrome 157 (2026-11-23):
   web runtime takes no activation type and uses its own.
 - **Refused:** the NPU, `cacheDir`, `activationDataType`, the tokenizer,
   option scoring, `benchmark()`, `Conversation.getBenchmarkInfo()`,
-  `readBundleInfo`, `readBundleGenericData`. `Backend.cpu` (WebAssembly) is
-  handed to the runtime, but it refuses Gemma 4 E2B's web export
-  ("tf_lite_prefill_decode not found in the model.").
+  `readBundleInfo`, `readBundleGenericData`. `Backend.cpu` (WebAssembly),
+  the default of `EngineConfig`, is handed to the runtime, but it refuses
+  Gemma 4 E2B's web export ("tf_lite_prefill_decode not found in the
+  model."): pass `Backend.gpu()`.
 - **EmbeddingGemma 2** runs on WebGPU only: the CPU (WebAssembly) path of
   `@litert-lm/core` cannot read the bundles' external weights ("Failed to get
   external weight"), so `Backend.cpu` — the default of `EmbeddingEngineConfig`
@@ -611,10 +619,5 @@ Run the browser suites with `dart test -p chrome` (and `-c dart2wasm`).
   compatibility promise; native only.
 - `package:litertlm_dart/internal.dart` (no `dart:io`, `dart:ffi` or
   `dart:js_interop`), `internal_io.dart` (native) and `internal_web.dart`
-  (web): what `flutter_edge_ai_litertlm` and its tests build on; no
-  compatibility promise.
-
-Everything LiteRT-LM lives here. LiteRT.js `.tflite` embeddings (EmbeddingGemma
-1, Gecko) stay in `flutter_edge_ai_litertlm`: they are a `flutter_edge_ai`
-`TokenEmbeddingPass`, built on core's embedding SPI, as the native `.tflite`
-pass is.
+  (web): internals for packages built on this one; no compatibility promise,
+  not for apps.

@@ -80,7 +80,9 @@ final class Engine {
   /// Loads [config.modelPath] — a URL the page can fetch (`blob:`, `https:`)
   /// — on [config.backend]: WebGPU for [Backend.gpu], WebAssembly for
   /// [Backend.cpu] (whose `threadCount` becomes the runtime's
-  /// `number_of_threads`). One attempt, no fallback.
+  /// `number_of_threads`). One attempt, no fallback. Pass [Backend.gpu] for
+  /// Gemma 4's web export: the default [Backend.cpu] fails it (0.18.0:
+  /// "tf_lite_prefill_decode not found in the model.").
   ///
   /// Throws [UnsupportedError] for what does not run on the web (see the
   /// library comment), [StateError] when the page did not load

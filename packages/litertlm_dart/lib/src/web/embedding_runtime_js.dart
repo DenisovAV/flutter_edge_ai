@@ -33,8 +33,8 @@
 /// [WindowLiteRtLmWebRuntime.readPrefix] is the page's own `fetch()`: the
 /// first bytes of the installed bundle, for its container header.
 ///
-/// With `backend: GPU` (4, the backend the embedder asks for) `create` sets up the
-/// module's one WebGPU device itself, from
+/// With `backend: GPU` (4, the backend the embedder asks for) `create` sets
+/// up the module's one WebGPU device itself, from
 /// `navigator.gpu.requestAdapter({powerPreference: 'high-performance'})`;
 /// [WindowLiteRtLmWebRuntime.webGpuSupport] asks the same question first, so
 /// a page without WebGPU is refused before `create`.

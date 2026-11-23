@@ -130,5 +130,9 @@ export 'src/web/web_embedder.dart'
         requireLiteRtLmWebAudioEncoder,
         requireLiteRtLmWebAudioEncoderFor;
 export 'src/web/web_runtime_version.dart'
-    show liteRtLmWebModuleUrl, liteRtLmWebRuntime, liteRtLmWebRuntimeVersion;
+    show
+        liteRtLmWebModuleUrl,
+        liteRtLmWebRuntime,
+        liteRtLmWebRuntimeVersion,
+        webNoMediaMessage;
 export 'src/web/web_session_config.dart' show samplerTypeTopP, webSessionConfig;

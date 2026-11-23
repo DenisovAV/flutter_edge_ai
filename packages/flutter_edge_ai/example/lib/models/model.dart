@@ -896,8 +896,7 @@ enum Model implements InferenceModelInterface {
   // [supportAudio] getters below suppress these on web for .litertlm models,
   // where the web engine is text only (litertlm_dart refuses vision and
   // audio there: @litert-lm/core 0.18.0's Engine takes no vision or audio
-  // backend) —
-  // so an image/audio message throws UnsupportedError.
+  // backend), so an image or audio message throws UnsupportedError.
   // Advertising them in the UI would offer a picker that only produces that
   // error. Native and web MediaPipe (.task) keep the declared value.
   final bool _supportImageRaw;

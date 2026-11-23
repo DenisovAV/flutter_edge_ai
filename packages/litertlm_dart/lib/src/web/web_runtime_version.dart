@@ -1,8 +1,8 @@
 // The `@litert-lm/core` release the web arm is written and measured against:
-// the one place the version lives. The page's module script imports exactly
-// this version (`liteRtLmWebModuleUrl`), and every message that names the
-// runtime quotes it; test/web/web_runtime_version_test.dart holds the example's
-// index.html and the READMEs to it.
+// the one place the version lives. An app's page imports exactly this version
+// (`liteRtLmWebModuleUrl`); every message that names the runtime quotes it. In
+// this repository, test/web/web_runtime_version_test.dart holds the example
+// pages, the READMEs and the web goldens to it.
 
 /// The `@litert-lm/core` version the web arm drives.
 const liteRtLmWebRuntimeVersion = '0.18.0';

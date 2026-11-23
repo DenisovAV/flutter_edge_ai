@@ -17,7 +17,12 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:litertlm_dart/internal.dart'
-    show liteRtLmWebRuntime, messageJson, messageRawJson, turnFailureCause;
+    show
+        liteRtLmWebRuntime,
+        messageJson,
+        messageRawJson,
+        turnFailureCause,
+        webNoMediaMessage;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'package:mutex/mutex.dart';
 
@@ -511,10 +516,9 @@ class LiteRtLmWebSession extends InferenceModelSession
       if (message.hasAudio) 'audio',
     ].join(' and ');
     return UnsupportedError(
-      'Web LiteRT-LM does not support $kinds input for LLMs yet: '
-      'flutter_edge_ai_litertlm creates the $liteRtLmWebRuntime LLM engine '
-      'without a vision or audio executor. Send text only to a web .litertlm '
-      'model${message.hasImage ? ', or use a MediaPipe .task web model for images' : ''}.',
+      'Web LiteRT-LM does not support $kinds input for LLMs yet. '
+      '$webNoMediaMessage Send text only to a web .litertlm model'
+      '${message.hasImage ? ', or use a MediaPipe .task web model for images' : ''}.',
     );
   }
 
@@ -742,8 +746,10 @@ class LiteRtLmWebSession extends InferenceModelSession
   }
 
   /// Stops the in-flight generation both locally (closes the Dart stream at
-  /// its next chunk) and in the runtime (`conversation.cancel()`, which keeps
-  /// the conversation usable).
+  /// its next chunk) and in the runtime (`conversation.cancel()`). A reply
+  /// stopped before its end leaves the runtime conversation refusing every
+  /// later send, so litertlm_dart sends the next message to one rebuilt from
+  /// the history, the stopped reply's text kept.
   @override
   Future<void> stopGeneration() async {
     _stopAsked = true;

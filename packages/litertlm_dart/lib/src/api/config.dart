@@ -226,7 +226,9 @@ final class EngineConfig {
   /// `https:`) of a web export.
   final String modelPath;
 
-  /// Where the text model runs.
+  /// Where the text model runs; [Backend.cpu] when unset. On the web pass
+  /// [Backend.gpu]: the WebAssembly CPU path refuses Gemma 4's web export
+  /// (see the README, "On the web").
   final Backend backend;
 
   /// Where the vision encoder runs; null loads none, as in Kotlin and Swift.

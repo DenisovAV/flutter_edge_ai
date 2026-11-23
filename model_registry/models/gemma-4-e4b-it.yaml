@@ -65,4 +65,4 @@ variants:
       export uploaded the same day (2026-05-19) answers a tool result with an empty reply on
       0.19.0 (measured 2026-11-23), so this one is withheld until a newer E4B web export is
       measured.
-    issue: https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/example/integration_test/web_function_calling_test.dart
+    issue: https://github.com/DenisovAV/flutter_edge_ai/blob/dbd768d5e30ebe787083068e51e73ebad780283e/packages/flutter_edge_ai/example/integration_test/web_function_calling_test.dart

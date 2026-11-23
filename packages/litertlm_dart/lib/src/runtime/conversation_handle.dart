@@ -95,9 +95,9 @@ final class StoppedTurnRewindException implements Exception {
 
 /// Per-conversation operations a session needs from the FFI layer.
 ///
-/// [LiteRtLmConversationHandle] is the real implementation backed by a
+/// `LiteRtLmConversationHandle` is the real implementation backed by a
 /// native `LiteRtLmConversation*`. Tests inject a fake implementing this
-/// interface so [FfiInferenceModelSession] orchestration (query buffering,
+/// interface so `FfiInferenceModelSession` orchestration (query buffering,
 /// raw-response capture, Gemma 4 tool-call extraction) can be exercised on
 /// the host VM with no native engine.
 abstract class ConversationHandle {

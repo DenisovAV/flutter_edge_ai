@@ -56,6 +56,14 @@ Object? turnFailureCause(TurnFailedException e) => e._cause;
 /// turn keeps its message and the part of the reply that was generated,
 /// closed as a finished exchange; a turn that produced nothing, failed or did
 /// not fit is taken back.
+///
+/// On the web the runtime refuses every send after a stop, so the next message
+/// goes to a new runtime conversation built from the history, the stopped
+/// exchange put back. Thinking and template variables are the conversation's
+/// (a message that asks for others, or for a repetition penalty, a no-repeat
+/// n-gram, suppressed tokens or a thinking budget, ends with an
+/// [UnsupportedError]); there is no [ContextFullException] (the runtime's own
+/// error is a [TurnFailedException]).
 final class Conversation {
   Conversation._(
     this._handle, {
@@ -322,7 +330,9 @@ final class Conversation {
     return TurnFailedException('$error', cause: error);
   }
 
-  /// What LiteRT-LM's benchmark reports about this conversation.
+  /// What LiteRT-LM's benchmark reports about this conversation. Refused on
+  /// the web with an [UnsupportedError]: the runtime reports it only in its
+  /// benchmark mode, which litertlm_dart does not turn on there.
   BenchmarkInfo getBenchmarkInfo() => _handle.getSessionMetrics();
 
   /// Ends the conversation. A reply still streaming ends with
@@ -334,7 +344,7 @@ final class Conversation {
   }
 }
 
-/// A conversation over [handle], as [Engine] makes one.
+/// A conversation over [handle], as `Engine` makes one.
 Conversation newConversation(
   ConversationHandle handle, {
   required ConversationConfig config,

@@ -55,13 +55,17 @@ Future<void> _disposeModel() async {
   _model = null;
 }
 
+/// The tests that started (Rule 6b).
+final _started = <int>{};
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  group('web thinking (@litert-lm/core 0.18.0)', () {
+  group('web thinking (@litert-lm/core, litertlm_dart\'s pin)', () {
     tearDownAll(_disposeModel);
 
     testWidgets('enableThinking reaches the model on web', (tester) async {
+      _started.add(0);
       final model = await _ensureModel();
       final chat = await model.openChat(
         enableThinking: true,
@@ -96,5 +100,10 @@ void main() {
         reason: 'reasoning but no answer: $thinking thinking events',
       );
     }, timeout: const Timeout(Duration(minutes: 10)));
+  });
+
+  // Rule 6b: under flutter drive a test that never ran reads as a pass.
+  testWidgets('every test above started', (tester) async {
+    expect(_started, hasLength(1));
   });
 }

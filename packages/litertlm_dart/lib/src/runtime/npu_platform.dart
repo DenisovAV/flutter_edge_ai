@@ -11,13 +11,13 @@ import 'npu_stacks.dart';
 /// through `rootBundle` and asks core's `flutter_gemma_bundled` channel.
 abstract interface class NpuPlatform {
   /// The text of the build's `NativeAssetsManifest.json`. Throws when it
-  /// cannot be read; [checkNpuStackInManifest] turns that into
-  /// [NpuStackCheck.unknown].
+  /// cannot be read; `checkNpuStackInManifest` turns that into
+  /// `NpuStackCheck.unknown`.
   Future<String> readNativeAssetsManifest();
 
   /// A directory on Android holding exactly [libFileNames] (`lib<name>.so`)
   /// for LiteRT to load [vendor]'s dispatch from, or null when the native side
-  /// returned none. Throws [NpuDispatchUnavailableException] when the stack
+  /// returned none. Throws `NpuDispatchUnavailableException` when the stack
   /// cannot be prepared.
   Future<String?> prepareAndroidDispatchDir(
     List<String> libFileNames,
@@ -25,6 +25,6 @@ abstract interface class NpuPlatform {
   );
 
   /// The directory of the running executable: where Native Assets puts a
-  /// Linux app's `lib/` and a Windows app's DLLs ([executableDirOf]).
+  /// Linux app's `lib/` and a Windows app's DLLs (`executableDirOf`).
   String get executableDir;
 }

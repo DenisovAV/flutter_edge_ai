@@ -6,7 +6,7 @@ import 'package:meta/meta.dart' show experimental, immutable;
 import '../runtime/types.dart' show ActivationDataType;
 import 'backend.dart';
 
-/// What one [benchmark] run measured: LiteRT-LM's record of its last prefill
+/// What one `benchmark` run measured: LiteRT-LM's record of its last prefill
 /// and last decode, as the Kotlin API's `BenchmarkInfo` reports them, and
 /// what the engine ran with.
 @experimental
@@ -32,7 +32,7 @@ final class LlmBenchmarkResult {
   /// 1.6 s, with [createTime] 1.0 s).
   final Duration initTime;
 
-  /// [Engine.create] measured in Dart from its turn among the process's
+  /// `Engine.create` measured in Dart from its turn among the process's
   /// creates (not the wait behind another one): the bundle read, the load
   /// plan, the isolate the engine is made on and `litert_lm_engine_create`.
   final Duration createTime;

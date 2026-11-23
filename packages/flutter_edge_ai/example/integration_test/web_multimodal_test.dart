@@ -1,7 +1,10 @@
 /// Image and audio on the web `.litertlm` path are refused with a clear error.
 ///
-/// `@litert-lm/core` 0.18.0 creates the LLM engine with no vision or audio
-/// executor: `EngineSettings.createDefault(modelAssets, backend)` takes no
+/// litertlm_dart creates the web LLM engine with no vision or audio executor:
+/// 0.19.0 takes a `visionBackend`/`audioBackend`, but Gemma 4 E2B's web export
+/// then fails the first image ("Vision executor should not be null, please
+/// TryLoadingVisionExecutor() first.") and clip (measured 2026-11-23,
+/// web_litertlm_runtime_probe_test.dart). On 0.18.0 `EngineSettings.createDefault(modelAssets, backend)` takes no
 /// vision or audio backend (only `EmbeddingEngine` has
 /// `createDefaultMultimodal`). Measured on Gemma 4 E2B against the raw JS API
 /// in Chrome 155 on Linux (WebGPU on a Tesla T4):
@@ -69,83 +72,96 @@ Matcher _refused(String kind) => throwsA(
   ),
 );
 
+/// The tests that started (Rule 6b).
+final _started = <int>{};
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  group('web .litertlm image/audio (@litert-lm/core 0.18.0)', () {
-    tearDownAll(() async {
-      await _model?.close();
-      _model = null;
-    });
+  group(
+    'web .litertlm image/audio (@litert-lm/core, litertlm_dart\'s pin)',
+    () {
+      tearDownAll(() async {
+        await _model?.close();
+        _model = null;
+      });
 
-    testWidgets('chat: an image throws, and the chat still answers text', (
-      tester,
-    ) async {
-      final model = await _ensureModel();
-      final image = await _asset('assets/test/test_image.jpg');
-      // supportImage: true is what a cross-platform app passes; the chat must
-      // still open, because a text-only conversation is valid on web.
-      final chat = await model.openChat(
-        modelType: ModelType.gemma4,
-        supportImage: true,
-      );
-      try {
-        await expectLater(
-          chat.addQueryChunk(
-            Message.withImage(
-              text: 'What animal is in this image? Answer in one word.',
-              imageBytes: image,
-              isUser: true,
+      testWidgets('chat: an image throws, and the chat still answers text', (
+        tester,
+      ) async {
+        _started.add(0);
+        final model = await _ensureModel();
+        final image = await _asset('assets/test/test_image.jpg');
+        // supportImage: true is what a cross-platform app passes; the chat must
+        // still open, because a text-only conversation is valid on web.
+        final chat = await model.openChat(
+          modelType: ModelType.gemma4,
+          supportImage: true,
+        );
+        try {
+          await expectLater(
+            chat.addQueryChunk(
+              Message.withImage(
+                text: 'What animal is in this image? Answer in one word.',
+                imageBytes: image,
+                isUser: true,
+              ),
             ),
-          ),
-          _refused('image'),
-        );
+            _refused('image'),
+          );
 
-        await chat.addQueryChunk(
-          const Message(text: 'Say hello in one word.', isUser: true),
-        );
-        final response = await chat.generateChatResponse();
-        expect(response, isA<TextResponse>(), reason: '$response');
-        final text = (response as TextResponse).token;
-        expect(text.trim(), isNotEmpty);
-        expect(
-          text.toLowerCase(),
-          isNot(anyOf(contains('dog'), contains('puppy'))),
-          reason:
-              'the refused image must not reach the model (got "$text"); the '
-              'test picture is a black puppy',
-        );
-      } finally {
-        await chat.close();
-      }
-    });
+          await chat.addQueryChunk(
+            const Message(text: 'Say hello in one word.', isUser: true),
+          );
+          final response = await chat.generateChatResponse();
+          expect(response, isA<TextResponse>(), reason: '$response');
+          final text = (response as TextResponse).token;
+          expect(text.trim(), isNotEmpty);
+          expect(
+            text.toLowerCase(),
+            isNot(anyOf(contains('dog'), contains('puppy'))),
+            reason:
+                'the refused image must not reach the model (got "$text"); the '
+                'test picture is a black puppy',
+          );
+        } finally {
+          await chat.close();
+        }
+      });
 
-    testWidgets('session: audio throws, and the session still answers text', (
-      tester,
-    ) async {
-      final model = await _ensureModel();
-      final audio = await _asset('assets/test/test_audio.wav');
-      final session = await model.openSession(enableAudioModality: true);
-      try {
-        await expectLater(
-          session.addQueryChunk(
-            Message.withAudio(
-              text: 'Transcribe this audio.',
-              audioBytes: audio,
-              isUser: true,
+      testWidgets('session: audio throws, and the session still answers text', (
+        tester,
+      ) async {
+        _started.add(1);
+        final model = await _ensureModel();
+        final audio = await _asset('assets/test/test_audio.wav');
+        final session = await model.openSession(enableAudioModality: true);
+        try {
+          await expectLater(
+            session.addQueryChunk(
+              Message.withAudio(
+                text: 'Transcribe this audio.',
+                audioBytes: audio,
+                isUser: true,
+              ),
             ),
-          ),
-          _refused('audio'),
-        );
+            _refused('audio'),
+          );
 
-        await session.addQueryChunk(
-          const Message(text: 'Say goodbye in one word.', isUser: true),
-        );
-        final response = await session.getResponse();
-        expect(response.trim(), isNotEmpty);
-      } finally {
-        await session.close();
-      }
-    });
+          await session.addQueryChunk(
+            const Message(text: 'Say goodbye in one word.', isUser: true),
+          );
+          final response = await session.getResponse();
+          expect(response.trim(), isNotEmpty);
+        } finally {
+          await session.close();
+        }
+      });
+    },
+  );
+
+  // Rule 6b: under flutter drive a test that never ran reads as a pass.
+  testWidgets('every test above started', (tester) async {
+    expect(_started, hasLength(2));
   });
 }

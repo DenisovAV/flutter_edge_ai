@@ -9,7 +9,7 @@ import '../embedder/embedder_types.dart';
 import 'backend.dart';
 import 'message.dart';
 
-/// What an [EmbeddingEngine] loads, and on what: LiteRT-LM's
+/// What an `EmbeddingEngine` loads, and on what: LiteRT-LM's
 /// `EmbeddingEngineConfig`.
 @immutable
 final class EmbeddingEngineConfig {

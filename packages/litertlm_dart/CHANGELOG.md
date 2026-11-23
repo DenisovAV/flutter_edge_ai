@@ -1,4 +1,6 @@
 ## Unreleased
+- Runs on the web over `@litert-lm/core` 0.19.0.
+- `EmbeddingEngineConfig.cacheDir` is optional; natively a null one is refused.
 - `maxNumTokens` unset: the bundle's context or 4096 (was 2048), so Gemma 4 GPU runs float32 off Android; core unaffected.
 - Experimental `benchmark()`: exactly N prefill and N decode tokens, as in Kotlin.
 

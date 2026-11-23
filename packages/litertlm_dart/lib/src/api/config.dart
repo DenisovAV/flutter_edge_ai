@@ -15,7 +15,8 @@ import 'message.dart';
 ///
 /// Every field is set, as there. A conversation that names none uses the
 /// sampler the model file carries, field by field, else 0.8 / 40 / 0.95 /
-/// seed 1.
+/// seed 1. On the web the file's sampler cannot be read: 0.8 / 40 / 0.95 /
+/// seed 1, said once per engine.
 @immutable
 final class SamplerConfig {
   /// Throws [ArgumentError] for a value no engine samples with: a negative or
@@ -206,7 +207,7 @@ final class RegexResponseFormat extends ResponseFormat {
   final String pattern;
 }
 
-/// What an [Engine] loads, and on what: LiteRT-LM's `EngineConfig`.
+/// What an `Engine` loads, and on what: LiteRT-LM's `EngineConfig`.
 @immutable
 final class EngineConfig {
   EngineConfig({
@@ -221,33 +222,39 @@ final class EngineConfig {
     this.speculativeDecoding,
   }) : backend = backend ?? const Backend.cpu();
 
-  /// The `.litertlm` file.
+  /// The `.litertlm` file. On the web: a URL the page can fetch (`blob:`,
+  /// `https:`) of a web export.
   final String modelPath;
 
   /// Where the text model runs.
   final Backend backend;
 
   /// Where the vision encoder runs; null loads none, as in Kotlin and Swift.
-  /// `BundleInfo.declaredVisionBackend` is what the file asks for.
+  /// `BundleInfo.declaredVisionBackend` is what the file asks for. Refused on
+  /// the web (see the README, "On the web").
   final Backend? visionBackend;
 
-  /// Where the audio encoder runs; null loads none.
+  /// Where the audio encoder runs; null loads none. Refused on the web.
   final Backend? audioBackend;
 
   /// The context window: the prompt, the history and every reply, the KV
   /// cache's length. Not the reply length (that is `maxOutputTokens`). On the
   /// CPU and the GPU a value below 1024 is raised to 1024 (the cache length
-  /// those bundles bake); null is 2048.
+  /// those bundles bake); null leaves it to LiteRT-LM (the bundle's own, else
+  /// 4096). On the web it is passed through as given, with no floor.
   final int? maxNumTokens;
 
   /// The most images one message may carry; null is 1 with a vision encoder.
+  /// Refused on the web.
   final int? maxNumImages;
 
   /// Where LiteRT-LM keeps its caches (compiled programs, weight caches).
+  /// Refused on the web, which keeps none.
   final String? cacheDir;
 
   /// The GPU executor's activation type; null lets the engine choose (the
-  /// bundle's own, or float32 where float16 is known to break).
+  /// bundle's own, or float32 where float16 is known to break). Refused on
+  /// the web, whose runtime takes none.
   final ActivationDataType? activationDataType;
 
   /// Speculative decoding (MTP); null is LiteRT-LM's default (off).
@@ -290,7 +297,8 @@ final class ConversationConfig {
   /// The caller's sampler; null takes the model file's sampler, field by
   /// field, then 0.8 / 40 / 0.95 / seed 1. Set, it is the caller's choice:
   /// when it differs from the sampler the engine's first generation fixed
-  /// (LiteRT-LM#2080), the conversation says so once.
+  /// (LiteRT-LM#2080), the conversation says so once. On the web the file's
+  /// sampler cannot be read, so null is 0.8 / 40 / 0.95 / seed 1.
   final SamplerConfig? samplerConfig;
 
   /// The most tokens a reply may have, thinking included.

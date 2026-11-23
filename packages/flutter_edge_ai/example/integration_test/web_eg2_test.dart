@@ -96,7 +96,15 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 // ignore: implementation_imports — the CPU record and the minInputLength measurement build the web pass with a backend and a setting the public backend does not offer
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
 import 'package:litertlm_dart/internal.dart'
-    show LiteRtLmWebBackend, LiteRtLmWebEmbedderConfig, liteRtLmWebRuntime;
+    show
+        LiteRtLmWebBackend,
+        LiteRtLmWebEmbedderConfig,
+        LiteRtLmWebEmbeddingOptions,
+        LiteRtLmWebEngineSettings,
+        LiteRtLmWebImage,
+        LiteRtLmWebOverflowStrategy,
+        liteRtLmWebRuntime;
+import 'package:litertlm_dart/internal_web.dart' show WindowLiteRtLmWebRuntime;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -114,6 +122,7 @@ const _tests = [
   'EG2 overflow',
   'EG2 shim missing',
   'EG2 270m images refused',
+  'EG2 runtime vision on 270m',
   'EG2 close and recreate',
   'EG2 440m load',
   'EG2 text to image',
@@ -631,6 +640,59 @@ void main() {
       await model.embed(EmbeddingInput.text('x'), taskType: TaskType.none),
       hasLength(768),
     );
+  }, timeout: const Timeout(Duration(minutes: 30)));
+
+  // Why the header decides images: the runtime itself, asked directly past
+  // the header check. 0.18.0 refused the 270m's missing vision tower in
+  // `EmbeddingEngine.create`; 0.19.0 creates the engine (2026-11-23). Recorded
+  // for the runtime the page pins; the day it refuses again, this says so.
+  testWidgets('the runtime itself: $liteRtLmWebRuntime creates an engine with '
+      'a vision tower on the 270m, and only an image fails', (tester) async {
+    _start('EG2 runtime vision on 270m');
+    await _ensureEg2();
+    await _releaseActive(); // one engine at a time on the page
+    Object? createError;
+    Object? imageError;
+    try {
+      final engine = await const WindowLiteRtLmWebRuntime().create(
+        LiteRtLmWebEngineSettings(
+          modelUrl: await _installedUrl(),
+          backend: LiteRtLmWebBackend.gpu,
+          maxInputLength: 1024,
+          visionBackend: LiteRtLmWebBackend.gpu,
+          visionTokensPerImage: 140,
+        ),
+      );
+      try {
+        await engine.computeEmbedding(
+          LiteRtLmWebImage(await _asset('assets/eg2_vision/circle.png')),
+          const LiteRtLmWebEmbeddingOptions(
+            normalize: true,
+            insertSpecialTokens: true,
+            inputOverflowStrategy: LiteRtLmWebOverflowStrategy.truncate,
+          ),
+        );
+      } catch (e) {
+        imageError = e;
+      } finally {
+        await engine.delete();
+      }
+    } catch (e) {
+      createError = e;
+    }
+    report('runtime_vision_without_encoder', {
+      'create': '${createError ?? 'ok'}',
+      'image': '$imageError',
+    });
+    _log('270m raw vision: create ${createError ?? 'ok'}, image $imageError');
+    expect(
+      createError,
+      isNull,
+      reason:
+          '$liteRtLmWebRuntime refuses the vision tower at create again: the '
+          'header check is no longer the only guard',
+    );
+    expect(imageError, isNotNull, reason: 'the 270m embedded an image');
   }, timeout: const Timeout(Duration(minutes: 30)));
 
   testWidgets('close and recreate: a new model, the same vectors', (

@@ -347,7 +347,7 @@ final class LiteRtLmWebEmbedderConfig {
 /// text → audio top-1 6/6 on the example's clips.
 const liteRtLmWebAudioBackend = LiteRtLmWebBackend.gpu;
 
-/// Throws [EmbeddingLoadException] unless the `.litertlm` bundle at [url]
+/// Throws [EmbedderLoadException] unless the `.litertlm` bundle at [url]
 /// has an audio encoder, read from its container header through
 /// [runtime]'s `readPrefix` (a few KB) — D23, the native rule
 /// (`litertlm_container.dart`): ModelInfo claims audio on the 270m and the

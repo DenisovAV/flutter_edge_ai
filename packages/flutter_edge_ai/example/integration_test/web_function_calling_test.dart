@@ -108,10 +108,13 @@ Future<InferenceChat> _openChat(
   modelType: ModelType.gemma4,
 );
 
+/// The tests that started (Rule 6b).
+final _started = <int>{};
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  group('web function calling (@litert-lm/core 0.18.0)', () {
+  group('web function calling (@litert-lm/core, litertlm_dart\'s pin)', () {
     tearDownAll(() async {
       await _model?.close();
       _model = null;
@@ -120,6 +123,7 @@ void main() {
     testWidgets('1. single tool call yields FunctionCallResponse', (
       tester,
     ) async {
+      _started.add(0);
       final chat = await _openChat(await _ensureModel());
       try {
         await chat.addQueryChunk(
@@ -148,6 +152,7 @@ void main() {
     testWidgets('2. multi-tool prompt invokes at least one declared tool', (
       tester,
     ) async {
+      _started.add(1);
       final chat = await _openChat(
         await _ensureModel(),
         tools: const [_changeColorTool, _setVolumeTool],
@@ -187,6 +192,7 @@ void main() {
     testWidgets('3. streaming surfaces the call and leaks no raw tokens', (
       tester,
     ) async {
+      _started.add(2);
       final chat = await _openChat(await _ensureModel());
       try {
         await chat.addQueryChunk(
@@ -227,6 +233,7 @@ void main() {
     testWidgets('4. negative control: a non-action prompt calls nothing', (
       tester,
     ) async {
+      _started.add(3);
       // The case that separates "function calling works" from "the model calls a
       // tool whatever you say". Without it, cases 1-3 are also satisfied by a
       // runtime that fires change_color unconditionally.
@@ -257,6 +264,7 @@ void main() {
     testWidgets('4b. DISCRIMINATOR: plain second turn in a tools chat', (
       tester,
     ) async {
+      _started.add(4);
       // Splits the case-5 failure in two. Case 5 dies with "Invalid token at
       // state 37" on the SECOND generation of a tools-enabled chat. That is
       // either (a) the tool-response message specifically, or (b) any second
@@ -289,6 +297,7 @@ void main() {
     testWidgets('4c. DISCRIMINATOR: second turn when turn 1 called nothing', (
       tester,
     ) async {
+      _started.add(5);
       // 4b showed any second turn dies in a tools chat. This narrows it further:
       // tools are declared (so constrained decoding is ON) but turn 1 is a
       // question that needs no tool, so no <|tool_call> is emitted.
@@ -325,6 +334,7 @@ void main() {
     testWidgets('5. tool result fed back produces a reply, not a crash', (
       tester,
     ) async {
+      _started.add(6);
       final chat = await _openChat(await _ensureModel());
       try {
         await chat.addQueryChunk(
@@ -361,5 +371,10 @@ void main() {
         await chat.close();
       }
     }, timeout: const Timeout(Duration(minutes: 10)));
+  });
+
+  // Rule 6b: under flutter drive a test that never ran reads as a pass.
+  testWidgets('every test above started', (tester) async {
+    expect(_started, hasLength(7));
   });
 }

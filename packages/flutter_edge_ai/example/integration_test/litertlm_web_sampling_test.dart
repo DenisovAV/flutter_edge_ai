@@ -41,10 +41,14 @@ const _webModelUrl = String.fromEnvironment(
 
 const _hfToken = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
+/// The tests that started (Rule 6b).
+final _started = <int>{};
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('explicit sampling values reach the web engine', (tester) async {
+    _started.add(0);
     await registerTestEngines();
     final installer = FlutterEdgeAi.installModel(
       modelType: ModelType.gemma4,
@@ -102,4 +106,9 @@ void main() {
       reason: 'the hot reply is the greedy one: the values never arrived',
     );
   }, timeout: const Timeout(Duration(minutes: 20)));
+
+  // Rule 6b: under flutter drive a test that never ran reads as a pass.
+  testWidgets('every test above started', (tester) async {
+    expect(_started, hasLength(1));
+  });
 }

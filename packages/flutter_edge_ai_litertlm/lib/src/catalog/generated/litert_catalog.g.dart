@@ -962,7 +962,7 @@ final class LiteRtLmGemma4E2bIt extends LiteRtLmModel {
 
   /// `gemma-4-E2B-it-web.litertlm`, 2.01 GB.
   @Deprecated(
-    'Withheld: On @litert-lm/core 0.19.0 this web export (uploaded 2026-05-19) answers a tool result with an empty reply (web_function_calling_test.dart case 5, run with --dart-define=WEB_MODEL_URL set to this file\'s URL, 2 of 2 runs, 2026-11-23; the suite\'s default is the web-gpu file). No issue records it. Use the web-gpu variant. (https://github.com/DenisovAV/flutter_edge_ai/blob/dbd768d5e30ebe787083068e51e73ebad780283e/packages/flutter_edge_ai/example/integration_test/web_function_calling_test.dart) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
+    'Withheld: On @litert-lm/core 0.19.0 this web export (uploaded 2026-05-19) answers a tool result with an empty reply (web_function_calling_test.dart case 5, run with --dart-define=WEB_MODEL_URL set to this file\'s URL, 2 of 2 runs, 2026-11-23; the suite\'s default is the web-gpu file; measured in pull request 872, no issue records it). Use the web-gpu variant. (https://github.com/DenisovAV/flutter_edge_ai/pull/872) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
   )
   LiteRtLmVariant get web => _gemma4E2bIt$web;
 
@@ -1290,7 +1290,7 @@ final class LiteRtLmGemma4E4bIt extends LiteRtLmModel {
 
   /// `gemma-4-E4B-it-web.litertlm`, 2.97 GB.
   @Deprecated(
-    'Withheld: Untested on @litert-lm/core 0.19.0, not known to be broken. The Gemma 4 E2B web export uploaded the same day (2026-05-19) answers a tool result with an empty reply on 0.19.0 (measured 2026-11-23), so this one is withheld until a newer E4B web export is measured. (https://github.com/DenisovAV/flutter_edge_ai/blob/dbd768d5e30ebe787083068e51e73ebad780283e/packages/flutter_edge_ai/example/integration_test/web_function_calling_test.dart) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
+    'Withheld: Untested on @litert-lm/core 0.19.0, not known to be broken. The Gemma 4 E2B web export uploaded the same day (2026-05-19) answers a tool result with an empty reply on 0.19.0 (measured 2026-11-23), so this one is withheld until a newer E4B web export is measured. (https://github.com/DenisovAV/flutter_edge_ai/pull/872) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
   )
   LiteRtLmVariant get web => _gemma4E4bIt$web;
 }

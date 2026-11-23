@@ -103,7 +103,7 @@ transcription (see [Models](/docs/models)).
 | Android | ✅ Full |
 | iOS | ✅ Device only (Simulator is CPU-only / no GPU) |
 | Desktop (macOS/Windows/Linux) | ✅ `.litertlm` only (via FFI) |
-| Web | ❌ Not supported |
+| Web | ✅ `.litertlm`: Gemma 4 E2B's GPU export on `@litert-lm/core` 0.19.0 |
 
 Enable audio with `supportAudio: true`:
 
@@ -133,8 +133,9 @@ final response = await chat.generateChatResponse();
 <Warning>
 
 Audio input needs a model that includes the audio encoder: `.litertlm` on
-Android, iOS and desktop. The Gemma 3n MediaPipe `.task` files carry none
-(`TF_LITE_AUDIO_ENCODER`), and neither web engine takes audio. Leave
+Android, iOS and desktop, and on the web Gemma 4 E2B's GPU export. The Gemma
+3n MediaPipe `.task` files carry none (`TF_LITE_AUDIO_ENCODER`), and MediaPipe
+on the web takes no audio. Leave
 `preferredAudioBackend` unset: the encoder follows the bundle, and the
 published Gemma 4 and Gemma 3n audio encoders declare `backend_constraint`
 cpu, so `PreferredBackend.gpu` is refused for them
@@ -231,11 +232,15 @@ final model = await FlutterEdgeAi.getActiveModel(
 
 ## Web limitations
 
-The web `.litertlm` path (`@litert-lm/core`, early preview) does **not** support
-vision or audio yet — its JS API creates the LLM engine with no vision or audio
-executor, so an image or audio message throws `UnsupportedError`. For full
-vision on web, use **MediaPipe `.task` web** models (which do support image
-input; MediaPipe LLM Inference is maintenance-only — see [MediaPipe](/docs/mediapipe)). See
+The web `.litertlm` path (`@litert-lm/core` 0.19.0, early preview) takes images
+and audio with Gemma 4 E2B's GPU export (`LiteRtLmModels.gemma4E2bIt.webGpu`,
+installed with `WebStorageMode.streaming`): load it with `supportImage` and
+`supportAudio`; the vision encoder runs on the GPU and the audio encoder on the
+CPU. Without them an image or audio message throws `UnsupportedError`. On the
+web `maxNumImages` is the number of images a whole conversation holds (unset:
+1), not a message's; an image past it is refused before it is sent.
+**MediaPipe `.task` web** models take images too (MediaPipe LLM Inference is
+maintenance-only — see [MediaPipe](/docs/mediapipe)). See
 [Troubleshooting](/docs/troubleshooting#litert-lm-on-web-early-preview) for the
 full web `.litertlm` feature matrix.
 

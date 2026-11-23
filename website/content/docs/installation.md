@@ -466,10 +466,12 @@ window.LlmInference = LlmInference;
 </script>
 ```
 
-**`flutter_edge_ai_litertlm`** (`.litertlm` web models — early preview, text
-only). Only dedicated web exports (`-web.litertlm`) load — Gemma 4 and Gemma 3n
-today; a native `.litertlm` installs on web and then fails at the first
-generation. The
+**`flutter_edge_ai_litertlm`** (`.litertlm` web models — early preview, on
+`@litert-lm/core` 0.19.0). Only builds made for the web load: Gemma 4 E2B's GPU
+export (`LiteRtLmModels.gemma4E2bIt.webGpu`, text, images and audio; 2.34 GB,
+so install it with `WebStorageMode.streaming`) and Gemma 3n's `-web.litertlm`
+exports (documented on 0.18.0, not measured on 0.19.0); a native `.litertlm`
+installs on web and then fails at the first generation. The
 `@litert-lm/core` ESM doesn't assign window globals and module scripts are
 deferred, so Dart must await `window.litertLmReady` before any static interop:
 
@@ -557,9 +559,10 @@ Cross-Origin-Embedder-Policy: require-corp
 <Info>
 
 **Model compatibility:** mobile `.task` models often don't work on web, and
-native `.litertlm` models never do — use the `-web.task` (MediaPipe) or
-`-web.litertlm` (LiteRT-LM) web variant. Check the model repo for
-web-compatible builds.
+native `.litertlm` models never do — use the `-web.task` (MediaPipe) build, or
+for LiteRT-LM a build made for the web: `LiteRtLmModels.gemma4E2bIt.webGpu`
+for Gemma 4 E2B. The older `-web.litertlm` exports of Gemma 4 E2B and E4B are
+withheld (see [Migration](/docs/migration)).
 
 </Info>
 

@@ -371,7 +371,7 @@ try {
 }
 ```
 
-`audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop (VibeVoice-ASR also takes audio, for transcription only; measured on Android and macOS); on the `.litertlm` web engine an audio message throws `UnsupportedError`.
+`audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop (VibeVoice-ASR also takes audio, for transcription only; measured on Android and macOS), or on the web Gemma 4 E2B's GPU export loaded with `supportAudio: true`; without it an audio message throws `UnsupportedError`.
 
 The `.litertlm` engine sends a Gemma 4 message as images, text, then audio, as the Gemma 4 model card asks, and every other model type as images, audio, then text (`flutter_edge_ai` 2.4.0 with `flutter_edge_ai_litertlm` 1.14.0; litertlm 1.13.x ignores `multimodalOrder`). A model whose chat template expects another order takes `getActiveModel(multimodalOrder: MultimodalOrder.imagesAudioText)` or `MultimodalOrder.imagesTextAudio`.
 

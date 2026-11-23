@@ -103,7 +103,7 @@ final chat = await model.openChat(maxOutputTokens: 100);        // reply cap
 ## Web
 
 - **MediaPipe is GPU-only on web.** The web engine ignores `preferredBackend` and always runs on the browser's GPU (WebGPU). ONNX on web is the exception: `PreferredBackend.cpu` pins WASM there.
-- **Mobile `.task` models often don't work on web** — use the `-web.task` (MediaPipe) or `-web.litertlm` (LiteRT-LM) export; only Gemma 4 and Gemma 3n publish the latter today. A native `.litertlm` installs on web and then fails at the first generation.
+- **Mobile `.task` models often don't work on web** — use the `-web.task` (MediaPipe) export, or for LiteRT-LM a build made for the web: Gemma 4 E2B's GPU export (`LiteRtLmModels.gemma4E2bIt.webGpu`) or Gemma 3n's `-web.litertlm` exports (documented on `@litert-lm/core` 0.18.0, not measured on 0.19.0). A native `.litertlm` installs on web and then fails at the first generation.
 - **Memory / cache limits:**
 
 | Browser | Max Model Size | Notes |
@@ -125,15 +125,15 @@ LLM Inference is maintenance-only — see [MediaPipe](/docs/mediapipe).
 **Works on web `.litertlm`:** text generation (sync + streaming), multi-turn chat
 with history, system instruction, **function calling / tool calls** (Gemma 4),
 **thinking mode** (Gemma 4 measured in Chrome; core parses `<think>` tags from
-any model that emits them), concurrent sessions (serialized), large models via
-OPFS streaming.
+any model that emits them), **images and audio** with Gemma 4 E2B's GPU export
+loaded with `supportImage`/`supportAudio` (`maxNumImages` counts a whole
+conversation's images on the web), concurrent sessions (serialized), large
+models via OPFS streaming.
 
 **Not supported on web `.litertlm` yet:**
 
-- ❌ **Vision / image input** (native only) — an image message throws
-  `UnsupportedError`; the JS API creates the LLM engine with no vision executor.
-- ❌ **Audio input** (native only) — an audio message throws `UnsupportedError`;
-  no audio executor either.
+- ❌ **Images or audio without `supportImage`/`supportAudio`** — such a
+  message throws `UnsupportedError` instead of being dropped.
 - ❌ **LoRA weights** — `loraPath` throws `UnsupportedError`, as it does on
   native `.litertlm`; LoRA works only with MediaPipe `.task` models.
 

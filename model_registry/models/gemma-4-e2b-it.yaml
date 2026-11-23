@@ -64,8 +64,9 @@ variants:
     reason: On @litert-lm/core 0.19.0 this web export (uploaded 2026-05-19) answers a tool
       result with an empty reply (web_function_calling_test.dart case 5, run with
       --dart-define=WEB_MODEL_URL set to this file's URL, 2 of 2 runs, 2026-11-23; the
-      suite's default is the web-gpu file). No issue records it. Use the web-gpu variant.
-    issue: https://github.com/DenisovAV/flutter_edge_ai/blob/dbd768d5e30ebe787083068e51e73ebad780283e/packages/flutter_edge_ai/example/integration_test/web_function_calling_test.dart
+      suite's default is the web-gpu file; measured in pull request 872, no issue records it). Use the
+      web-gpu variant.
+    issue: https://github.com/DenisovAV/flutter_edge_ai/pull/872
 - slug: web-gpu
   file_type: litertlm
   web_bundle: true

@@ -14,9 +14,10 @@ builds and then fails at model load, or is killed for memory.
 `openSession` and `openChat` use one native conversation and KV cache per
 session on macOS CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, and
 Qualcomm or Google Tensor NPUs on Android and Intel NPUs on Windows. Linux
-Vulkan, Windows D3D12, iOS, Android CPU and PowerVR, MediaTek, unverified Linux
-arm64 accelerators and the web use virtual sessions that replay full messages
-into one shared conversation. Hybrid models such as LFM2 rebuild from full
+Vulkan, Windows D3D12, iOS, Android CPU and PowerVR, MediaTek and unverified
+Linux arm64 accelerators use virtual sessions that replay full messages into one
+shared conversation. On the web each session has its own `@litert-lm/core`
+conversation, rebuilt from its history after a stop mid-reply. Hybrid models such as LFM2 rebuild from full
 messages when recovery is needed and never rewind.
 
 Native sessions consume memory while idle. Gemma 4 E2B on an M5 Pro added

@@ -4,11 +4,11 @@
 // it in place of the native one where `dart.library.js_interop` is true.
 //
 // What does not run on the web is refused, never ignored, each with the
-// reason measured on the pinned runtime (2026-11-23, Gemma 4 E2B's web export,
-// Chrome 157): vision and audio encoders (an image or audio part fails), the
-// NPU, the cache directory, the activation
-// type, speculative decoding, the tokenizer and option scoring. The page loads
-// the runtime itself (its module script sets `window.Engine` and
+// reason measured on the pinned runtime (2026-11-23, Gemma 4 E2B's GPU
+// export, Chrome 157): the NPU, the cache directory, the activation type,
+// speculative decoding, the tokenizer and option scoring; an image by file
+// path, and an image past the conversation's maxNumImages. The page loads the
+// runtime itself (its module script sets `window.Engine` and
 // `window.litertLmReady`; see litertlm_dart's README, "On the web").
 
 import 'dart:async';
@@ -86,7 +86,7 @@ final class Engine {
   }
 
   /// The context window the runtime resolved: the one asked for, else the
-  /// bundle's own (4096 for Gemma 4 E2B's web export); 0 when it reported
+  /// bundle's own (8192 for Gemma 4 E2B's GPU export); 0 when it reported
   /// none. On the web it is not raised to the 1024 tokens the native
   /// CPU and GPU executors need: the web runtime takes what it is given.
   final int maxNumTokens;
@@ -125,7 +125,8 @@ final class Engine {
   /// which is said once per engine. Throws [ConstraintUnsupportedException]
   /// for a response format (the web conversation API has no constrained
   /// decoding), [UnsupportedError] for speculative decoding, a thinking token
-  /// budget or an initial message with an image or audio, and
+  /// budget, an initial image or audio by file path or for an encoder the
+  /// engine did not load, and
   /// [LiteRtLmNativeException] with the runtime's message when it refuses the
   /// conversation.
   Future<Conversation> createConversation([ConversationConfig? config]) {

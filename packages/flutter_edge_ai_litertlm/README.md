@@ -1031,13 +1031,17 @@ with `FlutterEdgeAi.initialize(webStorageMode: WebStorageMode.streaming)`: a
 and E4B are withheld (the E2B one answers a tool result with an empty reply
 on 0.19.0). `supportImage` and `supportAudio` load the vision encoder on the
 GPU and the audio encoder on the CPU, and a session then sends images and
-audio as natively; without them an image or audio message throws
-`UnsupportedError` rather than being dropped. `loraPath` throws. A stopped
+audio; without them an image or audio message throws `UnsupportedError`
+rather than being dropped. `maxNumImages` counts a whole conversation's
+images on the web (natively a message's): the model reserves their space up
+front (unset: 1), and an image past it is refused before it is sent. `loraPath` throws. A stopped
 reply is kept: the next message goes to a conversation rebuilt from the
 history, because the runtime refuses every send after a stop mid-reply.
 `openSession(maxOutputTokens:)` is honoured here as it is on native, and
 `maxTokens` reaches the runtime (core's default context is 1024 tokens).
-Add the handshake below to your app's `web/index.html` `<head>` — the ESM doesn't
+The page must import `@litert-lm/core` 0.19.0: 0.18.0 refuses the GPU export
+("Unsupported backend: 2"). Add the handshake below to your app's
+`web/index.html` `<head>` — the ESM doesn't
 assign window globals and module scripts are deferred, so Dart awaits
 `window.litertLmReady` (which resolves to the `Engine` constructor):
 

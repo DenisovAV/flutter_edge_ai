@@ -476,7 +476,7 @@ deferred, so Dart must await `window.litertLmReady` before any static interop:
 ```
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
   window.Engine = m.Engine;
   window.EmbeddingEngine = m.EmbeddingEngine;
   return m.Engine;
@@ -488,7 +488,7 @@ window.litertLmReady = (async () => {
 1.13.1+) runs EmbeddingGemma 2 `.litertlm` embedders on WebGPU — text and
 images, and from 1.13.2 audio and combined inputs; without that line such an embedder fails to load with an
 `EmbeddingLoadException` that names it. Both need a browser with WebGPU: the
-CPU (WebAssembly) path of `@litert-lm/core` 0.18.0 cannot read the EmbeddingGemma
+CPU (WebAssembly) path of `@litert-lm/core` cannot read the EmbeddingGemma
 2 bundles' external weights, so without WebGPU the embedder's load fails with an
 `EmbeddingLoadException` that says so — there is no CPU fallback.
 

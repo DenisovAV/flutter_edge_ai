@@ -24,8 +24,8 @@ class LiteRtLmTurnCancelledException implements Exception {
 class LiteRtLmTurnClosedException extends StateError {
   LiteRtLmTurnClosedException()
     : super(
-        'The session was closed during this turn (close(), uninstallModel, '
-        'or a replaced active model); the reply is incomplete.',
+        'The conversation or its engine was closed during this turn; the '
+        'reply is incomplete.',
       );
 }
 

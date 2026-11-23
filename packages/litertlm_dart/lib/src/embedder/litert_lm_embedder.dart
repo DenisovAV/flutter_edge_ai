@@ -1037,9 +1037,8 @@ final class LiteRtLmEmbedder {
         break;
       case LiteRtLmModelType.kLiteRtLmModelTypeLlm:
         _refuse(
-          '$_file is an LLM bundle, not an embedder. Install it with '
-          '`installModel(fileType: ModelFileType.litertlm)` for inference, '
-          'and an EmbeddingGemma 2 bundle with `installEmbedder()`.',
+          '$_file is an LLM bundle, not an embedder: load it with Engine for '
+          'inference, and an EmbeddingGemma 2 bundle with EmbeddingEngine.',
         );
       case LiteRtLmModelType.kLiteRtLmModelTypeUnknown || null:
         _refuse('$_file is not a LiteRT-LM embedding bundle.');

@@ -37,20 +37,27 @@ void main() {
     expect(info.modalities, {EmbedderModality.text});
   });
 
-  for (final (what, arrange) in [
+  for (final (what, arrange, reason) in [
     (
       'the probe throws',
       (FakeWebRuntime r) => r.probeError = StateError('trap'),
+      'could not embed with it',
     ),
     (
       'the probe is all zeros',
       (FakeWebRuntime r) => r.vector = const [0, 0, 0, 0],
+      'NaN, infinity or only zeros',
     ),
     (
       'the probe has a NaN',
       (FakeWebRuntime r) => r.vector = [double.nan, 1, 1, 1],
+      'NaN, infinity or only zeros',
     ),
-    ('the probe is empty', (FakeWebRuntime r) => r.vector = const []),
+    (
+      'the probe is empty',
+      (FakeWebRuntime r) => r.vector = const [],
+      'empty vector',
+    ),
   ]) {
     test(
       '$what: the load fails, and the engine it created is deleted',
@@ -60,12 +67,24 @@ void main() {
         final embedder = fakeEmbedder(runtime);
         await expectLater(
           embedder.load(),
-          throwsA(isA<EmbedderLoadException>()),
+          throwsA(
+            isA<EmbedderLoadException>().having(
+              (e) => e.message,
+              'message',
+              contains(reason),
+            ),
+          ),
         );
         expect(runtime.created.single.deletes, 1);
         await expectLater(
           embedder.embed(EmbedderInput(text: 'x')),
-          throwsA(isA<EmbedderEngineException>()),
+          throwsA(
+            isA<EmbedderEngineException>().having(
+              (e) => e.message,
+              'message',
+              contains('needs a loaded, open embedder'),
+            ),
+          ),
         );
       },
     );
@@ -80,7 +99,16 @@ void main() {
       await _settle();
       final closing = embedder.close();
       runtime.createGate!.complete();
-      await expectLater(loading, throwsStateError);
+      await expectLater(
+        loading,
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('is closed'),
+          ),
+        ),
+      );
       await closing;
       expect(runtime.created.single.deletes, 1);
       expect(runtime.created.single.computes, 0, reason: 'probed a closed one');
@@ -154,7 +182,13 @@ void main() {
     final queued = embedder.embed(EmbedderInput(text: 'x'));
     final expectation = expectLater(
       queued,
-      throwsA(isA<EmbedderEngineException>()),
+      throwsA(
+        isA<EmbedderEngineException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('could not embed the text'), contains('is closed')),
+        ),
+      ),
     );
     await _settle();
     await embedder.close();

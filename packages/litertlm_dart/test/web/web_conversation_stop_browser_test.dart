@@ -1,5 +1,5 @@
 // How a web conversation stops and recovers, over the stub runtime
-// (web_runtime_stub.dart), which does what @litert-lm/core 0.18.0 was
+// (web_runtime_stub.dart), which does what @litert-lm/core 0.18.0 and 0.19.0 were
 // measured to do: a stop mid-reply rejects the stream and leaves the runtime
 // conversation refusing every later send, so the next message goes to one
 // rebuilt from the preface, the exchanges so far and `getHistory()` (which
@@ -280,7 +280,7 @@ void main() {
       expect(entered, isFalse, reason: 'let go before the module did');
       js('__releaseFences');
       await other;
-      expect(await reply, isA<TurnFailedException>());
+      expect(await reply, errorWith<TurnFailedException>('generation failed'));
       setOnPage('holdFence', false);
       await engine.close();
     });
@@ -391,7 +391,7 @@ void main() {
     final reply = conversation.sendMessageStream(Message.user('Two'));
     final ended = expectLater(
       reply,
-      emitsError(isA<ConversationClosedException>()),
+      emitsError(errorWith<ConversationClosedException>('closed')),
     );
     await settle();
 
@@ -463,7 +463,10 @@ void main() {
       });
 
       expect(lock.poison?.message, contains('after its stream failed'));
-      expect(error, isA<web.LiteRtLmPagePoisonedError>());
+      expect(
+        error,
+        errorWith<web.LiteRtLmPagePoisonedError>('Reload the page'),
+      );
       setOnPage('holdFence', false);
     });
 
@@ -493,7 +496,10 @@ void main() {
         ),
       );
 
-      expect(await reply, isA<web.LiteRtLmPagePoisonedError>());
+      expect(
+        await reply,
+        errorWith<web.LiteRtLmPagePoisonedError>('Reload the page'),
+      );
     });
 
     test(
@@ -510,10 +516,13 @@ void main() {
 
         await expectLater(
           conversation.close(),
-          throwsA(isA<web.LiteRtLmPagePoisonedError>()),
+          throwsA(errorWith<web.LiteRtLmPagePoisonedError>('Reload the page')),
         );
 
-        expect(await reply, isA<web.LiteRtLmPagePoisonedError>());
+        expect(
+          await reply,
+          errorWith<web.LiteRtLmPagePoisonedError>('Reload the page'),
+        );
       },
     );
   });
@@ -534,7 +543,10 @@ void main() {
 
     expect(count('cancels'), 1, reason: 'the generation was not stopped');
     final error = await reply;
-    expect(error, isA<TurnFailedException>());
+    expect(
+      error,
+      errorWith<TurnFailedException>('litertlm_dart could not read'),
+    );
     expect(
       '${web.turnFailureCause(error! as TurnFailedException)}',
       contains('BigInt'),
@@ -568,7 +580,10 @@ void main() {
     js('__releaseFences');
     await other;
     final error = await reply;
-    expect(error, isA<TurnFailedException>());
+    expect(
+      error,
+      errorWith<TurnFailedException>('litertlm_dart could not read'),
+    );
     expect(
       '${web.turnFailureCause(error! as TurnFailedException)}',
       contains('unreadable stream'),
@@ -596,7 +611,10 @@ void main() {
     await engine.close().timeout(const Duration(seconds: 2));
 
     await reply;
-    expect(await queued, isStateError);
+    expect(
+      await queued,
+      errorWith<StateError>('closed while a conversation opened'),
+    );
     expect(count('cancels'), 1);
     expect(count('engineDeletes'), 1);
   });

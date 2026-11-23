@@ -35,10 +35,14 @@ await FlutterEdgeAi.initialize(
 final spec = BuiltInAiModels.forCurrentPlatform; // null on Linux
 
 Future<InferenceModel> downloadGemma() async {
-  // 2.6 GB (2.0 GB on web) — ask first. The catalog build is pinned to a
-  // Hugging Face commit; natively its size is checked before activation.
+  // 2.6 GB (2.34 GB on web, which needs
+  // FlutterEdgeAi.initialize(webStorageMode: WebStorageMode.streaming)) — ask
+  // first. The catalog build is pinned to a Hugging Face commit; natively its
+  // size is checked before activation.
   await FlutterEdgeAi.installModelFromCatalog(
-    kIsWeb ? LiteRtLmModels.gemma4E2bIt.web : LiteRtLmModels.gemma4E2bIt.generic,
+    kIsWeb
+        ? LiteRtLmModels.gemma4E2bIt.webGpu
+        : LiteRtLmModels.gemma4E2bIt.generic,
   ).install();
   return FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 }

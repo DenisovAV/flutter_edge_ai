@@ -288,8 +288,9 @@ web arms, plus embeddings and RAG:
   rebuilds, drain timer, page poisoning), litert_lm_js.dart (interop, member
   checks), page_lock.dart, web_embedder.dart and embedding_runtime_js.dart
   (EmbeddingGemma 2), web_runtime_version.dart (the pin). EARLY PREVIEW:
-  text only. Function calling and thinking are wired; vision, audio and LoRA
-  are refused with the measured reason.
+  function calling and thinking are wired; images and audio run with Gemma 4
+  E2B's GPU export (maxNumImages per conversation); LoRA, the NPU and file
+  paths are refused with the measured reason.
 - packages/flutter_edge_ai_litertlm/lib/src/web/ and lib/src/adapter/web_* —
   the adapter's thin web files over that runtime (web_llm_engine.dart,
   web_inference_model.dart, litert_lm_engine_web.dart) and the web EG2 pass
@@ -321,9 +322,11 @@ CHECKLIST
    agree between the code and any documented script tag. @litert-lm/core's
    one source is `liteRtLmWebRuntimeVersion`
    (packages/litertlm_dart/lib/src/web/web_runtime_version.dart): every
-   index.html, README snippet and skill must import exactly it, and the frozen
-   web goldens (packages/flutter_edge_ai/example/integration_test/goldens/*_web.dart) must come from
-   its major.minor — test/web/web_runtime_version_test.dart checks both.
+   index.html, README snippet and skill must import exactly it, and the
+   goldens the web EG2 suites compare against
+   (packages/flutter_edge_ai/example/integration_test/goldens/eg2_*_golden.json)
+   must come from its major.minor —
+   packages/litertlm_dart/test/web/web_runtime_version_test.dart checks both.
    Moving it means re-running the probe and every web drive suite and
    re-measuring every refusal text, not editing the constant alone.
    @litertjs/core has THREE places to keep in step:
@@ -335,7 +338,7 @@ CHECKLIST
    sendMessageStreaming, cancel, getHistory, getTokenCount, delete;
    EmbeddingEngine: create, computeEmbedding, delete). A new call on a
    runtime object must join that list and the parametrized tests, and a test
-   stub must model the measured 0.18.0 surface
+   stub must model the measured surface of the pinned version
    (packages/litertlm_dart/test/web/web_runtime_stub.dart), not an easier one.
    Behaviour claims about @litert-lm/core must cite a record of
    packages/flutter_edge_ai/example/integration_test/web_litertlm_runtime_probe_test.dart.

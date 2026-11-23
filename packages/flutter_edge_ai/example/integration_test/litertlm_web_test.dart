@@ -23,15 +23,13 @@
 /// Prerequisites:
 ///   * Chrome with WebGPU enabled (`chrome://flags/#enable-unsafe-webgpu`)
 ///   * ~2.4 GB free disk + network bandwidth for `gemma-4-E2B-it-gpu.litertlm`
-///     (first run only — cached afterwards by `WebStorageMode.cacheApi`)
+///     (installed with `WebStorageMode.streaming`: it is over 2 GiB)
 ///   * Optional `HUGGINGFACE_TOKEN` if the upstream model becomes gated
 ///     (`--dart-define=HUGGINGFACE_TOKEN=hf_...`)
 ///
 /// Why these tests and not the full 18 from `litertlm_ffi_test.dart`:
-///   * The upstream `@litert-lm/core` is "early preview, text-in/text-out only".
-///   * Vision / audio throw UnsupportedError (no vision or audio executor in
-///     the engine) — `web_multimodal_test.dart`. Thinking has its own suite,
-///     `web_thinking_test.dart`.
+///   * Images and audio have their own suite, `web_multimodal_test.dart`, and
+///     thinking `web_thinking_test.dart`.
 ///   * CPU/GPU/NPU is a single WebGPU/WASM backend (no choice to assert).
 ///   * LoRA throws UnsupportedError, exercised in the unit smoke
 ///     (`test/web/litert_lm_web_test.dart`).

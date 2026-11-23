@@ -223,12 +223,13 @@ final class EngineConfig {
   }) : backend = backend ?? const Backend.cpu();
 
   /// The `.litertlm` file. On the web: a URL the page can fetch (`blob:`,
-  /// `https:`) of a web export.
+  /// `https:`) of a build the web runtime loads, such as Gemma 4's GPU
+  /// export.
   final String modelPath;
 
   /// Where the text model runs; [Backend.cpu] when unset. On the web pass
-  /// [Backend.gpu]: the WebAssembly CPU path refuses Gemma 4's web export
-  /// (see the README, "On the web").
+  /// [Backend.gpu]: on the WebAssembly CPU path Gemma 4's GPU export fails
+  /// its first send (see the README, "On the web").
   final Backend backend;
 
   /// Where the vision encoder runs; null loads none, as in Kotlin and Swift.

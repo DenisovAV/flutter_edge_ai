@@ -193,7 +193,13 @@ void main() {
     expect((_eg['deletes']! as JSNumber).toDartInt, 1);
     await expectLater(
       engine.computeEmbedding([Content.text('x')]),
-      throwsStateError,
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          'The embedding engine is closed.',
+        ),
+      ),
     );
   });
 

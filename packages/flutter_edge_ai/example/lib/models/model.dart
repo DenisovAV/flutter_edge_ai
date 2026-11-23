@@ -57,7 +57,7 @@ enum Model implements InferenceModelInterface {
   // === GEMMA MODELS (Top Priority) ===
 
   // Gemma 4 (Next-gen multimodal: text + image + audio) — LiteRT-LM builds are
-  // the primary entries (litertlm everywhere incl. web -web.litertlm). The
+  // the primary entries (on the web E2B's GPU export, -gpu.litertlm). The
   // web-only MediaPipe (.task) twins live further down as *_web.
 
   // Gemma 4 E2B LiteRT-LM. On web, the GPU export (`-gpu.litertlm` of

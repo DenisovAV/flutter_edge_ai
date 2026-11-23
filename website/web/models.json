@@ -4508,8 +4508,8 @@
       "web": {
        "gpu": {
         "status": "withheld",
-        "note": "The web export of 2026-05-19 answers a tool result with an empty reply on @litert-lm/core 0.19.0, which the packages load on the web from this release (web_function_calling_test.dart, case 5, 2 of 2 runs, 2026-11-23). Use the web-gpu variant.",
-        "issue": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/commit/cccc664ea93091c52eeb7867ad4e5466357e14f3"
+        "note": "On @litert-lm/core 0.19.0 this web export (uploaded 2026-05-19) answers a tool result with an empty reply (web_function_calling_test.dart, case 5, 2 of 2 runs, 2026-11-23). Use the web-gpu variant.",
+        "issue": "https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/example/integration_test/web_function_calling_test.dart"
        }
       }
      }
@@ -4529,8 +4529,7 @@
      "cells": {
       "web": {
        "gpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:250-251"
+        "status": "untested"
        }
       }
      }
@@ -4879,8 +4878,8 @@
       "web": {
        "gpu": {
         "status": "withheld",
-        "note": "Not measured on @litert-lm/core 0.19.0, which the packages load on the web from this release. The Gemma 4 E2B web export of the same date answers a tool result with an empty reply there (measured, 2026-11-23), so this one is withheld until a newer E4B web export is measured.",
-        "issue": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/commit/cccc664ea93091c52eeb7867ad4e5466357e14f3"
+        "note": "Untested on @litert-lm/core 0.19.0, not known to be broken. The Gemma 4 E2B web export uploaded the same day (2026-05-19) answers a tool result with an empty reply on 0.19.0 (measured 2026-11-23), so this one is withheld until a newer E4B web export is measured.",
+        "issue": "https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/example/integration_test/web_function_calling_test.dart"
        }
       }
      }

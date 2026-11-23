@@ -962,7 +962,7 @@ final class LiteRtLmGemma4E2bIt extends LiteRtLmModel {
 
   /// `gemma-4-E2B-it-web.litertlm`, 2.01 GB.
   @Deprecated(
-    'Withheld: The web export of 2026-05-19 answers a tool result with an empty reply on @litert-lm/core 0.19.0, which the packages load on the web from this release (web_function_calling_test.dart, case 5, 2 of 2 runs, 2026-11-23). Use the web-gpu variant. (https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/commit/cccc664ea93091c52eeb7867ad4e5466357e14f3) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
+    'Withheld: On @litert-lm/core 0.19.0 this web export (uploaded 2026-05-19) answers a tool result with an empty reply (web_function_calling_test.dart, case 5, 2 of 2 runs, 2026-11-23). Use the web-gpu variant. (https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/example/integration_test/web_function_calling_test.dart) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
   )
   LiteRtLmVariant get web => _gemma4E2bIt$web;
 
@@ -1290,7 +1290,7 @@ final class LiteRtLmGemma4E4bIt extends LiteRtLmModel {
 
   /// `gemma-4-E4B-it-web.litertlm`, 2.97 GB.
   @Deprecated(
-    'Withheld: Not measured on @litert-lm/core 0.19.0, which the packages load on the web from this release. The Gemma 4 E2B web export of the same date answers a tool result with an empty reply there (measured, 2026-11-23), so this one is withheld until a newer E4B web export is measured. (https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/commit/cccc664ea93091c52eeb7867ad4e5466357e14f3) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
+    'Withheld: Untested on @litert-lm/core 0.19.0, not known to be broken. The Gemma 4 E2B web export uploaded the same day (2026-05-19) answers a tool result with an empty reply on 0.19.0 (measured 2026-11-23), so this one is withheld until a newer E4B web export is measured. (https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/example/integration_test/web_function_calling_test.dart) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
   )
   LiteRtLmVariant get web => _gemma4E4bIt$web;
 }

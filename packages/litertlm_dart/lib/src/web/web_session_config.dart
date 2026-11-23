@@ -16,8 +16,8 @@ const samplerTypeTopP = 2;
 ///
 /// `maxOutputTokens` has been in `SessionConfig` since at least 0.14.0.
 /// Upstream counts thinking tokens against the same budget on models that
-/// emit them, matching the native FFI behaviour. Vision and audio modality are
-/// never set: the web `Engine` loads no vision or audio executor.
+/// emit them, matching the native FFI behaviour. Vision and audio are the
+/// engine's (its `visionBackend` and `audioBackend`), not the session's.
 Map<String, Object> webSessionConfig(
   Sampler sampling, {
   int? maxOutputTokens,

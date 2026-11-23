@@ -1,7 +1,7 @@
 // A stub `@litert-lm/core` LLM runtime for the browser tests, defined on the
 // page in plain JS: `window.Engine` (with the prototype members the release
 // calls) and conversations whose `sendMessageStreaming` returns a real
-// `ReadableStream` the test feeds chunk by chunk. It does what 0.18.0 was
+// `ReadableStream` the test feeds chunk by chunk. It does what 0.19.0 was
 // measured to do (2026-11-23, web_litertlm_runtime_probe_test.dart):
 // - `cancel()` while a stream is generating rejects it with "Task cancelled",
 //   and every later send on that conversation fails the same way;
@@ -20,6 +20,7 @@ import 'dart:js_interop_unsafe';
 
 import 'package:litertlm_dart/internal_web.dart' as web;
 import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:test/test.dart';
 
 const _stub = r'''
 (() => {
@@ -273,6 +274,13 @@ Future<void> stoppedExchange(
   conversation.cancel();
   await done;
 }
+
+/// An error of type [T] whose message contains [message].
+TypeMatcher<T> errorWith<T>(String message) =>
+    isA<T>().having((e) => '$e', 'message', contains(message));
+
+/// Throws an error of type [T] whose message contains [message].
+Matcher throwsWith<T>(String message) => throwsA(errorWith<T>(message));
 
 /// Collects what [body] prints.
 Future<List<String>> printsOf(Future<void> Function() body) async {

@@ -250,7 +250,7 @@ void main() {
 
       await expectLater(
         conversation.sendMessageStream(_withImage('And this one?')),
-        emitsError(isA<UnsupportedError>()),
+        emitsError(errorWith<UnsupportedError>('maxNumImages: 1')),
       );
 
       expect(list('sent'), isEmpty);

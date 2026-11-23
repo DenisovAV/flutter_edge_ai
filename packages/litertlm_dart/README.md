@@ -38,7 +38,9 @@ dependencies:
 
 The version is the upstream LiteRT-LM version this package is built from,
 plus the number of our release on it: `0.19.1+1` is the first release on
-LiteRT-LM 0.19.1. Within one upstream version the Dart API stays compatible.
+LiteRT-LM 0.19.1. Within one upstream version the Dart API stays compatible,
+with one exception: `EmbeddingEngineConfig.cacheDir` became a `String?` in
+0.19.1+2 (it was a `String`).
 This release runs:
 
 | | |
@@ -563,8 +565,10 @@ with `backend: Backend.gpu()`. For Gemma 4 E2B use its GPU export
 a `blob:` URL of more than 2 GB fails in Chrome); the older
 `gemma-4-E2B-it-web.litertlm` of 2026-05-19 answers a tool result with an
 empty reply on 0.19.0. Import exactly the version above: this release is
-measured on it, and another is said once with `print` when the page fetched
-it by a versioned URL. A page that does not load the module, lacks
+measured on it, and another is said once with `print`, before the engine is
+created, when the page fetched it by a versioned URL (0.18.0 refuses the GPU
+export: "Unsupported backend: 2", and the create failure names the page's
+version). A page that does not load the module, lacks
 `window.Engine`, or loads a runtime without a call this release makes is
 refused with a `StateError` naming what is missing and the version above.
 
@@ -575,15 +579,17 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   `audioBackend` (CPU or GPU). A part goes as its bytes (`Content.imageBytes`,
   `Content.audioBytes`); a file path is refused, since the page cannot read
   it. `maxNumImages` counts the images of a whole conversation, not of a
-  message: the model reserves their space up front, a second image past it
-  fails ("Image index 1 must be less than 1."), and unset is 1 with a vision
-  encoder.
+  message as natively: the model reserves their space up front, unset is 1
+  with a vision encoder, and an image past it is refused before it is sent
+  (the runtime fails it: "Image index 1 must be less than 1.").
 - **A stop mid-reply is a rebuild.** After `cancel()` (or a cancelled
   subscription) stops a reply before its end, the runtime refuses every later
   send on that conversation ("Task cancelled"), so the next message goes to a
   new conversation built from the preface, the exchanges so far (images and
   audio included) and the stopped one (its text). A stop with nothing in
-  flight, or after the last chunk, changes nothing. A stopped generation that
+  flight, or after the last chunk, changes nothing. A turn the runtime fails
+  leaves the conversation refusing every later send too; the next message
+  goes to one rebuilt without the failed message. A stopped generation that
   does not end within 30 s, after a stop or a close, makes the page unusable
   for LiteRT-LM (the module may still be suspended in it): the turn,
   `close()` and every later call fail and say so.

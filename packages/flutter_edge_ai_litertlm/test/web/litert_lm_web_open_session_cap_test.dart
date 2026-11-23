@@ -46,7 +46,7 @@ JSObject _engineConstructor(JSObject engine) =>
         engine,
       ).toJS).toJS;
 
-/// A runtime conversation with the members litertlm_dart calls on 0.18.0;
+/// A runtime conversation with the members litertlm_dart calls on 0.19.0;
 /// [onDelete] counts its deletes.
 JSObject _conversation({void Function()? onDelete}) => JSObject()
   ..['sendMessageStreaming'] = ((JSAny? message) => JSObject()).toJS
@@ -58,7 +58,7 @@ JSObject _conversation({void Function()? onDelete}) => JSObject()
     return Future<void>.value().toJS;
   }).toJS;
 
-/// A runtime engine as 0.18.0 resolves a web export (`GPU_ARTISAN`, the
+/// A runtime engine as 0.19.0 resolves Gemma 4's GPU export (`GPU_ARTISAN`, the
 /// bundle's 4096 tokens), whose conversations come from [createConversation].
 JSObject _runtimeEngine(JSAny? Function(JSAny? options) createConversation) =>
     JSObject()

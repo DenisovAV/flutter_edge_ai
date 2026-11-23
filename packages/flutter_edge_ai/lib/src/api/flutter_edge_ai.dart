@@ -506,8 +506,11 @@ class FlutterEdgeAi {
   /// [preferredVisionBackend] (optional)
   /// - [supportImage]: Enable multimodal image support (default: false)
   /// - [supportAudio]: Enable audio input, for a model with an audio encoder,
-  ///   e.g. Gemma 4 or Gemma 3n `.litertlm` (E2B, E4B); native only (default: false)
-  /// - [maxNumImages]: Maximum number of images if supportImage is true
+  ///   e.g. Gemma 4 or Gemma 3n `.litertlm` (E2B, E4B); on the web Gemma 4 E2B's
+  ///   GPU export (default: false)
+  /// - [maxNumImages]: Maximum number of images if supportImage is true: per
+  ///   message natively, per conversation on the web, where the model
+  ///   reserves their space up front (unset: 1)
   /// - [multimodalOrder]: the order in which a user message's images, audio
   ///   and text reach the model. Null picks the order of the active model's
   ///   type ([MultimodalOrder.forModelType]): images, text, audio for

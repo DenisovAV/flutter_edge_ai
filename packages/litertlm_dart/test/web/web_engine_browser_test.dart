@@ -2,7 +2,7 @@
 // defined on the page in plain JS: `window.Engine` (with the prototype members
 // the release calls) and conversations whose `sendMessageStreaming` returns a
 // real `ReadableStream` the test feeds chunk by chunk. The stub does what
-// 0.18.0 was measured to do (2026-11-23, web_litertlm_runtime_probe_test.dart):
+// 0.19.0 was measured to do (2026-11-23, web_litertlm_runtime_probe_test.dart):
 // `cancel()` rejects the stream with "Task cancelled", and every later send on
 // that conversation fails the same way; `getHistory()` holds the completed
 // exchanges only; an engine's `delete()` is a Promise, a conversation's
@@ -37,33 +37,49 @@ void main() {
   tearDown(removeRuntime);
 
   group('Engine.create', () {
-    test('refuses what the web does not run, before touching the runtime', () {
-      for (final config in [
-        webConfig(backend: const Backend.npu()),
-        EngineConfig(modelPath: 'blob:x', visionBackend: const Backend.npu()),
-        EngineConfig(modelPath: 'blob:x', audioBackend: const Backend.npu()),
-        EngineConfig(modelPath: 'blob:x', cacheDir: '/tmp'),
-        EngineConfig(
-          modelPath: 'blob:x',
-          activationDataType: ActivationDataType.float32,
+    group('refuses what the web does not run, before touching the runtime', () {
+      for (final (what, config, message) in [
+        ('the NPU', webConfig(backend: const Backend.npu()), 'the NPU'),
+        (
+          'an NPU vision encoder',
+          EngineConfig(modelPath: 'blob:x', visionBackend: const Backend.npu()),
+          'an NPU vision encoder',
         ),
-        EngineConfig(
-          modelPath: 'blob:x',
-          speculativeDecoding: SpeculativeDecodingMode.on,
+        (
+          'an NPU audio encoder',
+          EngineConfig(modelPath: 'blob:x', audioBackend: const Backend.npu()),
+          'an NPU audio encoder',
+        ),
+        (
+          'a cache directory',
+          EngineConfig(modelPath: 'blob:x', cacheDir: '/tmp'),
+          'a cache directory (cacheDir)',
+        ),
+        (
+          'an activation type',
+          EngineConfig(
+            modelPath: 'blob:x',
+            activationDataType: ActivationDataType.float32,
+          ),
+          'an activationDataType',
+        ),
+        (
+          'speculative decoding',
+          EngineConfig(
+            modelPath: 'blob:x',
+            speculativeDecoding: SpeculativeDecodingMode.on,
+          ),
+          'speculative decoding',
         ),
       ]) {
-        expect(
-          () => Engine.create(config),
-          throwsA(
-            isA<UnsupportedError>().having(
-              (e) => e.message,
-              'message',
-              contains(web.liteRtLmWebRuntime),
-            ),
-          ),
-        );
+        test(what, () async {
+          await expectLater(
+            Engine.create(config),
+            throwsWith<UnsupportedError>(message),
+          );
+          expect(list('createSettings'), isEmpty);
+        });
       }
-      expect(list('createSettings'), isEmpty);
     });
 
     test('a vision encoder goes to the runtime with one image reserved per '
@@ -150,53 +166,54 @@ void main() {
     });
 
     test(
-      'a page without the loader, without window.Engine or with a runtime '
-      'lacking what the release calls is a StateError saying which',
+      'a page without the loader is a StateError naming the module',
       () async {
         removeRuntime();
+
         await expectLater(
           Engine.create(webConfig()),
           throwsA(
-            isA<StateError>().having(
+            errorWith<StateError>('litertLmReady').having(
               (e) => e.message,
               'message',
-              allOf(
-                contains('litertLmReady'),
-                contains(web.liteRtLmWebModuleUrl),
-              ),
+              contains(web.liteRtLmWebModuleUrl),
             ),
           ),
         );
-        globalContext['litertLmReady'] = Future<void>.value().toJS;
-        await expectLater(
-          Engine.create(webConfig()),
-          throwsA(
-            isA<StateError>().having(
-              (e) => e.message,
-              'message',
-              contains('window.Engine = m.Engine;'),
-            ),
-          ),
-        );
-        installRuntime();
-        ((globalContext['Engine']! as JSObject)['prototype']! as JSObject)
-            .delete('createConversation'.toJS);
-        await expectLater(
-          Engine.create(webConfig()),
-          throwsA(
-            isA<StateError>().having(
-              (e) => e.message,
-              'message',
-              allOf(
-                contains('createConversation'),
-                contains(web.liteRtLmWebRuntimeVersion),
-              ),
-            ),
-          ),
-        );
-        expect(list('createSettings'), isEmpty);
       },
     );
+
+    test(
+      'a page without window.Engine is a StateError naming the shim line',
+      () async {
+        removeRuntime();
+        globalContext['litertLmReady'] = Future<void>.value().toJS;
+
+        await expectLater(
+          Engine.create(webConfig()),
+          throwsWith<StateError>('window.Engine = m.Engine;'),
+        );
+      },
+    );
+
+    test('a runtime lacking a member the release calls is a StateError '
+        'naming it and the pinned version', () async {
+      ((globalContext['Engine']! as JSObject)['prototype']! as JSObject).delete(
+        'createConversation'.toJS,
+      );
+
+      await expectLater(
+        Engine.create(webConfig()),
+        throwsA(
+          errorWith<StateError>('createConversation').having(
+            (e) => e.message,
+            'message',
+            contains(web.liteRtLmWebRuntimeVersion),
+          ),
+        ),
+      );
+      expect(list('createSettings'), isEmpty);
+    });
 
     test('hands Engine.create the model, the backend, the context and the '
         'thread count; reads back what the runtime resolved', () async {
@@ -229,7 +246,10 @@ void main() {
 
     test('a backend the release does not know is a StateError', () async {
       setOnPage('resolvedBackend', 6);
-      await expectLater(Engine.create(webConfig()), throwsStateError);
+      await expectLater(
+        Engine.create(webConfig()),
+        throwsWith<StateError>('backend 6'),
+      );
     });
 
     test('the runtime refusing the model is a LiteRtLmEngineCreateException '
@@ -444,11 +464,17 @@ void main() {
     });
 
     test('the tokenizer and option scoring refuse, as futures', () async {
-      await expectLater(engine.tokenize('x'), throwsUnsupportedError);
-      await expectLater(engine.detokenize([1]), throwsUnsupportedError);
+      await expectLater(
+        engine.tokenize('x'),
+        throwsWith<UnsupportedError>('no tokenizer'),
+      );
+      await expectLater(
+        engine.detokenize([1]),
+        throwsWith<UnsupportedError>('no tokenizer'),
+      );
       await expectLater(
         engine.scoreTargets('p', ['t']),
-        throwsUnsupportedError,
+        throwsWith<UnsupportedError>('Option scoring does not run on the web'),
       );
     });
   });
@@ -500,43 +526,77 @@ void main() {
       await done;
     });
 
-    test('refuses media, per-message thinking, other template variables and '
-        'decoding options, without sending; the same variables in another '
-        'key order are accepted', () async {
-      final c = await engine.createConversation(
-        ConversationConfig(extraContext: {'a': 1, 'b': 2}),
+    group('refuses, without sending', () {
+      late Conversation c;
+      setUp(
+        () async => c = await engine.createConversation(
+          ConversationConfig(extraContext: {'a': 1, 'b': 2}),
+        ),
       );
-      Future<void> refused(Stream<Message> reply) =>
-          expectLater(reply, emitsError(isA<UnsupportedError>()));
-      await refused(
-        c.sendMessageStream(
-          Message(
-            role: Role.user,
-            contents: [Content.imageBytes(Uint8List(4))],
+
+      test('an image on an engine without a vision encoder', () async {
+        await expectLater(
+          c.sendMessageStream(
+            Message(
+              role: Role.user,
+              contents: [Content.imageBytes(Uint8List(4))],
+            ),
           ),
-        ),
-      );
-      await refused(
-        c.sendMessageStream(
-          Message.user('x'),
-          thinkingConfig: ThinkingConfig(),
-        ),
-      );
-      await refused(
-        c.sendMessageStream(Message.user('x'), extraContext: {'a': 2}),
-      );
-      await refused(
-        c.sendMessageStream(Message.user('x'), suppressTokens: [1]),
-      );
-      expect(list('sent'), isEmpty);
-      final sent = c
-          .sendMessageStream(Message.user('x'), extraContext: {'b': 2, 'a': 1})
-          .drain<void>();
-      await settle();
-      expect(list('sent'), hasLength(1));
-      js('__end');
-      await sent;
+          emitsError(errorWith<UnsupportedError>('loaded no vision encoder')),
+        );
+        expect(list('sent'), isEmpty);
+      });
+
+      test('thinking asked per message', () async {
+        await expectLater(
+          c.sendMessageStream(
+            Message.user('x'),
+            thinkingConfig: ThinkingConfig(),
+          ),
+          emitsError(
+            errorWith<UnsupportedError>('thinking is set per conversation'),
+          ),
+        );
+        expect(list('sent'), isEmpty);
+      });
+
+      test('other template variables', () async {
+        await expectLater(
+          c.sendMessageStream(Message.user('x'), extraContext: {'a': 2}),
+          emitsError(errorWith<UnsupportedError>('template variables')),
+        );
+        expect(list('sent'), isEmpty);
+      });
+
+      test('a per-message decoding option', () async {
+        await expectLater(
+          c.sendMessageStream(Message.user('x'), suppressTokens: [1]),
+          emitsError(errorWith<UnsupportedError>('suppressTokens')),
+        );
+        expect(list('sent'), isEmpty);
+      });
     });
+
+    test(
+      'the same template variables in another key order are accepted',
+      () async {
+        final c = await engine.createConversation(
+          ConversationConfig(extraContext: {'a': 1, 'b': 2}),
+        );
+
+        final sent = c
+            .sendMessageStream(
+              Message.user('x'),
+              extraContext: {'b': 2, 'a': 1},
+            )
+            .drain<void>();
+        await settle();
+        js('__end');
+        await sent;
+
+        expect(list('sent'), hasLength(1));
+      },
+    );
 
     test('cancel(): the runtime rejects the stopped stream and the reply ends '
         'normally with what arrived; the next message goes to a conversation '
@@ -620,7 +680,10 @@ void main() {
     });
 
     test('the benchmark record refuses on the web', () {
-      expect(conversation.getBenchmarkInfo, throwsUnsupportedError);
+      expect(
+        conversation.getBenchmarkInfo,
+        throwsWith<UnsupportedError>('benchmark mode'),
+      );
     });
 
     test('a failed generation is a TurnFailedException carrying the '
@@ -646,7 +709,7 @@ void main() {
       final reply = conversation.sendMessageStream(Message.user('Hello'));
       final expectation = expectLater(
         reply,
-        emitsError(isA<ConversationClosedException>()),
+        emitsError(errorWith<ConversationClosedException>('closed')),
       );
       await settle();
       await conversation.close();
@@ -731,7 +794,7 @@ void main() {
       expect(printed.single, contains('ERROR'));
       await expectLater(
         lock.acquire(),
-        throwsA(isA<web.LiteRtLmPagePoisonedError>()),
+        throwsWith<web.LiteRtLmPagePoisonedError>('Reload the page'),
       );
     });
 
@@ -746,7 +809,10 @@ void main() {
       await settle();
       expect(count('engineDeletes'), 0, reason: 'deleted under a create');
       held.release();
-      await expectLater(create, throwsStateError);
+      await expectLater(
+        create,
+        throwsWith<StateError>('closed while a conversation opened'),
+      );
       await closing;
       expect(list('conversationOptions'), isEmpty);
       expect(count('engineDeletes'), 1);
@@ -771,15 +837,15 @@ void main() {
       await settle();
       await expectLater(
         conversation.close(),
-        throwsA(isA<web.LiteRtLmPagePoisonedError>()),
+        throwsWith<web.LiteRtLmPagePoisonedError>('Reload the page'),
       );
       await expectLater(
         lock.acquire(),
-        throwsA(isA<web.LiteRtLmPagePoisonedError>()),
+        throwsWith<web.LiteRtLmPagePoisonedError>('Reload the page'),
       );
       await expectLater(
         engine.close(),
-        throwsA(isA<web.LiteRtLmPagePoisonedError>()),
+        throwsWith<web.LiteRtLmPagePoisonedError>('Reload the page'),
       );
       expect(count('engineDeletes'), 0);
       unawaited(reply);
@@ -794,10 +860,13 @@ void main() {
     await engine.close();
     expect(count('conversationDeletes'), 2);
     expect(count('engineDeletes'), 1);
-    expect(engine.createConversation, throwsStateError);
+    expect(
+      engine.createConversation,
+      throwsWith<StateError>('The engine is closed.'),
+    );
     expect(
       () => conversation.sendMessageStream(Message.user('x')),
-      throwsStateError,
+      throwsWith<StateError>('closed'),
     );
   });
 
@@ -835,14 +904,17 @@ void main() {
   test(
     'the file reads and the benchmark refuse on the web, as futures',
     () async {
-      await expectLater(readBundleInfo('m.litertlm'), throwsUnsupportedError);
+      await expectLater(
+        readBundleInfo('m.litertlm'),
+        throwsWith<UnsupportedError>('which the web cannot'),
+      );
       await expectLater(
         readBundleGenericData('m.litertlm', 'x'),
-        throwsUnsupportedError,
+        throwsWith<UnsupportedError>('which the web'),
       );
       await expectLater(
         benchmark(modelPath: 'm', backend: const Backend.gpu()),
-        throwsUnsupportedError,
+        throwsWith<UnsupportedError>('benchmark mode'),
       );
     },
   );

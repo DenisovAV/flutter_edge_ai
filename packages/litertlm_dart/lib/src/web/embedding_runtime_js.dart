@@ -21,7 +21,7 @@
 /// ```js
 /// EmbeddingEngine.create({model, backend, visionBackend?, audioBackend?,
 ///     maxInputLength, minInputLength?, visionTokensPerImage?})
-///                                                   // Promise<EmbeddingEngine>
+///   // Promise<EmbeddingEngine>
 /// engine.computeEmbedding(input, {normalize, insertSpecialTokens,
 ///     inputOverflowStrategy})  // Promise<{embedding: number[], inputLength,
 ///                              //   truncatedLength?, numChunks}>

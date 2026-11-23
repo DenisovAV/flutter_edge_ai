@@ -231,7 +231,14 @@ void main() {
       await closing;
 
       expect(engine.closes, 1);
-      expect(await session, isStateError);
+      expect(
+        await session,
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Model was closed while'),
+        ),
+      );
     });
 
     test('createSession refuses the session it built', () async {
@@ -245,7 +252,14 @@ void main() {
       loading.complete(engine);
       await closing;
 
-      expect(await session, isStateError);
+      expect(
+        await session,
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Model was closed while'),
+        ),
+      );
       expect(engine.handles.single.closes, 1);
     });
   });

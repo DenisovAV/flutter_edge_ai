@@ -9,10 +9,12 @@
 //
 // API surface mirrored, as published (`dist/engine.d.ts`, `conversation.d.ts`,
 // `conversation_config.d.ts`, `engine_settings.d.ts`):
-//   const engine = await Engine.create({model, backend?, mainExecutorSettings?});
-//   const convo = await engine.createConversation({sessionConfig, preface, ...});
-//   const stream = convo.sendMessageStreaming(message); // ReadableStream<Message>
-//   for await (const chunk of stream) ...                // {role, content: [...]}
+//   const engine =
+//       await Engine.create({model, backend?, mainExecutorSettings?});
+//   const convo =
+//       await engine.createConversation({sessionConfig, preface, ...});
+//   const stream = convo.sendMessageStreaming(message); // ReadableStream
+//   for await (const chunk of stream) ...  // {role, content: [...]}
 //   convo.cancel(); await convo.delete(); await engine.delete();
 //
 // `sendMessageStreaming` returns a ReadableStream, which Chrome iterates as an
@@ -108,8 +110,8 @@ final _versioned = RegExp(r'@litert-lm/core@(\d+\.\d+\.\d+)');
 
 /// Says once, with `print`, when the page fetched another `@litert-lm/core`
 /// than [liteRtLmWebRuntimeVersion]: one that has every member this release
-/// calls still runs, but its behaviour is not the one measured (0.19.0
-/// answers empty after a tool result with Gemma 4 E2B's web export).
+/// calls still runs, but its behaviour is not the one measured (0.18.0
+/// refuses the GPU export, "Unsupported backend: 2").
 void noteOtherWebRuntimeVersion() {
   if (_versionNoted) return;
   final others = liteRtLmWebFetchedVersions()

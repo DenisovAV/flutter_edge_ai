@@ -44,9 +44,11 @@ abstract interface class WebLlmEngine {
 /// ([liteRtLmWebRuntime] on WebGPU).
 ///
 /// **Limitations:**
-/// - Text-in/text-out only. An image or audio message throws
-///   [UnsupportedError] from [LiteRtLmWebSession.addQueryChunk]: the web
-///   engine is created with no vision or audio executor.
+/// - Images and audio with `supportImage`/`supportAudio` (the vision encoder
+///   on the GPU, the audio encoder on the CPU); without them an image or
+///   audio message throws [UnsupportedError] from
+///   [LiteRtLmWebSession.addQueryChunk]. `maxNumImages` counts a whole
+///   conversation's images on the web.
 /// - Thinking reaches the model as `extra_context` with an explicit
 ///   `enable_thinking` (litertlm_dart's `thinkingContext`), the key the chat
 ///   templates read — measured on Gemma 4 E2B in Chrome

@@ -15,8 +15,9 @@
 //   no engine to create; the load fails with an EmbedderLoadException that
 //   names the missing line instead of a JS `undefined` deep in the runtime.
 // - One `EmbeddingEngine` per embedder, created at load and deleted at
-//   close. The runtime's WebAssembly module is page-global and shared with the `.litertlm` LLM engine, whose calls the
-//   runtime does not order against these: the create + probe and every
+//   close. The runtime's WebAssembly module is page-global and shared with
+//   the `.litertlm` LLM engine, whose calls the runtime does not order
+//   against these: the create + probe and every
 //   `computeEmbedding` take `liteRtLmPageLock`, as the LLM's create,
 //   conversation and generation do (see that file for why). The two engines
 //   also share the module's one WebGPU device. `delete()` never suspends and
@@ -75,7 +76,8 @@
 //   is never returned.
 // - Under `WebStorageMode.streaming` the model path is `opfs://`, which the
 //   runtime's fetch() cannot open: it is resolved to a `blob:` URL first, and
-//   that URL — created by this embedder — is revoked once the engine has read it.
+//   that URL — created by this embedder — is revoked once the engine has read
+//   it.
 
 import 'dart:typed_data';
 

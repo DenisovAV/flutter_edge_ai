@@ -238,6 +238,10 @@ void main() {
   group('variantFor on the generated catalog', () {
     final gemma = LiteRtLmModels.gemma4E2bIt;
 
+    test('on the web a model whose web build is withheld has no variant', () {
+      expect(_on(null, LiteRtLmModels.gemma4E4bIt.variantFor), isNull);
+    });
+
     test('natively the generic file, on the web the web bundle', () {
       expect(_on('macos_arm64', gemma.variantFor), same(gemma.generic));
       expect(_on(null, gemma.variantFor), same(gemma.webGpu));

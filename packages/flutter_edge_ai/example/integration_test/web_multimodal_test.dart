@@ -138,14 +138,21 @@ void main() {
       final image = await _asset('assets/test/test_image.jpg');
       final session = await model.openSession(enableVisionModality: true);
       try {
+        // The first reply must not name the animal, or the question after
+        // the stop could be answered from the text alone.
         await session.addQueryChunk(
           Message.withImage(
-            text: 'What animal is in this image? Answer in one word.',
+            text: 'Look at this image. Answer only: OK',
             imageBytes: image,
             isUser: true,
           ),
         );
-        await session.getResponse();
+        final first = (await session.getResponse()).toLowerCase();
+        expect(
+          first,
+          isNot(anyOf(contains('dog'), contains('puppy'))),
+          reason: 'the first reply named the animal: "$first"',
+        );
         await session.addQueryChunk(
           const Message(
             text: 'Count from 1 to 300, one number per line.',
@@ -164,7 +171,7 @@ void main() {
 
         await session.addQueryChunk(
           const Message(
-            text: 'What animal was in the image I sent first? One word.',
+            text: 'What animal was in the image I sent? One word.',
             isUser: true,
           ),
         );

@@ -117,12 +117,6 @@
   backends: [gpu]
   status: documented
   source: website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:251
-- what: Gemma 4 on the web
-  variants: [gemma-4-e2b-it/web-gpu]
-  hosts: [web]
-  backends: [gpu]
-  status: documented
-  source: website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:250-251
 - what: Gemma 3n E2B and E4B on desktop and mobile
   variants: [gemma-3n-e2b-it/generic, gemma-3n-e4b-it/generic]
   hosts: [android_arm64, ios_arm64, macos_arm64, windows_x64, linux_x64]

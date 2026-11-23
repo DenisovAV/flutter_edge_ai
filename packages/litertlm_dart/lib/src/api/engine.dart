@@ -372,8 +372,9 @@ final class Engine {
   bool _channelWarned = false;
 
   /// Loads [config.modelPath] on [config.backend]: one attempt, no fallback.
-  /// On the web the same call loads a web export over the page's
-  /// `@litert-lm/core`, on [Backend.gpu] (see the README, "On the web").
+  /// On the web the same call loads a build the web runtime loads (Gemma 4's
+  /// GPU export) over the page's `@litert-lm/core`, on [Backend.gpu] (see
+  /// the README, "On the web").
   ///
   /// Throws [LiteRtLmBundleException] when the file is incomplete or cannot
   /// run as asked, [NpuDispatchUnavailableException] when the NPU cannot be

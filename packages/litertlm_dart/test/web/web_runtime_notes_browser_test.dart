@@ -52,7 +52,10 @@ void main() {
         'p.catch(() => {}); return p; })()',
       );
 
-      await expectLater(web.awaitIfThenable(rejected), throwsA(anything));
+      await expectLater(
+        web.awaitIfThenable(rejected),
+        throwsA(predicate((e) => '$e'.contains('delete failed'))),
+      );
     });
   });
 

@@ -3,8 +3,9 @@ import 'dart:js_interop_unsafe';
 
 /// Why EmbeddingGemma 2 cannot run in this browser, or null when it can.
 ///
-/// On the web the bundles run on WebGPU only (`@litert-lm/core` 0.18.0 cannot
-/// load them on its CPU path), and core refuses a page without it at load.
+/// On the web the bundles run on WebGPU only (`@litert-lm/core` cannot load
+/// them on its CPU path, 0.18.0 and 0.19.0 alike), and core refuses a page
+/// without it at load.
 /// Asking first — as core does: `navigator.gpu`, then an adapter — lets the
 /// screen say so plainly instead of offering a model list where no model
 /// would load.

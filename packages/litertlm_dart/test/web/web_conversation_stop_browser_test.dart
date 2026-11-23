@@ -371,6 +371,32 @@ void main() {
       );
     });
 
+    test('a rebuild after a stop before any chunk names the stop when it '
+        'fails, also after an earlier failed turn', () async {
+      await failedTurn('Broken');
+      await exchange(conversation, 'Two', 'Dos');
+      final stopped = conversation
+          .sendMessageStream(Message.user('Three'))
+          .drain<void>();
+      await settle();
+      conversation.cancel();
+      await stopped;
+      setOnPage('conversationErrorAfter', 2);
+
+      await expectLater(
+        conversation.sendMessageStream(Message.user('Four')),
+        emitsError(
+          isA<TurnFailedException>().having(
+            (e) => '${web.turnFailureCause(e)}',
+            'cause',
+            contains(
+              'Could not rebuild the conversation after a stopped reply',
+            ),
+          ),
+        ),
+      );
+    });
+
     test('only the failed message is left out of the rebuild, not another '
         'message at the end of the history', () async {
       await exchange(conversation, 'One', 'Uno');

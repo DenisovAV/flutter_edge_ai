@@ -358,8 +358,8 @@ final class WebConversationHandle implements ConversationHandle {
           // send ("Task cancelled" after a stop, measured on 0.18.0 and
           // 0.19.0).
           _mustRebuild = true;
+          if (turn.stopAsked) _rebuildCause = 'a stopped reply';
           if (turn.stopAsked && turn.streamed) {
-            _rebuildCause = 'a stopped reply';
             _stopped = (
               message: turn.message,
               reply: assistantTurnMessage(

@@ -12,7 +12,6 @@ import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../adapter/runtime_log_binding.dart';
 import '../adapter/runtime_mapping.dart';
-import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'package:litertlm_dart/bindings.dart';
@@ -60,12 +59,10 @@ void requireLiteRtLmAudioEncoderForCore(String modelPath) {
 final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   LiteRtLmEmbeddingPass(
     this._config, {
-    @visibleForTesting LiteRtLmEmbeddingBindings Function()? openBindings,
-    @visibleForTesting Allocator allocator = calloc,
-    @visibleForTesting DateTime Function()? clock,
-  }) : _openBindings = openBindings,
-       _allocator = allocator,
-       _clock = clock;
+    @visibleForTesting this._openBindings,
+    @visibleForTesting this._allocator = calloc,
+    @visibleForTesting this._clock,
+  });
 
   final LiteRtLmEmbeddingConfig _config;
   final LiteRtLmEmbeddingBindings Function()? _openBindings;

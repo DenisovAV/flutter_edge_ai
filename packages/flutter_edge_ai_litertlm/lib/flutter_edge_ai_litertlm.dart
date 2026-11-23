@@ -9,7 +9,7 @@
 ///
 /// await FlutterEdgeAi.initialize(inferenceEngines: [LiteRtLmEngine()]);
 /// ```
-library flutter_edge_ai_litertlm;
+library;
 
 export 'src/litert_lm_engine_web.dart'
     if (dart.library.ffi) 'src/litert_lm_engine.dart';

@@ -431,11 +431,10 @@ Future<Engine> createWebEngine(
   );
 }
 
-bool _hasKeys(JSObject object) =>
-    (globalContext['Object']! as JSObject)
-        .callMethod<JSArray<JSAny?>>('keys'.toJS, object)
-        .length >
-    0;
+bool _hasKeys(JSObject object) => (globalContext['Object']! as JSObject)
+    .callMethod<JSArray<JSAny?>>('keys'.toJS, object)
+    .toDart
+    .isNotEmpty;
 
 /// [Engine.createConversation] with the model's sampler default when the
 /// config sets none, as natively: values the Flutter adapter resolves, which

@@ -1,6 +1,5 @@
 import 'package:flutter_edge_ai/engine.dart';
 
-import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 
 import 'runtime_mapping.dart';

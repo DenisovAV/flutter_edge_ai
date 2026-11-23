@@ -22,7 +22,6 @@ import 'package:flutter_edge_ai/engine.dart';
 import '../catalog/litert_catalog.dart' show LiteRtEmbedders;
 import 'embedding_cache_dir.dart';
 import 'litert_embedding_pass.dart';
-import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'litert_lm_embedding_pass.dart';
 import 'litert_lm_npu.dart';
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;

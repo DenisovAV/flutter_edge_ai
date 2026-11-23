@@ -20,6 +20,7 @@ LiteRtLmWebSession webSessionOver(
   void Function()? onClose,
   bool supportImage = false,
   bool supportAudio = false,
+  bool? engineVision,
 }) {
   final handle = WebConversationHandle(
     conversation as JsLiteRtLmConversation,
@@ -29,7 +30,8 @@ LiteRtLmWebSession webSessionOver(
     // A stop marks the conversation for a rebuild before its NEXT turn; these
     // suites send none after a stop.
     rebuild: (_) => throw StateError('no rebuild in this fixture'),
-    vision: supportImage,
+    // The engine's encoder, when it differs from what the session was told.
+    vision: engineVision ?? supportImage,
     audio: supportAudio,
   );
   return LiteRtLmWebSession(

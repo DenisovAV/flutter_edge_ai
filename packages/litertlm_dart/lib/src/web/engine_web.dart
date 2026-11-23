@@ -44,7 +44,11 @@ final class Engine {
     required this.audioBackend,
     required this.maxNumTokens,
     required this._pageLock,
+    this._maxNumImages,
   });
+
+  /// The images a conversation reserves (`maxNumImages`, unset 1).
+  final int? _maxNumImages;
 
   final JsLiteRtLmEngine _js;
   final LiteRtLmPageLock _pageLock;
@@ -228,7 +232,9 @@ final class Engine {
       if (missing.isNotEmpty) {
         try {
           await awaitIfThenable(conversation.delete());
-        } catch (_) {}
+        } catch (e) {
+          noteWebDeleteFailure('A conversation', e);
+        }
         throw StateError(_incompleteRuntime('conversation', missing));
       }
       return conversation;
@@ -262,10 +268,7 @@ final class Engine {
       try {
         await awaitIfThenable(js.delete());
       } catch (e) {
-        runtimeLog(
-          '[litertlm_dart/web] deleting a conversation built while the engine '
-          'closed failed: $e',
-        );
+        noteWebDeleteFailure('A conversation', e);
       }
       _pendingCreates.remove(pending.future);
       pending.complete();
@@ -282,6 +285,7 @@ final class Engine {
       rebuild: create,
       preface: base,
       vision: visionBackend != null,
+      maxImages: visionBackend == null ? null : _maxNumImages,
       audio: audioBackend != null,
       onClose: () => _handles.remove(handle),
       pageLock: _pageLock,
@@ -396,6 +400,9 @@ Future<Engine> createWebEngine(
 }) async {
   _refuseOnWeb(config);
   final constructor = await _awaitRuntime();
+  // Said before the create: an older runtime fails it ("Unsupported backend:
+  // 2" on 0.18.0), and the reason is the version.
+  noteOtherWebRuntimeVersion();
   final settings = JSObject()..['model'] = model ?? config.modelPath.toJS;
   settings['backend'] = _webBackendValue(config.backend).toJS;
   if (config.visionBackend case final vision?) {
@@ -449,9 +456,16 @@ Future<Engine> createWebEngine(
     rethrow;
   } catch (e) {
     final message = '$e';
+    final others = liteRtLmWebFetchedVersions()
+      ..remove(liteRtLmWebRuntimeVersion);
     throw LiteRtLmEngineCreateException(
-      '$liteRtLmWebRuntime could not create the engine for '
-      '${config.modelPath} on ${config.backend}: $message',
+      others.isEmpty
+          ? '$liteRtLmWebRuntime could not create the engine for '
+                '${config.modelPath} on ${config.backend}: $message'
+          : 'The page\'s @litert-lm/core ${others.join(', ')} could not create '
+                'the engine for ${config.modelPath} on ${config.backend}: '
+                '$message. This release runs on $liteRtLmWebRuntimeVersion: '
+                'import $liteRtLmWebModuleUrl in the page\'s module script.',
       nativeMessage: message,
     );
   }
@@ -490,7 +504,6 @@ Future<Engine> createWebEngine(
     }
     rethrow;
   }
-  noteOtherWebRuntimeVersion();
   Backend? encoder(String key) {
     final value = resolved?[key];
     if (!value.isA<JSNumber>()) return null;
@@ -502,11 +515,32 @@ Future<Engine> createWebEngine(
     };
   }
 
+  final vision = encoder('visionBackend');
+  final audio = encoder('audioBackend');
+  final missing = [
+    if (config.visionBackend != null && vision == null) 'vision',
+    if (config.audioBackend != null && audio == null) 'audio',
+  ];
+  if (missing.isNotEmpty) {
+    // Asked for, not loaded: a message with that medium would fail later.
+    try {
+      await awaitIfThenable(js.delete());
+    } catch (e) {
+      noteWebDeleteFailure('An engine', e);
+    }
+    throw LiteRtLmEngineCreateException(
+      '$liteRtLmWebRuntime created the engine for ${config.modelPath} without '
+      'its ${missing.join(' and ')} encoder '
+      '(settings.${missing.first}Backend not reported): the model may have '
+      'none.',
+    );
+  }
   return Engine._(
     js,
     backend: backend,
-    visionBackend: encoder('visionBackend'),
-    audioBackend: encoder('audioBackend'),
+    visionBackend: vision,
+    audioBackend: audio,
+    maxNumImages: vision == null ? null : (config.maxNumImages ?? 1),
     maxNumTokens: tokens.isA<JSNumber>()
         ? (tokens as JSNumber).toDartInt
         : (config.maxNumTokens ?? 0),

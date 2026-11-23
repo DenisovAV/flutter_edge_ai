@@ -74,6 +74,14 @@ window.__litertlmProbe = async (url, image, audio) => {
     }
     return t.slice(0, 400);
   };
+  // A history's media bytes ({bytes: [...]}) as the base64 `blob` a preface
+  // takes, as WebConversationHandle._replayable does.
+  const toBase64 = (history) => history.map((m) => !Array.isArray(m.content) ? m : {
+    ...m,
+    content: m.content.map((p) => p.blob && p.blob.bytes
+      ? {...p, blob: btoa(String.fromCharCode(...p.blob.bytes))}
+      : p),
+  });
   const greedy = {sessionConfig: {samplerParams: {type: 2, k: 1, p: 1, temperature: 1, seed: 1}}};
   const stream = async () => (await fetch(url)).body;
   r.modelBytes = Number((await fetch(url, {method: 'HEAD'})).headers.get('content-length'));
@@ -275,6 +283,22 @@ window.__litertlmProbe = async (url, image, audio) => {
         await attempt('second_image_same_conversation', () => text(c, {role: 'user', content: [
           {type: 'image', data: image},
           {type: 'text', text: 'And this one, which shape? One word.'}]}));
+        // M1: after a runtime error that is not a cancel, is the failed
+        // message in the history, and does the conversation still answer?
+        let failedHistory;
+        await attempt('history_after_failed_turn', async () => {
+          failedHistory = await c.getHistory();
+          return {length: failedHistory.length,
+                  roles: failedHistory.map((m) => m.role),
+                  lastUser: JSON.stringify(failedHistory.filter((m) => m.role === 'user').pop()).slice(0, 200)};
+        });
+        await attempt('send_after_failed_turn', () => text(c, 'Say yes.'));
+        await attempt('rebuilt_after_failed_turn', async () => {
+          const r4 = await v.createConversation({...greedy, preface: {messages: toBase64(failedHistory)}});
+          const answer = await text(r4, 'Say yes.');
+          await r4.delete();
+          return answer;
+        });
       }
       await c.delete();
       await v.delete();
@@ -296,8 +320,19 @@ window.__litertlmProbe = async (url, image, audio) => {
         {type: 'audio', data: audio},
         {type: 'text', text: 'Transcribe this audio.'}]}));
       if (name === 'audio_cpu') {
-        await attempt('history_with_audio', async () =>
-          JSON.stringify(await c.getHistory()).slice(0, 200));
+        let audioHistory;
+        await attempt('history_with_audio', async () => {
+          audioHistory = await c.getHistory();
+          return JSON.stringify(audioHistory).slice(0, 200);
+        });
+        // M2: a conversation rebuilt from a history that holds audio, its
+        // bytes turned into base64 as a rebuild does.
+        await attempt('rebuilt_from_history_with_audio_as_base64', async () => {
+          const r5 = await a.createConversation({...greedy, preface: {messages: toBase64(audioHistory)}});
+          const answer = await text(r5, 'What did the audio ask for? A few words.');
+          await r5.delete();
+          return answer;
+        });
       }
       await c.delete();
       await a.delete();
@@ -398,10 +433,40 @@ void main() {
       'preface_with_image_blob',
       'second_image_same_conversation',
       'rebuilt_from_history_with_image_as_base64',
+      'history_after_failed_turn',
+      'send_after_failed_turn',
+      'rebuilt_after_failed_turn',
+      'history_with_audio',
+      'rebuilt_from_history_with_audio_as_base64',
       'cpu_default',
       'cpu_number_of_threads',
     ]) {
       expect(record, contains(probe), reason: '$probe never ran');
+    }
+    // What the docs and the web arm rely on must have worked, not only run.
+    for (final probe in [
+      'send_text',
+      'create_vision_gpu',
+      'vision_gpu_image_and_text',
+      'create_audio_cpu',
+      'audio_cpu_and_text',
+      'create_vision_and_audio',
+      'vision_and_audio_both',
+      'image_as_base64_blob',
+      'preface_with_image_blob',
+      'rebuilt_from_history_with_image_as_base64',
+      'rebuilt_from_history_with_audio_as_base64',
+      'history_with_preface',
+      'idle_cancel_then_send',
+      'cancel_at_end',
+      'explicit_gpu_backend',
+      'rebuilt_from_history',
+    ]) {
+      expect(
+        (record[probe]! as Map)['ok'],
+        isTrue,
+        reason: '$probe failed: ${record[probe]}',
+      );
     }
   }, timeout: const Timeout(Duration(minutes: 60)));
 }

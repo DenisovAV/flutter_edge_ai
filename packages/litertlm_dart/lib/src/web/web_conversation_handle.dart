@@ -68,6 +68,7 @@ final class WebConversationHandle implements ConversationHandle {
     required this._rebuild,
     this._preface = const [],
     this._vision = false,
+    this._maxImages,
     this._audio = false,
     this._onClose,
     LiteRtLmPageLock? pageLock,
@@ -91,6 +92,15 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// The engine loaded a vision, an audio encoder.
   final bool _vision;
+
+  /// The images a conversation of this engine holds at most (its
+  /// `maxNumImages`, whose space the model reserves per conversation); null
+  /// without a vision encoder.
+  final int? _maxImages;
+
+  /// The images the current runtime conversation holds: its preface's, its
+  /// replayed exchanges' and every message sent on it since.
+  late int _images = _imagesIn(_preface);
   final bool _audio;
 
   final bool _enableThinking;
@@ -228,15 +238,33 @@ final class WebConversationHandle implements ConversationHandle {
     void start() {
       final stream = _conversation.sendMessageStreaming(message);
       turn.sent = true;
-      _onGeneration();
-      final asyncIterator = globalContext
-          .getProperty<JSObject>('Symbol'.toJS)
-          .getProperty<JSAny>('asyncIterator'.toJS);
-      final iterator =
-          (stream.getProperty<JSFunction?>(asyncIterator) != null
-                  ? stream.callMethod<JSObject>(asyncIterator)
-                  : stream) // Already an iterator.
-              as JsAsyncIterator;
+      _images += _imagesIn([turn.message]);
+      final JsAsyncIterator iterator;
+      try {
+        _onGeneration();
+        final asyncIterator = globalContext
+            .getProperty<JSObject>('Symbol'.toJS)
+            .getProperty<JSAny>('asyncIterator'.toJS);
+        iterator =
+            (stream.getProperty<JSFunction?>(asyncIterator) != null
+                    ? stream.callMethod<JSObject>(asyncIterator)
+                    : stream) // Already an iterator.
+                as JsAsyncIterator;
+      } catch (e, st) {
+        // Sent, but its stream cannot be read: stop the generation, and let
+        // the page go only once it has left the module.
+        turn.fault = (
+          LiteRtLmNativeException(
+            'litertlm_dart could not read the reply stream of '
+            '$liteRtLmWebRuntime: $e',
+          ),
+          st,
+        );
+        _mustRebuild = true;
+        _stopJs(turn, 'its reply stream could not be read');
+        _fence().then((_) => finishAsked(StackTrace.current));
+        return;
+      }
 
       void pump() {
         // Every path ends in [finish] or another [pump]: a callback that
@@ -311,9 +339,13 @@ final class WebConversationHandle implements ConversationHandle {
           _mustRebuild = true;
           if (turn.stopAsked && turn.reply.isNotEmpty) {
             _stopped = (message: turn.message, reply: turn.reply.toString());
+          } else {
+            // The rebuilt conversation will not hold this turn's images.
+            _images -= _imagesIn([turn.message]);
           }
           // 0.19.0 rejects from inside the generation's chunk callback:
           // wait until it has left the module before the page is let go.
+          _armDrain(turn, 'its stream failed');
           _fence().then((_) {
             if (turn.asked || turn.fault != null) {
               // How the runtime ends a stopped generation is its business:
@@ -446,6 +478,18 @@ final class WebConversationHandle implements ConversationHandle {
       );
     }
     final json = jsonDecode(messageJson);
+    final images = _imagesIn([json]);
+    if (_vision && images > 0) {
+      if (_maxImages case final max? when _images + images > max) {
+        return UnsupportedError(
+          'This conversation holds $_images of the $max images its engine '
+          'reserves per conversation (maxNumImages: $max): on the web the '
+          'model reserves their space up front, and an image past it fails '
+          '("Image index $max must be less than $max.", 0.19.0). Load the '
+          'model with a larger maxNumImages, or start a new conversation.',
+        );
+      }
+    }
     if (json case {'content': final List<Object?> parts}) {
       for (final part in parts) {
         if (part case {'type': 'image' || 'audio', 'path': _}) {
@@ -504,6 +548,12 @@ final class WebConversationHandle implements ConversationHandle {
     } catch (e) {
       runtimeLog('[WebConversationHandle] conversation.cancel() threw: $e');
     }
+    _armDrain(turn, why);
+  }
+
+  /// Gives [turn] [drainTimeout] to end; if it has not, the page lock is
+  /// poisoned and [turn] fails with that error. Armed once per turn.
+  void _armDrain(_Turn turn, String why) {
     if (turn.drain != null) return;
     turn.drain = Timer(drainTimeout, () {
       if (turn.finished) return;
@@ -535,12 +585,16 @@ final class WebConversationHandle implements ConversationHandle {
         '$_untilRebuilt',
       );
     }
-    // 0.19.0's history holds no preface (measured); should a runtime start
-    // to return it, it is not replayed twice.
-    final current = [..._preface, ..._replayed];
-    final exchanges = _startsWith(history, current)
-        ? history.sublist(current.length)
-        : history;
+    // The runtime's history holds no preface (P1, 0.18.0 and 0.19.0
+    // measured): it is the exchanges since this conversation was created. A
+    // turn the runtime failed (not a stop) stays in it as a user message
+    // with no reply, and replaying it fails again (M1, 0.19.0: an image past
+    // maxNumImages), so an unanswered tail is not replayed.
+    final exchanges = [...history];
+    while (exchanges.isNotEmpty &&
+        (exchanges.last as Map?)?['role'] != 'assistant') {
+      exchanges.removeLast();
+    }
     final replay = [
       ..._replayed,
       ...exchanges,
@@ -566,6 +620,7 @@ final class WebConversationHandle implements ConversationHandle {
     final old = _conversation;
     _conversation = next;
     _replayed = replay;
+    _images = _imagesIn([..._preface, ...replay]);
     _mustRebuild = false;
     _stopped = null;
     runtimeLog(
@@ -627,7 +682,12 @@ final class WebConversationHandle implements ConversationHandle {
         // Abort the JS generation before the engine is torn down: deleting
         // the engine while an iterator's next() still resolves against this
         // conversation would free what it reads.
-        if (streaming.sent) _stopJs(streaming, 'its conversation closed');
+        if (streaming.sent) {
+          _stopJs(streaming, 'its conversation closed');
+        } else {
+          // Still rebuilding the conversation inside the module.
+          _armDrain(streaming, 'its conversation closed during a rebuild');
+        }
         await streaming.ended.future;
         if (_pageLock.poison case final poison?) throw poison;
       }
@@ -642,7 +702,21 @@ final class WebConversationHandle implements ConversationHandle {
   }
 }
 
-/// [message] of a runtime history as a preface takes it. 0.19.0 returns an
+/// The image parts of [messages], conversation API JSON.
+int _imagesIn(List<Object?> messages) => [
+  for (final message in messages)
+    if (message case {'content': final List<Object?> parts})
+      for (final part in parts)
+        if (part case {'type': 'image'}) part,
+].length;
+
+/// Whether [blob] is the runtime history's `{bytes: [...]}`.
+bool _isBytes(Object? blob) =>
+    blob is Map<Object?, Object?> && blob['bytes'] is List<Object?>;
+
+/// [message] of a runtime history as a preface takes it. The bytes are
+/// turned into base64 on this isolate: for a long history of large media
+/// that is work on the UI thread at the next message. 0.19.0 returns an
 /// image or audio part's bytes as `blob: {bytes: [...]}`, which a preface
 /// aborts the module on; the base64 `blob` of a message replays it (measured
 /// 2026-11-23, web_litertlm_runtime_probe_test.dart).
@@ -652,7 +726,14 @@ Object? _replayable(Object? message) {
       ...(message as Map),
       'content': [
         for (final part in parts)
-          if (part case {'blob': {'bytes': final List<Object?> bytes}})
+          if (part case {
+            'blob': final blob,
+          } when blob is! String && !_isBytes(blob))
+            throw FormatException(
+              'A media part of the runtime history has a blob of an unknown '
+              'shape (${blob.runtimeType}), which a rebuild cannot replay.',
+            )
+          else if (part case {'blob': {'bytes': final List<Object?> bytes}})
             {
               ...(part as Map),
               // dartify gives a JS number as a double under dart2wasm.
@@ -668,15 +749,6 @@ Object? _replayable(Object? message) {
     };
   }
   return message;
-}
-
-/// Whether [list] begins with [prefix], compared as JSON.
-bool _startsWith(List<Object?> list, List<Object?> prefix) {
-  if (list.length < prefix.length) return false;
-  for (var i = 0; i < prefix.length; i++) {
-    if (!_jsonEquals(list[i], prefix[i])) return false;
-  }
-  return true;
 }
 
 /// One turn of a [WebConversationHandle]: whether it was asked to end, and

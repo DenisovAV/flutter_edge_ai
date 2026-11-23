@@ -43,8 +43,14 @@ final class _Handle implements ConversationHandle {
 
   int closes = 0;
 
+  /// Holds [close] open until completed; null closes at once.
+  Completer<void>? closeGate;
+
   @override
-  Future<void> close() async => closes++;
+  Future<void> close() async {
+    closes++;
+    await closeGate?.future;
+  }
 
   @override
   Future<int?> tokenCount(String text) async => null;
@@ -242,5 +248,51 @@ void main() {
       expect(await session, isStateError);
       expect(engine.handles.single.closes, 1);
     });
+  });
+
+  test('a session closed twice: the second close completes when the first '
+      'has, and the conversation is closed once', () async {
+    final engine = _Engine();
+    final model = _model(engine, ModelType.gemmaIt);
+    final session = await model.openSession();
+    final handle = engine.handles.single..closeGate = Completer<void>();
+
+    final first = session.close();
+    var secondDone = false;
+    final second = session.close().then((_) => secondDone = true);
+    await pumpEventQueue();
+
+    expect(secondDone, isFalse, reason: 'returned before the first close');
+    handle.closeGate!.complete();
+    await first;
+    await second;
+    expect(handle.closes, 1);
+    await model.close();
+  });
+
+  test('an engine that fails to load reaches core with the line in core\'s '
+      'terms, as natively', () async {
+    final model = LiteRtLmWebInferenceModel(
+      createEngine: () async => throw const lm.LiteRtLmEngineCreateException(
+        'Load it on the CPU (Backend.cpu()).',
+      ),
+      maxTokens: 1024,
+      modelType: ModelType.gemmaIt,
+      onClose: () {},
+    );
+
+    await expectLater(
+      model.openSession(),
+      throwsA(
+        isA<lm.LiteRtLmEngineCreateException>().having(
+          (e) => e.message,
+          'message',
+          contains(
+            'In flutter_edge_ai: preferredBackend: PreferredBackend.cpu',
+          ),
+        ),
+      ),
+    );
+    await model.close();
   });
 }

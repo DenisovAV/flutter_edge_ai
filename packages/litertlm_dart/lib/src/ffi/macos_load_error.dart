@@ -80,8 +80,14 @@ String macOSLoadErrorMessage(String dyldText) {
           'LiteRtLmMetalAccelerator.framework must be embedded in its '
           'Frameworks (xcframework zips on the native-v* release this build '
           'uses); the build hook does not embed them yet. Where a Swift '
-          'package or a Podfile post_install step embeds them, run '
-          '`flutter clean` and build again.',
+          "package embeds them (Swift Package Manager on, Flutter's "
+          'default), this is a stale build: run `flutter clean` and build '
+          'again. With `enable-swift-package-manager: false`, the '
+          'post_install block in macos/Podfile copies them: replace the '
+          'existing post_install block with the one from '
+          'https://flutteredge.ai/docs/desktop#macos (a second post_install '
+          'block fails `pod install`), keeping any lines of your own inside '
+          'it, then run `flutter clean` and build again.',
     MacOSLoadCause.wrongArchitecture =>
       'LiteRT-LM ships for Apple silicon (arm64) only; it does not run on an '
           'Intel Mac or in an x86_64 (Rosetta) process.',

@@ -56,21 +56,52 @@ void main() {
       );
     });
 
-    test('missing macOS companions name the Swift package and the Podfile '
-        'block to replace, keeping the app\'s own lines (#689)', () {
-      final hint = coreHintFor(
-        "LiteRT-LM's companion libraries are not in the app: …",
-      );
-
+    test('missing macOS companions name the package whose Swift package '
+        'embeds them', () {
       expect(
-        hint,
-        allOf(
-          contains("Swift Package Manager on (Flutter's default)"),
-          contains("flutter_edge_ai_litertlm's Swift package"),
-          contains('replace the post_install block'),
-          contains('keeping any lines of your own'),
-          contains('https://flutteredge.ai/docs/desktop#macos'),
+        coreHintFor("LiteRT-LM's companion libraries are not in the app: …"),
+        "In flutter_edge_ai: flutter_edge_ai_litertlm's Swift package embeds "
+        'them.',
+      );
+    });
+
+    test('the web engine\'s missing vision encoder becomes supportImage', () {
+      expect(
+        coreHintFor(
+          'This engine loaded no vision encoder: create it with a '
+          'visionBackend to send images.',
         ),
+        contains('supportImage: true'),
+      );
+    });
+
+    test('the web engine\'s missing audio encoder becomes supportAudio', () {
+      expect(
+        coreHintFor(
+          'This engine loaded no audio encoder: create it with an '
+          'audioBackend to send audio.',
+        ),
+        contains('supportAudio: true'),
+      );
+    });
+
+    test('the web image reservation names getActiveModel(maxNumImages:)', () {
+      expect(
+        coreHintFor(
+          'This conversation holds 1 of the 1 images its engine '
+          'reserves per conversation (maxNumImages: 1).',
+        ),
+        allOf(
+          contains('getActiveModel(maxNumImages'),
+          contains('maxNumImages: 1'),
+        ),
+      );
+    });
+
+    test('Chrome\'s blob limit names the streaming storage mode', () {
+      expect(
+        coreHintFor('could not create the engine: ERR_BLOB_OUT_OF_MEMORY'),
+        contains('WebStorageMode.streaming'),
       );
     });
 
@@ -143,6 +174,28 @@ void main() {
               as UnsupportedError;
 
       expect(hinted.message, contains('MediaPipe `.task` model'));
+    });
+
+    test('an ArgumentError keeps its invalid value and name', () {
+      final hinted =
+          withCoreHintError(
+                ArgumentError.value(
+                  7,
+                  'threadCount',
+                  'Load it on the CPU (Backend.cpu()).',
+                ),
+              )
+              as ArgumentError;
+
+      expect(hinted.invalidValue, 7);
+      expect(hinted.name, 'threadCount');
+      expect(hinted.message, contains('PreferredBackend.cpu'));
+    });
+
+    test('a RangeError stays as it is', () {
+      final error = RangeError.range(9, 0, 4, 'index', 'Backend.cpu()');
+
+      expect(withCoreHintError(error), same(error));
     });
 
     test('an error with nothing to add is the same object', () {

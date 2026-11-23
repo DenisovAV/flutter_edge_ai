@@ -201,6 +201,14 @@ void main() {
       expect(message, contains('LiteRtLmMetalAccelerator.framework'));
       expect(message, contains('the build hook does not embed them yet'));
       expect(message, contains('flutter clean'));
+      // With Swift Package Manager on, a package brings them: a stale build,
+      // not a missing setup step (#689).
+      expect(message, contains("Swift Package Manager on, Flutter's default"));
+      // Flutter's generated Podfile has a post_install already; a second one
+      // fails `pod install`.
+      expect(message, contains('replace the existing post_install block'));
+      expect(message, contains('keeping any lines of your own'));
+      expect(message, contains('https://flutteredge.ai/docs/desktop#macos'));
       expect(message, isNot(contains('flutter_edge_ai')));
       expect(message, endsWith('dyld: $_missingCompanion'));
     });

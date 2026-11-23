@@ -20,7 +20,6 @@ import 'package:litertlm_dart/internal_io.dart'
         createOwnConversation,
         engineBundleSampler,
         engineRenderUserMessage,
-        turnFailureCause,
         engineFiltersChannelContent,
         engineNoRewindReason,
         isReleaseBuild,
@@ -32,7 +31,9 @@ import '../litertlm_decision_section.dart';
 import '../option_scoring_self_check.dart';
 import '../reported_engine_turn.dart';
 import 'runtime_log_binding.dart';
-import 'core_hints.dart';
+import 'turn_errors.dart';
+
+export 'turn_errors.dart' show LiteRtLmSessionClosedError;
 import 'user_message.dart';
 
 export 'user_message.dart' show liteRtLmUserMessage;
@@ -792,33 +793,7 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// waiting, since a paused turn might never end on its own.
   final _closedSignal = Completer<void>();
 
-  /// The runtime's turn errors as core's: a message that did not fit is
-  /// [ContextLimitException], which says what happened and keeps native's
-  /// token counts; the rest as [mapRuntimeError] maps them.
-  Object _coreTurnError(Object error) {
-    if (error is lm.ConversationClosedException) {
-      return LiteRtLmSessionClosedError(error.message);
-    }
-    // What core's apps always got: the failure itself, not litertlm_dart's
-    // wrapper of it.
-    if (error is lm.TurnFailedException) {
-      final cause = turnFailureCause(error);
-      // A native failure mid-turn as at session open: a plain Exception.
-      if (cause is lm.LiteRtLmNativeException) {
-        return Exception(withCoreHint(cause.message));
-      }
-      if (cause != null) return mapRuntimeError(cause);
-    }
-    if (error is lm.ContextFullException) {
-      return ContextLimitException(
-        'The input token count does not fit the context window space '
-        'left; the session was restored to before this turn. Send a '
-        'shorter message, or close the session and open a new one. '
-        'Native token counts: ${error.message}',
-      );
-    }
-    return mapRuntimeError(error);
-  }
+  Object _coreTurnError(Object error) => coreTurnError(error);
 
   void _closeAfterFormatRefusal() {
     if (_isClosed || _rejectFurtherSends) return;
@@ -1386,13 +1361,6 @@ final class _AnyCancelSignal implements lm.CancelSignal {
   @override
   Future<void> get whenCancelled =>
       Future.any([for (final s in signals) s.whenCancelled]);
-}
-
-/// The session, or its model, was closed while a reply streamed: a
-/// [StateError], as a use of a closed session is.
-@visibleForTesting
-final class LiteRtLmSessionClosedError extends StateError {
-  LiteRtLmSessionClosedError(super.message);
 }
 
 /// One turn's stop: asked by [FfiInferenceModelSession.stopGeneration] while

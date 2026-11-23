@@ -14,6 +14,7 @@ import 'dart:js_interop_unsafe';
 import 'package:flutter_edge_ai/engine_web.dart';
 import 'package:flutter_edge_ai_litertlm/src/web/web_llm_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
 /// Resolves the active model to a blob URL; nothing is read from it.
 class _Resolver implements WebModelSourceResolver {
@@ -30,9 +31,12 @@ class _Resolver implements WebModelSourceResolver {
 /// 0.19.0 does for Gemma 4 E2B's GPU export; returns the recorded settings.
 List<Map<String, Object?>> _installEngine() {
   final settings = <Map<String, Object?>>[];
-  final engine = JSObject()
+  JSObject engineFor(Map<String, Object?> asked) => JSObject()
+    // As 0.19.0 reports them: the encoders asked for, resolved.
     ..['settings'] = {
       'backend': 2,
+      if (asked['visionBackend'] case final vision?) 'visionBackend': vision,
+      if (asked['audioBackend'] case final audio?) 'audioBackend': audio,
       'mainExecutorSettings': {'maxNumTokens': 8192},
     }.jsify()
     ..['createConversation'] = ((JSAny? _) => Future.value(
@@ -51,8 +55,9 @@ List<Map<String, Object?>> _installEngine() {
               .toJS,
         )
         ..['create'] = ((JSAny? options) {
-          settings.add((options.dartify()! as Map).cast<String, Object?>());
-          return Future<JSObject>.value(engine).toJS;
+          final asked = (options.dartify()! as Map).cast<String, Object?>();
+          settings.add(asked);
+          return Future<JSObject>.value(engineFor(asked)).toJS;
         }).toJS;
   globalContext['litertLmReady'] = Future<void>.value().toJS;
   globalContext['Engine'] = constructor;
@@ -115,5 +120,57 @@ void main() {
 
     expect(_executor(settings.single).containsKey('maxNumImages'), isFalse);
     await engine.close();
+  });
+
+  JSObject openStream() {
+    final stream = JSObject()..['cancelled'] = false.toJS;
+    stream['cancel'] = (() {
+      stream['cancelled'] = true.toJS;
+    }).toJS;
+    return stream;
+  }
+
+  lm.EngineConfig streamed() => lm.EngineConfig(
+    modelPath: 'gemma-4-E2B-it-gpu.litertlm',
+    backend: const lm.Backend.gpu(),
+  );
+
+  test(
+    'under WebStorageMode.streaming the OPFS stream goes as the model',
+    () async {
+      final settings = _installEngine();
+      final stream = openStream();
+
+      final engine = await createWebEngineFromStream(streamed(), stream);
+
+      expect(
+        (settings.single['model']! as Map).containsKey('cancelled'),
+        isTrue,
+        reason: 'the stream itself is the model',
+      );
+      expect((stream['cancelled']! as JSBoolean).toDart, isFalse);
+      await engine.close();
+    },
+  );
+
+  test('a refused load cancels the OPFS stream it was given', () async {
+    _installEngine();
+    final stream = openStream();
+    ((globalContext['Engine']! as JSObject)['prototype']! as JSObject).delete(
+      'delete'.toJS,
+    );
+
+    await expectLater(
+      createWebEngineFromStream(streamed(), stream),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('delete'),
+        ),
+      ),
+    );
+
+    expect((stream['cancelled']! as JSBoolean).toDart, isTrue);
   });
 }

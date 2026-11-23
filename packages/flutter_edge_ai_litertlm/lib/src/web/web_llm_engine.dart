@@ -2,6 +2,10 @@
 // the page, handed to litertlm_dart's web `Engine`. dart:js_interop (the
 // OPFS stream), so web only.
 
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine_web.dart';
 // The web Engine by name: through the public library the analyzer would see
 // the native one.
@@ -31,33 +35,52 @@ Future<WebLlmEngine> createLiteRtLmWebEngine(
   int? maxNumImages,
 }) async {
   final resolved = await resolver.resolveActiveInferenceModel();
+  lm.EngineConfig config(String modelPath) => lm.EngineConfig(
+    modelPath: modelPath,
+    backend: const lm.Backend.gpu(),
+    maxNumTokens: maxTokens,
+    visionBackend: supportImage ? const lm.Backend.gpu() : null,
+    audioBackend: supportAudio ? const lm.Backend.cpu() : null,
+    maxNumImages: supportImage ? maxNumImages : null,
+  );
   final Engine engine;
   switch (resolved.model) {
     case BlobUrlModelSource(:final url):
-      engine = await createWebEngine(
-        lm.EngineConfig(
-          modelPath: url,
-          backend: const lm.Backend.gpu(),
-          maxNumTokens: maxTokens,
-          visionBackend: supportImage ? const lm.Backend.gpu() : null,
-          audioBackend: supportAudio ? const lm.Backend.cpu() : null,
-          maxNumImages: supportImage ? maxNumImages : null,
-        ),
-      );
+      engine = await createWebEngine(config(url));
     case final OpfsStreamModelSource source:
-      engine = await createWebEngine(
-        lm.EngineConfig(
-          modelPath: source.filename,
-          backend: const lm.Backend.gpu(),
-          maxNumTokens: maxTokens,
-          visionBackend: supportImage ? const lm.Backend.gpu() : null,
-          audioBackend: supportAudio ? const lm.Backend.cpu() : null,
-          maxNumImages: supportImage ? maxNumImages : null,
-        ),
-        model: await source.openStream(),
+      engine = await createWebEngineFromStream(
+        config(source.filename),
+        await source.openStream(),
       );
   }
   return _LmWebLlmEngine(engine);
+}
+
+/// The engine for [config] read from [stream], a `ReadableStream` of an OPFS
+/// file (WebStorageMode.streaming). A refusal or a failed create may leave
+/// the stream unread: it is cancelled then, which releases the file.
+@visibleForTesting
+Future<Engine> createWebEngineFromStream(
+  lm.EngineConfig config,
+  JSAny stream,
+) async {
+  try {
+    return await createWebEngine(config, model: stream);
+  } catch (_) {
+    _cancelStream(stream);
+    rethrow;
+  }
+}
+
+void _cancelStream(JSAny stream) {
+  try {
+    if (stream.isA<JSObject>() &&
+        ((stream as JSObject)['cancel']?.typeofEquals('function') ?? false)) {
+      stream.callMethod<JSAny?>('cancel'.toJS);
+    }
+  } catch (_) {
+    // Already read or already cancelled: nothing to release.
+  }
 }
 
 final class _LmWebLlmEngine implements WebLlmEngine {

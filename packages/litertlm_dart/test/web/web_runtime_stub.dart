@@ -31,18 +31,25 @@ const _stub = r'''
     createError: null, conversationError: null, conversationErrorAfter: null,
     historyError: null, holdFence: false, holdHistory: false,
     stuckOnCancel: false, deleteError: null, missingMember: null,
-    noSettingsBackend: false, noSettingsTokens: false, prefaceInHistory: false,
+    noSettingsBackend: false, noSettingsTokens: false,
     resolvedVisionBackend: null, resolvedAudioBackend: null,
   };
   const open = () => p.streams.find((s) => !s.closed);
-  const conversation = (options) => {
-    // A runtime that returned its preface in the history (0.18.0 does not).
+  // The image parts of a message.
+  const images = (m) => (m && Array.isArray(m.content))
+    ? m.content.filter((x) => x.type === 'image').length : 0;
+  const conversation = (options, maxImages) => {
     const preface = (options && options.preface && options.preface.messages) || [];
-    const c = {dead: false, history: p.prefaceInHistory ? [...preface] : []};
+    const c = {dead: false, failed: false, history: [],
+               images: preface.reduce((n, m) => n + images(m), 0)};
     c.sendMessageStreaming = (message) => {
       p.sent.push(message);
       // A bare iterator (no Symbol.asyncIterator) whose step has no `done`.
       if (p.malformed) return {next: async () => ({value: 1})};
+      // A stream whose iterator cannot be read.
+      if (p.unreadable) {
+        return new Proxy({}, {get() { throw new Error('unreadable stream'); }});
+      }
       let controller;
       const stream = new ReadableStream({start(ctl) { controller = ctl; }});
       const entry = {controller, conversation: c, message, closed: false,
@@ -51,6 +58,20 @@ const _stub = r'''
       if (c.dead) {
         entry.closed = true;
         queueMicrotask(() => controller.error(new Error('Task cancelled')));
+      } else if (c.failed) {
+        entry.closed = true;
+        queueMicrotask(() => controller.error(new Error('Task failed with state: 7')));
+      } else if (c.images + images(message) > maxImages) {
+        // As 0.19.0: an image past the reservation fails the turn, the
+        // message stays in the history unanswered, and the conversation
+        // refuses every later send.
+        entry.closed = true;
+        c.failed = true;
+        c.history.push(asHistory(message));
+        queueMicrotask(() => controller.error(
+          new Error('Image index ' + maxImages + ' must be less than ' + maxImages + '.')));
+      } else {
+        c.images += images(message);
       }
       return stream;
     };
@@ -71,6 +92,10 @@ const _stub = r'''
     };
     c.getHistory = () => {
       if (p.historyError) return Promise.reject(new Error(p.historyError));
+      if (p.oddMediaInHistory) {
+        return Promise.resolve([...c.history, {role: 'user', content: [
+          {type: 'image', blob: 42}]}, {role: 'assistant', content: 'x'}]);
+      }
       if (p.holdHistory) {
         return new Promise((resolve) => p.histories.push(() => resolve(c.history)));
       }
@@ -90,17 +115,19 @@ const _stub = r'''
   };
   // Every chunk generated, the stream not ended yet.
   // 0.19.0 returns an image or audio part's bytes as {bytes: [...]}.
-  const asHistory = (message) => typeof message === 'string' ? message : {
-    ...message,
-    content: message.content.map((p) => typeof p.blob === 'string'
-      ? {...p, blob: {bytes: Array.from(atob(p.blob), (c) => c.charCodeAt(0))}}
-      : p),
-  };
+  const asHistory = (message) => typeof message === 'string'
+    ? {role: 'user', content: message}
+    : {
+        ...message,
+        content: message.content.map((p) => typeof p.blob === 'string'
+          ? {...p, blob: {bytes: Array.from(atob(p.blob), (c) => c.charCodeAt(0))}}
+          : p),
+      };
   window.__generated = () => {
     const s = open();
     s.generated = true;
     s.conversation.history.push(
-      {role: 'user', content: asHistory(s.message).content ?? s.message},
+      asHistory(s.message),
       {role: 'assistant', content: [{type: 'text', text: s.text}]});
   };
   window.__step = (text) => {
@@ -120,6 +147,10 @@ const _stub = r'''
   window.__fail = (message) => {
     const s = open();
     s.closed = true;
+    // As 0.19.0: a failed turn stays in the history unanswered, and the
+    // conversation refuses every later send.
+    s.conversation.failed = true;
+    s.conversation.history.push(asHistory(s.message));
     s.controller.error(new Error(message));
   };
   window.__releaseFences = () => { for (const f of p.fences.splice(0)) f(); };
@@ -144,7 +175,8 @@ const _stub = r'''
             p.conversationOptions.length > p.conversationErrorAfter) {
           throw new Error('Rebuild refused');
         }
-        return conversation(options);
+        return conversation(options,
+          (settings.mainExecutorSettings && settings.mainExecutorSettings.maxNumImages) || 0);
       },
       delete: async () => {
         p.engineDeletes++;

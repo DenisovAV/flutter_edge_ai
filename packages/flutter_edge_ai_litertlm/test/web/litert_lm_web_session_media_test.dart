@@ -222,5 +222,37 @@ void main() {
         contains(equals({'type': 'audio', 'blob': base64Encode(_wav)})),
       );
     });
+
+    test('an image the runtime refuses reaches core with the line in core\'s '
+        'terms, as natively', () async {
+      final stub = _stubConversation();
+      final session = webSessionOver(
+        stub.conversation,
+        modelType: ModelType.gemma4,
+        supportImage: true,
+        engineVision: false,
+      );
+      await session.addQueryChunk(
+        Message.withImage(text: 'What?', imageBytes: _jpeg, isUser: true),
+      );
+
+      await expectLater(
+        session.getResponseAsync(),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('loaded no vision encoder'),
+              contains(
+                'In flutter_edge_ai: load the model with '
+                'supportImage: true.',
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(stub.sent, isEmpty);
+    });
   });
 }

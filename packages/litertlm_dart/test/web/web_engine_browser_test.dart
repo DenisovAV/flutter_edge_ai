@@ -68,6 +68,8 @@ void main() {
 
     test('a vision encoder goes to the runtime with one image reserved per '
         'conversation by default, which a GPU_ARTISAN model needs', () async {
+      setOnPage('resolvedVisionBackend', 4);
+      setOnPage('resolvedAudioBackend', 3);
       final engine = await Engine.create(
         EngineConfig(
           modelPath: 'blob:x',
@@ -87,6 +89,7 @@ void main() {
     test(
       'maxNumImages, when set, is the images a conversation reserves',
       () async {
+        setOnPage('resolvedVisionBackend', 4);
         final engine = await Engine.create(
           EngineConfig(
             modelPath: 'blob:x',
@@ -105,6 +108,28 @@ void main() {
         await engine.close();
       },
     );
+
+    test('an encoder asked for that the runtime does not report is a '
+        'LiteRtLmEngineCreateException, and the engine is deleted', () async {
+      await expectLater(
+        Engine.create(
+          EngineConfig(
+            modelPath: 'blob:x',
+            backend: const Backend.gpu(),
+            visionBackend: const Backend.gpu(),
+          ),
+        ),
+        throwsA(
+          isA<LiteRtLmEngineCreateException>().having(
+            (e) => e.message,
+            'message',
+            contains('without its vision encoder'),
+          ),
+        ),
+      );
+
+      expect(count('engineDeletes'), 1);
+    });
 
     test('the encoders the runtime resolved are read back', () async {
       setOnPage('resolvedVisionBackend', 4);

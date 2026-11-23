@@ -65,19 +65,21 @@ List<String> liteRtLmWebObjectMissing(JSObject object, List<String> members) =>
         if (!(object[member]?.typeofEquals('function') ?? false)) member,
     ];
 
-/// Says [what] failed to free with `print`, once per page: release builds
+/// Says [what] failed to free with `print`, once per page for each [what]
+/// (an engine, a conversation, an embedding engine): release builds
 /// show it, and memory the page never gets back is worth knowing about.
 void noteWebDeleteFailure(String what, Object error) {
-  if (_deleteFailureNoted) return;
-  _deleteFailureNoted = true;
+  if (!_deleteFailuresNoted.add(what)) return;
   // ignore: avoid_print
   print(
     '[litertlm_dart] WARNING: $what failed to free in $liteRtLmWebRuntime: '
-    '$error. Its memory may stay in the page. Shown once per page.',
+    '$error. Its memory may stay in the page. Shown once per page for each '
+    'kind of object.',
   );
 }
 
-bool _deleteFailureNoted = false;
+/// The kinds of object whose failed delete was said.
+final _deleteFailuresNoted = <String>{};
 
 /// The `@litert-lm/core` versions the page fetched, read from the URLs of
 /// its resources (`@litert-lm/core@X.Y.Z`): the runtime itself exports no
@@ -96,8 +98,8 @@ Set<String> liteRtLmWebFetchedVersions() {
   }
   return {
     for (final entry in entries.toDart)
-      if (entry['name'] case final JSString name)
-        if (_versioned.firstMatch(name.toDart) case final match?)
+      if (entry['name'] case final name? when name.isA<JSString>())
+        if (_versioned.firstMatch((name as JSString).toDart) case final match?)
           match.group(1)!,
   };
 }

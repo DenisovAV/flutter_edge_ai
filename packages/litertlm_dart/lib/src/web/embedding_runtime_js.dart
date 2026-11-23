@@ -50,7 +50,9 @@ import 'litert_lm_js.dart'
         liteRtLmWebBackendCpu,
         liteRtLmWebBackendGpu,
         awaitIfThenable,
-        liteRtLmWebRuntimeMissing;
+        liteRtLmWebRuntimeMissing,
+        noteOtherWebRuntimeVersion,
+        noteWebDeleteFailure;
 import 'web_embedder.dart';
 import 'web_runtime_version.dart';
 
@@ -127,6 +129,9 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
 
   @override
   Future<LiteRtLmWebRuntimeState> ensureReady() async {
+    // Said before the load: a runtime of another version than the one this
+    // release is measured on behaves otherwise, without a missing member.
+    noteOtherWebRuntimeVersion();
     if (_hasEmbeddingEngine) return _versionState;
     final ready = globalContext['litertLmReady'];
     if (ready == null || ready.isUndefinedOrNull) {
@@ -305,7 +310,14 @@ final class _WindowEngine implements LiteRtLmWebEngine {
     ..['data'] = Uint8List.fromList(bytes).buffer.toJS;
 
   @override
-  Future<void> delete() => awaitIfThenable(_engine.delete());
+  Future<void> delete() async {
+    try {
+      await awaitIfThenable(_engine.delete());
+    } catch (e) {
+      noteWebDeleteFailure('An embedding engine', e);
+      rethrow;
+    }
+  }
 
   static int _int(JSNumber? value, String field) {
     if (value == null) {

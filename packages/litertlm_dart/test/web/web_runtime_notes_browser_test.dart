@@ -80,15 +80,20 @@ void main() {
     await engine.close();
   });
 
-  test('a failed delete is printed once per page', () async {
-    final printed = await printsOf(() async {
-      web.noteWebDeleteFailure('An engine', StateError('busy'));
-      web.noteWebDeleteFailure('A conversation', StateError('busy'));
-    });
+  test(
+    'a failed delete is printed once per page for each kind of object',
+    () async {
+      final printed = await printsOf(() async {
+        web.noteWebDeleteFailure('An engine', StateError('busy'));
+        web.noteWebDeleteFailure('An engine', StateError('busy'));
+        web.noteWebDeleteFailure('A conversation', StateError('busy'));
+      });
 
-    expect(printed, hasLength(1));
-    expect(printed.single, allOf(contains('WARNING'), contains('An engine')));
-  });
+      expect(printed, hasLength(2));
+      expect(printed.first, allOf(contains('WARNING'), contains('An engine')));
+      expect(printed.last, contains('A conversation'));
+    },
+  );
 
   group('the @litert-lm/core versions the page fetched', () {
     setUp(() {

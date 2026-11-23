@@ -11,8 +11,6 @@
 @TestOn('browser')
 library;
 
-import 'dart:async';
-
 import 'package:litertlm_dart/internal_web.dart' as web;
 import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:test/test.dart';
@@ -82,25 +80,25 @@ void main() {
       ]);
     });
 
-    test('from a runtime whose history starts with the preface does not '
-        'replay the preface twice', () async {
-      setOnPage('prefaceInHistory', true);
-      final conversation = await engine.createConversation(
-        ConversationConfig(initialMessages: [Message.user('Earlier')]),
-      );
-      await exchange(conversation, 'One', 'Uno');
-      await stoppedExchange(conversation, 'Two', 'Do');
+    test(
+      'an exchange that repeats one replayed earlier is replayed again',
+      () async {
+        final conversation = await engine.createConversation();
+        await exchange(conversation, 'One', 'Uno');
+        await stoppedExchange(conversation, 'Gone', '');
+        await exchange(conversation, 'One', 'Uno');
+        await stoppedExchange(conversation, 'Gone again', '');
 
-      await exchange(conversation, 'Three', 'Tres');
+        await exchange(conversation, 'Two', 'Dos');
 
-      expect(prefaceMessages(1), [
-        userPart('Earlier'),
-        {'role': 'user', 'content': 'One'},
-        assistantPart('Uno'),
-        userPart('Two'),
-        assistantPart('Do'),
-      ]);
-    });
+        expect(prefaceMessages(2), [
+          {'role': 'user', 'content': 'One'},
+          assistantPart('Uno'),
+          {'role': 'user', 'content': 'One'},
+          assistantPart('Uno'),
+        ]);
+      },
+    );
 
     test('a stop mid tool call, with no text yet, keeps nothing of the '
         'stopped turn', () async {
@@ -160,6 +158,61 @@ void main() {
       await engine.close();
     },
   );
+
+  group('after a turn the runtime failed', () {
+    late web.Engine engine;
+    late Conversation conversation;
+    setUp(() async {
+      engine = await webEngine();
+      conversation = await engine.createConversation();
+    });
+    tearDown(() => engine.close());
+
+    Future<void> failedTurn(String text) async {
+      final failed = conversation
+          .sendMessageStream(Message.user(text))
+          .drain<void>()
+          .catchError((Object _) {});
+      await settle();
+      js('__fail', 'generation failed');
+      await failed;
+    }
+
+    test('the next message goes to a conversation rebuilt without the '
+        'failed message, and is answered', () async {
+      await exchange(conversation, 'One', 'Uno');
+      await failedTurn('Broken');
+
+      await exchange(conversation, 'Two', 'Dos');
+
+      expect(prefaceMessages(1), [
+        {'role': 'user', 'content': 'One'},
+        assistantPart('Uno'),
+      ]);
+      expect(list('sent').last, 'Two');
+    });
+
+    test('a stop after the last chunk records no stopped exchange: a failed '
+        'turn after it rebuilds with that exchange once', () async {
+      final stopped = conversation
+          .sendMessageStream(Message.user('One'))
+          .drain<void>();
+      await settle();
+      js('__step', 'Uno');
+      js('__generated');
+      await settle();
+      conversation.cancel();
+      await stopped;
+      await failedTurn('Broken');
+
+      await exchange(conversation, 'Two', 'Dos');
+
+      expect(prefaceMessages(1), [
+        {'role': 'user', 'content': 'One'},
+        assistantPart('Uno'),
+      ]);
+    });
+  });
 
   group('a stop that changes nothing in the runtime', () {
     late web.Engine engine;
@@ -302,6 +355,17 @@ void main() {
       );
     });
 
+    test('on a history media part of an unknown shape is a '
+        'LiteRtLmNativeException naming it', () async {
+      setOnPage('oddMediaInHistory', true);
+
+      await expectLater(
+        conversation.sendMessageStream(Message.user('Two')),
+        failsRebuild('a blob of an unknown shape'),
+      );
+      setOnPage('oddMediaInHistory', false);
+    });
+
     test('is tried again by the next message, which then goes to the '
         'rebuilt conversation', () async {
       setOnPage('historyError', 'History unavailable');
@@ -362,13 +426,73 @@ void main() {
           .then<Object?>((_) => null, onError: (Object e) => e);
       await settle();
 
+      late Object? error;
       final printed = await printsOf(() async {
         conversation.cancel();
-        await Future<void>.delayed(const Duration(milliseconds: 200));
+        error = await reply; // ends when the drain timer gives up on it
       });
 
       expect(lock.poison?.message, contains('after it was stopped'));
       expect(printed.single, contains('ERROR'));
+      expect(
+        error,
+        isA<web.LiteRtLmPagePoisonedError>().having(
+          (e) => e.message,
+          'message',
+          contains('after it was stopped'),
+        ),
+      );
+    });
+
+    test('a stream that failed and never leaves the module poisons the page '
+        'too', () async {
+      final lock = web.LiteRtLmPageLock();
+      final engine = await webEngine(lock: lock);
+      final conversation = await engine.createConversation();
+      setOnPage('holdFence', true);
+      final reply = conversation
+          .sendMessageStream(Message.user('Hello'))
+          .drain<void>()
+          .then<Object?>((_) => null, onError: (Object e) => e);
+      await settle();
+
+      late Object? error;
+      await printsOf(() async {
+        js('__fail', 'generation failed');
+        error = await reply;
+      });
+
+      expect(lock.poison?.message, contains('after its stream failed'));
+      expect(error, isA<web.LiteRtLmPagePoisonedError>());
+      setOnPage('holdFence', false);
+    });
+
+    test('a close during a rebuild that never ends poisons the page', () async {
+      setOnPage('stuckOnCancel', false);
+      final lock = web.LiteRtLmPageLock();
+      final engine = await webEngine(lock: lock);
+      final conversation = await engine.createConversation();
+      await stoppedExchange(conversation, 'One', 'Un');
+      setOnPage('holdHistory', true);
+      final reply = conversation
+          .sendMessageStream(Message.user('Two'))
+          .drain<void>()
+          .then<Object?>((_) => null, onError: (Object e) => e);
+      await settle();
+
+      await printsOf(
+        () => expectLater(
+          conversation.close(),
+          throwsA(
+            isA<web.LiteRtLmPagePoisonedError>().having(
+              (e) => e.message,
+              'message',
+              contains('during a rebuild'),
+            ),
+          ),
+        ),
+      );
+
       expect(await reply, isA<web.LiteRtLmPagePoisonedError>());
     });
 
@@ -416,6 +540,41 @@ void main() {
       contains('BigInt'),
     );
     expect(lock.poison, isNull);
+    await engine.close();
+  });
+
+  test('a stream that cannot be read after the send stops the generation, '
+      'waits for it to leave the module, then fails the turn', () async {
+    final lock = web.LiteRtLmPageLock();
+    final engine = await webEngine(lock: lock);
+    final conversation = await engine.createConversation();
+    setOnPage('unreadable', true);
+    setOnPage('holdFence', true);
+
+    final reply = conversation
+        .sendMessageStream(Message.user('Hello'))
+        .drain<void>()
+        .then<Object?>((_) => null, onError: (Object e) => e);
+    await settle();
+    var entered = false;
+    final other = lock.acquire().then((lease) {
+      entered = true;
+      lease.release();
+    });
+    await settle();
+
+    expect(count('cancels'), 1, reason: 'the generation was not stopped');
+    expect(entered, isFalse, reason: 'let go before the module did');
+    js('__releaseFences');
+    await other;
+    final error = await reply;
+    expect(error, isA<TurnFailedException>());
+    expect(
+      '${web.turnFailureCause(error! as TurnFailedException)}',
+      contains('unreadable stream'),
+    );
+    setOnPage('unreadable', false);
+    setOnPage('holdFence', false);
     await engine.close();
   });
 

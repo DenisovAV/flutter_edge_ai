@@ -17,11 +17,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:litertlm_dart/internal.dart'
-    show liteRtLmWebRuntime, messageJson, messageRawJson, turnFailureCause;
+    show liteRtLmWebRuntime, messageJson, messageRawJson;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'package:mutex/mutex.dart';
 
 import '../reported_engine_turn.dart';
+import 'core_hints.dart';
+import 'turn_errors.dart';
 import 'user_message.dart';
 
 /// What the web model needs of a loaded engine: conversations with the
@@ -137,6 +139,17 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     ..._openSessions,
   ];
 
+  /// [body], its error with the line in core's terms ([withCoreHintError]).
+  static Future<T> _withCoreHint<T>(Future<T> Function() body) async {
+    try {
+      return await body();
+    } catch (e, st) {
+      final hinted = withCoreHintError(e);
+      if (identical(hinted, e)) rethrow;
+      Error.throwWithStackTrace(hinted, st);
+    }
+  }
+
   Future<void> _ensureEngine() async {
     if (_engine != null) return;
     // Concurrent-call guard: a second caller awaits the first creation instead
@@ -147,7 +160,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     }
     final completer = _engineCompleter = Completer<void>();
     try {
-      _engine = await createEngine();
+      _engine = await _withCoreHint(createEngine);
       completer.complete();
     } catch (e, st) {
       _engineCompleter = null; // allow retry
@@ -700,15 +713,10 @@ class LiteRtLmWebSession extends InferenceModelSession
                 turn = null;
                 releaseMutex();
                 if (controller.isClosed) return;
-                // Closed under the turn: it ends with what arrived, as core's
-                // chat reads a close (TurnEnd.closed).
-                if (error is! lm.ConversationClosedException) {
-                  // What the runtime threw, not litertlm_dart's wrapper.
-                  final cause = error is lm.TurnFailedException
-                      ? turnFailureCause(error)
-                      : null;
-                  controller.addError(cause ?? error, st);
-                }
+                // As natively: a close is LiteRtLmSessionClosedError, which
+                // startTurn reads as TurnEnd.closed; a failure is what the
+                // runtime threw, with its line in core's terms.
+                controller.addError(coreTurnError(error), st);
                 controller.close();
               },
               onDone: () {
@@ -766,6 +774,7 @@ class LiteRtLmWebSession extends InferenceModelSession
       getResponseAsync(),
       stopped: () => _stopAsked,
       closed: () => _isClosed,
+      isCloseError: (error) => error is LiteRtLmSessionClosedError,
       completed: () => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
     );
   }
@@ -788,10 +797,15 @@ class LiteRtLmWebSession extends InferenceModelSession
 
   /// Stops any generation in flight and waits for the runtime to have ended
   /// it (at most 30 s), so the owning model deletes its engine only after
-  /// nothing is suspended inside the page's WebAssembly module any more.
+  /// nothing is suspended inside the page's WebAssembly module any more. A
+  /// second call returns the first one's future: it completes when the
+  /// conversation has really closed.
   @override
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void> close() => _closing ??= _close();
+
+  Future<void>? _closing;
+
+  Future<void> _close() async {
     _isClosed = true;
     _isCancelled = true;
     try {

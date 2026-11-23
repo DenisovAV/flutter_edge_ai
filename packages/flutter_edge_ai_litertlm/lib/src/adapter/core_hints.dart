@@ -42,16 +42,26 @@ String? coreHintFor(String message) {
     hints.add('LiteRtLmEngine(nativeLogLevel: LiteRtLmLogLevel.verbose)');
   }
   if (message.contains("companion libraries are not in the app")) {
-    // With Swift Package Manager on, the Swift package brings them, so a
-    // missing one is a stale build (#689); Flutter's generated Podfile has a
-    // post_install already, and a second one fails `pod install`.
+    // litertlm_dart says how; this says which package's Swift package.
+    hints.add("flutter_edge_ai_litertlm's Swift package embeds them");
+  }
+  // The web engine's wording.
+  if (message.contains('create it with a visionBackend')) {
+    hints.add('load the model with supportImage: true');
+  }
+  if (message.contains('create it with an audioBackend')) {
+    hints.add('load the model with supportAudio: true');
+  }
+  if (RegExp(r'maxNumImages: \d+').firstMatch(message) case final m?) {
     hints.add(
-      "with Swift Package Manager on (Flutter's default), "
-      "flutter_edge_ai_litertlm's Swift package embeds them: run `flutter "
-      'clean` and build again; with `enable-swift-package-manager: false`, '
-      'replace the post_install block in macos/Podfile with the one from '
-      'https://flutteredge.ai/docs/desktop#macos, keeping any lines of your '
-      'own inside it, then run `flutter clean` and build again',
+      'getActiveModel(maxNumImages: ...) sets it; this model has '
+      '${m.group(0)}',
+    );
+  }
+  if (message.contains('ERR_BLOB_OUT_OF_MEMORY')) {
+    hints.add(
+      'a model over 2 GB loads on the web only with '
+      'FlutterEdgeAi.initialize(webStorageMode: WebStorageMode.streaming)',
     );
   }
   if (hints.isEmpty) return null;
@@ -112,9 +122,11 @@ Object withCoreHintError(Object error) => switch (error) {
     ),
   UnsupportedError(:final message?) when coreHintFor(message) != null =>
     UnsupportedError(withCoreHint(message)),
-  ArgumentError(:final message, :final name)
+  // A RangeError keeps its type and bounds as they are.
+  RangeError() => error,
+  ArgumentError(:final message, :final name, :final invalidValue)
       when message is String && coreHintFor(message) != null =>
-    ArgumentError(withCoreHint(message), name),
+    ArgumentError.value(invalidValue, name, withCoreHint(message)),
   EmbedderInputTooLongException() => error,
   _ => error,
 };

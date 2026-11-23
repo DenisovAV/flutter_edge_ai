@@ -12,6 +12,7 @@ import '../api/message.dart';
 import '../embedder/embedder_constants.dart'
     show liteRtLmDefaultVisionTokensPerImage, liteRtLmVisionTokenBudgets;
 import '../embedder/embedder_types.dart';
+import '../runtime/runtime_log.dart';
 import '../runtime/types.dart' show BackendKind;
 import 'embedding_runtime_js.dart';
 import 'web_embedder.dart';
@@ -91,7 +92,13 @@ final class EmbeddingEngine {
     final loaded = await embedder.load();
     final limit = loaded.maxInputTokens;
     if (limit == null) {
-      await embedder.close();
+      try {
+        await embedder.close();
+      } catch (e) {
+        // The refusal below is the answer; a failed close only goes to the
+        // log.
+        runtimeLog('[litertlm_dart/web] closing a refused embedder: $e');
+      }
       throw EmbedderLoadException(
         'LiteRT-LM could not pin the input limit of ${config.modelPath} on '
         'the web ($liteRtLmWebRuntime): the engine neither truncated nor '

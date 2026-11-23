@@ -33,6 +33,7 @@ final class _StubStream {
         (JSObject()
               ..['sendMessageStreaming'] = ((JSAny? message) => iterator).toJS
               ..['cancel'] = (() {}).toJS
+              ..['getTokenCount'] = (() => Future.value(0.toJS).toJS).toJS
               ..['delete'] = (() => Future<void>.value().toJS).toJS)
             as JsLiteRtLmConversation;
   }
@@ -140,5 +141,23 @@ void main() {
     expect(other.granted(), isTrue);
     (await other.lease).release();
     await subscription.cancel();
+  });
+
+  test('a send after close is an error on the stream, not a throw', () async {
+    final handle = _handle(_StubStream().conversation);
+    await handle.close();
+
+    final reply = handle.chatRawMessage(_hi);
+
+    await expectLater(
+      reply,
+      emitsError(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('closed'),
+        ),
+      ),
+    );
   });
 }

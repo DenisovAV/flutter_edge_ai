@@ -158,8 +158,8 @@ final class Engine {
       for (final m in c.initialMessages) messageJson(m),
     ];
     final tools = toolsJson(c.tools);
-    JSObject options(List<Object?> history) {
-      final messages = [...base, ..._withoutPreface(history, base)];
+    JSObject options(List<Object?> replay) {
+      final messages = [...base, ...replay];
       final preface = <String, Object?>{
         if (messages.isNotEmpty) 'messages': messages,
         if (tools != null) 'tools': jsonDecode(tools),
@@ -176,7 +176,9 @@ final class Engine {
         ).jsify()
         ..['preface'] = preface.jsify();
       // Strips the thinking channel from the KV cache so it does not pollute
-      // later turns, as natively.
+      // later turns, as natively. A rebuild replays the runtime's history,
+      // which then holds no thinking either; the stopped exchange is put
+      // back as its text only.
       if (enableThinking) js['filterChannelContentFromKvCache'] = true.toJS;
       // Constrained decoding stays off, unlike natively: with it on, the WASM
       // grammar does not return to its start state after a tool-call block,
@@ -188,14 +190,26 @@ final class Engine {
       return js;
     }
 
-    Future<JsLiteRtLmConversation> create(List<Object?> history) async {
+    Future<JsLiteRtLmConversation> create(List<Object?> replay) async {
+      final JsLiteRtLmConversation conversation;
       try {
-        return await _js.createConversation(options(history)).toDart;
+        conversation = await _js.createConversation(options(replay)).toDart;
       } catch (e) {
         throw LiteRtLmNativeException(
           '$liteRtLmWebRuntime refused the conversation: $e',
         );
       }
+      final missing = liteRtLmWebObjectMissing(
+        conversation,
+        webConversationMembers,
+      );
+      if (missing.isNotEmpty) {
+        try {
+          await awaitIfThenable(conversation.delete());
+        } catch (_) {}
+        throw StateError(_incompleteRuntime('conversation', missing));
+      }
+      return conversation;
     }
 
     final took = Stopwatch()..start();
@@ -244,6 +258,7 @@ final class Engine {
       extraContext: c.extraContext,
       onGeneration: () => _noteGeneration(sampling, explicit: explicit),
       rebuild: create,
+      preface: base,
       onClose: () => _handles.remove(handle),
       pageLock: _pageLock,
     );
@@ -307,38 +322,43 @@ final class Engine {
 
   Future<void> _close() async {
     _closed = true;
-    // A create queued on the page lock refuses when its turn comes; one
-    // already running finishes and is closed below.
-    await Future.wait(_pendingCreates.toList());
-    final handles = _handles.toList();
-    final closes = await Future.wait([
-      for (final handle in handles)
+    // The conversations stop first: a create queued on the page lock may be
+    // waiting behind one of their generations. Started before the creates
+    // are awaited, so they cannot wait on each other.
+    final closes = [
+      for (final handle in _handles.toList())
         handle.close().then<Object?>((_) => null, onError: (Object e) => e),
-    ]);
-    final poisoned = closes.whereType<LiteRtLmPagePoisonedError>().firstOrNull;
+    ];
+    // A create queued on the page lock refuses when its turn comes; one
+    // already running deletes what it built.
+    await Future.wait(_pendingCreates.toList());
+    final results = await Future.wait(closes);
+    final poisoned = results.whereType<LiteRtLmPagePoisonedError>().firstOrNull;
     if (poisoned != null || _pageLock.poison != null) {
       throw poisoned ?? _pageLock.poison!;
     }
     try {
       await awaitIfThenable(_js.delete());
     } catch (e) {
-      runtimeLog('[litertlm_dart/web] engine.delete() failed: $e');
+      noteWebDeleteFailure('An engine', e);
     }
   }
 }
 
-/// [history] without the preface messages a runtime history may start with.
-List<Object?> _withoutPreface(
-  List<Object?> history,
-  List<Map<String, Object?>> base,
-) {
-  if (base.isEmpty || history.length < base.length) return history;
-  for (var i = 0; i < base.length; i++) {
-    final entry = history[i];
-    if (entry is! Map || entry['role'] != base[i]['role']) return history;
-  }
-  return history.sublist(base.length);
-}
+/// The members of a runtime conversation this release calls.
+const webConversationMembers = [
+  'sendMessageStreaming',
+  'cancel',
+  'getHistory',
+  'getTokenCount',
+  'delete',
+];
+
+/// Why a page's `@litert-lm/core` cannot be driven: its [what] lacks
+/// [missing].
+String _incompleteRuntime(String what, List<String> missing) =>
+    'The page\'s @litert-lm/core $what lacks ${missing.join(', ')}, which '
+    'this release calls: import $liteRtLmWebModuleUrl in its module script.';
 
 /// [Engine.create], with [model] — a `ReadableStream<Uint8Array>` or a `Blob`
 /// — in place of [EngineConfig.modelPath] when given: what a model of more
@@ -410,19 +430,36 @@ Future<Engine> createWebEngine(
   final tokens = resolvedExecutor.isA<JSObject>()
       ? (resolvedExecutor as JSObject)['maxNumTokens']
       : null;
+  final Backend backend;
+  try {
+    backend = switch (resolvedBackend.isA<JSNumber>()
+        ? (resolvedBackend as JSNumber).toDartInt
+        : null) {
+      liteRtLmWebBackendCpu => const Backend.cpu(),
+      liteRtLmWebBackendGpu ||
+      liteRtLmWebBackendGpuArtisan => const Backend.gpu(),
+      final other => throw StateError(
+        other == null
+            ? '$liteRtLmWebRuntime reported no backend for the engine '
+                  '(settings.backend), so this release cannot say where it '
+                  'runs.'
+            : '$liteRtLmWebRuntime resolved the engine to backend $other, '
+                  'which this release does not know.',
+      ),
+    };
+  } catch (_) {
+    // Nobody else holds the engine: free it before refusing it.
+    try {
+      await awaitIfThenable(js.delete());
+    } catch (e) {
+      noteWebDeleteFailure('An engine', e);
+    }
+    rethrow;
+  }
+  noteOtherWebRuntimeVersion();
   return Engine._(
     js,
-    backend: resolvedBackend.isA<JSNumber>()
-        ? switch ((resolvedBackend as JSNumber).toDartInt) {
-            liteRtLmWebBackendCpu => const Backend.cpu(),
-            liteRtLmWebBackendGpu ||
-            liteRtLmWebBackendGpuArtisan => const Backend.gpu(),
-            final other => throw StateError(
-              '$liteRtLmWebRuntime resolved the engine to backend $other, '
-              'which this release does not know.',
-            ),
-          }
-        : config.backend,
+    backend: backend,
     maxNumTokens: tokens.isA<JSNumber>()
         ? (tokens as JSNumber).toDartInt
         : (config.maxNumTokens ?? 0),
@@ -469,8 +506,10 @@ void _refuseOnWeb(EngineConfig config) {
 /// Waits for the page's module script (`window.litertLmReady`) to have
 /// loaded `@litert-lm/core`, and returns its `Engine` constructor: module
 /// scripts are deferred, so Dart can reach here before `window.Engine` is
-/// set. A page that pins another version than [liteRtLmWebRuntimeVersion] is
-/// refused, as is one without `window.Engine`.
+/// set. A page whose loader failed, without `window.Engine`, or whose
+/// `Engine` lacks a member this release calls is refused with a
+/// [StateError]; another version that has them all is accepted, and said
+/// once ([noteOtherWebRuntimeVersion]).
 Future<JSObject> _awaitRuntime() async {
   final ready = globalContext['litertLmReady'];
   if (ready == null || ready.isUndefinedOrNull) {
@@ -481,7 +520,15 @@ Future<JSObject> _awaitRuntime() async {
     );
   }
   if (ready.isA<JSObject>() && (ready as JSObject).has('then')) {
-    await (ready as JSPromise<JSAny?>).toDart;
+    try {
+      await (ready as JSPromise<JSAny?>).toDart;
+    } catch (e) {
+      throw StateError(
+        'The page\'s module script failed to load @litert-lm/core '
+        '(window.litertLmReady rejected: $e). It must import '
+        '$liteRtLmWebModuleUrl (litertlm_dart\'s README, "On the web").',
+      );
+    }
   }
   final constructor = globalContext['Engine'];
   if (constructor == null || !constructor.typeofEquals('function')) {
@@ -495,10 +542,7 @@ Future<JSObject> _awaitRuntime() async {
     'delete',
   ]);
   if (missing.isNotEmpty) {
-    throw StateError(
-      'The page\'s @litert-lm/core Engine lacks ${missing.join(', ')}, which '
-      'this release calls: import $liteRtLmWebModuleUrl in its module script.',
-    );
+    throw StateError(_incompleteRuntime('Engine', missing));
   }
   return constructor;
 }

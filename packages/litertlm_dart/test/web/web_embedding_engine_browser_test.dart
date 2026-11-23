@@ -109,35 +109,59 @@ void main() {
   setUp(() => _install(_header740m));
   tearDown(_remove);
 
-  test('refuses before anything is created: a cacheDir, requireWeightCache, '
-      'the CPU text tower (with the measured reason), the NPU, a thread '
-      'count, a vision tower on another backend, a budget other than '
-      '140/70', () async {
-    for (final config in [
-      _config(cacheDir: '/tmp'),
-      _config(requireWeightCache: true),
-      _config(backend: const Backend.cpu()),
-      _config(backend: const Backend.npu()),
-      _config(audio: const Backend.cpu(threadCount: 2)),
-      _config(vision: const Backend.cpu()),
-    ]) {
-      await expectLater(EmbeddingEngine.create(config), throwsUnsupportedError);
-    }
-    await expectLater(
-      EmbeddingEngine.create(_config(backend: const Backend.cpu())),
-      throwsA(
-        isA<UnsupportedError>().having(
-          (e) => e.message,
-          'message',
-          contains('Failed to get external weight'),
-        ),
+  group('refuses before anything is created', () {
+    for (final (what, config, message) in [
+      ('a cacheDir', _config(cacheDir: '/tmp'), 'keeps no weight cache'),
+      (
+        'requireWeightCache',
+        _config(requireWeightCache: true),
+        'keeps no weight cache',
       ),
-    );
-    await expectLater(
-      EmbeddingEngine.create(_config(budget: 100)),
-      throwsArgumentError,
-    );
-    expect(_list('settings'), isEmpty);
+      (
+        'the CPU text tower, with the measured reason',
+        _config(backend: const Backend.cpu()),
+        'Failed to get external weight',
+      ),
+      ('the NPU', _config(backend: const Backend.npu()), 'only natively'),
+      (
+        'a CPU thread count',
+        _config(audio: const Backend.cpu(threadCount: 2)),
+        'no CPU thread count',
+      ),
+      (
+        'a vision tower on another backend',
+        _config(vision: const Backend.cpu()),
+        "the text tower's backend",
+      ),
+    ]) {
+      test(what, () async {
+        await expectLater(
+          EmbeddingEngine.create(config),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (e) => e.message,
+              'message',
+              contains(message),
+            ),
+          ),
+        );
+        expect(_list('settings'), isEmpty);
+      });
+    }
+
+    test('a vision budget other than 140 or 70', () async {
+      await expectLater(
+        EmbeddingEngine.create(_config(budget: 100)),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            contains('must be one of'),
+          ),
+        ),
+      );
+      expect(_list('settings'), isEmpty);
+    });
   });
 
   test('loads with both towers on WebGPU and reports the pinned limit; '
@@ -205,23 +229,41 @@ void main() {
     expect((_eg['deletes']! as JSNumber).toDartInt, 1);
   });
 
-  test('a @litert-lm/core without what the release calls is refused naming '
-      'the member and the pinned version', () async {
-    ((globalContext['EmbeddingEngine']! as JSObject)['prototype']! as JSObject)
-        .delete('computeEmbedding'.toJS);
-    await expectLater(
-      EmbeddingEngine.create(_config()),
-      throwsA(
-        isA<EmbedderLoadException>().having(
-          (e) => e.message,
-          'message',
-          allOf(
-            contains('computeEmbedding'),
-            contains(web.liteRtLmWebRuntimeVersion),
+  group('an EmbeddingEngine lacking a member the release calls is refused '
+      'naming it and the pinned version', () {
+    for (final member in ['computeEmbedding', 'delete']) {
+      test(member, () async {
+        ((globalContext['EmbeddingEngine']! as JSObject)['prototype']!
+                as JSObject)
+            .delete(member.toJS);
+
+        await expectLater(
+          EmbeddingEngine.create(_config()),
+          throwsA(
+            isA<EmbedderLoadException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains(member), contains(web.liteRtLmWebRuntimeVersion)),
+            ),
+          ),
+        );
+        expect(_list('settings'), isEmpty);
+      });
+    }
+
+    test('create', () async {
+      (globalContext['EmbeddingEngine']! as JSObject).delete('create'.toJS);
+
+      await expectLater(
+        EmbeddingEngine.create(_config()),
+        throwsA(
+          isA<EmbedderLoadException>().having(
+            (e) => e.message,
+            'message',
+            contains('create'),
           ),
         ),
-      ),
-    );
-    expect(_list('settings'), isEmpty);
+      );
+    });
   });
 }

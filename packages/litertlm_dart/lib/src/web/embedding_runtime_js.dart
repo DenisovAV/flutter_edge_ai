@@ -142,13 +142,18 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
         : LiteRtLmWebRuntimeState.embeddingEngineMissing;
   }
 
-  static LiteRtLmWebRuntimeState get _versionState =>
-      liteRtLmWebRuntimeMissing(
-        globalContext['EmbeddingEngine']! as JSObject,
-        const ['computeEmbedding', 'delete'],
-      ).isEmpty
+  static LiteRtLmWebRuntimeState get _versionState => _missing().isEmpty
       ? LiteRtLmWebRuntimeState.ready
-      : LiteRtLmWebRuntimeState.otherRuntimeVersion;
+      : LiteRtLmWebRuntimeState.runtimeIncomplete;
+
+  static List<String> _missing() => liteRtLmWebRuntimeMissing(
+    globalContext['EmbeddingEngine']! as JSObject,
+    const ['computeEmbedding', 'delete'],
+  );
+
+  @override
+  List<String> get missingMembers =>
+      _hasEmbeddingEngine ? _missing() : const [];
 
   /// `navigator.gpu.requestAdapter({powerPreference: 'high-performance'})`:
   /// the adapter `@litert-lm/core` itself asks for before it creates

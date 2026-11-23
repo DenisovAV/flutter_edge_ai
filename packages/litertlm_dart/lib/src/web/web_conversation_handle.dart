@@ -17,7 +17,19 @@
 //   stream then ends with, a chunk, done or an error, the turn ends normally,
 //   as `Conversation.cancel` promises. A close ([close]) stops the same way;
 //   a turn it cut short ends with [LiteRtLmTurnClosedException] unless a stop
-//   was asked first, as natively.
+//   was asked first, as natively. A stopped generation that does not end
+//   within [WebConversationHandle.drainTimeout] poisons the page lock, stop
+//   or close alike: the module may still be suspended in it.
+// - A stream that rejects keeps the page until a call on the engine's
+//   executor mutex (`getTokenCount()`) resolves: 0.18.0 rejects from its
+//   chunk callback, before the generation has left the module. Chrome 157
+//   runs the JSPI build, where that is harmless; the Asyncify builds (no
+//   JSPI) hold one suspended call per module, and another call entering then
+//   would corrupt it.
+// - A generation stopped before its end leaves the runtime conversation
+//   refusing every later send ("Task cancelled"); the next turn replaces it
+//   by one built from the preface, the exchanges kept so far and
+//   `getHistory()` (which holds no preface), the stopped exchange put back.
 // - The web runtime takes thinking and the template variables per
 //   conversation (its `preface.extra_context`), not per message, and has no
 //   per-message decoding options: a send that asks for either differently is
@@ -52,16 +64,27 @@ final class WebConversationHandle implements ConversationHandle {
     required this._extraContext,
     required this._onGeneration,
     required this._rebuild,
+    this._preface = const [],
     this._onClose,
     LiteRtLmPageLock? pageLock,
   }) : _pageLock = pageLock ?? liteRtLmPageLock;
 
   JsLiteRtLmConversation _conversation;
 
-  /// A new runtime conversation, set up as this one was, whose history is
-  /// [history]: what replaces a conversation the runtime refuses after a
-  /// stop. Runs while this handle holds the page lock, so it takes none.
-  final Future<JsLiteRtLmConversation> Function(List<Object?> history) _rebuild;
+  /// A new runtime conversation, set up as this one was, whose messages after
+  /// [_preface] are [replay]: what replaces a conversation the runtime
+  /// refuses after a stop. Runs while this handle holds the page lock, so it
+  /// takes none. Fails with a [LiteRtLmNativeException].
+  final Future<JsLiteRtLmConversation> Function(List<Object?> replay) _rebuild;
+
+  /// The messages the conversation was created with (system instruction and
+  /// initial messages), as sent in its preface.
+  final List<Object?> _preface;
+
+  /// The messages replayed after [_preface] into the current runtime
+  /// conversation: the exchanges of the conversations it replaced.
+  List<Object?> _replayed = const [];
+
   final bool _enableThinking;
   final Map<String, Object?> _extraContext;
   final void Function() _onGeneration;
@@ -79,26 +102,25 @@ final class WebConversationHandle implements ConversationHandle {
   /// The turn holding the page, and the lease it holds; null between turns.
   _Turn? _streaming;
 
-  /// `conversation.cancel()` was called: the runtime fails every later send
-  /// on this conversation with "Task cancelled" (0.18.0 and 0.19.0, measured
-  /// 2026-11-23), so the next turn first replaces it ([_rebuildConversation]).
+  /// A generation on this conversation ended by rejection (a stop before its
+  /// end, a runtime error, or a local fault that cancelled it): the runtime
+  /// then fails every later send on it, so the next turn first replaces it
+  /// ([_rebuildConversation]).
   bool _mustRebuild = false;
 
   /// The exchange a stop cut short, kept as natively: its message and the
-  /// reply generated before the stop, put back after the runtime's history
-  /// (which drops a cancelled turn). Null when the stopped turn produced
-  /// nothing: it is taken back.
+  /// text generated before the stop, put back after the runtime's history
+  /// (which drops a cancelled turn). Its text only: a tool call or thinking
+  /// cut short is not kept. Null when the stopped turn produced no text: it
+  /// is taken back.
   ({Map<String, Object?> message, String reply})? _stopped;
 
-  /// Completes once [close] has drained the last generation and deleted the
-  /// JS conversation.
-  Future<void> get closed => _closedFuture ?? Future<void>.value();
   Future<void>? _closedFuture;
 
-  /// How long [close] waits for a cancelled generation to end; a test
-  /// shortens it.
+  /// How long a stopped generation may take to end before the page lock is
+  /// poisoned; a test shortens it.
   @visibleForTesting
-  static Duration closeDrainTimeout = const Duration(seconds: 30);
+  static Duration drainTimeout = const Duration(seconds: 30);
 
   /// The JS `JSON.stringify`, looked up once.
   static final JSObject _json = globalContext.getProperty<JSObject>(
@@ -153,7 +175,9 @@ final class WebConversationHandle implements ConversationHandle {
     bool enableThinking = false,
     SendOptions options = SendOptions.none,
   }) {
-    if (_closed) throw StateError('Conversation handle is closed');
+    if (_closed) {
+      return Stream.error(StateError('Conversation handle is closed'));
+    }
     final refusal = _refusal(messageJson, enableThinking, options);
     if (refusal != null) return Stream.error(refusal);
     final message = _jsMessage(messageJson);
@@ -166,9 +190,8 @@ final class WebConversationHandle implements ConversationHandle {
     var listenerGone = false;
 
     void finish({Object? error, StackTrace? stack}) {
-      if (turn.sent && turn.stopAsked && turn.reply.isNotEmpty) {
-        _stopped = (message: turn.message, reply: turn.reply.toString());
-      }
+      if (turn.finished) return;
+      turn.finished = true;
       _liveTurns.remove(turn);
       if (identical(_streaming, turn)) _streaming = null;
       turn.release();
@@ -177,12 +200,21 @@ final class WebConversationHandle implements ConversationHandle {
       controller.close();
     }
 
-    // How a turn that was asked to end ended: normally after a stop, with
-    // [LiteRtLmTurnClosedException] after a close that came first.
-    void finishAsked(StackTrace stack) => finish(
-      error: turn.stopAsked ? null : LiteRtLmTurnClosedException(),
-      stack: stack,
-    );
+    turn.abort = (error) => finish(error: error, stack: StackTrace.current);
+
+    // How a turn that was asked to end, or that failed here, ended: with the
+    // local fault, normally after a stop, with [LiteRtLmTurnClosedException]
+    // after a close that came first.
+    void finishAsked(StackTrace stack) {
+      if (turn.fault case (final error, final faultStack)) {
+        finish(error: error, stack: faultStack);
+      } else {
+        finish(
+          error: turn.stopAsked ? null : LiteRtLmTurnClosedException(),
+          stack: stack,
+        );
+      }
+    }
 
     void start() {
       final stream = _conversation.sendMessageStreaming(message);
@@ -202,53 +234,89 @@ final class WebConversationHandle implements ConversationHandle {
         // threw would otherwise keep the page lock, and with it every LLM and
         // EmbeddingGemma 2 call on the page, for good.
         void onStep(JSObject step) {
+          // Given up on (the page was poisoned): nothing more is read.
+          if (turn.finished) return;
+          final done = step.getProperty<JSAny?>('done'.toJS);
+          if (!done.isA<JSBoolean>()) {
+            // The iterator broke its contract: where the generation is, and
+            // whether it ever ends, cannot be known. The module may still be
+            // in it, so nothing else may enter.
+            final error = LiteRtLmNativeException(
+              '$liteRtLmWebRuntime streamed a step without a boolean `done`: '
+              '${_stringifySafe(step)}',
+            );
+            _mustRebuild = true;
+            _pageLock.poisonFor(
+              turn.lease!,
+              '$liteRtLmWebRuntime streamed a step without a boolean `done`.',
+            );
+            finish(error: error, stack: StackTrace.current);
+            return;
+          }
+          if ((done as JSBoolean).toDart) {
+            // Ended on its own: the runtime conversation keeps working (also
+            // after a stop that came after the last chunk).
+            if (turn.asked || turn.fault != null) {
+              finishAsked(StackTrace.current);
+            } else {
+              finish();
+            }
+            return;
+          }
           try {
-            final done = step.getProperty<JSAny?>('done'.toJS);
-            if (!done.isA<JSBoolean>()) {
-              // A runtime fault, not the caller's: a failed turn.
-              throw LiteRtLmNativeException(
-                '$liteRtLmWebRuntime streamed a step without a boolean `done`: '
-                '${_stringify(step)}',
-              );
-            }
-            if ((done as JSBoolean).toDart) {
-              if (turn.asked) {
-                finishAsked(StackTrace.current);
-              } else {
-                finish();
-              }
-              return;
-            }
             final value = step.getProperty<JSAny?>('value'.toJS);
-            if (value != null) {
+            if (value != null && turn.fault == null) {
               final json = _stringify(value);
-              turn.reply.write(messageFromChunk(json).text);
+              // Bookkeeping for a stop only: a chunk it cannot read keeps
+              // nothing, and the chunk still goes to the listener.
+              try {
+                turn.reply.write(messageFromChunk(json).text);
+              } catch (e) {
+                runtimeLog('[WebConversationHandle] unreadable chunk: $e');
+              }
               if (!listenerGone && !controller.isClosed) controller.add(json);
             }
           } catch (e, st) {
-            if (turn.asked) {
-              finishAsked(st);
-            } else {
-              finish(error: e, stack: st);
+            // A fault here, not the runtime's: stop the generation and read
+            // its stream to the end before the turn fails, so the page is
+            // left only once the module has.
+            if (turn.fault == null) {
+              turn.fault = (
+                LiteRtLmNativeException(
+                  'litertlm_dart could not read a chunk of the reply from '
+                  '$liteRtLmWebRuntime: $e',
+                ),
+                st,
+              );
+              _stopJs(turn, 'its turn failed in litertlm_dart ($e)');
             }
-            return;
           }
           pump();
         }
 
         void onError(Object error, StackTrace stack) {
-          if (turn.asked) {
-            // How the runtime ends a stopped generation (it rejects the
-            // stream with "Task cancelled") is its business: the turn was
-            // asked to end, and it did.
-            runtimeLog(
-              '[WebConversationHandle] the stopped generation ended with '
-              '$error',
-            );
-            finishAsked(stack);
-            return;
+          if (turn.finished) return;
+          // A rejected stream: the runtime conversation refuses every later
+          // send ("Task cancelled" after a stop, measured on 0.18.0).
+          _mustRebuild = true;
+          if (turn.stopAsked && turn.reply.isNotEmpty) {
+            _stopped = (message: turn.message, reply: turn.reply.toString());
           }
-          finish(error: error, stack: stack);
+          // 0.18.0 rejects from inside the generation's chunk callback:
+          // wait until it has left the module before the page is let go.
+          _fence().then((_) {
+            if (turn.asked || turn.fault != null) {
+              // How the runtime ends a stopped generation is its business:
+              // the turn was asked to end, and it did.
+              runtimeLog(
+                '[WebConversationHandle] the stopped generation ended with '
+                '$error',
+              );
+              finishAsked(stack);
+            } else {
+              finish(error: _typed(error), stack: stack);
+            }
+          });
         }
 
         try {
@@ -283,20 +351,54 @@ final class WebConversationHandle implements ConversationHandle {
       _streaming = turn;
       try {
         if (_mustRebuild) await _rebuildConversation();
+      } catch (e, st) {
         if (turn.asked) {
-          finishAsked(StackTrace.current);
-          return;
+          finishAsked(st);
+        } else {
+          finish(error: e, stack: st);
         }
+        return;
+      }
+      if (turn.asked) {
+        finishAsked(StackTrace.current);
+        return;
+      }
+      try {
         start();
       } catch (e, st) {
         // Nothing reached the stream's end if the send threw: no drain.
-        finish(error: e, stack: st);
+        finish(error: _typed(e), stack: st);
       }
     };
     controller.onCancel = () {
       listenerGone = true;
     };
     return controller.stream;
+  }
+
+  /// A runtime error as the typed exception the shared `Conversation` maps;
+  /// errors already typed pass as they are.
+  static Object _typed(Object error) =>
+      error is Error || error is LiteRtLmNativeException
+      ? error
+      : LiteRtLmNativeException('$liteRtLmWebRuntime failed the turn: $error');
+
+  static String _stringifySafe(JSAny value) {
+    try {
+      return _stringify(value);
+    } catch (_) {
+      return '$value';
+    }
+  }
+
+  /// Completes once a call serialised on the engine's executor mutex has run:
+  /// the generation that just rejected has then left the module. Its result
+  /// and its failure do not matter; a fence that never completes is covered
+  /// by the drain timer of a stop or close.
+  Future<void> _fence() async {
+    try {
+      await _conversation.getTokenCount().toDart;
+    } catch (_) {}
   }
 
   /// Why the web runtime cannot send [messageJson] with these options; null
@@ -359,57 +461,107 @@ final class WebConversationHandle implements ConversationHandle {
     return json.jsify()!;
   }
 
+  /// Marks every live turn stopped and stops the one streaming, if it was
+  /// sent. With nothing in flight the runtime is not asked: a cancel there
+  /// changes nothing (0.18.0, measured).
   @override
   void cancelGeneration() {
     for (final turn in _liveTurns) {
       turn.stopAsked = true;
     }
-    _cancelJs();
-  }
-
-  void _cancelJs() {
-    _mustRebuild = true;
-    try {
-      _conversation.cancel();
-    } catch (e) {
-      // It may throw when nothing is in flight.
-      runtimeLog('[WebConversationHandle] conversation.cancel() threw: $e');
+    if (_streaming case final turn? when turn.sent) {
+      _stopJs(turn, 'it was stopped');
     }
   }
 
-  /// Replaces the conversation the runtime refuses after a cancel by one
-  /// rebuilt from its history, the stopped exchange put back after it, and
-  /// deletes the old one. Runs holding the page lock.
+  /// `conversation.cancel()` for [turn], whose stream is running, with the
+  /// drain timer armed: a generation that does not end within
+  /// [drainTimeout] poisons the page lock, and [turn] fails with that error.
+  void _stopJs(_Turn turn, String why) {
+    try {
+      _conversation.cancel();
+    } catch (e) {
+      runtimeLog('[WebConversationHandle] conversation.cancel() threw: $e');
+    }
+    if (turn.drain != null) return;
+    turn.drain = Timer(drainTimeout, () {
+      if (turn.finished) return;
+      _mustRebuild = true;
+      _pageLock.poisonFor(
+        turn.lease!,
+        'A $liteRtLmWebRuntime generation did not end within '
+        '${drainTimeout.inSeconds} s after $why.',
+      );
+      turn.abort!(_pageLock.poison!);
+    });
+  }
+
+  /// Replaces the conversation the runtime refuses after a rejected stream
+  /// by one rebuilt from the preface, the exchanges replayed so far and the
+  /// runtime's history, the stopped exchange put back, and deletes the old
+  /// one. Runs holding the page lock. Fails with a [LiteRtLmNativeException]
+  /// and leaves the conversation as it was: the next message tries again.
   Future<void> _rebuildConversation() async {
-    final history = [
-      for (final message in (await _conversation.getHistory().toDart).toDart)
-        message.dartify(),
-    ];
-    if (_stopped case (:final message, :final reply)) {
-      history
-        ..add(message)
-        ..add({
+    final List<Object?> history;
+    try {
+      history = [
+        for (final message in (await _conversation.getHistory().toDart).toDart)
+          message.dartify(),
+      ];
+    } catch (e) {
+      throw LiteRtLmNativeException(
+        'Could not read the history of the stopped conversation ($e). '
+        '$_untilRebuilt',
+      );
+    }
+    // 0.18.0's history holds no preface (measured); should a runtime start
+    // to return it, it is not replayed twice.
+    final current = [..._preface, ..._replayed];
+    final exchanges = _startsWith(history, current)
+        ? history.sublist(current.length)
+        : history;
+    final replay = [
+      ..._replayed,
+      ...exchanges,
+      if (_stopped case (:final message, :final reply)) ...[
+        message,
+        {
           'role': 'assistant',
           'content': [
             {'type': 'text', 'text': reply},
           ],
-        });
+        },
+      ],
+    ];
+    final JsLiteRtLmConversation next;
+    try {
+      next = await _rebuild(replay);
+    } catch (e) {
+      throw LiteRtLmNativeException(
+        'Could not rebuild the conversation after a stop: '
+        '${e is LiteRtLmNativeException ? e.message : e}. $_untilRebuilt',
+      );
     }
-    final next = await _rebuild(history);
     final old = _conversation;
     _conversation = next;
+    _replayed = replay;
     _mustRebuild = false;
     _stopped = null;
     runtimeLog(
       '[WebConversationHandle] rebuilt the conversation after a stop '
-      '(${history.length} messages replayed)',
+      '(${_preface.length + replay.length} messages replayed)',
     );
     try {
       await awaitIfThenable(old.delete());
     } catch (e) {
-      runtimeLog('[WebConversationHandle] deleting the stopped one: $e');
+      noteWebDeleteFailure('A stopped conversation', e);
     }
   }
+
+  static const _untilRebuilt =
+      'The runtime refuses every send on a conversation stopped mid-reply, so '
+      'it cannot be used until a rebuild succeeds; the next message tries '
+      'again.';
 
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
@@ -436,7 +588,7 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// Stops the generation in flight and every turn queued behind it, waits
   /// for its JS stream to end, and deletes the JS conversation. A stream
-  /// that does not end within [closeDrainTimeout] poisons the page lock
+  /// that does not end within [drainTimeout] poisons the page lock
   /// ([LiteRtLmPageLock.poisonFor]): the module may still be suspended in
   /// it, so nothing else may enter, and the returned future fails with that
   /// error. The conversation is then left to the page.
@@ -448,34 +600,34 @@ final class WebConversationHandle implements ConversationHandle {
     for (final turn in _liveTurns) {
       turn.closeAsked = true;
     }
-    // Abort the JS generation before the engine is torn down: deleting the
-    // engine while an iterator's next() still resolves against this
-    // conversation would free what it reads.
-    _cancelJs();
     try {
       final streaming = _streaming;
       if (streaming != null) {
-        final drained = await streaming.ended.future
-            .then((_) => true)
-            .timeout(closeDrainTimeout, onTimeout: () => false);
-        if (!drained) {
-          _pageLock.poisonFor(
-            streaming.lease!,
-            'A stopped $liteRtLmWebRuntime generation did not end within '
-            '${closeDrainTimeout.inSeconds} s of its conversation\'s close.',
-          );
-          throw _pageLock.poison!;
-        }
+        // Abort the JS generation before the engine is torn down: deleting
+        // the engine while an iterator's next() still resolves against this
+        // conversation would free what it reads.
+        if (streaming.sent) _stopJs(streaming, 'its conversation closed');
+        await streaming.ended.future;
+        if (_pageLock.poison case final poison?) throw poison;
       }
       try {
         await awaitIfThenable(_conversation.delete());
       } catch (e) {
-        runtimeLog('[WebConversationHandle] conversation.delete() failed: $e');
+        noteWebDeleteFailure('A conversation', e);
       }
     } finally {
       _onClose?.call();
     }
   }
+}
+
+/// Whether [list] begins with [prefix], compared as JSON.
+bool _startsWith(List<Object?> list, List<Object?> prefix) {
+  if (list.length < prefix.length) return false;
+  for (var i = 0; i < prefix.length; i++) {
+    if (!_jsonEquals(list[i], prefix[i])) return false;
+  }
+  return true;
 }
 
 /// One turn of a [WebConversationHandle]: whether it was asked to end, and
@@ -496,12 +648,26 @@ final class _Turn {
   bool closeAsked = false;
   bool get asked => stopAsked || closeAsked;
 
+  /// A fault in litertlm_dart while reading the stream: the turn fails with
+  /// it once the stream has ended.
+  (Object, StackTrace)? fault;
+
+  /// The drain timer of a stop or close, armed once.
+  Timer? drain;
+
+  /// Ends the turn with an error now, whatever its stream does.
+  void Function(Object error)? abort;
+
+  /// [abort] or the stream's end has run.
+  bool finished = false;
+
   LiteRtLmPageLease? lease;
 
   /// Completes when the turn has let go of the page.
   final ended = Completer<void>();
 
   void release() {
+    drain?.cancel();
     lease?.release();
     if (!ended.isCompleted) ended.complete();
   }

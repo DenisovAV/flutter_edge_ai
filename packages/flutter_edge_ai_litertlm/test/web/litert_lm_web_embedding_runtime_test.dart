@@ -266,8 +266,8 @@ void main() {
       },
     );
 
-    test('an EmbeddingEngine without computeEmbedding: a runtime the release '
-        'cannot drive, which the load refuses naming the pinned one', () async {
+    test('an EmbeddingEngine without computeEmbedding is incomplete, and '
+        'names what it lacks', () async {
       _js('''
         window.litertLmReady = Promise.resolve(null);
         window.EmbeddingEngine = function () {};
@@ -276,8 +276,9 @@ void main() {
       ''');
       expect(
         await runtime.ensureReady(),
-        LiteRtLmWebRuntimeState.otherRuntimeVersion,
+        LiteRtLmWebRuntimeState.runtimeIncomplete,
       );
+      expect(runtime.missingMembers, ['computeEmbedding']);
     });
 
     test('a loader that failed: the rejection propagates', () async {

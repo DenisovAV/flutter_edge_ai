@@ -220,9 +220,10 @@ enum LiteRtLmWebRuntimeState {
   /// written for the LLM engine only.
   embeddingEngineMissing,
 
-  /// `window.EmbeddingEngine` lacks what this release calls: a
-  /// `@litert-lm/core` older than [liteRtLmWebRuntimeVersion].
-  otherRuntimeVersion,
+  /// `window.EmbeddingEngine` lacks a member this release calls
+  /// ([LiteRtLmWebRuntime.missingMembers]): a `@litert-lm/core` this release
+  /// cannot drive, whatever its version.
+  runtimeIncomplete,
 }
 
 /// Whether the browser can give the runtime a WebGPU device.
@@ -245,6 +246,11 @@ abstract interface class LiteRtLmWebRuntime {
   /// then reports whether `window.EmbeddingEngine` exists. Throws when the
   /// loader itself failed (the module could not be imported).
   Future<LiteRtLmWebRuntimeState> ensureReady();
+
+  /// What `window.EmbeddingEngine` lacks of what this release calls, after
+  /// [ensureReady] reported [LiteRtLmWebRuntimeState.runtimeIncomplete];
+  /// empty otherwise.
+  List<String> get missingMembers;
 
   /// Asks the browser for a WebGPU adapter as `@litert-lm/core` does
   /// before it creates a GPU engine (`navigator.gpu.requestAdapter({
@@ -683,11 +689,11 @@ final class LiteRtLmWebEmbedder {
           '$liteRtLmWebShimLine next to window.Engine = m.Engine; in its '
           'module script.',
         );
-      case LiteRtLmWebRuntimeState.otherRuntimeVersion:
-        throw const EmbedderLoadException(
-          'The page\'s @litert-lm/core EmbeddingEngine lacks what this '
-          'release calls (computeEmbedding, delete): import '
-          '$liteRtLmWebModuleUrl in its module script.',
+      case LiteRtLmWebRuntimeState.runtimeIncomplete:
+        throw EmbedderLoadException(
+          'The page\'s @litert-lm/core EmbeddingEngine lacks '
+          '${_config.runtime.missingMembers.join(', ')}, which this release '
+          'calls: import $liteRtLmWebModuleUrl in its module script.',
         );
     }
   }
@@ -832,6 +838,9 @@ final class LiteRtLmWebEmbedder {
         _checkNotClosed();
         return engine.computeEmbedding(request, _options);
       });
+    } on LiteRtLmPagePoisonedError {
+      // The page's state, not this embedding's: the caller tells them apart.
+      rethrow;
     } catch (e) {
       throw EmbedderEngineException(
         'LiteRT-LM could not embed the $what for $_file: $e',

@@ -53,6 +53,9 @@ final class _Runtime implements LiteRtLmWebRuntime {
       LiteRtLmWebRuntimeState.ready;
 
   @override
+  List<String> get missingMembers => const [];
+
+  @override
   Future<LiteRtLmWebGpuSupport> webGpuSupport() async =>
       LiteRtLmWebGpuSupport.available;
 

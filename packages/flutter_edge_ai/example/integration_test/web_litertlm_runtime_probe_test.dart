@@ -12,7 +12,13 @@
 ///   declared backend) and an audio part;
 /// - `backendConfig.number_of_threads` on the CPU (WebAssembly) backend;
 /// - constrained decoding on (`enableConstrainedDecoding`) through a tool call
-///   and the turn after its result (google-ai-edge/LiteRT-LM#2434).
+///   and the turn after its result (google-ai-edge/LiteRT-LM#2434);
+/// - `getHistory()` of a conversation created with a preface (system, user,
+///   assistant) after one exchange: is the preface in it;
+/// - `cancel()` with nothing in flight, then a send;
+/// - a stop at the very end: every chunk read, `cancel()`, then the stream's
+///   end, and whether the completed exchange is in `getHistory()`;
+/// - `backend: GPU` named explicitly for the web export.
 /// The model is fetched once into a Blob and handed to every `Engine.create`.
 ///
 /// Run from packages/flutter_edge_ai/example:
@@ -116,11 +122,62 @@ window.__litertlmProbe = async (url, image, audio) => {
     const f = await e.createConversation(greedy);
     await attempt('fresh_conversation_after_cancel', () => text(f, 'Say yes.'));
     await f.delete();
+    // P1: a preface and getHistory().
+    await attempt('history_with_preface', async () => {
+      const p = await e.createConversation({...greedy, preface: {messages: [
+        {role: 'system', content: [{type: 'text', text: 'Answer in one word.'}]},
+        {role: 'user', content: [{type: 'text', text: 'Say red.'}]},
+        {role: 'assistant', content: [{type: 'text', text: 'Red.'}]}]}});
+      await text(p, 'Say blue.');
+      const h = await p.getHistory();
+      await p.delete();
+      return {length: h.length, roles: h.map((m) => m.role), history: JSON.stringify(h).slice(0, 1500)};
+    });
+    // P2: cancel with nothing in flight, then a send.
+    await attempt('idle_cancel_then_send', async () => {
+      const q = await e.createConversation(greedy);
+      q.cancel();
+      try { return 'answered: ' + await text(q, 'Say yes.'); }
+      catch (err) { return 'rejected: ' + ((err && err.message) || err); }
+      finally { await q.delete(); }
+    });
+    // P3: a stop after the last chunk, before the stream's end is read. The
+    // reply is greedy, so a first run counts its chunks.
+    await attempt('cancel_at_end', async () => {
+      const prompt = 'Say hello.';
+      const g = await e.createConversation(greedy);
+      let n = 0;
+      for await (const _ of g.sendMessageStreaming(prompt)) n++;
+      await g.delete();
+      const h = await e.createConversation(greedy);
+      const it = h.sendMessageStreaming(prompt)[Symbol.asyncIterator]();
+      for (let i = 0; i < n; i++) await it.next();
+      h.cancel();
+      let end;
+      try { const last = await it.next(); end = last.done ? 'done' : 'one more chunk'; }
+      catch (err) { end = 'rejected: ' + ((err && err.message) || err); }
+      let history;
+      try { history = JSON.stringify(await h.getHistory()).slice(0, 800); }
+      catch (err) { history = 'getHistory rejected: ' + ((err && err.message) || err); }
+      let next;
+      try { next = 'answered: ' + await text(h, 'Say yes.'); }
+      catch (err) { next = 'rejected: ' + ((err && err.message) || err); }
+      await h.delete();
+      return {chunks: n, end, history, next};
+    });
     await c.delete();
     const deleted = e.delete();
     r.engineDeleteReturnsThenable = !!(deleted && typeof deleted.then === 'function');
     await deleted;
   }
+
+  // P4: the GPU named explicitly for the web export.
+  await attempt('explicit_gpu_backend', async () => {
+    const x = await Engine.create({model, backend: 4});
+    const s = {backend: x.settings.backend};
+    await x.delete();
+    return s;
+  });
 
   let t;
   await attempt('constrained_decoding_tool_round_trip', async () => {
@@ -223,6 +280,14 @@ void main() {
     print('PROBE ${jsonEncode(record)}');
     for (final probe in [
       'create_text_benchmark',
+      'cancel_after_first_chunk',
+      'send_after_cancel',
+      'history_after_cancel',
+      'rebuilt_from_history',
+      'history_with_preface',
+      'idle_cancel_then_send',
+      'cancel_at_end',
+      'explicit_gpu_backend',
       'constrained_decoding_tool_round_trip',
       'create_vision',
       'create_audio',

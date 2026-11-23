@@ -138,6 +138,8 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       completer.complete();
     } catch (e, st) {
       _engineCompleter = null; // allow retry
+      // Only a concurrent caller or a close listens to it; this one rethrows.
+      completer.future.ignore();
       completer.completeError(e, st);
       rethrow;
     }
@@ -201,6 +203,12 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         tools: tools,
         maxOutputTokens: maxOutputTokens,
       );
+      // Closed while the engine or the conversation was being created: the
+      // model has closed (or is closing) its engine.
+      if (_isClosed) {
+        await conversation.close();
+        throw StateError('Model was closed while creating a session');
+      }
 
       final session = _session = LiteRtLmWebSession(
         conversation: conversation,
@@ -222,6 +230,8 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       }
       return session;
     } catch (e, st) {
+      // Only a concurrent caller listens to it; this one rethrows.
+      completer.future.ignore();
       completer.completeError(e, st);
       _createCompleter = null;
       rethrow;
@@ -400,6 +410,15 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
 
   Future<void> _close() async {
     _isClosed = true;
+    // An engine still loading is closed with the rest, once it has loaded:
+    // nobody else would close it.
+    if (_engineCompleter case final loading? when !loading.isCompleted) {
+      try {
+        await loading.future;
+      } catch (_) {
+        // A failed load left no engine to close.
+      }
+    }
     try {
       await _session?.close();
       for (final s in _openSessions.toList()) {
@@ -410,9 +429,11 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       try {
         await _engine?.close();
       } catch (e) {
-        if (kDebugMode) {
-          edgeAiLog('[LiteRtLmWebInferenceModel] engine close failed: $e');
-        }
+        // Release builds see it: the engine's memory may stay in the page.
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai_litertlm] WARNING: closing the web engine failed: $e',
+        );
       }
       _engine = null;
       onClose();

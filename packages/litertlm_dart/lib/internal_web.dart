@@ -14,7 +14,17 @@ export 'src/web/embedding_runtime_js.dart' show WindowLiteRtLmWebRuntime;
 // the native ones.
 export 'src/web/embedding_engine_web.dart' show EmbeddingEngine;
 export 'src/web/engine_web.dart'
-    show Engine, createConversationWithDefault, createWebEngine;
+    show
+        Engine,
+        createConversationWithDefault,
+        createWebEngine,
+        webConversationMembers;
 export 'src/web/litert_lm_js.dart'
-    show JsLiteRtLmConversation, JsLiteRtLmEngine;
+    show
+        JsLiteRtLmConversation,
+        JsLiteRtLmEngine,
+        awaitIfThenable,
+        liteRtLmWebFetchedVersions,
+        noteOtherWebRuntimeVersion,
+        noteWebDeleteFailure;
 export 'src/web/web_conversation_handle.dart' show WebConversationHandle;

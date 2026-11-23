@@ -46,25 +46,44 @@ JSObject _engineConstructor(JSObject engine) =>
         engine,
       ).toJS).toJS;
 
+/// A runtime conversation with the members litertlm_dart calls on 0.18.0;
+/// [onDelete] counts its deletes.
+JSObject _conversation({void Function()? onDelete}) => JSObject()
+  ..['sendMessageStreaming'] = ((JSAny? message) => JSObject()).toJS
+  ..['cancel'] = (() {}).toJS
+  ..['getHistory'] = (() => Future.value(JSArray<JSObject>()).toJS).toJS
+  ..['getTokenCount'] = (() => Future.value(0.toJS).toJS).toJS
+  ..['delete'] = (() {
+    onDelete?.call();
+    return Future<void>.value().toJS;
+  }).toJS;
+
+/// A runtime engine as 0.18.0 resolves a web export (`GPU_ARTISAN`, the
+/// bundle's 4096 tokens), whose conversations come from [createConversation].
+JSObject _runtimeEngine(JSAny? Function(JSAny? options) createConversation) =>
+    JSObject()
+      ..['settings'] = {
+        'backend': 2,
+        'mainExecutorSettings': {'maxNumTokens': 4096},
+      }.jsify()
+      ..['createConversation'] = createConversation.toJS
+      ..['delete'] = (() => Future<void>.value().toJS).toJS;
+
 void main() {
   test('two openSession calls that overlap cannot both pass '
       'maxConcurrentSessions, and a failed one frees its slot', () async {
     var conversations = 0;
     var gate = Completer<void>();
     var failNext = false;
-    final engine = JSObject()
-      ..['createConversation'] = ((JSAny? options) {
-        conversations++;
-        final fail = failNext;
-        failNext = false;
-        return gate.future.then<JSObject>((_) {
-          if (fail) throw StateError('createConversation failed');
-          return JSObject()
-            ..['cancel'] = (() {}).toJS
-            ..['delete'] = (() => Future<void>.value().toJS).toJS;
-        }).toJS;
-      }).toJS
-      ..['delete'] = (() => Future<void>.value().toJS).toJS;
+    final engine = _runtimeEngine((options) {
+      conversations++;
+      final fail = failNext;
+      failNext = false;
+      return gate.future.then<JSObject>((_) {
+        if (fail) throw StateError('createConversation failed');
+        return _conversation();
+      }).toJS;
+    });
     globalContext['litertLmReady'] = Future<void>.value().toJS;
     globalContext['Engine'] = _engineConstructor(engine);
 
@@ -95,20 +114,11 @@ void main() {
       'that conversation and fails the open', () async {
     final gate = Completer<void>();
     var deleted = 0;
-    final engine = JSObject()
-      ..['createConversation'] =
-          ((JSAny? options) => gate.future
-                  .then<JSObject>(
-                    (_) => JSObject()
-                      ..['cancel'] = (() {}).toJS
-                      ..['delete'] = (() {
-                        deleted++;
-                        return Future<void>.value().toJS;
-                      }).toJS,
-                  )
-                  .toJS)
-              .toJS
-      ..['delete'] = (() => Future<void>.value().toJS).toJS;
+    final engine = _runtimeEngine(
+      (options) => gate.future
+          .then<JSObject>((_) => _conversation(onDelete: () => deleted++))
+          .toJS,
+    );
     globalContext['litertLmReady'] = Future<void>.value().toJS;
     globalContext['Engine'] = _engineConstructor(engine);
 

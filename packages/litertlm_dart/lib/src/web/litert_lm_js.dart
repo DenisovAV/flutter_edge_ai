@@ -58,6 +58,73 @@ List<String> liteRtLmWebRuntimeMissing(
   ];
 }
 
+/// The members [members] of a runtime object (an engine or a conversation)
+/// that are not functions on it; empty when it has them all.
+List<String> liteRtLmWebObjectMissing(JSObject object, List<String> members) =>
+    [
+      for (final member in members)
+        if (!(object[member]?.typeofEquals('function') ?? false)) member,
+    ];
+
+/// Says [what] failed to free with `print`, once per page: release builds
+/// show it, and memory the page never gets back is worth knowing about.
+void noteWebDeleteFailure(String what, Object error) {
+  if (_deleteFailureNoted) return;
+  _deleteFailureNoted = true;
+  // ignore: avoid_print
+  print(
+    '[litertlm_dart] WARNING: $what failed to free in $liteRtLmWebRuntime: '
+    '$error. Its memory may stay in the page. Shown once per page.',
+  );
+}
+
+bool _deleteFailureNoted = false;
+
+/// The `@litert-lm/core` versions the page fetched, read from the URLs of
+/// its resources (`@litert-lm/core@X.Y.Z`): the runtime itself exports no
+/// version. Empty when none was fetched by a versioned URL.
+Set<String> liteRtLmWebFetchedVersions() {
+  final performance = globalContext['performance'];
+  if (performance == null || !performance.isA<JSObject>()) return const {};
+  final JSArray<JSObject> entries;
+  try {
+    entries = (performance as JSObject).callMethod<JSArray<JSObject>>(
+      'getEntriesByType'.toJS,
+      'resource'.toJS,
+    );
+  } catch (_) {
+    return const {};
+  }
+  return {
+    for (final entry in entries.toDart)
+      if (entry['name'] case final JSString name)
+        if (_versioned.firstMatch(name.toDart) case final match?)
+          match.group(1)!,
+  };
+}
+
+final _versioned = RegExp(r'@litert-lm/core@(\d+\.\d+\.\d+)');
+
+/// Says once, with `print`, when the page fetched another `@litert-lm/core`
+/// than [liteRtLmWebRuntimeVersion]: one that has every member this release
+/// calls still runs, but its behaviour is not the one measured (0.19.0
+/// answers empty after a tool result with Gemma 4 E2B's web export).
+void noteOtherWebRuntimeVersion() {
+  if (_versionNoted) return;
+  final others = liteRtLmWebFetchedVersions()
+    ..remove(liteRtLmWebRuntimeVersion);
+  if (others.isEmpty) return;
+  _versionNoted = true;
+  // ignore: avoid_print
+  print(
+    '[litertlm_dart] WARNING: the page loaded @litert-lm/core '
+    '${others.join(', ')}; this release is measured on '
+    '$liteRtLmWebRuntimeVersion ($liteRtLmWebModuleUrl). Shown once per page.',
+  );
+}
+
+bool _versionNoted = false;
+
 /// Awaits [result] when it is a thenable: `delete()` is a Promise in the
 /// typings of 0.18.0 and 0.19.0, but nothing here relies on it.
 Future<void> awaitIfThenable(JSAny? result) async {
@@ -97,15 +164,24 @@ extension type JsLiteRtLmConversation._(JSObject _) implements JSObject {
   /// object.
   external JSObject sendMessageStreaming(JSAny message);
 
-  /// Asks the generation in flight to stop. The stream then rejects with
-  /// "Task cancelled", and so does every later send on this conversation
-  /// (0.18.0 and 0.19.0, measured 2026-11-23): a stopped conversation is
-  /// replaced by one rebuilt from [getHistory].
+  /// Asks the generation in flight to stop (`cancelProcess()`). Measured on
+  /// 0.18.0 (2026-11-23, web_litertlm_runtime_probe_test.dart): a generation
+  /// stopped before its end rejects with "Task cancelled", and so does every
+  /// later send on this conversation, so it is replaced by one rebuilt from
+  /// [getHistory]; with nothing in flight, or after the last chunk, the
+  /// conversation keeps working.
   external void cancel();
 
-  /// The conversation's messages: its completed exchanges (a cancelled turn
-  /// is not in it).
+  /// The conversation's completed exchanges, without its preface (0.18.0,
+  /// measured 2026-11-23): a cancelled turn is not in it. A user message
+  /// sent as a string comes back with its content as that string.
   external JSPromise<JSArray<JSObject>> getHistory();
+
+  /// The conversation's token count. It runs on the engine's executor mutex,
+  /// as a generation does, so it resolves only once the generation in flight
+  /// has left the module: a stream that rejected may still be inside it
+  /// (0.18.0 rejects from its chunk callback, before `waitUntilDone`).
+  external JSPromise<JSNumber> getTokenCount();
 
   /// Frees the conversation once its executor is free ([awaitIfThenable]).
   external JSAny? delete();

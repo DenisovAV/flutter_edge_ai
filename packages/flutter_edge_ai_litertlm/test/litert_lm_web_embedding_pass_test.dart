@@ -134,6 +134,9 @@ final class _FakeEngine implements LiteRtLmWebEngine {
 
 final class _FakeRuntime implements LiteRtLmWebRuntime {
   LiteRtLmWebRuntimeState state = LiteRtLmWebRuntimeState.ready;
+
+  @override
+  List<String> missingMembers = const [];
   LiteRtLmWebGpuSupport gpu = LiteRtLmWebGpuSupport.available;
   Object? gpuError;
   Object? readyError;

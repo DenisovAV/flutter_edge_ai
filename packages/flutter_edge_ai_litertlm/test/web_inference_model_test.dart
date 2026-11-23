@@ -41,8 +41,10 @@ final class _Handle implements ConversationHandle {
   @override
   void cancelGeneration() => cancels++;
 
+  int closes = 0;
+
   @override
-  Future<void> close() async {}
+  Future<void> close() async => closes++;
 
   @override
   Future<int?> tokenCount(String text) async => null;
@@ -97,8 +99,10 @@ final class _Engine implements WebLlmEngine {
     return conversationForTest(handle, config: config);
   }
 
+  int closes = 0;
+
   @override
-  Future<void> close() async {}
+  Future<void> close() async => closes++;
 }
 
 LiteRtLmWebInferenceModel _model(_Engine engine, ModelType type) =>
@@ -192,5 +196,51 @@ void main() {
     unawaited(handle.reply!.close());
     await next;
     await model.close();
+  });
+
+  group('a model closed while its engine loads', () {
+    late _Engine engine;
+    late Completer<WebLlmEngine> loading;
+    late LiteRtLmWebInferenceModel model;
+    setUp(() {
+      engine = _Engine();
+      loading = Completer<WebLlmEngine>();
+      model = LiteRtLmWebInferenceModel(
+        createEngine: () => loading.future,
+        maxTokens: 1024,
+        modelType: ModelType.gemmaIt,
+        onClose: () {},
+      );
+    });
+
+    test('closes the engine once it has loaded', () async {
+      final session = model.openSession().then<Object?>(
+        (_) => null,
+        onError: (Object e) => e,
+      );
+      await pumpEventQueue();
+      final closing = model.close();
+
+      loading.complete(engine);
+      await closing;
+
+      expect(engine.closes, 1);
+      expect(await session, isStateError);
+    });
+
+    test('createSession refuses the session it built', () async {
+      final session = model.createSession().then<Object?>(
+        (_) => null,
+        onError: (Object e) => e,
+      );
+      await pumpEventQueue();
+      final closing = model.close();
+
+      loading.complete(engine);
+      await closing;
+
+      expect(await session, isStateError);
+      expect(engine.handles.single.closes, 1);
+    });
   });
 }

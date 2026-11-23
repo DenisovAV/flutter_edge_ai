@@ -162,8 +162,10 @@ abstract class ConversationHandle {
   /// [NativeLastTurnEnd.contextFull]; null when [lastTurnEnd] is.
   int? get lastTurnCode;
 
-  /// Ends the conversation; completes once it is torn down (on the web: its
-  /// generation drained and its runtime conversation deleted).
+  /// Ends the conversation. Natively it may complete before the native
+  /// delete, which waits for an operation still running on the conversation;
+  /// on the web it completes once the generation has drained and the runtime
+  /// conversation is deleted. Idempotent: a second call does not close twice.
   Future<void> close();
 }
 

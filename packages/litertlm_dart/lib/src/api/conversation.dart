@@ -241,9 +241,11 @@ final class Conversation {
             if (!nativeEnded.isCompleted) nativeEnded.complete();
           });
         if (sub.isPaused) sub.resume();
-        // Bounded: the native turn layer already gives a stopped turn 2 s and
-        // says so when it does not end; this only keeps the cancel from
-        // waiting longer than that layer.
+        // Bounded: the native turn layer gives a stopped turn 2 s and says so
+        // when it does not end; this only keeps the cancel from waiting
+        // longer than that. On the web the handle's own drain timer (30 s)
+        // decides when a stopped generation is given up on, and the page
+        // lock stays held until then: this bound only lets the cancel return.
         return nativeEnded.future.timeout(
           const Duration(seconds: 5),
           onTimeout: sub.cancel,
@@ -336,11 +338,11 @@ final class Conversation {
   BenchmarkInfo getBenchmarkInfo() => _handle.getSessionMetrics();
 
   /// Ends the conversation. A reply still streaming ends with
-  /// [ConversationClosedException]; a later send is a [StateError].
-  Future<void> close() async {
-    if (_closed) return;
+  /// [ConversationClosedException]; a later send is a [StateError]. A second
+  /// call completes when the first does.
+  Future<void> close() {
     _closed = true;
-    await _handle.close();
+    return _handle.close();
   }
 }
 

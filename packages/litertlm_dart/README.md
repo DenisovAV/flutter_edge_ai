@@ -601,10 +601,18 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   `ContextFullException`, as natively, and the message is left out: the next
   message goes to a conversation rebuilt without it, so a shorter one is
   answered. When the history alone fills the window (the conversation held
-  `maxNumTokens` tokens), no rebuild can take it, and that turn and every
-  later one fail with `ContextFullException` without being sent, as natively
-  a conversation with no room left ends every turn at the context limit;
-  nothing is truncated. A reply that fills the window ends normally (0.19.0
+  `maxNumTokens` tokens), or leaves no room for the shortest message, no
+  rebuild can take it, and that turn and every later one fail with
+  `ContextFullException` without being sent, as natively a conversation with
+  no room left ends every turn at the context limit; nothing is truncated.
+  Natively the shortest input is read from the model file; the web cannot
+  read it, so it learns a lower bound from the runtime's refusals ("Input
+  token ids are too long… X >= Y" counts what that call would prefill: on a
+  rebuilt conversation's first call the replayed history and the message) —
+  that count less the history and the message's UTF-8 bytes — and takes a
+  room within that bound plus one token as none. The bound is low by the
+  bytes a token spans, so a conversation one or two tokens from that point
+  may be told to send a shorter message once more before it ends. A reply that fills the window ends normally (0.19.0
   reports nothing), so the turn after it is the one refused. A stopped generation that
   does not end within 30 s, after a stop or a close, makes the page unusable
   for LiteRT-LM (the module may still be suspended in it): the turn,

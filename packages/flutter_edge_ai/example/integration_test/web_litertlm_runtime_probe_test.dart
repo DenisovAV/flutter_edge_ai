@@ -294,6 +294,39 @@ window.__litertlmProbe = async (url, image, audio) => {
     } finally { await x.delete(); }
   });
 
+  // N7: what the count in "Input token ids are too long… X >= Y" holds, and
+  // where a one-word message stops fitting behind a long history.
+  await attempt('refusal_count_and_room', async () => {
+    const x = await Engine.create({model: await stream(), mainExecutorSettings: {maxNumTokens: 128}});
+    const counted = (e) => { const m = /(\d+) >= (\d+)/.exec(String((e && e.message) || e)); return m ? [Number(m[1]), Number(m[2])] : String((e && e.message) || e); };
+    try {
+      const big = 'word '.repeat(200);
+      const out = {};
+      const a = await x.createConversation(greedy);
+      try { await text(a, big); out.fresh = 'answered'; } catch (e) { out.fresh = counted(e); }
+      await a.delete();
+      const b = await x.createConversation(greedy);
+      await text(b, 'Say yes.');
+      out.held = await b.getTokenCount();
+      try { await text(b, big); out.afterExchange = 'answered'; } catch (e) { out.afterExchange = counted(e); }
+      out.heldAfterRefusal = await b.getTokenCount();
+      await b.delete();
+      // A preface of k words, then 'Hi': accepted or the counts of its refusal.
+      out.scan = [];
+      for (let k = 90; k <= 130; k += 2) {
+        const c = await x.createConversation({...greedy, preface: {messages: [
+          {role: 'user', content: [{type: 'text', text: 'word '.repeat(k)}]},
+          {role: 'assistant', content: [{type: 'text', text: 'Ok.'}]}]}});
+        let r;
+        try { await text(c, 'Hi'); r = {k, ok: true, tokens: await c.getTokenCount()}; }
+        catch (e) { r = {k, refused: counted(e), tokens: await c.getTokenCount()}; }
+        out.scan.push(r);
+        await c.delete();
+      }
+      return out;
+    } finally { await x.delete(); }
+  });
+
   // P4: the GPU named explicitly.
   await attempt('explicit_gpu_backend', async () => {
     const x = await Engine.create({model: await stream(), backend: 4});
@@ -572,6 +605,7 @@ void main() {
       'history_after_empty_reply',
       'history_after_failure_mid_decode',
       'oversized_prompt_then_shorter',
+      'refusal_count_and_room',
       'create_from_blob_url_over_2gib',
       'history_with_audio',
       'rebuilt_from_history_with_audio_as_base64',
@@ -621,6 +655,20 @@ void main() {
         (record['history_after_failure_mid_decode']! as Map)['value'] as Map;
     expect(full['tokensFull'], full['tokensAfter']);
     expect(full['rebuilt'], startsWith('send rejected: Input token ids'));
+    // N7: a refusal's count is what that call would prefill: the message
+    // alone once the conversation has prefilled (not its 15 held tokens),
+    // the preface with the message on a conversation's first call; a call
+    // of the whole window is refused.
+    final room = (record['refusal_count_and_room']! as Map)['value'] as Map;
+    final fresh = (room['fresh']! as List).cast<num>();
+    final after = (room['afterExchange']! as List).cast<num>();
+    expect(after[0], lessThan(fresh[0] + (room['held']! as num)));
+    expect(
+      (room['scan']! as List).cast<Map>().where(
+        (r) => '${r['refused']}' == '[128, 128]',
+      ),
+      hasLength(1),
+    );
     // M1/N1: the failed message stays at the end of the history with no
     // reply, a rebuild with it fails again, and one without it answers.
     final failed =

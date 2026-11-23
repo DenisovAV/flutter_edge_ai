@@ -539,21 +539,24 @@ void main() {
         web.conversationHandle(conversation).lastTurnEnd;
 
     /// Sends [text] and has the runtime refuse it for its size, as [how]
-    /// (`__tooLong` or `__contextFull`).
-    Future<Object?> refused(String text, String how) async {
+    /// (`__tooLong`, with the refusal's "X,Y" [counts], or `__contextFull`).
+    Future<Object?> refused(String text, String how, [String? counts]) async {
       final reply = conversation
           .sendMessageStream(Message.user(text))
           .drain<void>()
           .then<Object?>((_) => null, onError: (Object e) => e);
       await settle();
-      js(how);
+      js(how, counts);
       return reply;
     }
+
+    /// A message far longer than the window (5000 words).
+    final long = 'word ' * 5000;
 
     test('a message too long for the room left is a ContextFullException, '
         'and the turn ends at the context limit', () async {
       expect(
-        await refused('Long', '__tooLong'),
+        await refused(long, '__tooLong'),
         errorWith<ContextFullException>('Send a shorter message'),
       );
       expect(lastEnd(), web.NativeLastTurnEnd.contextFull);
@@ -562,7 +565,7 @@ void main() {
     test('the next, shorter message goes to a conversation rebuilt without '
         'the refused one, and is answered', () async {
       await exchange(conversation, 'One', 'Uno');
-      await refused('Long', '__tooLong');
+      await refused(long, '__tooLong');
 
       await exchange(conversation, 'Short', 'Ok');
 
@@ -577,6 +580,7 @@ void main() {
     test('a message refused while the history fills the window ends the '
         'conversation: every later message fails without being sent', () async {
       setOnPage('tokenCount', 4096);
+      await exchange(conversation, 'One', 'Uno');
       expect(
         await refused('Long', '__contextFull'),
         errorWith<ContextFullException>(
@@ -589,7 +593,7 @@ void main() {
         emitsError(errorWith<ContextFullException>('Open a new conversation')),
       );
       expect(lastEnd(), web.NativeLastTurnEnd.contextFull);
-      expect(list('sent'), ['Long']);
+      expect(list('sent'), ['One', 'Long']);
       expect(list('conversationOptions'), hasLength(1));
     });
 
@@ -602,17 +606,185 @@ void main() {
           .drain<void>()
           .then<Object?>((_) => null, onError: (Object e) => e);
       await settle();
-      // The runtime prefills a preface only at the first send (N5).
-      setOnPage('tokenCount', 0);
-      js('__tooLong');
+      // The rebuilt conversation counts 0: the runtime prefills a preface only
+      // at the first send (N5).
+      js('__tooLong', '4106,4096');
 
-      expect(await reply, errorWith<ContextFullException>('is full'));
+      expect(
+        await reply,
+        errorWith<ContextFullException>('of this conversation is full'),
+      );
       await expectLater(
         conversation.sendMessageStream(Message.user('Three')),
-        emitsError(errorWith<ContextFullException>('is full')),
+        emitsError(
+          errorWith<ContextFullException>('of this conversation is full'),
+        ),
       );
       expect(list('sent'), ['One', 'Two']);
     });
+
+    test('a history that leaves less room than a message\'s overhead ends '
+        'the conversation at the first refusal that counts it', () async {
+      setOnPage('tokenCount', 4090);
+      await exchange(conversation, 'One', 'Uno');
+      // The history overflows: refused without counts, so nothing is learnt
+      // and the conversation is rebuilt.
+      expect(
+        await refused('Hi', '__contextFull'),
+        errorWith<ContextFullException>('Send a shorter message'),
+      );
+      // The rebuilt conversation prefills the 4090 replayed tokens with the
+      // message: 9 tokens for 'Hi' (2 bytes), so the template adds at least
+      // 7, and 6 tokens of room take no message.
+      expect(
+        await refused('Hi', '__tooLong', '4099,4096'),
+        errorWith<ContextFullException>('of this conversation is full'),
+      );
+
+      await expectLater(
+        conversation.sendMessageStream(Message.user('Hi')),
+        emitsError(
+          errorWith<ContextFullException>('of this conversation is full'),
+        ),
+      );
+      expect(list('sent'), ['One', 'Hi', 'Hi']);
+    });
+
+    test('room one token above the overhead learnt is final too: a message\'s '
+        'text takes a token', () async {
+      setOnPage('tokenCount', 4088);
+      await exchange(conversation, 'One', 'Uno');
+      await refused('Hi', '__contextFull');
+
+      expect(
+        await refused('Hi', '__tooLong', '4097,4096'),
+        errorWith<ContextFullException>('of this conversation is full'),
+      );
+    });
+
+    test(
+      'room larger than the overhead learnt keeps the conversation going',
+      () async {
+        setOnPage('tokenCount', 4000);
+        await exchange(conversation, 'One', 'Uno');
+        await refused('Hi', '__contextFull');
+
+        expect(
+          await refused('Hi', '__tooLong', '4009,4096'),
+          errorWith<ContextFullException>('Send a shorter message'),
+        );
+      },
+    );
+
+    test('a message\'s own bytes are not taken for overhead', () async {
+      setOnPage('tokenCount', 4000);
+      await exchange(conversation, 'One', 'Uno');
+      await refused('Hi', '__contextFull');
+      // 'Hello there, friend' is 19 bytes of the 30 tokens: at least 11 for
+      // the template, so 96 tokens of room still take a message.
+      expect(
+        await refused('Hello there, friend', '__tooLong', '4030,4096'),
+        errorWith<ContextFullException>('Send a shorter message'),
+      );
+      setOnPage('tokenCount', 4080);
+      await exchange(conversation, 'Two', 'Dos');
+      await refused('Hi', '__contextFull');
+
+      // Room 16: more than 11 + 1, so still not final.
+      expect(
+        await refused('Hi', '__tooLong', '4089,4096'),
+        errorWith<ContextFullException>('Send a shorter message'),
+      );
+    });
+
+    test('the largest overhead learnt holds', () async {
+      setOnPage('tokenCount', 4000);
+      await exchange(conversation, 'One', 'Uno');
+      await refused('Hi', '__contextFull');
+      // At least 11 tokens of template (30 tokens, 19 bytes), then a refusal
+      // that alone bounds it at 7.
+      await refused('Hello there, friend', '__tooLong', '4030,4096');
+      await refused('Hi', '__tooLong', '4009,4096');
+      setOnPage('tokenCount', 4084);
+      await exchange(conversation, 'Two', 'Dos');
+
+      // 12 tokens of room are within the 11 learnt, plus one.
+      expect(
+        await refused('Hi', '__contextFull'),
+        errorWith<ContextFullException>('of this conversation is full'),
+      );
+    });
+
+    test('a rebuilt conversation refused before it prefilled still counts '
+        'the history it replays', () async {
+      setOnPage('tokenCount', 4000);
+      await exchange(conversation, 'One', 'Uno');
+      await refused('Hi', '__contextFull');
+      // Refused on the rebuilt conversation before anything was prefilled:
+      // it counts 0, and teaches nothing (no count).
+      await refused('Hi', '__contextFull');
+
+      // The next rebuild still replays 4000 tokens, so this count is 9 for
+      // 'Hi': 96 tokens of room take a message.
+      expect(
+        await refused('Hi', '__tooLong', '4009,4096'),
+        errorWith<ContextFullException>('Send a shorter message'),
+      );
+      // Had the count been read as 0, the overhead learnt would be 4007, and
+      // this conversation, back to counting 4000, would end here.
+      await exchange(conversation, 'Two', 'Dos');
+      expect(
+        await refused('Hi', '__contextFull'),
+        errorWith<ContextFullException>('Send a shorter message'),
+      );
+    });
+
+    test('a new conversation\'s first refusal, which counts its preface too, '
+        'teaches nothing', () async {
+      final prefaced = await engine.createConversation(
+        ConversationConfig(initialMessages: [Message.user('Remember this.')]),
+      );
+      final reply = prefaced
+          .sendMessageStream(Message.user('Hi'))
+          .drain<void>()
+          .then<Object?>((_) => null, onError: (Object e) => e);
+      await settle();
+      js('__tooLong', '4099,4096');
+
+      expect(
+        await reply,
+        errorWith<ContextFullException>('Send a shorter message'),
+      );
+    });
+
+    test(
+      'a refused message with a part that is not text teaches nothing',
+      () async {
+        setOnPage('tokenCount', 4090);
+        await exchange(conversation, 'One', 'Uno');
+        await refused('Hi', '__contextFull');
+        final reply = web
+            .conversationHandle(conversation)
+            .chatRawMessage(
+              jsonEncode({
+                'role': 'user',
+                'content': [
+                  {'type': 'text', 'text': 'Hi'},
+                  {'type': 'tool_response', 'name': 'f', 'response': 1},
+                ],
+              }),
+            )
+            .drain<void>()
+            .then<Object?>((_) => null, onError: (Object e) => e);
+        await settle();
+        js('__tooLong', '4099,4096');
+
+        expect(
+          await reply,
+          errorWith<ContextFullException>('Send a shorter message'),
+        );
+      },
+    );
 
     test('a rebuild the runtime refuses for it is a ContextFullException, '
         'and so is every later message', () async {
@@ -643,6 +815,7 @@ void main() {
     test('a turn queued on the handle while the window filled fails without '
         'being sent', () async {
       setOnPage('tokenCount', 4096);
+      await exchange(conversation, 'One', 'Uno');
       final handle = web.conversationHandle(conversation);
       final first = handle
           .chatRawMessage(jsonEncode(userPart('Long')))
@@ -650,14 +823,16 @@ void main() {
           .catchError((Object _) {});
       final second = expectLater(
         handle.chatRawMessage(jsonEncode(userPart('Short'))),
-        emitsError(errorWith<ContextFullException>('is full')),
+        emitsError(
+          errorWith<ContextFullException>('of this conversation is full'),
+        ),
       );
       await settle();
       js('__contextFull');
       await first;
       await second;
 
-      expect(list('sent'), hasLength(1));
+      expect(list('sent'), hasLength(2));
     });
 
     test('a turn that ends normally records no end', () async {

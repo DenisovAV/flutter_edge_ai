@@ -111,8 +111,11 @@ const _stub = r'''
     };
     c.getTokenCount = () => {
       p.tokenCounts++;
-      if (p.holdFence) return new Promise((resolve) => p.fences.push(() => resolve(p.tokenCount)));
-      return Promise.resolve(p.tokenCount);
+      // As 0.19.0 (N5): a conversation counts nothing until something was
+      // prefilled on it; a refused message is not counted.
+      const n = c.prefilled ? p.tokenCount : 0;
+      if (p.holdFence) return new Promise((resolve) => p.fences.push(() => resolve(n)));
+      return Promise.resolve(n);
     };
     c.delete = () => {
       p.conversationDeletes++;
@@ -134,16 +137,22 @@ const _stub = r'''
   window.__generated = () => {
     const s = open();
     s.generated = true;
+    s.conversation.prefilled = true;
     s.conversation.history.push(
       asHistory(s.message),
       {role: 'assistant', content: [{type: 'text', text: s.text}]});
   };
   window.__step = (text) => {
     const s = open();
+    s.conversation.prefilled = true;
     s.text += text;
     s.controller.enqueue({role: 'assistant', content: [{type: 'text', text}]});
   };
-  window.__chunk = (json) => open().controller.enqueue(JSON.parse(json));
+  window.__chunk = (json) => {
+    const s = open();
+    s.conversation.prefilled = true;
+    s.controller.enqueue(JSON.parse(json));
+  };
   // A chunk JSON.stringify cannot write.
   window.__unwritable = () => open().controller.enqueue({n: 1n});
   window.__end = () => {
@@ -172,13 +181,16 @@ const _stub = r'''
   // A message longer than the room the window has left: as 0.19.0 (N5), it
   // is refused, kept at the end of the history, and the conversation refuses
   // every later send.
-  window.__tooLong = () => {
+  // [counts] is "X,Y" as the refusal names them: X the tokens that call
+  // would prefill, Y the window.
+  window.__tooLong = (counts) => {
+    const [x, y] = (counts || '5000,4096').split(',');
     const s = open();
     s.closed = true;
     s.conversation.failed = true;
     s.conversation.history.push(asHistory(s.message));
     s.controller.error(new Error(
-      'Input token ids are too long. Exceeding the maximum number of tokens allowed: 611 >= 256'));
+      'Input token ids are too long. Exceeding the maximum number of tokens allowed: ' + x + ' >= ' + y));
   };
   window.__releaseFences = () => { for (const f of p.fences.splice(0)) f(); };
   window.__releaseHistories = () => { for (const f of p.histories.splice(0)) f(); };

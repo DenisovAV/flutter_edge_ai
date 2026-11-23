@@ -112,6 +112,19 @@ final class WebConversationHandle implements ConversationHandle {
   /// so a new conversation counts 0 until then (N5, 0.19.0).
   int _replayedTokens = 0;
 
+  /// Whether the runtime conversation was rebuilt here: until something is
+  /// prefilled on it (it counts 0 until then, N5), its first send prefills
+  /// the replayed history with the message, and a refusal's count holds both
+  /// (N7, 0.19.0).
+  bool _rebuilt = false;
+
+  /// A lower bound on the tokens the chat template adds to a message, learnt
+  /// from refusals (N7: "Input token ids are too long… X >= Y" counts what
+  /// that call would prefill). The web cannot read the template, as natively
+  /// the bundle's prefill lengths are read: the count less the message's
+  /// UTF-8 bytes is at most the overhead, as no token spans less than a byte.
+  int _overheadAtLeast = 0;
+
   /// The images the current runtime conversation holds: its preface's, its
   /// replayed exchanges' and every message sent on it since. A turn that
   /// failed or was stopped still counts until the rebuild it forces recounts
@@ -153,6 +166,58 @@ final class WebConversationHandle implements ConversationHandle {
     }
     if (_cannotContinue case final why?) return LiteRtLmNativeException(why);
     return null;
+  }
+
+  /// Whether, after the runtime refused [message] for its size, the history
+  /// alone leaves no room for any message, as natively a conversation whose
+  /// room is below its shortest prefill is (`liteRtLmPrefillFits`). [count]
+  /// is what the conversation holds (`getTokenCount()`; the runtime does not
+  /// count a refused message, N5). Final when the history fills the window,
+  /// or when the room left is at most the template's overhead learnt from
+  /// refusals plus one token, the least a message's text takes.
+  bool _historyLeavesNoRoom(
+    int? count,
+    Map<String, Object?> message,
+    Object error,
+  ) {
+    if (_maxTokens <= 0) return false;
+    final held = max(count ?? 0, _rebuilt ? _replayedTokens : 0);
+    // Learnt on a rebuilt conversation, whose first call prefills the
+    // replayed history, then the message. A new conversation's first call
+    // also holds its preface and the BOS token, so it teaches nothing. Once a
+    // conversation has prefilled, a count is the message alone, refused for
+    // being longer than the window: with the replay taken off it bounds
+    // nothing (a token is at least a byte), which is harmless.
+    final counts = RegExp(r'(\d+) >= \d+').firstMatch('$error');
+    if (counts != null && _rebuilt) {
+      if (_textBytes(message) case final bytes?) {
+        final turnTokens = int.parse(counts.group(1)!) - _replayedTokens;
+        _overheadAtLeast = max(_overheadAtLeast, turnTokens - bytes);
+      }
+    }
+    final room = _maxTokens - held;
+    return room <= 0 || (_overheadAtLeast > 0 && room <= _overheadAtLeast + 1);
+  }
+
+  /// The UTF-8 bytes of [message]'s text, or null when it holds anything
+  /// else (media, a tool response), whose tokens cannot be bounded here.
+  static int? _textBytes(Map<String, Object?> message) {
+    switch (message['content']) {
+      case final String text:
+        return utf8.encode(text).length;
+      case final List<Object?> parts:
+        var bytes = 0;
+        for (final part in parts) {
+          if (part case {'type': 'text', 'text': final String text}) {
+            bytes += utf8.encode(text).length;
+          } else {
+            return null;
+          }
+        }
+        return bytes;
+      default:
+        return null;
+    }
   }
 
   static bool _isContextFull(Object error) =>
@@ -438,13 +503,9 @@ final class WebConversationHandle implements ConversationHandle {
           // 0.19.0 rejects from inside the generation's chunk callback:
           // wait until it has left the module before the page is let go.
           _armDrain(turn, 'its stream failed');
-          _fence().then((held) {
-            // What the conversation held before this message (the runtime
-            // does not count a refused one, N5): the history alone fills the
-            // window, so no rebuild can take it.
+          _fence().then((count) {
             if (_lastTurnEnd == NativeLastTurnEnd.contextFull &&
-                _maxTokens > 0 &&
-                max(held ?? 0, _replayedTokens) >= _maxTokens) {
+                _historyLeavesNoRoom(count, turn.message, error)) {
               _contextFull = _contextFullMessage(error);
             }
             if (turn.asked || turn.fault != null) {
@@ -759,7 +820,11 @@ final class WebConversationHandle implements ConversationHandle {
       );
     }
     final old = _conversation;
-    _replayedTokens = await _fence() ?? 0;
+    // A conversation refused before anything was prefilled on it counts 0
+    // (N5) but still holds the history it was rebuilt with; the history only
+    // grows (a refused message is not counted, nor replayed).
+    _replayedTokens = max(await _fence() ?? 0, _replayedTokens);
+    _rebuilt = true;
     _conversation = next;
     _replayed = replay;
     _images = _imagesIn([..._preface, ...replay]);

@@ -11,6 +11,8 @@
 @TestOn('browser')
 library;
 
+import 'dart:convert';
+
 import 'package:litertlm_dart/internal_web.dart' as web;
 import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:test/test.dart';
@@ -524,6 +526,108 @@ void main() {
     });
   });
 
+  group('a full context window', () {
+    late web.Engine engine;
+    late Conversation conversation;
+    setUp(() async {
+      engine = await webEngine();
+      conversation = await engine.createConversation();
+    });
+    tearDown(() => engine.close());
+
+    /// Sends [text] and has the runtime refuse it for a full context window.
+    Future<Object?> refusedForContext(String text) async {
+      final reply = conversation
+          .sendMessageStream(Message.user(text))
+          .drain<void>()
+          .then<Object?>((_) => null, onError: (Object e) => e);
+      await settle();
+      js('__contextFull');
+      return reply;
+    }
+
+    test('a message the runtime refuses for it is a ContextFullException, '
+        'and the turn ends at the context limit', () async {
+      expect(
+        await refusedForContext('Long'),
+        errorWith<ContextFullException>(
+          'The context window of this conversation is full',
+        ),
+      );
+      expect(
+        web.conversationHandle(conversation).lastTurnEnd,
+        web.NativeLastTurnEnd.contextFull,
+      );
+    });
+
+    test('every later message fails the same way, without being sent or '
+        'rebuilt', () async {
+      await refusedForContext('Long');
+
+      await expectLater(
+        conversation.sendMessageStream(Message.user('Short')),
+        emitsError(errorWith<ContextFullException>('Open a new conversation')),
+      );
+      expect(
+        web.conversationHandle(conversation).lastTurnEnd,
+        web.NativeLastTurnEnd.contextFull,
+      );
+      expect(list('sent'), ['Long']);
+      expect(list('conversationOptions'), hasLength(1));
+    });
+
+    test('a rebuild the runtime refuses for it is a ContextFullException, '
+        'and so is every later message', () async {
+      await stoppedExchange(conversation, 'One', 'Un');
+      setOnPage(
+        'conversationError',
+        'Max number of tokens reached, the context window is full.',
+      );
+
+      await expectLater(
+        conversation.sendMessageStream(Message.user('Two')),
+        emitsError(
+          errorWith<ContextFullException>('Max number of tokens reached'),
+        ),
+      );
+      setOnPage('conversationError', null);
+      await expectLater(
+        conversation.sendMessageStream(Message.user('Three')),
+        emitsError(
+          errorWith<ContextFullException>(
+            'The context window of this conversation is full',
+          ),
+        ),
+      );
+      expect(list('conversationOptions'), hasLength(2));
+    });
+
+    test('a turn queued on the handle while the window filled fails without '
+        'being sent', () async {
+      final handle = web.conversationHandle(conversation);
+      final first = handle
+          .chatRawMessage(jsonEncode(userPart('Long')))
+          .drain<void>()
+          .catchError((Object _) {});
+      final second = expectLater(
+        handle.chatRawMessage(jsonEncode(userPart('Short'))),
+        emitsError(errorWith<ContextFullException>('is full')),
+      );
+      await settle();
+      js('__contextFull');
+      await first;
+      await second;
+
+      expect(list('sent'), hasLength(1));
+    });
+
+    test('a turn that ends normally records no end', () async {
+      await exchange(conversation, 'One', 'Uno');
+
+      expect(web.conversationHandle(conversation).lastTurnEnd, isNull);
+    });
+  });
+
   group('a rebuild that fails', () {
     late web.Engine engine;
     late Conversation conversation;
@@ -576,15 +680,44 @@ void main() {
       );
     });
 
-    test('on a history media part of an unknown shape is a '
-        'LiteRtLmNativeException naming it', () async {
+    test('on a history media part of an unknown shape ends the '
+        'conversation, naming the part', () async {
       setOnPage('oddMediaInHistory', true);
 
       await expectLater(
         conversation.sendMessageStream(Message.user('Two')),
-        failsRebuild('a blob of an unknown shape'),
+        emitsError(
+          isA<TurnFailedException>().having(
+            (e) => '${web.turnFailureCause(e)}',
+            'cause',
+            allOf(
+              contains('This conversation cannot continue'),
+              contains('a blob of an unknown shape'),
+              contains('Open a new conversation'),
+            ),
+          ),
+        ),
       );
       setOnPage('oddMediaInHistory', false);
+    });
+
+    test('that cannot replay the history fails every later message the '
+        'same way, without trying again', () async {
+      setOnPage('oddMediaInHistory', true);
+      await conversation
+          .sendMessageStream(Message.user('Two'))
+          .drain<void>()
+          .catchError((Object _) {});
+      setOnPage('oddMediaInHistory', false);
+
+      await expectLater(
+        conversation.sendMessageStream(Message.user('Three')),
+        emitsError(
+          errorWith<TurnFailedException>('This conversation cannot continue'),
+        ),
+      );
+      expect(list('conversationOptions'), hasLength(1));
+      expect(list('sent'), ['One']);
     });
 
     test('is tried again by the next message, which then goes to the '

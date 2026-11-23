@@ -591,7 +591,19 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   taken back, as natively. A stop with nothing in flight, or after the last
   chunk, changes nothing. A turn the runtime fails
   leaves the conversation refusing every later send too; the next message
-  goes to one rebuilt without the failed message. A stopped generation that
+  goes to one rebuilt without the failed message. A rebuild that fails is
+  tried again by the next message, except where it cannot succeed: a
+  history holding a part it cannot replay ends the conversation with a
+  `TurnFailedException` that says to open a new one.
+- **A full context window.** When the runtime refuses a message because the
+  window is full ("Max number of tokens reached, the context window is
+  full.", 0.19.0), it refuses every later one, and a rebuild would replay the
+  same history. That turn and every later one fail with
+  `ContextFullException`, without being sent, as natively a conversation
+  with no room left ends every turn at the context limit; nothing is
+  truncated. Open a new conversation, or load the model with a larger
+  `maxNumTokens`. A reply that fills the window ends normally (0.19.0 reports
+  nothing), so the turn after it is the one refused. A stopped generation that
   does not end within 30 s, after a stop or a close, makes the page unusable
   for LiteRT-LM (the module may still be suspended in it): the turn,
   `close()` and every later call fail and say so.

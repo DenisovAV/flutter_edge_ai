@@ -12,7 +12,6 @@ import 'package:flutter/foundation.dart';
 
 import 'package:litertlm_dart/internal_io.dart'
     show
-        NativeLastTurnEnd,
         ScoringStoppedError,
         conversationHandle,
         conversationTokenCount,
@@ -1202,31 +1201,6 @@ class FfiInferenceModelSession extends InferenceModelSession
     onClose();
   }
 }
-
-/// How a native turn whose text ran to its end ended, from native's turn-end
-/// record ([NativeLastTurnEnd], §23; litertlm_dart keeps it internal, as
-/// LiteRT-LM's Kotlin and Swift APIs report no end reason): the end of the
-/// reply is [TurnEnd.endOfSequence], `max_output_tokens`
-/// [TurnEnd.outputLimit], a decode that filled the context window (and an
-/// input that did not fit, should one ever end without an error)
-/// [TurnEnd.contextLimit]. Without a record, or with one no completed send
-/// leaves, it is [liteRtLmPlaceholderCompletedEnd]'s guess.
-@visibleForTesting
-TurnEnd liteRtLmCompletedTurnEnd(
-  NativeLastTurnEnd? end,
-  int? maxOutputTokens,
-) => switch (end) {
-  NativeLastTurnEnd.completed => TurnEnd.endOfSequence,
-  NativeLastTurnEnd.outputLimit => TurnEnd.outputLimit,
-  NativeLastTurnEnd.contextLimit ||
-  NativeLastTurnEnd.contextFull => TurnEnd.contextLimit,
-  NativeLastTurnEnd.none ||
-  NativeLastTurnEnd.cancelled ||
-  NativeLastTurnEnd.failed ||
-  NativeLastTurnEnd.running ||
-  NativeLastTurnEnd.refused ||
-  null => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
-};
 
 /// [call], with a failed native call thrown as the [StateError] core's
 /// option scoring has always got.

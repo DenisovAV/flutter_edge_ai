@@ -1038,7 +1038,9 @@ images on the web (natively a message's): the model reserves their space up
 front (unset: 1), and an image past it is refused before it is sent. `loraPath` throws. A stopped
 reply is kept as on native (its text, or the tool calls it made): the next
 message goes to a conversation rebuilt from the history, because the runtime
-refuses every send after a stop mid-reply.
+refuses every send after a stop mid-reply. Once the context window is full,
+as on native, every turn fails with `ContextLimitException` and ends
+`TurnEnd.contextLimit`: open a new session, or raise `maxTokens`.
 `openSession(maxOutputTokens:)` is honoured here as it is on native, and
 `maxTokens` reaches the runtime (core's default context is 1024 tokens).
 The page must import `@litert-lm/core` 0.19.0: 0.18.0 refuses the GPU export

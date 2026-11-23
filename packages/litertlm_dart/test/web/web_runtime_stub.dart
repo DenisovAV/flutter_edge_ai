@@ -36,6 +36,7 @@ const _stub = r'''
     resolvedVisionBackend: null, resolvedAudioBackend: null,
   };
   const open = () => p.streams.find((s) => !s.closed);
+  const contextFull = 'Max number of tokens reached, the context window is full.';
   // The image parts of a message.
   const images = (m) => (m && Array.isArray(m.content))
     ? m.content.filter((x) => x.type === 'image').length : 0;
@@ -59,6 +60,10 @@ const _stub = r'''
       if (c.dead) {
         entry.closed = true;
         queueMicrotask(() => controller.error(new Error('Task cancelled')));
+      } else if (c.full) {
+        // As 0.19.0 once the context window is full (N3): every send refused.
+        entry.closed = true;
+        queueMicrotask(() => controller.error(new Error(contextFull)));
       } else if (c.failed) {
         entry.closed = true;
         queueMicrotask(() => controller.error(new Error('Task failed with state: 7')));
@@ -153,6 +158,14 @@ const _stub = r'''
     s.conversation.failed = true;
     s.conversation.history.push(asHistory(s.message));
     s.controller.error(new Error(message));
+  };
+  // The conversation's context window fills: as 0.19.0 (N3), the send is
+  // refused, and so is every later one.
+  window.__contextFull = () => {
+    const s = open();
+    s.closed = true;
+    s.conversation.full = true;
+    s.controller.error(new Error(contextFull));
   };
   window.__releaseFences = () => { for (const f of p.fences.splice(0)) f(); };
   window.__releaseHistories = () => { for (const f of p.histories.splice(0)) f(); };

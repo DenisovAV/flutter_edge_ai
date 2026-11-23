@@ -17,7 +17,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:litertlm_dart/internal.dart'
-    show liteRtLmWebRuntime, messageJson, messageRawJson;
+    show conversationHandle, liteRtLmWebRuntime, messageJson, messageRawJson;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'package:mutex/mutex.dart';
 
@@ -777,7 +777,12 @@ class LiteRtLmWebSession extends InferenceModelSession
       stopped: () => _stopAsked,
       closed: () => _isClosed,
       isCloseError: (error) => error is LiteRtLmSessionClosedError,
-      completed: () => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
+      // As natively: a turn the runtime refused for a full context window
+      // ends at the context limit.
+      completed: () => liteRtLmCompletedTurnEnd(
+        conversationHandle(conversation).lastTurnEnd,
+        maxOutputTokens,
+      ),
     );
   }
 

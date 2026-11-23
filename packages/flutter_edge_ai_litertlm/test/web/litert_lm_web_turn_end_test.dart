@@ -136,4 +136,44 @@ void main() {
       ),
     );
   });
+
+  test('a message the runtime refuses for a full context window is '
+      'ContextLimitException and TurnEnd.contextLimit, and so is the next '
+      'one, never sent', () async {
+    var sent = 0;
+    final iterator = JSObject()
+      ..['next'] = (() => Future<JSObject>.error(
+        StateError('Max number of tokens reached, the context window is full.'),
+      ).toJS).toJS;
+    final conversation = JSObject()
+      ..['sendMessageStreaming'] = ((JSAny? message) {
+        sent++;
+        return iterator;
+      }).toJS
+      ..['cancel'] = (() {}).toJS
+      ..['getTokenCount'] = (() => Future<JSNumber>.value(1.toJS).toJS).toJS
+      ..['delete'] = (() => Future<void>.value().toJS).toJS;
+    final session = webSessionOver(conversation);
+
+    for (final text in ['A long message.', 'Short.']) {
+      await session.addQueryChunk(Message(text: text, isUser: true));
+      final turn = _turn(session);
+      // As core's chat reads a turn: its error does not cancel the text.
+      final errors = <Object>[];
+      final done = Completer<void>();
+      turn.text.listen((_) {}, onError: errors.add, onDone: done.complete);
+      await done.future;
+
+      expect(
+        errors.single,
+        isA<ContextLimitException>().having(
+          (e) => '$e',
+          'message',
+          contains('The context window of this conversation is full'),
+        ),
+      );
+      expect(await turn.end, TurnEnd.contextLimit, reason: text);
+    }
+    expect(sent, 1);
+  });
 }

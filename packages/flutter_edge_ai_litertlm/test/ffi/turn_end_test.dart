@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/reported_engine_turn.dart'
+    show liteRtLmCompletedTurnEnd;
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:litertlm_dart/internal.dart' hide ActivationDataType;

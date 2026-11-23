@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:litertlm_dart/internal.dart' show NativeLastTurnEnd;
 
 /// [text] as an [EngineTurn] whose `end` says how the turn ended, for a
 /// session that knows when it was stopped or closed.
@@ -103,3 +104,28 @@ EngineTurn reportedEngineTurn(
 /// ends are guessed keeps `StructuredOutputSupport.none`.
 TurnEnd liteRtLmPlaceholderCompletedEnd(int? maxOutputTokens) =>
     maxOutputTokens == null ? TurnEnd.endOfSequence : TurnEnd.outputLimit;
+
+/// How a turn whose text ran to its end ended, from the conversation's
+/// turn-end record ([NativeLastTurnEnd]: native's §23, and on the web a full
+/// context window; litertlm_dart keeps it internal, as
+/// LiteRT-LM's Kotlin and Swift APIs report no end reason): the end of the
+/// reply is [TurnEnd.endOfSequence], `max_output_tokens`
+/// [TurnEnd.outputLimit], a decode that filled the context window (and an
+/// input that did not fit, should one ever end without an error)
+/// [TurnEnd.contextLimit]. Without a record, or with one no completed send
+/// leaves, it is [liteRtLmPlaceholderCompletedEnd]'s guess.
+TurnEnd liteRtLmCompletedTurnEnd(
+  NativeLastTurnEnd? end,
+  int? maxOutputTokens,
+) => switch (end) {
+  NativeLastTurnEnd.completed => TurnEnd.endOfSequence,
+  NativeLastTurnEnd.outputLimit => TurnEnd.outputLimit,
+  NativeLastTurnEnd.contextLimit ||
+  NativeLastTurnEnd.contextFull => TurnEnd.contextLimit,
+  NativeLastTurnEnd.none ||
+  NativeLastTurnEnd.cancelled ||
+  NativeLastTurnEnd.failed ||
+  NativeLastTurnEnd.running ||
+  NativeLastTurnEnd.refused ||
+  null => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
+};

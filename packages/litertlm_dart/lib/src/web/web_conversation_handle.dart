@@ -47,6 +47,7 @@ import 'dart:typed_data';
 import '../ffi/native_turns.dart' show LiteRtLmTurnClosedException;
 import 'package:meta/meta.dart' show visibleForTesting;
 
+import '../api/conversation.dart' show ContextFullException;
 import '../api/message.dart' show messageFromChunk;
 import '../runtime/conversation_handle.dart';
 import '../runtime/errors.dart' show LiteRtLmNativeException;
@@ -113,6 +114,41 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// Why the conversation must be rebuilt, for the errors of a rebuild.
   String _rebuildCause = 'a stopped reply';
+
+  /// Set once the runtime refused a message because the context window is
+  /// full (N3, 0.19.0: "Max number of tokens reached, the context window is
+  /// full."): it then refuses every later message, and a rebuild would replay
+  /// the same history. Every later turn fails with [ContextFullException]
+  /// without being sent, as natively a session with no room left ends every
+  /// turn at the context limit; nothing is truncated.
+  String? _contextFull;
+
+  /// Why the conversation cannot continue (a history no rebuild can
+  /// replay): every later turn fails with it without being sent.
+  String? _cannotContinue;
+
+  /// How the last turn ended, where the web can tell: the context window
+  /// full ([NativeLastTurnEnd.contextFull]), which is final; else null.
+  NativeLastTurnEnd? _lastTurnEnd;
+
+  /// The error a turn gets on a conversation that cannot take it, or null.
+  Object? _deadEnd() {
+    if (_contextFull case final why?) {
+      _lastTurnEnd = NativeLastTurnEnd.contextFull;
+      return ContextFullException(why);
+    }
+    if (_cannotContinue case final why?) return LiteRtLmNativeException(why);
+    return null;
+  }
+
+  static bool _isContextFull(Object error) =>
+      '$error'.contains('Max number of tokens reached');
+
+  static String _contextFullMessage(Object error) =>
+      'The context window of this conversation is full: $liteRtLmWebRuntime '
+      'refused the message ($error) and refuses every later one, and its '
+      'history would not fit a new conversation either. Open a new '
+      'conversation, or load the model with a larger maxNumTokens.';
   final bool _audio;
 
   final bool _enableThinking;
@@ -369,8 +405,13 @@ final class WebConversationHandle implements ConversationHandle {
               ),
             );
           } else if (!turn.asked && turn.fault == null) {
-            _rebuildCause = 'a failed turn';
-            _failed = turn.message;
+            if (_isContextFull(error)) {
+              _contextFull = _contextFullMessage(error);
+              _lastTurnEnd = NativeLastTurnEnd.contextFull;
+            } else {
+              _rebuildCause = 'a failed turn';
+              _failed = turn.message;
+            }
           }
           // 0.19.0 rejects from inside the generation's chunk callback:
           // wait until it has left the module before the page is let go.
@@ -385,7 +426,12 @@ final class WebConversationHandle implements ConversationHandle {
               );
               finishAsked(stack);
             } else {
-              finish(error: _typed(error), stack: stack);
+              finish(
+                error: _lastTurnEnd == NativeLastTurnEnd.contextFull
+                    ? ContextFullException(_contextFull!)
+                    : _typed(error),
+                stack: stack,
+              );
             }
           });
         }
@@ -415,6 +461,12 @@ final class WebConversationHandle implements ConversationHandle {
         } else {
           finish();
         }
+        return;
+      }
+      // A conversation at a dead end (also one reached while this turn was
+      // queued) sends nothing more.
+      if (_deadEnd() case final error?) {
+        finish(error: error, stack: StackTrace.current);
         return;
       }
       // From here the turn holds the page until its stream ends; close()
@@ -613,7 +665,10 @@ final class WebConversationHandle implements ConversationHandle {
   /// by one rebuilt from the preface, the exchanges replayed so far and the
   /// runtime's history, the stopped exchange put back, and deletes the old
   /// one. Runs holding the page lock. Fails with a [LiteRtLmNativeException]
-  /// and leaves the conversation as it was: the next message tries again.
+  /// and leaves the conversation as it was, so the next message tries again;
+  /// except where no rebuild can succeed: a history it cannot replay ends
+  /// the conversation, and a new conversation the runtime refuses because
+  /// the history fills its context window is [ContextFullException].
   Future<void> _rebuildConversation() async {
     final List<Object?> history;
     try {
@@ -621,6 +676,14 @@ final class WebConversationHandle implements ConversationHandle {
         for (final message in (await _conversation.getHistory().toDart).toDart)
           _replayable(message.dartify()),
       ];
+    } on FormatException catch (e) {
+      // The same history every time: no later rebuild can replay it.
+      throw LiteRtLmNativeException(
+        _cannotContinue =
+            'This conversation cannot continue: after $_rebuildCause its '
+            'history holds what a rebuild cannot replay (${e.message}). Open a '
+            'new conversation.',
+      );
     } catch (e) {
       throw LiteRtLmNativeException(
         'Could not read the history of the conversation after '
@@ -648,6 +711,10 @@ final class WebConversationHandle implements ConversationHandle {
     try {
       next = await _rebuild(replay);
     } catch (e) {
+      if (_isContextFull(e)) {
+        _lastTurnEnd = NativeLastTurnEnd.contextFull;
+        throw ContextFullException(_contextFull = _contextFullMessage(e));
+      }
       throw LiteRtLmNativeException(
         'Could not rebuild the conversation after $_rebuildCause: '
         '${e is LiteRtLmNativeException ? e.message : e}. $_untilRebuilt',
@@ -694,7 +761,7 @@ final class WebConversationHandle implements ConversationHandle {
   NativeBenchmark? getNativeBenchmark() => null;
 
   @override
-  NativeLastTurnEnd? get lastTurnEnd => null;
+  NativeLastTurnEnd? get lastTurnEnd => _lastTurnEnd;
 
   @override
   int? get lastTurnCode => null;

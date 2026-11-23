@@ -238,8 +238,9 @@ final class WebConversationHandle implements ConversationHandle {
 
         void onError(Object error, StackTrace stack) {
           if (turn.asked) {
-            // How the runtime ends a stopped generation (0.19.0 rejects the
-            // stream) is its business: the turn was asked to end, and it did.
+            // How the runtime ends a stopped generation (it rejects the
+            // stream with "Task cancelled") is its business: the turn was
+            // asked to end, and it did.
             runtimeLog(
               '[WebConversationHandle] the stopped generation ended with '
               '$error',
@@ -404,7 +405,7 @@ final class WebConversationHandle implements ConversationHandle {
       '(${history.length} messages replayed)',
     );
     try {
-      await old.delete().toDart;
+      await awaitIfThenable(old.delete());
     } catch (e) {
       runtimeLog('[WebConversationHandle] deleting the stopped one: $e');
     }
@@ -467,7 +468,7 @@ final class WebConversationHandle implements ConversationHandle {
         }
       }
       try {
-        await _conversation.delete().toDart;
+        await awaitIfThenable(_conversation.delete());
       } catch (e) {
         runtimeLog('[WebConversationHandle] conversation.delete() failed: $e');
       }

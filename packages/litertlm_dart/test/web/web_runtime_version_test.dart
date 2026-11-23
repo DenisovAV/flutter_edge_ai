@@ -61,23 +61,35 @@ void main() {
     });
   }
 
-  // The web EG2 suites compare against the native goldens: those must come
-  // from the LiteRT-LM release the page runs, or a drift reads as a fault.
-  for (final golden in ['eg2_audio_golden.json', 'eg2_text_golden.json']) {
-    test(
-      '$golden comes from LiteRT-LM $liteRtLmWebRuntimeVersion\'s major.minor',
-      () {
-        final json =
-            jsonDecode(
-                  File(
-                    '../flutter_edge_ai/example/integration_test/goldens/$golden',
-                  ).readAsStringSync(),
-                )
-                as Map<String, Object?>;
-        final runtime = (json['runtime']! as Map)['litert-lm'] as String;
-        String majorMinor(String v) => v.split('.').take(2).join('.');
-        expect(majorMinor(runtime), majorMinor(liteRtLmWebRuntimeVersion));
-      },
-    );
+  // The web EG2 suites compare against frozen goldens of the LiteRT-LM
+  // release the page runs (integration_test/goldens/*_web.dart), or a drift
+  // between releases reads as a fault. Moving the pin means new goldens.
+  String majorMinor(String v) => v.split('.').take(2).join('.');
+  Map<String, Object?> webGolden(String file) {
+    final source = File(
+      '../flutter_edge_ai/example/integration_test/goldens/$file',
+    ).readAsStringSync();
+    final start = source.indexOf("r'''") + 4;
+    return jsonDecode(source.substring(start, source.indexOf("'''", start)))
+        as Map<String, Object?>;
   }
+
+  test('eg2_audio_golden_web.dart comes from LiteRT-LM '
+      '$liteRtLmWebRuntimeVersion\'s major.minor', () {
+    final runtime =
+        (webGolden('eg2_audio_golden_web.dart')['runtime']! as Map)['litert-lm']
+            as String;
+    expect(majorMinor(runtime), majorMinor(liteRtLmWebRuntimeVersion));
+  });
+
+  test('eg2_text_golden_web.dart comes from a native build of LiteRT-LM '
+      '$liteRtLmWebRuntimeVersion\'s major.minor', () {
+    final tag =
+        (webGolden('eg2_text_golden_web.dart')['native_library']! as Map)['tag']
+            as String;
+    expect(
+      tag,
+      startsWith('native-v${majorMinor(liteRtLmWebRuntimeVersion)}.'),
+    );
+  });
 }

@@ -38,9 +38,10 @@
 //   (`visionBackend` unset = vision disabled on the web), at 140 or 70 tokens
 //   per image (D25). The web runtime has no ModelInfo, so whether the bundle
 //   HAS a vision encoder is read from its container header, as for audio
-//   below: `@litert-lm/core` 0.18.0 refused the 270m's missing vision tower
-//   in `EmbeddingEngine.create`, 0.19.0 creates the engine anyway (measured
-//   2026-11-23), and the load error names the bundle that embeds images.
+//   below, and the load error names the bundle that embeds images.
+//   `EmbeddingEngine.create` of 0.18.0 refuses the 270m's missing vision
+//   tower itself; the header check keeps that answer the package's own, since
+//   0.19.0 creates the engine anyway (measured 2026-11-23).
 // - The audio tower is created only when audio is declared (`audioBackend`
 //   unset = audio disabled), on WebGPU like the rest (see
 //   [liteRtLmWebAudioBackend] for the measurement behind it). Whether the
@@ -219,8 +220,8 @@ enum LiteRtLmWebRuntimeState {
   /// written for the LLM engine only.
   embeddingEngineMissing,
 
-  /// `window.EmbeddingEngine` is from another `@litert-lm/core` than
-  /// [liteRtLmWebRuntimeVersion].
+  /// `window.EmbeddingEngine` lacks what this release calls: a
+  /// `@litert-lm/core` older than [liteRtLmWebRuntimeVersion].
   otherRuntimeVersion,
 }
 
@@ -523,11 +524,10 @@ final class LiteRtLmWebEmbedder {
     try {
       // From the container, before any engine exists (D23), one read for
       // both towers. Audio: describe() has asked already; this is the
-      // backstop for an embedder built another way. Images: `@litert-lm/core`
-      // 0.18.0 refused a vision tower the bundle lacks in
-      // `EmbeddingEngine.create`, but 0.19.0 creates the engine (measured on
-      // the 270m, Chrome 157, 2026-11-23), so the header decides, as ModelInfo
-      // does natively.
+      // backstop for an embedder built another way. Images: the header
+      // decides, as ModelInfo does natively; `EmbeddingEngine.create` of
+      // 0.18.0 refuses a vision tower the bundle lacks, 0.19.0 does not
+      // (measured on the 270m, Chrome 157, 2026-11-23).
       if (audio || images) {
         final types = await _modelTypes(
           _config.runtime,
@@ -685,8 +685,8 @@ final class LiteRtLmWebEmbedder {
         );
       case LiteRtLmWebRuntimeState.otherRuntimeVersion:
         throw const EmbedderLoadException(
-          'web/index.html loads another @litert-lm/core than '
-          '$liteRtLmWebRuntimeVersion, which this release drives: import '
+          'The page\'s @litert-lm/core EmbeddingEngine lacks what this '
+          'release calls (computeEmbedding, delete): import '
           '$liteRtLmWebModuleUrl in its module script.',
         );
     }

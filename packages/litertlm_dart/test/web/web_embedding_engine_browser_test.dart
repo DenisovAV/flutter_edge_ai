@@ -21,7 +21,8 @@ const _stub = r'''
 (() => {
   const p = window.__eg = {settings: [], inputs: [], deletes: 0, pinnable: true};
   window.EmbeddingEngine = function EmbeddingEngine() {};
-  window.EmbeddingEngine.createExclusive = function () {};
+  window.EmbeddingEngine.prototype.computeEmbedding = function () {};
+  window.EmbeddingEngine.prototype.delete = function () {};
   window.EmbeddingEngine.create = async (settings) => {
     p.settings.push(settings);
     return {
@@ -204,22 +205,23 @@ void main() {
     expect((_eg['deletes']! as JSNumber).toDartInt, 1);
   });
 
-  test(
-    'another @litert-lm/core on the page is refused naming the pinned one',
-    () async {
-      (globalContext['EmbeddingEngine']! as JSObject).delete(
-        'createExclusive'.toJS,
-      );
-      await expectLater(
-        EmbeddingEngine.create(_config()),
-        throwsA(
-          isA<EmbedderLoadException>().having(
-            (e) => e.message,
-            'message',
+  test('a @litert-lm/core without what the release calls is refused naming '
+      'the member and the pinned version', () async {
+    ((globalContext['EmbeddingEngine']! as JSObject)['prototype']! as JSObject)
+        .delete('computeEmbedding'.toJS);
+    await expectLater(
+      EmbeddingEngine.create(_config()),
+      throwsA(
+        isA<EmbedderLoadException>().having(
+          (e) => e.message,
+          'message',
+          allOf(
+            contains('computeEmbedding'),
             contains(web.liteRtLmWebRuntimeVersion),
           ),
         ),
-      );
-    },
-  );
+      ),
+    );
+    expect(_list('settings'), isEmpty);
+  });
 }

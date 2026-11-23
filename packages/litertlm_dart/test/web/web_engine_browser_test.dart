@@ -1,11 +1,12 @@
 // The web arm of the public API in a browser, over a stub `@litert-lm/core`
-// defined on the page in plain JS: `window.Engine` (with 0.19.0's
-// `createExclusive`) and conversations whose `sendMessageStreaming` returns a
+// defined on the page in plain JS: `window.Engine` (with the prototype members
+// the release calls) and conversations whose `sendMessageStreaming` returns a
 // real `ReadableStream` the test feeds chunk by chunk. The stub does what
-// 0.19.0 was measured to do (2026-11-23, web_litertlm_runtime_probe_test.dart):
+// 0.18.0 was measured to do (2026-11-23, web_litertlm_runtime_probe_test.dart):
 // `cancel()` rejects the stream with "Task cancelled", and every later send on
 // that conversation fails the same way; `getHistory()` holds the completed
-// exchanges only.
+// exchanges only; an engine's `delete()` is a Promise, a conversation's
+// returns nothing (the typings say Promise, nothing here relies on it).
 //
 // What it holds: the refusals before the runtime is touched, the settings and
 // conversation options handed over, the runtime's errors as typed
@@ -66,7 +67,7 @@ const _stub = r'''
       }
     };
     c.getHistory = async () => c.history;
-    c.delete = async () => { p.conversationDeletes++; };
+    c.delete = () => { p.conversationDeletes++; };
     return c;
   };
   window.__step = (text) => {
@@ -88,7 +89,8 @@ const _stub = r'''
     s.controller.error(new Error(message));
   };
   window.Engine = function Engine() {};
-  window.Engine.createExclusive = function () {};
+  window.Engine.prototype.createConversation = function () {};
+  window.Engine.prototype.delete = function () {};
   window.Engine.create = async (settings) => {
     p.createSettings.push(settings);
     if (p.createError) throw new Error(p.createError);
@@ -180,7 +182,7 @@ void main() {
     });
 
     test(
-      'vision and audio are refused with what 0.19.0 was measured doing',
+      'vision and audio are refused with what 0.18.0 was measured doing',
       () {
         expect(
           () => Engine.create(
@@ -194,7 +196,7 @@ void main() {
               (e) => e.message,
               'message',
               allOf(
-                contains('Vision executor should not be null'),
+                contains('Audio or image item must contain a path or blob.'),
                 contains('measured'),
               ),
             ),
@@ -203,55 +205,63 @@ void main() {
       },
     );
 
-    test('a page without the loader, without window.Engine or with another '
-        'runtime version is a StateError saying which', () async {
-      _removeRuntime();
-      await expectLater(
-        Engine.create(_config()),
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            allOf(
-              contains('litertLmReady'),
-              contains(web.liteRtLmWebModuleUrl),
+    test(
+      'a page without the loader, without window.Engine or with a runtime '
+      'lacking what the release calls is a StateError saying which',
+      () async {
+        _removeRuntime();
+        await expectLater(
+          Engine.create(_config()),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('litertLmReady'),
+                contains(web.liteRtLmWebModuleUrl),
+              ),
             ),
           ),
-        ),
-      );
-      globalContext['litertLmReady'] = Future<void>.value().toJS;
-      await expectLater(
-        Engine.create(_config()),
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            contains('window.Engine = m.Engine;'),
+        );
+        globalContext['litertLmReady'] = Future<void>.value().toJS;
+        await expectLater(
+          Engine.create(_config()),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('window.Engine = m.Engine;'),
+            ),
           ),
-        ),
-      );
-      _installRuntime();
-      (globalContext['Engine']! as JSObject).delete('createExclusive'.toJS);
-      await expectLater(
-        Engine.create(_config()),
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            contains(web.liteRtLmWebRuntimeVersion),
+        );
+        _installRuntime();
+        ((globalContext['Engine']! as JSObject)['prototype']! as JSObject)
+            .delete('createConversation'.toJS);
+        await expectLater(
+          Engine.create(_config()),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('createConversation'),
+                contains(web.liteRtLmWebRuntimeVersion),
+              ),
+            ),
           ),
-        ),
-      );
-    });
+        );
+        expect(_list('createSettings'), isEmpty);
+      },
+    );
 
-    test('hands Engine.create the model, the backend, the context and the '
-        'thread count; reads back what the runtime resolved', () async {
+    test('hands Engine.create the model, the context and the thread count '
+        '(the GPU by leaving the backend out, which 0.18.0 needs for a web '
+        'export); reads back what the runtime resolved', () async {
       _set('resolvedBackend', 2); // GPU_ARTISAN: a web export on the GPU
       _set('maxNumTokens', 2048);
       final engine = await Engine.create(_config(tokens: 2048));
       expect(_map(_list('createSettings').single), {
         'model': 'blob:https://example.com/model',
-        'backend': 4,
         'mainExecutorSettings': {'maxNumTokens': 2048},
       });
       expect(engine.backend, const Backend.gpu());
@@ -264,7 +274,9 @@ void main() {
       final cpu = await Engine.create(
         _config(backend: const Backend.cpu(threadCount: 2)),
       );
-      expect(_map(_list('createSettings').single)['mainExecutorSettings'], {
+      final cpuSettings = _map(_list('createSettings').single);
+      expect(cpuSettings['backend'], 3);
+      expect(cpuSettings['mainExecutorSettings'], {
         'backendConfig': {'number_of_threads': 2},
       });
       expect(cpu.backend, const Backend.cpu());

@@ -1,6 +1,5 @@
 ## Unreleased
-- Web needs `@litert-lm/core` 0.19.0 in index.html; a cancelled reply now stops generation.
-- Web: the message after a stopped reply no longer fails with "Task cancelled".
+- Web: a cancelled reply stops generation, and the next message no longer fails ("Task cancelled").
 
 ## 1.21.0
 - Android GPU keeps Gemma 4 at FP16 above 2,048 tokens; Adreno GPU failures name the CPU.

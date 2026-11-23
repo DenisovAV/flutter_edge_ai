@@ -29,14 +29,19 @@ class _Resolver implements WebModelSourceResolver {
 }
 
 /// A stand-in for `window.Engine`: a function (as the page's is) with the
-/// 0.19.0 `createExclusive` the version check looks for, whose `create`
-/// returns [engine].
+/// prototype members the runtime check looks for, whose `create` returns
+/// [engine].
 JSObject _engineConstructor(JSObject engine) =>
     (globalContext.callMethod<JSObject>(
         'eval'.toJS,
-        '(function Engine() {})'.toJS,
+        '''(() => {
+          function Engine() {}
+          Engine.prototype.createConversation = function () {};
+          Engine.prototype.delete = function () {};
+          return Engine;
+        })()'''
+            .toJS,
       ))
-      ..['createExclusive'] = (() {}).toJS
       ..['create'] = ((JSAny? options) => Future<JSObject>.value(
         engine,
       ).toJS).toJS;

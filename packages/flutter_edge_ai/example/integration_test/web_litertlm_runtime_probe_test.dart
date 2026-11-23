@@ -42,13 +42,10 @@ const _modelUrl = String.fromEnvironment(
       'resolve/main/gemma-4-E2B-it-web.litertlm',
 );
 
-/// `--dart-define=PROBE_NO_BACKEND=true` leaves `backend` out of the text
-/// engine's settings: what 0.18.0 needs for the web export (it refuses
-/// `backend: GPU` with "Unsupported backend: 2").
-const _noBackend = bool.fromEnvironment('PROBE_NO_BACKEND');
-
+// The GPU engines leave `backend` out (the runtime's default): 0.18.0
+// refuses the web export asked for `backend: GPU` ("Unsupported backend: 2").
 const _probe = r'''
-window.__litertlmProbe = async (url, image, audio, gpu) => {
+window.__litertlmProbe = async (url, image, audio) => {
   await window.litertLmReady;
   const Engine = window.Engine;
   const r = {};
@@ -69,7 +66,7 @@ window.__litertlmProbe = async (url, image, audio, gpu) => {
 
   let e;
   await attempt('create_text_benchmark', async () => {
-    e = await Engine.create(gpu ? {model, backend: 4, benchmarkEnabled: true} : {model, benchmarkEnabled: true});
+    e = await Engine.create({model, benchmarkEnabled: true});
     return {backend: e.settings.backend,
             maxNumTokens: e.settings.mainExecutorSettings.maxNumTokens,
             deleteIsPromise: typeof Engine.prototype.delete === 'function'};
@@ -127,7 +124,7 @@ window.__litertlmProbe = async (url, image, audio, gpu) => {
 
   let t;
   await attempt('constrained_decoding_tool_round_trip', async () => {
-    t = await Engine.create({model, backend: 4});
+    t = await Engine.create({model});
     const c = await t.createConversation({
       ...greedy,
       enableConstrainedDecoding: true,
@@ -146,7 +143,7 @@ window.__litertlmProbe = async (url, image, audio, gpu) => {
 
   let v;
   await attempt('create_vision', async () => {
-    v = await Engine.create({model, backend: 4, visionBackend: 4, maxNumImages: 1});
+    v = await Engine.create({model, visionBackend: 4, maxNumImages: 1});
     return {visionBackend: v.settings.visionBackend};
   });
   if (v) {
@@ -160,7 +157,7 @@ window.__litertlmProbe = async (url, image, audio, gpu) => {
 
   let a;
   await attempt('create_audio', async () => {
-    a = await Engine.create({model, backend: 4, audioBackend: 3});
+    a = await Engine.create({model, audioBackend: 3});
     return {audioBackend: a.settings.audioBackend};
   });
   if (a) {
@@ -216,7 +213,6 @@ void main() {
             _modelUrl.toJS,
             image,
             audio,
-            (!_noBackend).toJS,
           )
           .toDart;
     });

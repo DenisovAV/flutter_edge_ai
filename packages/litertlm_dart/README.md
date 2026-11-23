@@ -49,7 +49,7 @@ This release runs:
 | | |
 |---|---|
 | Native | LiteRT-LM 0.19.1, our build `native-v0.19.1-c` |
-| Web | `@litert-lm/core` 0.19.0 |
+| Web | `@litert-lm/core` 0.18.0 |
  `dart pub add litertlm_dart` writes `^0.19.1+1`, which for a 0.x
 version also takes later 0.19.x releases; those follow newer LiteRT-LM
 releases and may change the Dart API, so bound it at the next upstream patch,
@@ -543,13 +543,13 @@ fix (`native/litert_lm/patch_c_api.sh`).
 ## On the web
 
 The same `Engine`, `Conversation` and `EmbeddingEngine` run in a browser over
-`@litert-lm/core` 0.19.0, which the page loads itself. Add to
+`@litert-lm/core` 0.18.0, which the page loads itself. Add to
 `web/index.html`:
 
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
   window.Engine = m.Engine;
   window.EmbeddingEngine = m.EmbeddingEngine;
   return m.Engine;
@@ -559,16 +559,17 @@ window.litertLmReady = (async () => {
 
 `EngineConfig.modelPath` is then a URL the page can fetch (`blob:`, `https:`):
 a `.litertlm` web export such as `gemma-4-E2B-it-web.litertlm`. A page that
-does not load the module, loads another version, or lacks `window.Engine` is
-refused with a `StateError` naming the version above.
+does not load the module, lacks `window.Engine`, or loads a runtime without
+the calls this release makes is refused with a `StateError` naming the
+version above.
 
-What differs on the web, measured on `@litert-lm/core` 0.19.0 with Gemma 4
+What differs on the web, measured on `@litert-lm/core` 0.18.0 with Gemma 4
 E2B's web export in Chrome 157 (2026-11-23):
 
-- **Text only.** 0.19.0 creates an engine with a vision or audio backend, but
-  the first image or clip then fails ("Vision executor should not be null"),
-  so `visionBackend`, `audioBackend` and `maxNumImages` are refused, and so is
-  a message with an image or audio.
+- **Text only.** 0.18.0's `Engine` takes no vision or audio backend, and an
+  image or audio part fails ("Audio or image item must contain a path or
+  blob."), so `visionBackend`, `audioBackend` and `maxNumImages` are refused,
+  and so is a message with an image or audio.
 - **A stop is a rebuild.** After `cancel()` (or a cancelled subscription) the
   runtime refuses every later send on that conversation ("Task cancelled"),
   so the next message goes to a new conversation built from the old one's
@@ -588,8 +589,8 @@ E2B's web export in Chrome 157 (2026-11-23):
 - **Refused:** the NPU, `cacheDir`, `activationDataType`, the tokenizer,
   option scoring, `benchmark()`, `Conversation.getBenchmarkInfo()`,
   `readBundleInfo`, `readBundleGenericData`. `Backend.cpu` (WebAssembly) is
-  handed to the runtime, but it failed Gemma 4 E2B's web export ("Environment
-  was not initialized during streaming.").
+  handed to the runtime, but it refuses Gemma 4 E2B's web export
+  ("tf_lite_prefill_decode not found in the model.").
 - **EmbeddingGemma 2** runs on WebGPU only: the CPU (WebAssembly) path of
   `@litert-lm/core` cannot read the bundles' external weights ("Failed to get
   external weight"), so `Backend.cpu` — the default of `EmbeddingEngineConfig`

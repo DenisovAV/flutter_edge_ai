@@ -10,12 +10,12 @@
 ///
 /// What it holds the browser to:
 /// - 768 dimensions, unit norm, finite; `maxInputTokens` 1024; `{text}`; GPU;
-/// - the native golden (integration_test/goldens/eg2_text_golden.dart,
-///   LiteRT-LM 0.19 as the page's 0.19.0): every vector finite and non-zero,
+/// - the native golden as of LiteRT-LM 0.18, which the page runs
+///   (integration_test/goldens/eg2_text_golden_web.dart, frozen from
+///   native-v0.18.0-d on macOS arm64, CPU): every vector finite and non-zero,
 ///   cos >= 0.99 against `vector` (WebGPU drifts from the native CPU, measured
-///   about 0.995 on a Tesla T4 with 0.18.0, 0.997 on an Apple GPU with
-///   0.19.0), >= 0.97 against Sentence Transformers fp32; every query ranks
-///   its document first;
+///   about 0.995), >= 0.97 against Sentence Transformers fp32; every query
+///   ranks its document first;
 /// - the 9 TaskTypes give 9 different vectors; empty text embeds;
 /// - W2 and the exact overflow counts: a text of exactly 1024 tokens (prefix,
 ///   BOS and EOS included) embeds, 1025 and 3000 are
@@ -25,7 +25,8 @@
 /// - a page without `window.EmbeddingEngine = m.EmbeddingEngine;` fails the
 ///   load with the EmbeddingLoadException that names the line;
 /// - supportImage on the 270m is refused naming the 440m, from the bundle's
-///   container header (0.19.0 creates an engine there anyway);
+///   container header, and the runtime asked directly never embeds an image
+///   there either;
 /// - the 440m: {text, image}; each scene's vector against the native CPU
 ///   image golden (cos >= 0.99; measured about 0.998); text → image top-1
 ///   10/10 on the ten scenes; across platforms (integration_test/goldens/
@@ -110,7 +111,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'goldens/eg2_image_golden.dart';
-import 'goldens/eg2_text_golden.dart';
+import 'goldens/eg2_text_golden_web.dart';
 import 'web_embeddings_support.dart';
 
 /// Every test in this file, in order; the last one checks they all started.
@@ -260,7 +261,7 @@ List<double> _f32(String encoded) {
 
 final List<_GoldenItem> _golden = [
   for (final item
-      in ((jsonDecode(eg2TextGoldenJson) as Map)['items'] as List)
+      in ((jsonDecode(eg2TextGoldenWebJson) as Map)['items'] as List)
           .cast<Map<String, dynamic>>())
     (
       id: item['id'] as String,
@@ -625,10 +626,9 @@ void main() {
     } on EmbeddingLoadException catch (e) {
       refusal = e;
     }
-    // From the container header, before any engine exists: @litert-lm/core
-    // 0.18.0 refused the missing vision tower in `EmbeddingEngine.create`,
-    // 0.19.0 creates the engine anyway (this test, 2026-11-23), so the
-    // embedder reads the header, as for audio.
+    // From the container header, before any engine exists, as for audio:
+    // the package's answer, whatever the runtime's create does (0.18.0
+    // refuses the missing vision tower there, 0.19.0 does not; 2026-11-23).
     report('eg2_270m_images_refusal', refusal?.message);
     expect(refusal, isNotNull, reason: 'the 270m loaded with images');
     expect(refusal!.engine, 'LiteRT-LM');
@@ -642,12 +642,12 @@ void main() {
     );
   }, timeout: const Timeout(Duration(minutes: 30)));
 
-  // Why the header decides images: the runtime itself, asked directly past
-  // the header check. 0.18.0 refused the 270m's missing vision tower in
-  // `EmbeddingEngine.create`; 0.19.0 creates the engine (2026-11-23). Recorded
-  // for the runtime the page pins; the day it refuses again, this says so.
-  testWidgets('the runtime itself: $liteRtLmWebRuntime creates an engine with '
-      'a vision tower on the 270m, and only an image fails', (tester) async {
+  // The runtime itself, asked directly past the header check: on the 270m it
+  // never embeds an image. Where it fails is recorded for the runtime the
+  // page pins: 0.18.0 refuses the vision tower in `EmbeddingEngine.create`,
+  // 0.19.0 creates the engine and fails the image (2026-11-23).
+  testWidgets('the runtime itself: $liteRtLmWebRuntime never embeds an image '
+      'with the 270m', (tester) async {
     _start('EG2 runtime vision on 270m');
     await _ensureEg2();
     await _releaseActive(); // one engine at a time on the page
@@ -686,13 +686,10 @@ void main() {
     });
     _log('270m raw vision: create ${createError ?? 'ok'}, image $imageError');
     expect(
-      createError,
-      isNull,
-      reason:
-          '$liteRtLmWebRuntime refuses the vision tower at create again: the '
-          'header check is no longer the only guard',
+      createError ?? imageError,
+      isNotNull,
+      reason: 'the 270m embedded an image',
     );
-    expect(imageError, isNotNull, reason: 'the 270m embedded an image');
   }, timeout: const Timeout(Duration(minutes: 30)));
 
   testWidgets('close and recreate: a new model, the same vectors', (

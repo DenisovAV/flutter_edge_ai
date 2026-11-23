@@ -92,8 +92,9 @@ void _installEngine() => _js('''
   window.__eg2 = { settings: [], inputs: [], options: [], deletes: 0,
                    maxSeq: 1024, createError: null, computeError: null };
   window.EmbeddingEngine = function () {};
-  // The static 0.19.0 added; the version check looks for it.
-  window.EmbeddingEngine.createExclusive = function () {};
+  // The members the release calls, which the runtime check looks for.
+  window.EmbeddingEngine.prototype.computeEmbedding = function () {};
+  window.EmbeddingEngine.prototype.delete = function () {};
   window.EmbeddingEngine.create = async function (settings) {
     const s = window.__eg2;
     s.settings.push(settings);
@@ -255,7 +256,9 @@ void main() {
         _js('''
         window.litertLmReady = new Promise((resolve) => setTimeout(() => {
           window.EmbeddingEngine = function () {};
-          window.EmbeddingEngine.createExclusive = function () {};
+          window.EmbeddingEngine.create = async function () {};
+          window.EmbeddingEngine.prototype.computeEmbedding = function () {};
+          window.EmbeddingEngine.prototype.delete = function () {};
           resolve(null);
         }, 50));
       ''');
@@ -263,20 +266,19 @@ void main() {
       },
     );
 
-    test(
-      'an EmbeddingEngine of 0.18.0 (no createExclusive): another '
-      'runtime version, which the load refuses naming the pinned one',
-      () async {
-        _js('''
+    test('an EmbeddingEngine without computeEmbedding: a runtime the release '
+        'cannot drive, which the load refuses naming the pinned one', () async {
+      _js('''
         window.litertLmReady = Promise.resolve(null);
         window.EmbeddingEngine = function () {};
+        window.EmbeddingEngine.create = async function () {};
+        window.EmbeddingEngine.prototype.delete = function () {};
       ''');
-        expect(
-          await runtime.ensureReady(),
-          LiteRtLmWebRuntimeState.otherRuntimeVersion,
-        );
-      },
-    );
+      expect(
+        await runtime.ensureReady(),
+        LiteRtLmWebRuntimeState.otherRuntimeVersion,
+      );
+    });
 
     test('a loader that failed: the rejection propagates', () async {
       _js('''

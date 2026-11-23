@@ -49,7 +49,8 @@ import 'litert_lm_js.dart'
     show
         liteRtLmWebBackendCpu,
         liteRtLmWebBackendGpu,
-        liteRtLmWebRuntimeIsCurrent;
+        awaitIfThenable,
+        liteRtLmWebRuntimeMissing;
 import 'web_embedder.dart';
 import 'web_runtime_version.dart';
 
@@ -78,7 +79,7 @@ extension type _EmbeddingEngine._(JSObject _) implements JSObject {
     JSObject options,
   );
 
-  external JSPromise<JSAny?> delete();
+  external JSAny? delete();
 }
 
 /// `EmbeddingResponse`. `truncatedLength` is undefined unless the engine cut
@@ -142,7 +143,10 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
   }
 
   static LiteRtLmWebRuntimeState get _versionState =>
-      liteRtLmWebRuntimeIsCurrent(globalContext['EmbeddingEngine']! as JSObject)
+      liteRtLmWebRuntimeMissing(
+        globalContext['EmbeddingEngine']! as JSObject,
+        const ['computeEmbedding', 'delete'],
+      ).isEmpty
       ? LiteRtLmWebRuntimeState.ready
       : LiteRtLmWebRuntimeState.otherRuntimeVersion;
 
@@ -296,7 +300,7 @@ final class _WindowEngine implements LiteRtLmWebEngine {
     ..['data'] = Uint8List.fromList(bytes).buffer.toJS;
 
   @override
-  Future<void> delete() => _engine.delete().toDart;
+  Future<void> delete() => awaitIfThenable(_engine.delete());
 
   static int _int(JSNumber? value, String field) {
     if (value == null) {

@@ -32,17 +32,41 @@ const liteRtLmWebBackendCpu = 3;
 const liteRtLmWebBackendGpu = 4;
 
 /// `Backend.GPU_ARTISAN`: what `engine.settings.backend` reports for a web
-/// export such as `gemma-4-E2B-it-web.litertlm` asked for on the GPU (0.19.0,
-/// measured 2026-11-23): the same WebGPU, through the runtime's legacy
-/// executor.
+/// export such as `gemma-4-E2B-it-web.litertlm` on the GPU (0.18.0 and
+/// 0.19.0, measured 2026-11-23): the same WebGPU, through the runtime's
+/// legacy executor. 0.18.0 refuses such a model when asked for `backend: GPU`
+/// ("Unsupported backend: 2"), so the GPU is asked for by leaving `backend`
+/// out, the runtime's default.
 const liteRtLmWebBackendGpuArtisan = 2;
 
-/// Whether the page's `Engine` (or `EmbeddingEngine`) constructor is from
-/// the version this release drives: 0.19.0 added the static
-/// `createExclusive` both run their creates through
-/// (`runExclusiveEngineCreation`), which 0.18.0 has not.
-bool liteRtLmWebRuntimeIsCurrent(JSObject constructor) =>
-    constructor.has('createExclusive');
+/// What the page's `Engine` (or `EmbeddingEngine`) constructor lacks of what
+/// this release calls ([members] on its prototype, `create` on itself); empty
+/// when it has everything. A page that pins another `@litert-lm/core` than
+/// [liteRtLmWebRuntimeVersion] is accepted as long as nothing is missing, so
+/// moving the pin takes only the constant.
+List<String> liteRtLmWebRuntimeMissing(
+  JSObject constructor,
+  List<String> members,
+) {
+  final prototype = constructor['prototype'];
+  return [
+    if (!(constructor['create']?.typeofEquals('function') ?? false)) 'create',
+    for (final member in members)
+      if (prototype == null ||
+          !((prototype as JSObject)[member]?.typeofEquals('function') ?? false))
+        member,
+  ];
+}
+
+/// Awaits [result] when it is a thenable: `delete()` is a Promise in the
+/// typings of 0.18.0 and 0.19.0, but nothing here relies on it.
+Future<void> awaitIfThenable(JSAny? result) async {
+  if (result != null &&
+      result.isA<JSObject>() &&
+      ((result as JSObject)['then']?.typeofEquals('function') ?? false)) {
+    await (result as JSPromise<JSAny?>).toDart;
+  }
+}
 
 /// `@JS('Engine')` makes the static `create` resolve against
 /// `globalThis.Engine.create` (where the page's `window.Engine = m.Engine`
@@ -62,8 +86,9 @@ extension type JsLiteRtLmEngine._(JSObject _) implements JSObject {
     JSObject config,
   );
 
-  /// `Promise<void>` since 0.19.0 (it waits for the engine's executor).
-  external JSPromise<JSAny?> delete();
+  /// Frees the engine; a Promise in the published typings (await it with
+  /// [awaitIfThenable]).
+  external JSAny? delete();
 }
 
 extension type JsLiteRtLmConversation._(JSObject _) implements JSObject {
@@ -82,8 +107,8 @@ extension type JsLiteRtLmConversation._(JSObject _) implements JSObject {
   /// is not in it).
   external JSPromise<JSArray<JSObject>> getHistory();
 
-  /// Frees the conversation once its executor is free.
-  external JSPromise<JSAny?> delete();
+  /// Frees the conversation once its executor is free ([awaitIfThenable]).
+  external JSAny? delete();
 }
 
 /// A JS AsyncIterator: `next()` is a Promise of `{value, done}`.

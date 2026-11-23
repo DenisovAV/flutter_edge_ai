@@ -1,13 +1,13 @@
 /// Image and audio on the web `.litertlm` path are refused with a clear error.
 ///
 /// litertlm_dart creates the web LLM engine with no vision or audio executor:
-/// 0.19.0 takes a `visionBackend`/`audioBackend`, but Gemma 4 E2B's web export
-/// then fails the first image ("Vision executor should not be null, please
-/// TryLoadingVisionExecutor() first.") and clip (measured 2026-11-23,
-/// web_litertlm_runtime_probe_test.dart). On 0.18.0 `EngineSettings.createDefault(modelAssets, backend)` takes no
+/// on 0.18.0 `EngineSettings.createDefault(modelAssets, backend)` takes no
 /// vision or audio backend (only `EmbeddingEngine` has
-/// `createDefaultMultimodal`). Measured on Gemma 4 E2B against the raw JS API
-/// in Chrome 155 on Linux (WebGPU on a Tesla T4):
+/// `createDefaultMultimodal`); a `visionBackend`/`audioBackend` passed to
+/// `Engine.create` is ignored, and an image part still fails "Audio or image
+/// item must contain a path or blob." (Chrome 157, 2026-11-23,
+/// web_litertlm_runtime_probe_test.dart). Measured on Gemma 4 E2B against the
+/// raw JS API in Chrome 155 on Linux (WebGPU on a Tesla T4):
 ///   - `visionModalityEnabled` / `audioModalityEnabled: true`:
 ///     `createConversation` throws "Vision options should not be null." /
 ///     "Audio options should not be null.";

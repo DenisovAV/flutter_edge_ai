@@ -5,8 +5,8 @@
 //
 // What does not run on the web is refused, never ignored, each with the
 // reason measured on the pinned runtime (2026-11-23, Gemma 4 E2B's web export,
-// Chrome 157): vision and audio encoders (0.19.0 creates the engine, then the
-// first image or clip fails), the NPU, the cache directory, the activation
+// Chrome 157): vision and audio encoders (an image or audio part fails), the
+// NPU, the cache directory, the activation
 // type, speculative decoding, the tokenizer and option scoring. The page loads
 // the runtime itself (its module script sets `window.Engine` and
 // `window.litertLmReady`; see litertlm_dart's README, "On the web").
@@ -84,9 +84,9 @@ final class Engine {
   ///
   /// Throws [UnsupportedError] for what does not run on the web (see the
   /// library comment), [StateError] when the page did not load
-  /// `@litert-lm/core` or loaded another version than
-  /// `liteRtLmWebRuntimeVersion`, and [LiteRtLmEngineCreateException] with
-  /// the runtime's message when it refuses the model.
+  /// `@litert-lm/core` or loaded one without what this release calls, and
+  /// [LiteRtLmEngineCreateException] with the runtime's message when it
+  /// refuses the model.
   static Future<Engine> create(EngineConfig config) => createWebEngine(config);
 
   /// Starts a conversation, with its own `@litert-lm/core` conversation.
@@ -178,16 +178,13 @@ final class Engine {
       // Strips the thinking channel from the KV cache so it does not pollute
       // later turns, as natively.
       if (enableThinking) js['filterChannelContentFromKvCache'] = true.toJS;
-      // Constrained decoding stays off, unlike natively. On 0.17.0 the WASM
-      // grammar did not return to its start state after a tool-call block,
-      // so the next decode round aborted with `Invalid token at state N`
-      // (google-ai-edge/LiteRT-LM#2434; web_function_calling_test.dart). On
-      // 0.19.0 a tool call and the turn after its result ran with it on
-      // (web_litertlm_runtime_probe_test.dart, 2026-11-23), but turning it on
-      // for tool conversations does not fix 0.19.0's empty reply to a tool
-      // result in web_function_calling_test.dart case 5 (failing alike with
-      // it off and on, and on main's code with 0.19.0; passing on 0.18.0),
-      // so it stays off.
+      // Constrained decoding stays off, unlike natively: with it on, the WASM
+      // grammar does not return to its start state after a tool-call block,
+      // so the next decode round aborts with `Invalid token at state N`
+      // (google-ai-edge/LiteRT-LM#2434; 0.17.0 in web_function_calling_test
+      // .dart, and 0.18.0 in web_litertlm_runtime_probe_test.dart on
+      // 2026-11-23: "Invalid token at state 35"). Gemma 4 emits well-formed
+      // tool-call blocks without the grammar.
       return js;
     }
 
@@ -227,7 +224,7 @@ final class Engine {
     if (_closed) {
       // Closed while the runtime built it: nobody else will delete it.
       try {
-        await js.delete().toDart;
+        await awaitIfThenable(js.delete());
       } catch (e) {
         runtimeLog(
           '[litertlm_dart/web] deleting a conversation built while the engine '
@@ -323,7 +320,7 @@ final class Engine {
       throw poisoned ?? _pageLock.poison!;
     }
     try {
-      await _js.delete().toDart;
+      await awaitIfThenable(_js.delete());
     } catch (e) {
       runtimeLog('[litertlm_dart/web] engine.delete() failed: $e');
     }
@@ -355,13 +352,12 @@ Future<Engine> createWebEngine(
 }) async {
   _refuseOnWeb(config);
   final constructor = await _awaitRuntime();
-  final settings = JSObject()
-    ..['model'] = model ?? config.modelPath.toJS
-    ..['backend'] = switch (config.backend) {
-      CpuBackend() => liteRtLmWebBackendCpu,
-      GpuBackend() => liteRtLmWebBackendGpu,
-      NpuBackend() => throw StateError('refused above'),
-    }.toJS;
+  final settings = JSObject()..['model'] = model ?? config.modelPath.toJS;
+  // The GPU is the runtime's default: asked for by name, 0.18.0 refuses a web
+  // export it runs on its legacy GPU executor ("Unsupported backend: 2").
+  if (config.backend is CpuBackend) {
+    settings['backend'] = liteRtLmWebBackendCpu.toJS;
+  }
   final executor = JSObject();
   if (config.maxNumTokens case final tokens?) {
     executor['maxNumTokens'] = tokens.toJS;
@@ -494,11 +490,14 @@ Future<JSObject> _awaitRuntime() async {
       'window.Engine = m.Engine; (litertlm_dart\'s README, "On the web").',
     );
   }
-  if (!liteRtLmWebRuntimeIsCurrent(constructor as JSObject)) {
+  final missing = liteRtLmWebRuntimeMissing(constructor as JSObject, const [
+    'createConversation',
+    'delete',
+  ]);
+  if (missing.isNotEmpty) {
     throw StateError(
-      'The page loads another @litert-lm/core than $liteRtLmWebRuntimeVersion, '
-      'which this release drives: import $liteRtLmWebModuleUrl in its '
-      'module script.',
+      'The page\'s @litert-lm/core Engine lacks ${missing.join(', ')}, which '
+      'this release calls: import $liteRtLmWebModuleUrl in its module script.',
     );
   }
   return constructor;

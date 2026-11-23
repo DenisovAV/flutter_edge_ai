@@ -268,7 +268,7 @@ final eg2Index = await rag.open(
   m.Engine;` in its `@litert-lm/core` module script; without it the load fails
   with an `EmbeddingLoadException` naming that line. The browser needs WebGPU:
   the CPU (WebAssembly) path of `@litert-lm/core` cannot read these
-  bundles' external weights (0.18.0 and 0.19.0 alike), so there is no CPU fallback, and a browser
+  bundles' external weights, so there is no CPU fallback, and a browser
   without WebGPU (no `navigator.gpu`, or no adapter) fails the load with an
   `EmbeddingLoadException` that says so.
 - The 270m is text only: `getActiveEmbedder(supportImage: true)` throws
@@ -610,11 +610,9 @@ page itself: there are no isolates there.
   do not depend on it. `forActiveModel` ids follow file names only, so an app
   that changes the budget puts it in the namespace (`'photos-vis70'`).
 - On Web the page's `@litert-lm/core` module has 4 GB of WebAssembly memory,
-  shared with a loaded `.litertlm` LLM. With the 0.18.0 runtime the 440m's
-  vision engine (about 3.3 GB) did not fit next to Gemma 4 E2B; with 0.19.0,
-  which the packages now pin, it loaded next to it (measured 2026-11-23).
-  Should a load not fit, the `EmbeddingLoadException` says to close the LLM
-  first.
+  and the 440m's vision engine (about 3.3 GB) and Gemma 4 E2B do not share it —
+  whichever loads second fails, the embedder with an `EmbeddingLoadException`
+  that says to close the LLM first. Text-only embedding loads next to the LLM.
 - Cost (CPU, measured): 388 MB on disk plus a 218 MB vision weight cache
   written every time the model loads — also when it only embeds text. The
   first image adds RAM: about 385 MB on an M4 Pro Mac, about 500 MB on a

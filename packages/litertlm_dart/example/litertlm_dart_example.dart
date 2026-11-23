@@ -6,7 +6,7 @@
 // hook bundles libLiteRtLm.
 //
 // On the web: compile it into a page whose index.html loads @litert-lm/core
-// 0.19.0 (the README's "On the web"), with the model's web export as a URL
+// 0.18.0 (the README's "On the web"), with the model's web export as a URL
 // the page can fetch, e.g. gemma-4-E2B-it-web.litertlm.
 import 'package:litertlm_dart/litertlm_dart.dart';
 

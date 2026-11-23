@@ -16,10 +16,10 @@
 ///   with the same vectors;
 /// - the 440m next to the loaded LLM: its vision encoder does not fit — the
 ///   module has 4 GB of WebAssembly memory, the 440m's vision engine takes
-///   about 3.3 GB of it and Gemma 4 E2B the rest on 0.18.0, where loading it
-///   with images was refused with the reason. On 0.19.0 it loads (2026-11-23)
-///   and embeds an image while a reply streams; loaded for text it does the
-///   same. The day it no longer fits, this test says so.
+///   about 3.3 GB of it and Gemma 4 E2B the rest (measured, @litert-lm/core
+///   0.18.0) — so loading it with images is refused with the reason; loaded
+///   for text it embeds while a reply streams. The day this test fails on the
+///   refusal, the runtime fits both: test images during a reply again.
 /// Timings and the reply go to the response file; a hang fails at a 10-minute
 /// bound instead of the driver's.
 ///
@@ -58,7 +58,6 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart' as catalog;
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
@@ -385,54 +384,40 @@ void main() {
     }
   }, timeout: const Timeout(Duration(minutes: 45)));
 
-  testWidgets('the 440m next to the LLM: with images it loads (0.19.0; on '
-      '0.18.0 it did not fit) and embeds an image while a reply streams; '
-      'text too, the same vectors as alone', (tester) async {
+  testWidgets('the 440m next to the LLM: with images it does not fit in the '
+      'page\'s WebAssembly memory and the load says so; for text it embeds '
+      'while a reply streams, the same vectors as alone', (tester) async {
     _start('LLM + EG2 440m');
     await _ensureEmbedder(_eg2Vision, _eg2VisionUrl);
     final llm = await _ensureLlm();
 
-    // A measurement: on 0.18.0 (Tesla T4, Chrome 155) the vision encoder did
-    // not fit in the page's 4 GB WebAssembly memory next to Gemma 4 E2B; on
-    // 0.19.0 it does (Apple GPU, Chrome 157, 2026-11-23).
-    EmbeddingModel? withImages;
     EmbeddingLoadException? refusal;
     try {
-      withImages = await FlutterEdgeAi.getActiveEmbedder(
-        supportImage: true,
-      ).timeout(_bound);
+      await FlutterEdgeAi.getActiveEmbedder(supportImage: true).timeout(_bound);
     } on EmbeddingLoadException catch (e) {
       refusal = e;
     }
-    report('images_next_to_llm', refusal?.message ?? 'loaded');
-    _log('440m with images next to the LLM: ${refusal?.message ?? 'loaded'}');
+    report('images_next_to_llm', refusal?.message);
+    _log('440m with images next to the LLM: ${refusal?.message}');
     expect(
       refusal,
-      isNull,
+      isNotNull,
       reason:
-          'the 440m no longer loads its vision encoder next to the LLM on '
-          'this runtime (it did on 0.19.0): update the docs that say it does',
+          'the 440m loaded its vision encoder next to the LLM: the runtime '
+          'now fits both on one page — embed an image during a reply here '
+          'again, and update the docs that say it does not fit',
     );
-    final data = await rootBundle.load('assets/eg2_vision/circle.png');
-    final image = EmbeddingInput.image(
-      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    expect(
+      refusal!.message,
+      allOf(
+        contains('with its vision encoder'),
+        contains('If a .litertlm LLM is loaded on this page, close it first'),
+      ),
     );
-    final imageAlone = await withImages!.embed(image, taskType: TaskType.none);
-    final imageWatch = Stopwatch()..start();
-    final imageReply = await _Reply.start(llm, imageWatch);
-    try {
-      await imageReply.firstChunk.future.timeout(_bound);
-      final during = await withImages.embed(image, taskType: TaskType.none);
-      _expectSaneText(await imageReply.done);
-      _expectSame([during], [imageAlone], '440m image');
-    } finally {
-      await imageReply.close();
-    }
-    await withImages.close();
 
     final embedder = await FlutterEdgeAi.getActiveEmbedder();
     expect(embedder.activeBackend, PreferredBackend.gpu);
-    expect(embedder.modalities, contains(EmbeddingModality.text));
+    expect(embedder.modalities, {EmbeddingModality.text});
     final inputs = [
       EmbeddingInput.text('a red stop sign'),
       EmbeddingInput.text('a bar chart of quarterly revenue'),

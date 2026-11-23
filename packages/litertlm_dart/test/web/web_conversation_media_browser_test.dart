@@ -344,6 +344,23 @@ void main() {
     });
   });
 
+  test('initial messages with more images than maxNumImages are refused '
+      'before the conversation is created', () async {
+    final engine = await _multimodalEngine();
+
+    await expectLater(
+      engine.createConversation(
+        ConversationConfig(
+          initialMessages: [_withImage('This one.'), _withImage('And this.')],
+        ),
+      ),
+      throwsWith<UnsupportedError>('maxNumImages: 1'),
+    );
+
+    expect(list('conversationOptions'), isEmpty);
+    await engine.close();
+  });
+
   test('an initial image goes to the preface as its bytes in base64', () async {
     final engine = await _multimodalEngine();
 

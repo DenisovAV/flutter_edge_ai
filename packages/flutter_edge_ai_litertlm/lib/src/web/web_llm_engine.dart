@@ -10,7 +10,7 @@ import 'package:flutter_edge_ai/engine_web.dart';
 // The web Engine by name: through the public library the analyzer would see
 // the native one.
 import 'package:litertlm_dart/internal_web.dart'
-    show Engine, createConversationWithDefault, createWebEngine;
+    show Engine, createConversationWithDefault, createWebEngine, runtimeLog;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
 import '../adapter/tool_calls.dart';
@@ -80,14 +80,27 @@ Future<Engine> createWebEngineFromStream(
   }
 }
 
+/// Cancels [stream], which releases its OPFS file. A stream the runtime
+/// already holds a reader on (`locked`) is the runtime's to end: cancelling it
+/// would only reject.
 void _cancelStream(JSAny stream) {
+  if (!stream.isA<JSObject>()) return;
+  final readable = stream as JSObject;
+  if (readable['locked'].dartify() == true) return;
+  if (!(readable['cancel']?.typeofEquals('function') ?? false)) return;
+  final JSAny? cancelled;
   try {
-    if (stream.isA<JSObject>() &&
-        ((stream as JSObject)['cancel']?.typeofEquals('function') ?? false)) {
-      stream.callMethod<JSAny?>('cancel'.toJS);
-    }
-  } catch (_) {
-    // Already read or already cancelled: nothing to release.
+    cancelled = readable.callMethod<JSAny?>('cancel'.toJS);
+  } catch (e) {
+    runtimeLog('[LiteRtLmWeb] could not cancel the model stream: $e');
+    return;
+  }
+  if (cancelled.isA<JSPromise<JSAny?>>()) {
+    (cancelled as JSPromise<JSAny?>).toDart.then(
+      (_) {},
+      onError: (Object e) =>
+          runtimeLog('[LiteRtLmWeb] cancelling the model stream failed: $e'),
+    );
   }
 }
 

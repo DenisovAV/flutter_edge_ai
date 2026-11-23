@@ -180,6 +180,14 @@ final class Engine {
       }
       _checkMediaLoaded(message.contents);
     }
+    // The preface's images take the reservation as sent ones do.
+    if (_maxNumImages case final max? when visionBackend != null) {
+      final images = [
+        for (final message in c.initialMessages)
+          ...message.contents.whereType<ImageBytesContent>(),
+      ].length;
+      if (images > max) throw webImagesRefused(0, images, max);
+    }
     final sampling = samplerFor(
       c.samplerConfig ?? defaultSamplerConfig,
       const BundleSampler(),
@@ -518,35 +526,46 @@ Future<Engine> createWebEngine(
     }
     rethrow;
   }
-  Backend? encoder(String key) {
-    final value = resolved?[key];
-    if (!value.isA<JSNumber>()) return null;
-    return switch ((value as JSNumber).toDartInt) {
+  // An encoder asked for: where the runtime put it, or why that is unknown.
+  final reasons = <String>[];
+  Backend? encoder(String medium, Backend? asked) {
+    if (asked == null) return null;
+    final value = resolved?['${medium}Backend'];
+    if (!value.isA<JSNumber>()) {
+      reasons.add(
+        'without its $medium encoder (settings.${medium}Backend not '
+        'reported): the model may have none',
+      );
+      return null;
+    }
+    final code = (value as JSNumber).toDartInt;
+    return switch (code) {
       liteRtLmWebBackendCpu => const Backend.cpu(),
       liteRtLmWebBackendGpu ||
       liteRtLmWebBackendGpuArtisan => const Backend.gpu(),
-      _ => null,
+      _ => () {
+        reasons.add(
+          'with its $medium encoder on backend $code, which this release '
+          'does not know',
+        );
+        return null;
+      }(),
     };
   }
 
-  final vision = encoder('visionBackend');
-  final audio = encoder('audioBackend');
-  final missing = [
-    if (config.visionBackend != null && vision == null) 'vision',
-    if (config.audioBackend != null && audio == null) 'audio',
-  ];
-  if (missing.isNotEmpty) {
-    // Asked for, not loaded: a message with that medium would fail later.
+  final vision = encoder('vision', config.visionBackend);
+  final audio = encoder('audio', config.audioBackend);
+  if (reasons.isNotEmpty) {
+    // Asked for, not loaded where this release can tell: a message with
+    // that medium would fail later.
     try {
       await awaitIfThenable(js.delete());
     } catch (e) {
       noteWebDeleteFailure('An engine', e);
     }
     throw LiteRtLmEngineCreateException(
-      '$liteRtLmWebRuntime created the engine for ${config.modelPath} without '
-      'its ${missing.join(' and ')} encoder '
-      '(settings.${missing.first}Backend not reported): the model may have '
-      'none.',
+      '$liteRtLmWebRuntime created the engine for ${config.modelPath} '
+      '${reasons.join(', and ')}.',
     );
   }
   return Engine._(

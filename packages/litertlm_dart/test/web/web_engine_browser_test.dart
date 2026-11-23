@@ -147,6 +147,43 @@ void main() {
       expect(count('engineDeletes'), 1);
     });
 
+    test('an audio encoder asked for that the runtime does not report is '
+        'refused, naming audio', () async {
+      await expectLater(
+        Engine.create(
+          EngineConfig(
+            modelPath: 'blob:x',
+            backend: const Backend.gpu(),
+            audioBackend: const Backend.cpu(),
+          ),
+        ),
+        throwsWith<LiteRtLmEngineCreateException>(
+          'without its audio encoder (settings.audioBackend not reported)',
+        ),
+      );
+    });
+
+    test('an encoder the runtime put on a backend this release does not '
+        'know is refused, naming that backend', () async {
+      setOnPage('resolvedVisionBackend', 7);
+
+      await expectLater(
+        Engine.create(
+          EngineConfig(
+            modelPath: 'blob:x',
+            backend: const Backend.gpu(),
+            visionBackend: const Backend.gpu(),
+          ),
+        ),
+        throwsWith<LiteRtLmEngineCreateException>(
+          'with its vision encoder on backend 7, which this release does not '
+          'know',
+        ),
+      );
+
+      expect(count('engineDeletes'), 1);
+    });
+
     test('the encoders the runtime resolved are read back', () async {
       setOnPage('resolvedVisionBackend', 4);
       setOnPage('resolvedAudioBackend', 3);

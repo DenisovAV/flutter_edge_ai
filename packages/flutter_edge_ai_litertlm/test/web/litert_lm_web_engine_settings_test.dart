@@ -16,7 +16,11 @@ import 'package:flutter_edge_ai_litertlm/src/adapter/tool_calls.dart';
 import 'package:flutter_edge_ai_litertlm/src/web/web_llm_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:litertlm_dart/internal_web.dart'
-    show WebConversationHandle, conversationHandle, webConversationMembers;
+    show
+        WebConversationHandle,
+        conversationHandle,
+        runtimeLogSink,
+        webConversationMembers;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
 /// Resolves the active model to a blob URL; nothing is read from it.
@@ -195,6 +199,47 @@ void main() {
       same(liteRtLmToolCallsOf),
     );
     await engine.close();
+  });
+
+  test(
+    'a refused load leaves a stream the runtime holds a reader on to it',
+    () async {
+      _installEngine();
+      final stream = openStream()..['locked'] = true.toJS;
+      ((globalContext['Engine']! as JSObject)['prototype']! as JSObject).delete(
+        'delete'.toJS,
+      );
+
+      await expectLater(
+        createWebEngineFromStream(streamed(), stream),
+        throwsA(isA<StateError>()),
+      );
+
+      expect((stream['cancelled']! as JSBoolean).toDart, isFalse);
+    },
+  );
+
+  test('a cancel that rejects is logged, not left unhandled', () async {
+    final logged = <String>[];
+    final saved = runtimeLogSink;
+    runtimeLogSink = (message, {verbose = false}) => logged.add(message);
+    addTearDown(() => runtimeLogSink = saved);
+    _installEngine();
+    final stream = JSObject()
+      ..['cancel'] = (() => Future<void>.error(
+        StateError('already closed'),
+      ).toJS).toJS;
+    ((globalContext['Engine']! as JSObject)['prototype']! as JSObject).delete(
+      'delete'.toJS,
+    );
+
+    await expectLater(
+      createWebEngineFromStream(streamed(), stream),
+      throwsA(isA<StateError>()),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(logged, contains(contains('cancelling the model stream failed')));
   });
 
   test('a refused load cancels the OPFS stream it was given', () async {

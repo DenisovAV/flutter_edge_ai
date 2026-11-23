@@ -520,7 +520,7 @@ final class WebConversationHandle implements ConversationHandle {
     // is sent (onListen): a failed or stopped turn's are only settled by the
     // rebuild before it. A message that alone holds more never fits.
     if (_maxImages case final max? when _vision && _imagesIn([json]) > max) {
-      return _imagesRefused(0, _imagesIn([json]), max);
+      return webImagesRefused(0, _imagesIn([json]), max);
     }
     if (json case {'content': final List<Object?> parts}) {
       for (final part in parts) {
@@ -549,20 +549,10 @@ final class WebConversationHandle implements ConversationHandle {
   UnsupportedError? _imageRefusal(int adding) {
     if (!_vision || adding == 0) return null;
     if (_maxImages case final max? when _images + adding > max) {
-      return _imagesRefused(_images, adding, max);
+      return webImagesRefused(_images, adding, max);
     }
     return null;
   }
-
-  static UnsupportedError _imagesRefused(int held, int adding, int max) =>
-      UnsupportedError(
-        'This conversation holds $held of the $max images its engine '
-        'reserves per conversation (maxNumImages: $max), and the message has '
-        '$adding: on the web the model reserves their space up front, and an '
-        'image past it fails ("Image index $max must be less than $max.", '
-        '0.19.0). Load the model with a larger maxNumImages, or start a new '
-        'conversation.',
-      );
 
   /// The message as `sendMessageStreaming` takes it: a user message of one
   /// text part as its bare string, which `@litert-lm/core` turns into a user
@@ -797,6 +787,18 @@ Object? _replayable(Object? message) {
   }
   return message;
 }
+
+/// The refusal of a message of [adding] images on a web conversation that
+/// holds [held] of the [max] its engine reserves (`maxNumImages`).
+UnsupportedError webImagesRefused(int held, int adding, int max) =>
+    UnsupportedError(
+      'This conversation holds $held of the $max images its engine '
+      'reserves per conversation (maxNumImages: $max), and the message has '
+      '$adding: on the web the model reserves their space up front, and an '
+      'image past it fails ("Image index $max must be less than $max.", '
+      '0.19.0). Load the model with a larger maxNumImages, or start a new '
+      'conversation.',
+    );
 
 /// [message] (a history entry or a sent message) in one form for comparing:
 /// a text content as its one text part, as the runtime's history gives a

@@ -12,14 +12,14 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web_inference.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/web_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mutex/mutex.dart';
+
+import 'web_session_fixture.dart';
 
 /// A conversation that streams one chunk, then waits until it is cancelled
 /// and ends.
-LiteRtLmConversation _conversation() {
+JSObject _conversation() {
   final cancelled = Completer<void>();
   var step = 0;
   final iterator = JSObject()
@@ -42,20 +42,14 @@ LiteRtLmConversation _conversation() {
           .toJS;
     }).toJS;
   return (JSObject()
-        ..['sendMessageStreaming'] = ((JSAny? message) => iterator).toJS
-        ..['cancel'] = (() {
-          if (!cancelled.isCompleted) cancelled.complete();
-        }).toJS)
-      as LiteRtLmConversation;
+    ..['sendMessageStreaming'] = ((JSAny? message) => iterator).toJS
+    ..['cancel'] = (() {
+      if (!cancelled.isCompleted) cancelled.complete();
+    }).toJS
+    ..['delete'] = (() => Future<void>.value().toJS).toJS);
 }
 
-LiteRtLmWebSession _session() => LiteRtLmWebSession(
-  conversation: _conversation(),
-  modelType: ModelType.gemmaIt,
-  fileType: ModelFileType.litertlm,
-  generationMutex: Mutex(),
-  onClose: () {},
-);
+LiteRtLmWebSession _session() => webSessionOver(_conversation());
 
 // ignore: invalid_use_of_protected_member
 EngineTurn _turn(InferenceModelSession session) => session.startTurn();

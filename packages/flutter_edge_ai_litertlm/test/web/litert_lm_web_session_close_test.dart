@@ -15,11 +15,10 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_page_lock.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web_inference.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mutex/mutex.dart';
+import 'package:litertlm_dart/internal.dart' show liteRtLmPageLock;
+
+import 'web_session_fixture.dart';
 
 /// The stream ends this long after `cancel()`, as a real one takes a moment.
 const _endAfterCancel = Duration(milliseconds: 300);
@@ -44,14 +43,9 @@ void main() {
       }).toJS
       ..['cancel'] = (() {
         if (!cancelled.isCompleted) cancelled.complete();
-      }).toJS;
-    final session = LiteRtLmWebSession(
-      conversation: conversation as LiteRtLmConversation,
-      modelType: ModelType.gemma4,
-      fileType: ModelFileType.litertlm,
-      generationMutex: Mutex(),
-      onClose: () {},
-    );
+      }).toJS
+      ..['delete'] = (() => Future<void>.value().toJS).toJS;
+    final session = webSessionOver(conversation, modelType: ModelType.gemma4);
 
     await session.addQueryChunk(const Message(text: 'Hello', isUser: true));
     final subscription = session.getResponseAsync().listen((_) {});

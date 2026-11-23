@@ -18,8 +18,15 @@ import 'litert_lm_embedding_common.dart';
 import 'vision_budget.dart';
 import 'weight_cache_notice.dart';
 import 'web/litert_js_embedding_pass.dart';
+import 'package:litertlm_dart/internal_web.dart'
+    show
+        EmbedderModality,
+        LiteRtLmWebEmbedderConfig,
+        WindowLiteRtLmWebRuntime,
+        requireLiteRtLmWebAudioEncoderFor;
+
+import 'embedder_core_errors.dart';
 import 'web/litert_lm_web_embedding_pass.dart';
-import 'web/litert_lm_web_embedding_runtime.dart';
 import 'web/litert_web_embeddings.dart'
     show WindowLiteRtJsBundle, revokeObjectUrl;
 
@@ -28,8 +35,8 @@ import 'web/litert_web_embeddings.dart'
 /// encoder, and combinations of them in one vector) through
 /// `@litert-lm/core`'s EmbeddingEngine on WebGPU — a browser without WebGPU is
 /// refused with `EmbeddingLoadException`, as there is no CPU path for these
-/// bundles in `@litert-lm/core` 0.18.0 — and EmbeddingGemma 1 `.tflite`
-/// through LiteRT.js.
+/// bundles in `@litert-lm/core` — and EmbeddingGemma 1 `.tflite` through
+/// LiteRT.js.
 final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider
     implements ModelCatalogSource {
   /// The embedding models this backend runs, pinned to Hugging Face
@@ -140,7 +147,7 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider
 /// it closes the embedder it holds, so that embedder keeps working. Whether
 /// the bundle has a vision encoder for declared images is answered by the
 /// runtime when the pass creates the engine.
-Future<EmbeddingPassDescriptor<LiteRtLmWebEmbeddingConfig>> _describeBundle(
+Future<EmbeddingPassDescriptor<LiteRtLmWebEmbedderConfig>> _describeBundle(
   RuntimeConfig config,
   String fileName,
   int visionTokensPerImage,
@@ -153,7 +160,7 @@ Future<EmbeddingPassDescriptor<LiteRtLmWebEmbeddingConfig>> _describeBundle(
       engine: liteRtLmEngineTag,
     );
   }
-  final passConfig = LiteRtLmWebEmbeddingConfig(
+  final passConfig = LiteRtLmWebEmbedderConfig(
     modelPath: config.modelPath,
     fileName: fileName,
     runtime: const WindowLiteRtLmWebRuntime(),
@@ -162,13 +169,17 @@ Future<EmbeddingPassDescriptor<LiteRtLmWebEmbeddingConfig>> _describeBundle(
     resolveUrl: resolveWebModelUrl,
     revokeUrl: revokeObjectUrl,
     declaredMedia: {
-      if (config.supportImage) EmbeddingModality.image,
-      if (config.supportAudio) EmbeddingModality.audio,
+      if (config.supportImage) EmbedderModality.image,
+      if (config.supportAudio) EmbedderModality.audio,
     },
     visionTokensPerImage: visionTokensPerImage,
   );
-  if (config.supportAudio) await requireLiteRtLmWebAudioEncoderFor(passConfig);
-  return EmbeddingPassDescriptor<LiteRtLmWebEmbeddingConfig>(
+  if (config.supportAudio) {
+    await withCoreEmbedderErrors(
+      () => requireLiteRtLmWebAudioEncoderFor(passConfig),
+    );
+  }
+  return EmbeddingPassDescriptor<LiteRtLmWebEmbedderConfig>(
     engineTag: liteRtLmEngineTag,
     factory: buildLiteRtLmWebEmbeddingPass,
     config: passConfig,

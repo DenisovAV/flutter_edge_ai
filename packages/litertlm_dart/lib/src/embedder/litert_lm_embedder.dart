@@ -1061,10 +1061,7 @@ final class LiteRtLmEmbedder {
     if (media.contains(EmbedderModality.image)) {
       // D23: from the vision signatures, never supports_input_modality.
       if (!_hasVision(info)) {
-        _refuse(
-          '$_file has no vision encoder; install '
-          'embeddinggemma-2-text-vision-440m',
-        );
+        _refuse(liteRtLmNoVisionEncoderMessage(_file));
       }
       final budgets = info.visionSignatures!;
       final budget = _config.visionTokensPerImage;

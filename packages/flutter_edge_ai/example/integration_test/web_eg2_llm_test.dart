@@ -4,7 +4,7 @@
 /// GPU device, so the LLM's and the embedder's GPU memory are held together
 /// (EmbeddingGemma 2 has no CPU path on the web). flutter_edge_ai_litertlm
 /// serialises them with
-/// one page lock (lib/src/web/litert_lm_page_lock.dart): a generation holds it
+/// one page lock (litertlm_dart's lib/src/web/page_lock.dart): a generation holds it
 /// from its first call until its stream ends; an embedding engine's create +
 /// load probe and each `computeEmbedding` take it too. This suite is the proof
 /// on the real runtime that the two take turns without corrupting each other:

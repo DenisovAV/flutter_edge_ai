@@ -3,7 +3,7 @@
 
 import 'package:meta/meta.dart' show immutable;
 
-import '../ffi/npu_vendor_host.dart' show NpuPlatform;
+import '../runtime/npu_platform.dart' show NpuPlatform;
 import '../runtime/types.dart' show BackendKind;
 
 /// The executor a model, or one of its encoders, runs on.

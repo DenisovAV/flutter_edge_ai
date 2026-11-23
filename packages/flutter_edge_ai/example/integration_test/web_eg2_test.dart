@@ -1,19 +1,21 @@
 /// EmbeddingGemma 2 in the browser (R5 §7 P2w, §10.3): the pinned
 /// litert-community 270m (text) and 440m (text + vision) bundles through
 /// `installEmbedder()` → `getActiveEmbedder()` → core's inline host →
-/// flutter_edge_ai_litertlm's web `.litertlm` pass → `@litert-lm/core` 0.18.0's
-/// `EmbeddingEngine` on WebGPU, with `WebStorageMode.cacheApi`. WebGPU because
-/// the runtime's CPU (WebAssembly) path cannot load these bundles ("Failed to
-/// get external weight for buffer id …"); there is no CPU fallback.
+/// flutter_edge_ai_litertlm's web `.litertlm` pass → litertlm_dart's web
+/// embedder → `@litert-lm/core`'s `EmbeddingEngine` (the version litertlm_dart
+/// pins) on WebGPU, with `WebStorageMode.cacheApi`. WebGPU because the
+/// runtime's CPU (WebAssembly) path cannot load these bundles ("Failed to get
+/// external weight for buffer id …", 0.18.0 and 0.19.0 alike); there is no CPU
+/// fallback.
 ///
 /// What it holds the browser to:
 /// - 768 dimensions, unit norm, finite; `maxInputTokens` 1024; `{text}`; GPU;
-/// - the native golden as of LiteRT-LM 0.18, which the page runs
-///   (integration_test/goldens/eg2_text_golden_web.dart, frozen from
-///   native-v0.18.0-d on macOS arm64, CPU): every vector finite and non-zero,
+/// - the native golden (integration_test/goldens/eg2_text_golden.dart,
+///   LiteRT-LM 0.19 as the page's 0.19.0): every vector finite and non-zero,
 ///   cos >= 0.99 against `vector` (WebGPU drifts from the native CPU, measured
-///   about 0.995), >= 0.97 against Sentence Transformers fp32; every query
-///   ranks its document first;
+///   about 0.995 on a Tesla T4 with 0.18.0, 0.997 on an Apple GPU with
+///   0.19.0), >= 0.97 against Sentence Transformers fp32; every query ranks
+///   its document first;
 /// - the 9 TaskTypes give 9 different vectors; empty text embeds;
 /// - W2 and the exact overflow counts: a text of exactly 1024 tokens (prefix,
 ///   BOS and EOS included) embeds, 1025 and 3000 are
@@ -22,7 +24,8 @@
 ///   measurement's `text_with_total` — and the model keeps working;
 /// - a page without `window.EmbeddingEngine = m.EmbeddingEngine;` fails the
 ///   load with the EmbeddingLoadException that names the line;
-/// - supportImage on the 270m is refused naming the 440m;
+/// - supportImage on the 270m is refused naming the 440m, from the bundle's
+///   container header (0.19.0 creates an engine there anyway);
 /// - the 440m: {text, image}; each scene's vector against the native CPU
 ///   image golden (cos >= 0.99; measured about 0.998); text → image top-1
 ///   10/10 on the ten scenes; across platforms (integration_test/goldens/
@@ -92,12 +95,14 @@ import 'package:flutter_edge_ai_example/models/embedding_model.dart' as catalog;
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 // ignore: implementation_imports — the CPU record and the minInputLength measurement build the web pass with a backend and a setting the public backend does not offer
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
+import 'package:litertlm_dart/internal.dart'
+    show LiteRtLmWebBackend, LiteRtLmWebEmbedderConfig, liteRtLmWebRuntime;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'goldens/eg2_image_golden.dart';
-import 'goldens/eg2_text_golden_web.dart';
+import 'goldens/eg2_text_golden.dart';
 import 'web_embeddings_support.dart';
 
 /// Every test in this file, in order; the last one checks they all started.
@@ -246,7 +251,7 @@ List<double> _f32(String encoded) {
 
 final List<_GoldenItem> _golden = [
   for (final item
-      in ((jsonDecode(eg2TextGoldenWebJson) as Map)['items'] as List)
+      in ((jsonDecode(eg2TextGoldenJson) as Map)['items'] as List)
           .cast<Map<String, dynamic>>())
     (
       id: item['id'] as String,
@@ -413,9 +418,9 @@ Future<LiteRtLmWebEmbeddingPass> _directPass({
       supportImage: images,
     ),
   );
-  final config = described.config as LiteRtLmWebEmbeddingConfig;
+  final config = described.config as LiteRtLmWebEmbedderConfig;
   return LiteRtLmWebEmbeddingPass(
-    LiteRtLmWebEmbeddingConfig(
+    LiteRtLmWebEmbedderConfig(
       modelPath: config.modelPath,
       fileName: model.filename,
       runtime: config.runtime,
@@ -611,18 +616,14 @@ void main() {
     } on EmbeddingLoadException catch (e) {
       refusal = e;
     }
-    // The runtime's own reason, for the record: the web has no ModelInfo, so
-    // this is the only evidence that `create` refuses a vision tower the
-    // bundle lacks (rather than failing at the first image).
+    // From the container header, before any engine exists: @litert-lm/core
+    // 0.18.0 refused the missing vision tower in `EmbeddingEngine.create`,
+    // 0.19.0 creates the engine anyway (this test, 2026-11-23), so the
+    // embedder reads the header, as for audio.
     report('eg2_270m_images_refusal', refusal?.message);
     expect(refusal, isNotNull, reason: 'the 270m loaded with images');
     expect(refusal!.engine, 'LiteRT-LM');
-    expect(refusal.cause, isNotNull, reason: 'no runtime error behind it');
-    expect(
-      refusal.message,
-      contains('could not create the embedding engine'),
-      reason: 'refused somewhere other than EmbeddingEngine.create',
-    );
+    expect(refusal.message, contains('has no vision encoder'));
     expect(refusal.message, contains('embeddinggemma-2-text-vision-440m'));
     final model = await _active();
     expect(model.modalities, {EmbeddingModality.text});
@@ -1217,7 +1218,7 @@ void main() {
     );
   }, timeout: const Timeout(Duration(minutes: 30)));
 
-  testWidgets('CPU, asked for directly: @litert-lm/core 0.18.0 still cannot '
+  testWidgets('CPU, asked for directly: $liteRtLmWebRuntime still cannot '
       'load either bundle there, and the error says why', (tester) async {
     _start('CPU refused');
     final record = <String, Object?>{};
@@ -1255,7 +1256,7 @@ void main() {
           contains('could not create the embedding engine'),
           contains('Failed to get external weight'),
           contains(
-            'The CPU (WebAssembly) path of @litert-lm/core 0.18.0 cannot read '
+            'The CPU (WebAssembly) path of $liteRtLmWebRuntime cannot read '
             'the external weights',
           ),
         ),

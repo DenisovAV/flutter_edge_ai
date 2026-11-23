@@ -1,12 +1,12 @@
-/// The `dart:js_interop` side of the EmbeddingGemma 2 web pass:
-/// [WindowLiteRtLmWebRuntime], the [LiteRtLmWebRuntime] the web backend hands
-/// `LiteRtLmWebEmbeddingPass`, over `@litert-lm/core` 0.18.0's
-/// `EmbeddingEngine` as the page exposes it:
+/// The `dart:js_interop` side of the EmbeddingGemma 2 web embedder:
+/// [WindowLiteRtLmWebRuntime], the [LiteRtLmWebRuntime] a [LiteRtLmWebEmbedder]
+/// gets on a page, over `@litert-lm/core`'s `EmbeddingEngine`
+/// ([liteRtLmWebRuntime]) as the page exposes it:
 ///
 /// ```html
 /// <script type="module">
 /// window.litertLmReady = (async () => {
-///   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
+///   const m = await import('<liteRtLmWebModuleUrl>');
 ///   window.Engine = m.Engine;
 ///   window.EmbeddingEngine = m.EmbeddingEngine;
 ///   return m.Engine;
@@ -14,7 +14,7 @@
 /// </script>
 /// ```
 ///
-/// The API used, as published in `@litert-lm/core` 0.18.0
+/// The API used, as published in [liteRtLmWebRuntime]
 /// (`dist/embedding_engine.d.ts`, `embedding_engine_settings.d.ts`,
 /// `wasm_binding_types.js`):
 ///
@@ -33,7 +33,7 @@
 /// [WindowLiteRtLmWebRuntime.readPrefix] is the page's own `fetch()`: the
 /// first bytes of the installed bundle, for its container header.
 ///
-/// With `backend: GPU` (4, the backend the pass asks for) `create` sets up the
+/// With `backend: GPU` (4, the backend the embedder asks for) `create` sets up the
 /// module's one WebGPU device itself, from
 /// `navigator.gpu.requestAdapter({powerPreference: 'high-performance'})`;
 /// [WindowLiteRtLmWebRuntime.webGpuSupport] asks the same question first, so
@@ -44,18 +44,18 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/engine.dart' show edgeAiLog;
+import '../runtime/runtime_log.dart';
+import 'litert_lm_js.dart' show liteRtLmWebBackendCpu, liteRtLmWebBackendGpu;
+import 'web_embedder.dart';
+import 'web_runtime_version.dart';
 
-import 'litert_lm_web_embedding_pass.dart';
-
-/// `Backend` in `@litert-lm/core` 0.18.0 (`wasm_binding_types.js`): `CPU: 3`,
-/// `GPU: 4`. The page's module script pins that version.
+/// `Backend` in `@litert-lm/core` (`wasm_binding_types.js`).
 int _backendValue(LiteRtLmWebBackend backend) => switch (backend) {
-  LiteRtLmWebBackend.cpu => 3,
-  LiteRtLmWebBackend.gpu => 4,
+  LiteRtLmWebBackend.cpu => liteRtLmWebBackendCpu,
+  LiteRtLmWebBackend.gpu => liteRtLmWebBackendGpu,
 };
 
-/// `InputOverflowStrategy` in `@litert-lm/core` 0.18.0: `CHUNK_AND_AVERAGE: 0`,
+/// `InputOverflowStrategy` in `@litert-lm/core`: `CHUNK_AND_AVERAGE: 0`,
 /// `TRUNCATE: 1`, `ERROR: 2`.
 int _overflowValue(LiteRtLmWebOverflowStrategy strategy) => switch (strategy) {
   LiteRtLmWebOverflowStrategy.chunkAndAverage => 0,
@@ -136,7 +136,7 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
   }
 
   /// `navigator.gpu.requestAdapter({powerPreference: 'high-performance'})`:
-  /// the adapter `@litert-lm/core` 0.18.0 itself asks for before it creates
+  /// the adapter `@litert-lm/core` itself asks for before it creates
   /// a GPU engine (`createDefaultWebGpuDevice` in `litertlm_web.js`). The
   /// adapter is only looked at: the runtime requests its own device from its
   /// own adapter in `EmbeddingEngine.create`.
@@ -200,7 +200,7 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
       try {
         await response.body?.cancel().toDart;
       } catch (e) {
-        edgeAiLog('[LiteRtLmWebEmbeddingPass] cancelling the read of $url: $e');
+        runtimeLog('[LiteRtLmWebEmbedder] cancelling the read of $url: $e');
       }
       throw StateError('fetch($url) answered HTTP ${response.status}');
     }
@@ -219,7 +219,7 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
         // Stops the rest of the body: a few KB were wanted, not the model.
         await reader.cancel().toDart;
       } catch (e) {
-        edgeAiLog('[LiteRtLmWebEmbeddingPass] cancelling the read of $url: $e');
+        runtimeLog('[LiteRtLmWebEmbedder] cancelling the read of $url: $e');
       }
     }
     final read = bytes.takeBytes();

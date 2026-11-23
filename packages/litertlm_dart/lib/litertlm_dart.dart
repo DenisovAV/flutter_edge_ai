@@ -1,7 +1,11 @@
 // LiteRT-LM from Dart, shaped like its Kotlin and Swift APIs: an [Engine]
 // loads a `.litertlm` model on a [Backend], a [Conversation] streams replies
-// to [Message]s, an [EmbeddingEngine] embeds with EmbeddingGemma 2. Native
-// only (dart:ffi); the build hook bundles libLiteRtLm for the target.
+// to [Message]s, an [EmbeddingEngine] embeds with EmbeddingGemma 2. Natively
+// over dart:ffi (the build hook bundles libLiteRtLm for the target); on the
+// web over the page's `@litert-lm/core` (dart:js_interop), with the same
+// types. What the web runtime does not have (reading a file by path, the NPU,
+// the tokenizer, option scoring, the benchmark mode) is an UnsupportedError
+// there.
 //
 // What it adds to the official APIs: several conversations per engine with
 // a stopped turn recovered, the NPU vendor
@@ -11,7 +15,10 @@ library;
 
 export 'src/api/backend.dart'
     show Backend, CpuBackend, GpuBackend, NpuBackend, SpeculativeDecodingMode;
-export 'src/api/benchmark.dart' show LlmBenchmarkResult, benchmark;
+export 'src/api/benchmark.dart'
+    if (dart.library.js_interop) 'src/web/native_only_web.dart'
+    show benchmark;
+export 'src/api/benchmark_result.dart' show LlmBenchmarkResult;
 export 'src/api/bundle.dart' show BundleInfoBackends;
 export 'src/api/config.dart'
     show
@@ -32,8 +39,12 @@ export 'src/api/conversation.dart'
         ConversationClosedException,
         TurnFailedException;
 export 'src/api/embedding_engine.dart'
-    show EmbeddingEngine, EmbeddingEngineConfig;
-export 'src/api/engine.dart' show Engine;
+    if (dart.library.js_interop) 'src/web/embedding_engine_web.dart'
+    show EmbeddingEngine;
+export 'src/api/embedding_engine_config.dart' show EmbeddingEngineConfig;
+export 'src/api/engine.dart'
+    if (dart.library.js_interop) 'src/web/engine_web.dart'
+    show Engine;
 export 'src/api/log.dart' show LiteRtLmLog;
 export 'src/api/message.dart'
     show
@@ -55,8 +66,12 @@ export 'src/bundle/litertlm_bundle_info.dart'
         LiteRtLmBundleException,
         LiteRtLmBundleProblem,
         NpuStamp;
-export 'src/bundle/litertlm_bundle_reader.dart' show readBundleInfo;
-export 'src/bundle/litertlm_generic_section.dart' show readBundleGenericData;
+export 'src/bundle/litertlm_bundle_reader.dart'
+    if (dart.library.js_interop) 'src/web/native_only_web.dart'
+    show readBundleInfo;
+export 'src/bundle/litertlm_generic_section.dart'
+    if (dart.library.js_interop) 'src/web/native_only_web.dart'
+    show readBundleGenericData;
 export 'src/embedder/embedder_types.dart'
     show
         EmbedderEngineException,

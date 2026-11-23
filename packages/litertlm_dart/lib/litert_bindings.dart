@@ -1,7 +1,7 @@
 // LiteRtBindings: the LiteRT C API (CompiledModel, tensor buffers,
 // accelerators) from the library this package bundles, which
 // flutter_edge_ai_speech runs its graphs on. No stability promise beyond the
-// C API's own.
+// C API's own. Native only (dart:ffi); never on the web.
 library;
 
 export 'src/ffi/litert_bindings.dart'

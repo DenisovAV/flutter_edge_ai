@@ -1,6 +1,6 @@
-// LiteRtLmWebSession refuses image and audio messages. `@litert-lm/core`
-// 0.18.0 creates the LLM engine with no vision or audio executor, so the bytes
-// could reach no encoder; the session used to drop them, and the model then
+// LiteRtLmWebSession refuses image and audio messages. The web engine is
+// created with no vision or audio executor, so the bytes could reach no
+// encoder; the session used to drop them, and the model then
 // answered about media it never received. The engine side is measured in
 // example/integration_test/web_multimodal_test.dart; these tests stand a stub
 // Conversation on a plain JS object and pin the session's half: the refusal,
@@ -16,14 +16,14 @@ import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web_inference.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/web_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mutex/mutex.dart';
+
+import 'web_session_fixture.dart';
 
 /// A Conversation whose `sendMessageStreaming` records what it was sent and
 /// returns an iterator that is already done.
-({LiteRtLmConversation conversation, List<JSAny?> sent}) _stubConversation() {
+({JSObject conversation, List<JSAny?> sent}) _stubConversation() {
   final sent = <JSAny?>[];
   final done = JSObject()..['done'] = true.toJS;
   final iterator = JSObject()
@@ -33,18 +33,13 @@ import 'package:mutex/mutex.dart';
       sent.add(message);
       return iterator;
     }).toJS
-    ..['cancel'] = (() {}).toJS;
-  return (conversation: conversation as LiteRtLmConversation, sent: sent);
+    ..['cancel'] = (() {}).toJS
+    ..['delete'] = (() => Future<void>.value().toJS).toJS;
+  return (conversation: conversation, sent: sent);
 }
 
-LiteRtLmWebSession _session(LiteRtLmConversation conversation) =>
-    LiteRtLmWebSession(
-      conversation: conversation,
-      modelType: ModelType.gemma4,
-      fileType: ModelFileType.litertlm,
-      generationMutex: Mutex(),
-      onClose: () {},
-    );
+LiteRtLmWebSession _session(JSObject conversation) =>
+    webSessionOver(conversation, modelType: ModelType.gemma4);
 
 final _jpeg = Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xE0]);
 final _wav = Uint8List.fromList('RIFF'.codeUnits);

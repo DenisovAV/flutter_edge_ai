@@ -23,6 +23,9 @@ import 'backend_preference.dart'
 import 'intel_weight_banks.dart';
 import '../runtime/runtime_log.dart';
 import 'npu_stack_manifest.dart';
+import '../runtime/npu_platform.dart';
+
+export '../runtime/npu_platform.dart';
 
 /// What choosing an NPU vendor asks of the host. The real one is
 /// [LiteRtLmPlatformNpuHost]; tests pass a fake, because every answer here is
@@ -48,31 +51,6 @@ abstract interface class LiteRtLmNpuHost {
   /// The `dispatch_lib_dir` for LiteRT ([prepareNpuDispatchDir]). Throws
   /// [NpuDispatchUnavailableException] when the stack cannot be prepared.
   Future<String> prepareDispatchDir(NpuStack vendor);
-}
-
-/// What the NPU code needs from the app's platform layer that plain Dart
-/// cannot answer: the build's NativeAssetsManifest.json, and on Android a
-/// dispatch directory the app's native side prepares. The Flutter one is
-/// `FlutterNpuPlatform` (flutter_npu_platform.dart), which reads the manifest
-/// through `rootBundle` and asks core's `flutter_gemma_bundled` channel.
-abstract interface class NpuPlatform {
-  /// The text of the build's `NativeAssetsManifest.json`. Throws when it
-  /// cannot be read; [checkNpuStackInManifest] turns that into
-  /// [NpuStackCheck.unknown].
-  Future<String> readNativeAssetsManifest();
-
-  /// A directory on Android holding exactly [libFileNames] (`lib<name>.so`)
-  /// for LiteRT to load [vendor]'s dispatch from, or null when the native side
-  /// returned none. Throws [NpuDispatchUnavailableException] when the stack
-  /// cannot be prepared.
-  Future<String?> prepareAndroidDispatchDir(
-    List<String> libFileNames,
-    NpuStack vendor,
-  );
-
-  /// The directory of the running executable: where Native Assets puts a
-  /// Linux app's `lib/` and a Windows app's DLLs ([executableDirOf]).
-  String get executableDir;
 }
 
 /// The directory of [executable] — by default `Platform.resolvedExecutable`,

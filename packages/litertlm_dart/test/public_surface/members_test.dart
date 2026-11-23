@@ -35,6 +35,33 @@ void main() {
       ),
     );
   }, timeout: const Timeout(Duration(minutes: 5)));
+
+  // The public library exports these from `src/web/` where
+  // `dart.library.js_interop` is true; the analyzer above sees the native
+  // arm. Each web declaration must render exactly as its native twin, so an
+  // app compiles against the same API on every platform.
+  test('the web arm declares the same members as the native one', () async {
+    final native = await exportNamespace('litertlm_dart.dart');
+    const webArms = {
+      'src/web/engine_web.dart': ['Engine'],
+      'src/web/embedding_engine_web.dart': ['EmbeddingEngine'],
+      'src/web/native_only_web.dart': [
+        'benchmark',
+        'readBundleGenericData',
+        'readBundleInfo',
+      ],
+    };
+    for (final MapEntry(key: library, value: names) in webArms.entries) {
+      final web = await exportNamespace(library);
+      for (final name in names) {
+        expect(
+          _render({name: web[name]!}),
+          _render({name: native[name]!}),
+          reason: '$name in lib/$library differs from the native one',
+        );
+      }
+    }
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }
 
 String _render(Map<String, Element> namespace) {

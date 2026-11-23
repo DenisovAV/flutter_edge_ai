@@ -64,11 +64,12 @@ jobs:
       - name: Core public surface
         run: tool/check_core_surface.sh
 
-      # litertlm_dart is the Flutter-free LiteRT-LM runtime: nothing under its
-      # lib/src imports Flutter, core or a Flutter plugin (the workspace would
-      # resolve them, so pub alone does not stop it).
+      # litertlm_dart is the Flutter-free LiteRT-LM runtime, native and web:
+      # nothing under its lib/src imports Flutter, core or a Flutter plugin
+      # (the workspace would resolve them, so pub alone does not stop it).
+      # That its web graph pulls no dart:io or dart:ffi is the next step's.
       - name: litertlm_dart is Flutter-free
-        run: python3 tool/check_litertlm_runtime_gate.py packages/litertlm_dart/lib litertlm_dart ffi bundle runtime hook embedder api
+        run: python3 tool/check_litertlm_runtime_gate.py packages/litertlm_dart/lib litertlm_dart ffi bundle runtime hook embedder api web
 
       # The web compilers do not reject a native import that leaks into the web
       # graph (dart2js lists dart:io and dart:isolate, dart2wasm accepts all

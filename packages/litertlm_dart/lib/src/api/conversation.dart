@@ -1,15 +1,17 @@
 // LiteRT-LM's Kotlin/Swift `Conversation`: messages in, a streamed reply out,
 // over one of the conversation handles of `ffi/conversation_handles.dart`
-// (its own native conversation, or a turn of the shared one).
+// (its own native conversation, or a turn of the shared one) or, on the web,
+// over `web/web_conversation_handle.dart`. No dart:ffi, no dart:io: the same
+// class on every platform.
 
 import 'dart:async';
 import 'dart:convert' show JsonUnsupportedObjectError, jsonEncode;
 
-import '../ffi/litert_lm_client.dart'
-    show ConversationHandle, NativeBenchmark, NativeLastTurnEnd;
 import '../ffi/native_turns.dart'
     show LiteRtLmTurnCancelledException, LiteRtLmTurnClosedException;
-import '../ffi/send_options.dart';
+import '../runtime/conversation_handle.dart'
+    show ConversationHandle, NativeBenchmark, NativeLastTurnEnd;
+import '../runtime/send_options.dart';
 import '../runtime/errors.dart';
 import '../runtime/types.dart' show BenchmarkInfo;
 import 'config.dart';

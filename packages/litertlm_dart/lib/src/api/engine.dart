@@ -43,6 +43,8 @@ import 'config.dart';
 import 'conversation.dart';
 import 'message.dart';
 
+export '../runtime/litert_lm_log_level.dart' show liteRtLmNativeLogLevel;
+
 /// The smallest context window a CPU or GPU `.litertlm` engine is created
 /// with: the `kv_cache_max_len` the published CPU/GPU bundles bake. Below it
 /// the native KV-cache resize underflows and generation fails to allocate
@@ -307,11 +309,6 @@ EngineHost get debugEngineHost => _host;
 
 @visibleForTesting
 set debugEngineHost(EngineHost? host) => _host = host ?? const EngineHost();
-
-/// The native log level [Engine.create] sets before every engine; null
-/// leaves the process's (LiteRT-LM's default until one is set). The level is
-/// process-wide, as LiteRT-LM's is.
-LiteRtLmLogLevel? liteRtLmNativeLogLevel;
 
 /// One `.litertlm` model loaded on one backend.
 final class Engine {

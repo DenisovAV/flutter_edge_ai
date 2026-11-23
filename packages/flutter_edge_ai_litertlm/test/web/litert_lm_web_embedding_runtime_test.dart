@@ -1,6 +1,6 @@
 // The EmbeddingGemma 2 web pass over the REAL interop — `WindowLiteRtLmWebRuntime`
 // and the page's `window.litertLmReady` / `window.EmbeddingEngine` — with a
-// stub engine of `@litert-lm/core` 0.18.0's shape defined in plain JS (`eval`),
+// stub engine of `@litert-lm/core`'s shape defined in plain JS (`eval`),
 // through the path an app takes: the web backend's describe(), the pass, and
 // core's inline host. What the VM suite cannot see: the JS objects themselves.
 // - the loader states: no loader, a loader without `EmbeddingEngine` (an
@@ -41,8 +41,11 @@ import 'package:flutter_edge_ai/src/embedding/common_embedding_model.dart';
 import 'package:flutter_edge_ai/src/embedding/embedding_host_web.dart'
     as inline;
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_backend_web.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_runtime.dart';
+import 'package:litertlm_dart/internal_web.dart'
+    show
+        LiteRtLmWebGpuSupport,
+        LiteRtLmWebRuntimeState,
+        WindowLiteRtLmWebRuntime;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'eg2_header_fixtures.dart';
@@ -80,7 +83,7 @@ void _stubGpu({bool present = true, bool adapter = true}) => _js('''
 
 int get _gpuRequests => (globalContext['__gpuRequests']! as JSArray).length;
 
-/// A stub `EmbeddingEngine` of 0.18.0's shape that records what it is given.
+/// A stub `EmbeddingEngine` of the runtime's shape that records what it is given.
 /// A text "token" is a space-separated word, plus BOS and EOS; an image is
 /// 140 tokens, an audio clip one per byte; an array of parts is the sum.
 /// Inputs over `__eg2.maxSeq` under TRUNCATE come back with

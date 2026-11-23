@@ -20,6 +20,12 @@ const liteRtLmVisionTokenBudgets = [140, 70];
 String liteRtLmNoAudioEncoderMessage(String file) =>
     '$file has no audio encoder; install $liteRtLmAudioBundle';
 
+/// Declared images on [file], a bundle without a vision encoder: the same
+/// words natively (from ModelInfo's vision signatures) and on the web (from
+/// the container header).
+String liteRtLmNoVisionEncoderMessage(String file) =>
+    '$file has no vision encoder; install embeddinggemma-2-text-vision-440m';
+
 /// Why [file]'s container could not be read to find [looking].
 String liteRtLmUnreadableContainerMessage(
   String file,

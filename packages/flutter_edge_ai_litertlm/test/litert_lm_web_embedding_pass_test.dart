@@ -1,5 +1,5 @@
-// `LiteRtLmWebEmbeddingPass` (web, EmbeddingGemma 2 over @litert-lm/core's
-// EmbeddingEngine) on the VM, over a fake runtime that models what the real
+// `LiteRtLmWebEmbeddingPass` (web, EmbeddingGemma 2 over litertlm_dart's
+// LiteRtLmWebEmbedder and @litert-lm/core's EmbeddingEngine) on the VM, over a fake runtime that models what the real
 // one does with the settings and options it is given. The real interop is the
 // browser's (example/integration_test/web_eg2_test.dart on the GCE VM); here:
 // the named error for a page without the shim line, the WebGPU refusal before
@@ -29,8 +29,10 @@ import 'package:flutter_edge_ai/src/embedding/common_embedding_model.dart';
 // ignore: implementation_imports — the app-facing model over core's inline host, which is internal to core
 import 'package:flutter_edge_ai/src/embedding/embedding_host_web.dart'
     as inline;
+import 'package:flutter_edge_ai_litertlm/src/embedding/embedder_core_errors.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_common.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
+import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
 
 /// "Tokens" as the fake engine counts them: one per character of a text part
@@ -97,7 +99,7 @@ final class _FakeEngine implements LiteRtLmWebEngine {
       );
     }
     if (runtime.webGpu) {
-      // @litert-lm/core 0.18.0 on WebGPU: whatever the strategy, windows of
+      // @litert-lm/core on WebGPU: whatever the strategy, windows of
       // the signature, averaged (measured on Chrome 155).
       return (
         embedding: vector,
@@ -201,7 +203,7 @@ final class _FakeRuntime implements LiteRtLmWebRuntime {
   }
 }
 
-LiteRtLmWebEmbeddingConfig _config(
+LiteRtLmWebEmbedderConfig _config(
   _FakeRuntime runtime, {
   String modelPath = 'blob:eg2',
   Set<EmbeddingModality> media = const {},
@@ -210,7 +212,7 @@ LiteRtLmWebEmbeddingConfig _config(
   List<String>? revoked,
   LiteRtLmWebBackend? backend,
   String fileName = 'embeddinggemma-2-text-vision-440m.litertlm',
-}) => LiteRtLmWebEmbeddingConfig(
+}) => LiteRtLmWebEmbedderConfig(
   modelPath: modelPath,
   fileName: fileName,
   runtime: runtime,
@@ -221,7 +223,7 @@ LiteRtLmWebEmbeddingConfig _config(
         : path;
   },
   revokeUrl: (url) => revoked?.add(url),
-  declaredMedia: media,
+  declaredMedia: {for (final m in media) embedderModalityOf(m)},
   visionTokensPerImage: visionTokensPerImage,
   backend: backend ?? LiteRtLmWebBackend.gpu,
 );
@@ -268,7 +270,7 @@ void main() {
       final runtime = _FakeRuntime();
       final pass = LiteRtLmWebEmbeddingPass(
         // The default backend, as describe() builds it.
-        LiteRtLmWebEmbeddingConfig(
+        LiteRtLmWebEmbedderConfig(
           modelPath: 'blob:eg2',
           fileName: 'embeddinggemma-2-text-270m.litertlm',
           runtime: runtime,
@@ -440,7 +442,7 @@ void main() {
                 contains('embeddinggemma-2-text-vision-440m.litertlm'),
                 contains('There is no CPU fallback'),
                 contains(
-                  'the CPU (WebAssembly) path of @litert-lm/core 0.18.0 '
+                  'the CPU (WebAssembly) path of $liteRtLmWebRuntime '
                   'cannot read the external weights',
                 ),
               ),
@@ -506,7 +508,7 @@ void main() {
               contains('(cpu)'),
               contains('Failed to get external weight'),
               contains(
-                'The CPU (WebAssembly) path of @litert-lm/core 0.18.0 cannot '
+                'The CPU (WebAssembly) path of $liteRtLmWebRuntime cannot '
                 'read the external weights of the EmbeddingGemma 2 .litertlm '
                 'bundles; they load on WebGPU',
               ),
@@ -603,18 +605,55 @@ void main() {
       },
     );
 
-    test('no audio declared: no audio tower, and the header is never '
-        'read', () async {
+    test('images without audio: no audio tower; the header is read, for the '
+        'vision tower', () async {
       final runtime = _FakeRuntime();
       final info = await _pass(
         runtime,
         media: {EmbeddingModality.image},
       ).load();
       expect(runtime.engine.settings.audioBackend, isNull);
-      expect(runtime.reads, isEmpty);
+      // One header read: its prefix, then up to the header's end.
+      expect(runtime.calls, ['ready', 'gpu', 'read', 'read', 'create']);
       expect(info.audioFormats, isEmpty);
       expect(info.combinedInputs, isTrue);
     });
+
+    test('text only: the header is never read', () async {
+      final runtime = _FakeRuntime();
+      await _pass(runtime).load();
+      expect(runtime.reads, isEmpty);
+    });
+
+    test('images declared on the 270m: refused from its container header, '
+        'naming the 440m, before any engine exists (@litert-lm/core 0.19.0 '
+        'creates one anyway)', () async {
+      final runtime = _FakeRuntime()..file = _header('270m');
+      await expectLater(
+        _pass(runtime, media: {EmbeddingModality.image}).load(),
+        throwsA(
+          _loadError(
+            allOf(
+              contains('has no vision encoder'),
+              contains('embeddinggemma-2-text-vision-440m'),
+            ),
+          ),
+        ),
+      );
+      expect(runtime.created, isEmpty);
+    });
+
+    test(
+      'images declared on the 440m: its vision tower is in the header',
+      () async {
+        final runtime = _FakeRuntime()..file = _header('440m');
+        final info = await _pass(
+          runtime,
+          media: {EmbeddingModality.image},
+        ).load();
+        expect(info.modalities, contains(EmbeddingModality.image));
+      },
+    );
 
     for (final bundle in ['270m', '440m']) {
       test('audio declared on the $bundle: refused from its container header, '
@@ -696,12 +735,15 @@ void main() {
       for (final (bundle, refused) in [('740m', false), ('270m', true)]) {
         final runtime = _FakeRuntime()..file = _header(bundle);
         final revoked = <String>[];
-        final check = requireLiteRtLmWebAudioEncoderFor(
-          _config(
-            runtime,
-            modelPath: 'opfs://eg2.litertlm',
-            revoked: revoked,
-            fileName: 'eg2.litertlm',
+        // As describe() runs it: with core's exceptions.
+        final check = withCoreEmbedderErrors(
+          () => requireLiteRtLmWebAudioEncoderFor(
+            _config(
+              runtime,
+              modelPath: 'opfs://eg2.litertlm',
+              revoked: revoked,
+              fileName: 'eg2.litertlm',
+            ),
           ),
         );
         if (refused) {
@@ -737,21 +779,21 @@ void main() {
       );
     });
 
-    test('create fails with images declared (the 270m has no vision '
-        'encoder, or an LLM fills the page\'s WebAssembly memory): the '
-        'message names the bundle that embeds images and the LLM', () async {
+    test('create fails with images declared (an LLM fills the page\'s '
+        'WebAssembly memory): the message says to close the LLM', () async {
       final runtime = _FakeRuntime()
-        ..createError = StateError('NOT_FOUND: vision encoder');
+        ..createError = StateError('Failed to modify graph with delegate');
       await expectLater(
         _pass(runtime, media: {EmbeddingModality.image}).load(),
         throwsA(
           _loadError(
             allOf(
-              contains('NOT_FOUND: vision encoder'),
-              contains('install embeddinggemma-2-text-vision-440m'),
+              contains('Failed to modify graph with delegate'),
               contains(
                 'If a .litertlm LLM is loaded on this page, close it first',
               ),
+              // The header refused a bundle without a vision encoder already.
+              isNot(contains('install embeddinggemma-2-text-vision-440m')),
             ),
           ),
         ),
@@ -800,7 +842,7 @@ void main() {
       final runtime = _FakeRuntime();
       final revoked = <String>[];
       final pass = LiteRtLmWebEmbeddingPass(
-        LiteRtLmWebEmbeddingConfig(
+        LiteRtLmWebEmbedderConfig(
           modelPath: 'opfs://eg2.litertlm',
           fileName: 'embeddinggemma-2-text-270m.litertlm',
           runtime: runtime,
@@ -1304,7 +1346,7 @@ void main() {
       'it; text overflows with exact counts', () async {
     final runtime = _FakeRuntime();
     final host = await inline.startEmbeddingHost(
-      EmbeddingPassDescriptor<LiteRtLmWebEmbeddingConfig>(
+      EmbeddingPassDescriptor<LiteRtLmWebEmbedderConfig>(
         engineTag: liteRtLmEngineTag,
         factory: buildLiteRtLmWebEmbeddingPass,
         config: _config(runtime, media: {EmbeddingModality.image}),
@@ -1370,7 +1412,7 @@ void main() {
     final runtime = _FakeRuntime();
     final media = {EmbeddingModality.image, EmbeddingModality.audio};
     final host = await inline.startEmbeddingHost(
-      EmbeddingPassDescriptor<LiteRtLmWebEmbeddingConfig>(
+      EmbeddingPassDescriptor<LiteRtLmWebEmbedderConfig>(
         engineTag: liteRtLmEngineTag,
         factory: buildLiteRtLmWebEmbeddingPass,
         config: _config(runtime, media: media),

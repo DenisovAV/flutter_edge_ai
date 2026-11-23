@@ -3,6 +3,7 @@
 // choice, the LLM client and its conversation handles, the EmbeddingGemma 2
 // embedder. For this repository's packages only: no compatibility promise,
 // changed with any release. Apps use `package:litertlm_dart/litertlm_dart.dart`.
+// Native only (dart:ffi, dart:io); the web arm's are internal_web.dart.
 library;
 
 export 'internal.dart';

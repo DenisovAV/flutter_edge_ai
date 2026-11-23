@@ -1,0 +1,138 @@
+// The web `EmbeddingEngine`: the same public shape as the native one
+// (`src/api/embedding_engine.dart`), over [LiteRtLmWebEmbedder] and the page's
+// `@litert-lm/core` `EmbeddingEngine` ([liteRtLmWebRuntime]). The public
+// library exports it in place of the native one where `dart.library.js_interop`
+// is true.
+
+import 'dart:typed_data' show Float32List;
+
+import '../api/backend.dart';
+import '../api/embedding_engine_config.dart';
+import '../api/message.dart';
+import '../embedder/embedder_constants.dart'
+    show liteRtLmDefaultVisionTokensPerImage, liteRtLmVisionTokenBudgets;
+import '../embedder/embedder_types.dart';
+import '../runtime/types.dart' show BackendKind;
+import 'embedding_runtime_js.dart';
+import 'web_embedder.dart';
+import 'web_runtime_version.dart';
+
+/// An EmbeddingGemma 2 model, loaded by the page's runtime.
+final class EmbeddingEngine {
+  EmbeddingEngine._(this._embedder, this.info);
+
+  final LiteRtLmWebEmbedder _embedder;
+
+  /// The dimension, the input limit, the modalities and the backend that
+  /// loaded.
+  final EmbedderInfo info;
+
+  /// Loads [config.modelPath], a URL the page can fetch (`blob:`, `https:`),
+  /// on WebGPU ([Backend.gpu]; a page without WebGPU is refused) or
+  /// WebAssembly ([Backend.cpu]). The vision tower, when [config.visionBackend]
+  /// is set, runs on the text tower's backend; the audio tower on
+  /// [config.audioBackend].
+  ///
+  /// [config.cacheDir] and [config.requireWeightCache] are read natively
+  /// only: the web runtime keeps no weight cache. Throws [UnsupportedError]
+  /// for the NPU, and [EmbedderLoadException] for a bundle or a page that
+  /// cannot run as asked.
+  static Future<EmbeddingEngine> create(EmbeddingEngineConfig config) async {
+    final backend = _webBackend(config.backend, 'backend');
+    final audio = config.audioBackend;
+    final budget =
+        config.visionTokensPerImage ?? liteRtLmDefaultVisionTokensPerImage;
+    if (!liteRtLmVisionTokenBudgets.contains(budget)) {
+      throw ArgumentError.value(
+        config.visionTokensPerImage,
+        'visionTokensPerImage',
+        'must be one of $liteRtLmVisionTokenBudgets',
+      );
+    }
+    if (config.visionBackend case final vision?
+        when _webBackend(vision, 'visionBackend') != backend) {
+      throw UnsupportedError(
+        'On the web the vision tower runs on the text tower\'s backend '
+        '($backend); visionBackend $vision differs.',
+      );
+    }
+    final file = config.modelPath.split('/').last;
+    final embedder = LiteRtLmWebEmbedder(
+      LiteRtLmWebEmbedderConfig(
+        modelPath: config.modelPath,
+        fileName: file.isEmpty ? config.modelPath : file,
+        runtime: const WindowLiteRtLmWebRuntime(),
+        resolveUrl: (path) async => path,
+        revokeUrl: (_) {},
+        declaredMedia: {
+          if (config.visionBackend != null) EmbedderModality.image,
+          if (audio != null) EmbedderModality.audio,
+        },
+        visionTokensPerImage: budget,
+        backend: backend,
+        audioBackend: audio == null
+            ? liteRtLmWebAudioBackend
+            : _webBackend(audio, 'audioBackend'),
+      ),
+    );
+    final loaded = await embedder.load();
+    final limit = loaded.maxInputTokens;
+    if (limit == null) {
+      await embedder.close();
+      throw EmbedderLoadException(
+        'LiteRT-LM could not pin the input limit of ${config.modelPath} on '
+        'the web ($liteRtLmWebRuntime): the engine neither truncated nor '
+        'split its over-long probe as expected.',
+      );
+    }
+    return EmbeddingEngine._(
+      embedder,
+      EmbedderInfo(
+        dimension: loaded.dimension,
+        maxInputTokens: limit,
+        modalities: loaded.modalities,
+        visionTokensPerImage: loaded.visionTokensPerImage,
+        activeBackend: switch (backend) {
+          LiteRtLmWebBackend.cpu => BackendKind.cpu,
+          LiteRtLmWebBackend.gpu => BackendKind.gpu,
+        },
+      ),
+    );
+  }
+
+  /// Always null on the web: the runtime keeps no weight cache.
+  String? get cacheDir => null;
+
+  bool _closed = false;
+
+  /// The embedding of [contents]: at most one text part (its task prefix
+  /// already in front), any image parts and at most one audio part, one
+  /// vector for all of them. Throws [EmbedderInputTooLongException] for an
+  /// input over the limit (never truncated), [ArgumentError] for contents it
+  /// does not take and [StateError] after [close].
+  Future<Float32List> computeEmbedding(List<Content> contents) async {
+    if (_closed) throw StateError('The embedding engine is closed.');
+    final input = embedderInputOfContents(contents, info.modalities);
+    return Float32List.fromList(await _embedder.embed(input));
+  }
+
+  /// Deletes the engine.
+  Future<void> close() {
+    _closed = true;
+    return _embedder.close();
+  }
+}
+
+LiteRtLmWebBackend _webBackend(Backend backend, String name) =>
+    switch (backend) {
+      CpuBackend(threadCount: null) => LiteRtLmWebBackend.cpu,
+      GpuBackend() => LiteRtLmWebBackend.gpu,
+      CpuBackend() => throw UnsupportedError(
+        'The web runtime ($liteRtLmWebRuntime) takes no CPU thread count '
+        '($name).',
+      ),
+      NpuBackend() => throw UnsupportedError(
+        'EmbeddingGemma 2 runs on the NPU only natively, not on the web '
+        '($name).',
+      ),
+    };

@@ -1,10 +1,14 @@
-// One lock for everything this package runs on the page's `@litert-lm/core`
+// One lock for everything litertlm_dart runs on the page's `@litert-lm/core`
 // WebAssembly module: the `.litertlm` LLM engine (`Engine.create`,
 // `createConversation`, a generation from its first chunk until the stream
 // ends) and the EmbeddingGemma 2 engine (`EmbeddingEngine.create` with the
-// load probe, each `computeEmbedding`). Internal; never exported.
+// load probe, each `computeEmbedding`). Internal (internal.dart), for the
+// flutter_edge_ai_litertlm tests that order their own calls against it.
 //
-// Why a page-wide lock, read from @litert-lm/core 0.18.0:
+// Why a page-wide lock, read from @litert-lm/core 0.18.0 and again from
+// 0.19.0, which adds a per-module creation mutex (`runExclusiveEngineCreation`)
+// that orders the two engines' creates, but not a generation against an
+// embedding:
 // - Both engines run in ONE Emscripten module per page
 //   (`getOrLoadGlobalLiteRtLm()`), but the runtime's own `Mutex` is per engine
 //   object (`Engine.mutexes.executor`, `EmbeddingEngine.mutex`): nothing

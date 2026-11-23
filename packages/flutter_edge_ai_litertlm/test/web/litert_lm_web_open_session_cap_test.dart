@@ -13,7 +13,8 @@ import 'dart:js_interop_unsafe';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_web.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web_inference.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/web_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/web/web_llm_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Resolves the active model to a blob URL; nothing is read from it.
@@ -40,10 +41,12 @@ void main() {
         failNext = false;
         return gate.future.then<JSObject>((_) {
           if (fail) throw StateError('createConversation failed');
-          return JSObject()..['cancel'] = (() {}).toJS;
+          return JSObject()
+            ..['cancel'] = (() {}).toJS
+            ..['delete'] = (() => Future<void>.value().toJS).toJS;
         }).toJS;
       }).toJS
-      ..['delete'] = (() {}).toJS;
+      ..['delete'] = (() => Future<void>.value().toJS).toJS;
     globalContext['litertLmReady'] = Future<void>.value().toJS;
     globalContext['Engine'] = JSObject()
       ..['create'] = ((JSAny? options) => Future<JSObject>.value(
@@ -51,7 +54,7 @@ void main() {
       ).toJS).toJS;
 
     final model = LiteRtLmWebInferenceModel(
-      sourceResolver: _Resolver(),
+      createEngine: () => createLiteRtLmWebEngine(_Resolver()),
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
       maxConcurrentSessions: 1,
@@ -90,7 +93,7 @@ void main() {
                   )
                   .toJS)
               .toJS
-      ..['delete'] = (() {}).toJS;
+      ..['delete'] = (() => Future<void>.value().toJS).toJS;
     globalContext['litertLmReady'] = Future<void>.value().toJS;
     globalContext['Engine'] = JSObject()
       ..['create'] = ((JSAny? options) => Future<JSObject>.value(
@@ -98,7 +101,7 @@ void main() {
       ).toJS).toJS;
 
     final model = LiteRtLmWebInferenceModel(
-      sourceResolver: _Resolver(),
+      createEngine: () => createLiteRtLmWebEngine(_Resolver()),
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
       onClose: () {},

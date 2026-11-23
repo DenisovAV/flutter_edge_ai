@@ -71,6 +71,12 @@ const _nativeOnly = {
       'native-only WordPiece adapter',
   'packages/flutter_edge_ai_litertlm/lib/litert_bindings.dart':
       'native-only LiteRT FFI bindings',
+  'packages/litertlm_dart/lib/bindings.dart':
+      'native-only LiteRT-LM FFI bindings',
+  'packages/litertlm_dart/lib/litert_bindings.dart':
+      'native-only LiteRT FFI bindings',
+  'packages/litertlm_dart/lib/internal_io.dart':
+      'native-only internals of the FFI runtime (internal.dart is web-safe)',
 };
 
 void main() {

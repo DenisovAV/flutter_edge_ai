@@ -210,9 +210,16 @@ for dir in packages/*/ packages/*/example/; do
   # name has a space. `|| true`: grep exits 1 when nothing matches.
   browser_files="$(cd "$dir" && grep -rlE "@TestOn\('(browser|chrome)'\)" test | sort | tr '\n' ' ' || true)"
   if [[ -n "${browser_files// /}" ]]; then
-    echo "::group::flutter test --platform chrome — $pkg"
-    # shellcheck disable=SC2086  # word splitting is the point
-    (cd "$dir" && flutter test --platform chrome --exclude-tags slow $browser_files)
+    echo "::group::test --platform chrome — $pkg"
+    if ! grep -q 'sdk: flutter' "${dir}pubspec.yaml"; then
+      # A pure Dart package (litertlm_dart's web arm): `flutter test` cannot
+      # run package:test suites without flutter_test, `dart test -p` can.
+      # shellcheck disable=SC2086  # word splitting is the point
+      (cd "$dir" && dart test -p chrome --exclude-tags slow $browser_files)
+    else
+      # shellcheck disable=SC2086  # word splitting is the point
+      (cd "$dir" && flutter test --platform chrome --exclude-tags slow $browser_files)
+    fi
     rc=$?
     echo "::endgroup::"
     if [[ $rc -eq 0 ]]; then

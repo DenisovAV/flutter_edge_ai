@@ -21,8 +21,11 @@ final _golden = File('test/public_surface.golden.txt');
 List<String> _exportedNames(String source) {
   final names = <String>[];
   final export = RegExp(r"export\s+'([^']+)'([^;]*);");
+  // A conditional export names its web arm; the names are the show list
+  // (the web arm exports the same, members_test.dart holds them equal).
+  final condition = RegExp(r"^if\s*\([^)]*\)\s*'[^']+'\s*");
   for (final m in export.allMatches(source)) {
-    final clause = m.group(2)!.trim();
+    final clause = m.group(2)!.trim().replaceFirst(condition, '');
     if (!clause.startsWith('show')) {
       throw StateError('export ${m.group(1)} shows no list: $clause');
     }

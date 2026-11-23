@@ -21,3 +21,9 @@ enum LiteRtLmLogLevel {
   /// The `LiteRtLmLogSeverity` value.
   final int nativeValue;
 }
+
+/// The native log level [Engine.create] sets before every engine; null
+/// leaves the process's (LiteRT-LM's default until one is set). The level is
+/// process-wide, as LiteRT-LM's is. The web runtime has no such setting and
+/// never reads it.
+LiteRtLmLogLevel? liteRtLmNativeLogLevel;

@@ -23,7 +23,8 @@
 //   does not wait for it.
 // - `maxInputLength: 1024` (D21, the runtime's own default), WebGPU for the
 //   text and the vision tower. The CPU (WebAssembly) path of `@litert-lm/core`
-//   0.18.0 could not load the EmbeddingGemma 2 bundles: `EmbeddingEngine.create`
+//   cannot load the EmbeddingGemma 2 bundles, 0.18.0 and 0.19.0 alike
+//   (web_eg2_test.dart, 2026-11-23): `EmbeddingEngine.create`
 //   fails with "Failed to get external weight for buffer id …" for the 270m
 //   and the 440m alike (measured on Chrome 155, and on the 0.19.0 nightly of
 //   2026-10-11). WebGPU loads them, and its vectors match the native CPU
@@ -59,7 +60,8 @@
 //   the fp16 failure — refuses the load instead of serving wrong vectors. The
 //   input limit the engine really enforces (prefix, BOS and EOS included)
 //   comes from what it did with the probe: on the CPU path it truncates and
-//   reports `truncatedLength`; on WebGPU `@litert-lm/core` 0.18.0 ignores the
+//   reports `truncatedLength`; on WebGPU `@litert-lm/core` (0.18.0, and 0.19.0
+//   on 2026-11-23) ignores the
 //   overflow strategy (TRUNCATE and ERROR alike) and always splits an
 //   over-long input into windows of its text signature and averages them
 //   (`numChunks` > 1, no `truncatedLength`; measured on Chrome 155: 1024
@@ -88,9 +90,9 @@ import 'web_runtime_version.dart';
 /// The `@litert-lm/core` backends the pass can ask for (`Backend.CPU`,
 /// `Backend.GPU`).
 enum LiteRtLmWebBackend {
-  /// XNNPack on WebAssembly. `@litert-lm/core` 0.18.0 cannot load the
-  /// EmbeddingGemma 2 bundles on it (their external weights); the pass says
-  /// so when `EmbeddingEngine.create` fails here.
+  /// XNNPack on WebAssembly. `@litert-lm/core` cannot load the EmbeddingGemma
+  /// 2 bundles on it (their external weights; 0.18.0 and 0.19.0 alike); the
+  /// embedder says so when `EmbeddingEngine.create` fails here.
   cpu,
 
   /// WebGPU: the default, and the backend the EmbeddingGemma 2 bundles load
@@ -243,7 +245,7 @@ abstract interface class LiteRtLmWebRuntime {
   /// loader itself failed (the module could not be imported).
   Future<LiteRtLmWebRuntimeState> ensureReady();
 
-  /// Asks the browser for a WebGPU adapter as `@litert-lm/core` 0.18.0 does
+  /// Asks the browser for a WebGPU adapter as `@litert-lm/core` does
   /// before it creates a GPU engine (`navigator.gpu.requestAdapter({
   /// powerPreference: 'high-performance'})`). Throws when the request itself
   /// fails.
@@ -314,8 +316,8 @@ final class LiteRtLmWebEmbedderConfig {
 
   /// The backend of the text tower, and of the vision tower when images are
   /// declared: WebGPU. CPU is left selectable for the drive suite, which
-  /// records that `@litert-lm/core` 0.18.0 still cannot load the bundles on
-  /// it; nothing in the package selects it.
+  /// records that the pinned runtime still cannot load the bundles on it;
+  /// the public web `EmbeddingEngine` refuses it.
   final LiteRtLmWebBackend backend;
 
   /// The backend of the audio tower when audio is declared:

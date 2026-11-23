@@ -32,8 +32,8 @@ class LiteRtLmEngine
   /// Read by the native engine only: the web runtime has no such setting.
   final LiteRtLmLogLevel? nativeLogLevel;
 
-  /// Checked as natively, then ignored: `@litert-lm/core` 0.18.0 takes no
-  /// thinking budget. A load with one set says so once per isolate, in debug.
+  /// Checked as natively, then ignored: the web runtime takes no thinking
+  /// budget (litertlm_dart refuses one there). A load with one set says so once per isolate, in debug.
   final int? thinkingTokenBudget;
 
   @override

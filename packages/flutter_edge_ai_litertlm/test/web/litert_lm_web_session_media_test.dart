@@ -6,7 +6,7 @@
 // Conversation on a plain JS object and pin the session's half: the refusal,
 // its wording, and that nothing of the refused message is staged.
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Run:
+// tool/test_all.sh runs it in Chrome (dart2js and dart2wasm). By hand:
 //   flutter test --platform chrome test/web/litert_lm_web_session_media_test.dart
 @TestOn('browser')
 library;

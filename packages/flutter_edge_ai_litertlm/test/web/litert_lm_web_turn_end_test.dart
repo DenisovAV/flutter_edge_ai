@@ -2,7 +2,7 @@
 // TurnEnd.stopped and a close the consumer did not ask for TurnEnd.closed,
 // each with the text generated so far and no error.
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Run:
+// tool/test_all.sh runs it in Chrome (dart2js and dart2wasm). By hand:
 //   flutter test --platform chrome test/web/litert_lm_web_turn_end_test.dart
 @TestOn('browser')
 library;

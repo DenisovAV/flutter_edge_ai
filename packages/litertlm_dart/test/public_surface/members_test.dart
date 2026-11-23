@@ -42,15 +42,8 @@ void main() {
   // app compiles against the same API on every platform.
   test('the web arm declares the same members as the native one', () async {
     final native = await exportNamespace('litertlm_dart.dart');
-    const webArms = {
-      'src/web/engine_web.dart': ['Engine'],
-      'src/web/embedding_engine_web.dart': ['EmbeddingEngine'],
-      'src/web/native_only_web.dart': [
-        'benchmark',
-        'readBundleGenericData',
-        'readBundleInfo',
-      ],
-    };
+    final webArms = _webArms(File('lib/litertlm_dart.dart').readAsStringSync());
+    expect(webArms, isNotEmpty, reason: 'no web arm found: the check is void');
     for (final MapEntry(key: library, value: names) in webArms.entries) {
       final web = await exportNamespace(library);
       for (final name in names) {
@@ -62,6 +55,23 @@ void main() {
       }
     }
   }, timeout: const Timeout(Duration(minutes: 5)));
+}
+
+/// The web arm of every conditional export of the public library — `export
+/// 'native' if (dart.library.js_interop) 'web' show names;` — as the web
+/// library (relative to lib/) and the names it must declare alike.
+Map<String, List<String>> _webArms(String source) {
+  final arms = <String, List<String>>{};
+  final export = RegExp(
+    r"export\s+'[^']+'\s+if\s*\(dart\.library\.js_interop\)\s*'([^']+)'"
+    r"\s+show\s+([^;]+);",
+  );
+  for (final m in export.allMatches(source)) {
+    (arms[m.group(1)!] ??= []).addAll(
+      m.group(2)!.split(',').map((n) => n.trim()).where((n) => n.isNotEmpty),
+    );
+  }
+  return arms;
 }
 
 String _render(Map<String, Element> namespace) {

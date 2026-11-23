@@ -25,7 +25,7 @@
 //   declared; an audio part is `{type: 'audio', data: ArrayBuffer}` of exactly
 //   the clip, and a combined input one JS array of its parts in order.
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Run on the GCE VM:
+// tool/test_all.sh runs it in Chrome (dart2js and dart2wasm). By hand:
 //   flutter test --platform chrome test/web/litert_lm_web_embedding_runtime_test.dart
 @TestOn('browser')
 library;

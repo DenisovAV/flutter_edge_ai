@@ -27,8 +27,8 @@ void checkThinkingTokenBudget(int? budget) {
 bool _noticed = false;
 
 /// Says, once per isolate and in debug builds only (`edgeAiLog`), that the
-/// web engine ignores `thinkingTokenBudget`: `@litert-lm/core` 0.18.0 has no
-/// such setting. The web engine accepts it so that one registration compiles
+/// web engine ignores `thinkingTokenBudget`: `@litert-lm/core` (0.18.0 and
+/// 0.19.0) has no such setting. The web engine accepts it so that one registration compiles
 /// on every platform. Nothing here changes what runs.
 void noticeThinkingTokenBudgetIgnoredOnWeb() {
   if (_noticed) return;

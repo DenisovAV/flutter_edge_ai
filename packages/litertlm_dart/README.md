@@ -2,7 +2,9 @@
 
 [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) in pure Dart, with
 no Flutter dependency: `dart:ffi` over LiteRT-LM's C API, with the native
-libraries fetched and bundled by a build hook. The API follows LiteRT-LM's
+libraries fetched and bundled by a build hook, and on the web the same API over
+the page's [`@litert-lm/core`](https://www.npmjs.com/package/@litert-lm/core)
+(see [On the web](#on-the-web)). The API follows LiteRT-LM's
 [Kotlin](https://developers.google.com/edge/litert-lm/android) and
 [Swift](https://developers.google.com/edge/litert-lm/swift) APIs: an `Engine`
 loads a `.litertlm` model, a `Conversation` sends it messages, an
@@ -40,9 +42,15 @@ dependencies:
 ```
 
 The version is the upstream LiteRT-LM version this package is built from,
-plus a build number for our native rebuilds of it: `0.19.1+1` is LiteRT-LM
-0.19.1 on `native-v0.19.1-c`. Within one upstream version the Dart API stays
-compatible. `dart pub add litertlm_dart` writes `^0.19.1+1`, which for a 0.x
+plus the number of our release on it: `0.19.1+1` is the first release on
+LiteRT-LM 0.19.1. Within one upstream version the Dart API stays compatible.
+This release runs:
+
+| | |
+|---|---|
+| Native | LiteRT-LM 0.19.1, our build `native-v0.19.1-c` |
+| Web | `@litert-lm/core` 0.19.0 |
+ `dart pub add litertlm_dart` writes `^0.19.1+1`, which for a 0.x
 version also takes later 0.19.x releases; those follow newer LiteRT-LM
 releases and may change the Dart API, so bound it at the next upstream patch,
 as above, to stay on one.
@@ -532,11 +540,80 @@ The native libraries are cached per release under
 upstream include rewinding a stopped turn, NPU fixes and the thinking-budget
 fix (`native/litert_lm/patch_c_api.sh`).
 
+## On the web
+
+The same `Engine`, `Conversation` and `EmbeddingEngine` run in a browser over
+`@litert-lm/core` 0.19.0, which the page loads itself. Add to
+`web/index.html`:
+
+```html
+<script type="module">
+window.litertLmReady = (async () => {
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
+  window.Engine = m.Engine;
+  window.EmbeddingEngine = m.EmbeddingEngine;
+  return m.Engine;
+})();
+</script>
+```
+
+`EngineConfig.modelPath` is then a URL the page can fetch (`blob:`, `https:`):
+a `.litertlm` web export such as `gemma-4-E2B-it-web.litertlm`. A page that
+does not load the module, loads another version, or lacks `window.Engine` is
+refused with a `StateError` naming the version above.
+
+What differs on the web, measured on `@litert-lm/core` 0.19.0 with Gemma 4
+E2B's web export in Chrome 157 (2026-11-23):
+
+- **Text only.** 0.19.0 creates an engine with a vision or audio backend, but
+  the first image or clip then fails ("Vision executor should not be null"),
+  so `visionBackend`, `audioBackend` and `maxNumImages` are refused, and so is
+  a message with an image or audio.
+- **A stop is a rebuild.** After `cancel()` (or a cancelled subscription) the
+  runtime refuses every later send on that conversation ("Task cancelled"),
+  so the next message goes to a new conversation built from the old one's
+  history, the stopped exchange put back. A stopped generation that does not
+  end within 30 s makes the page unusable for LiteRT-LM (the module may still
+  be suspended in it): `close()` and every later call fail and say so.
+- **Per conversation, not per message:** thinking and the template variables
+  (`extraContext`). Repetition penalties, no-repeat n-grams, suppressed
+  tokens, a thinking token budget, response formats and speculative decoding
+  are refused.
+- **The sampler** of the model file cannot be read: a conversation without a
+  `samplerConfig` samples with 0.8 / 40 / 0.95 / seed 1, said once per engine.
+- **The context window** (`maxNumTokens`) is passed through as given; the
+  1024-token floor of the native CPU and GPU executors does not apply, nor
+  does the native float32 rule for Gemma 4 on the GPU above 2,048 tokens: the
+  web runtime takes no activation type and uses its own.
+- **Refused:** the NPU, `cacheDir`, `activationDataType`, the tokenizer,
+  option scoring, `benchmark()`, `Conversation.getBenchmarkInfo()`,
+  `readBundleInfo`, `readBundleGenericData`. `Backend.cpu` (WebAssembly) is
+  handed to the runtime, but it failed Gemma 4 E2B's web export ("Environment
+  was not initialized during streaming.").
+- **EmbeddingGemma 2** runs on WebGPU only: the CPU (WebAssembly) path of
+  `@litert-lm/core` cannot read the bundles' external weights ("Failed to get
+  external weight"), so `Backend.cpu` — the default of `EmbeddingEngineConfig`
+  — is refused; pass `backend: Backend.gpu()`. `cacheDir` and
+  `requireWeightCache` are refused (the web keeps no weight cache). A page
+  without WebGPU is refused before anything loads.
+- **One module per page.** An LLM and an embedder share the page's
+  WebAssembly module and WebGPU device: their calls take turns, and their GPU
+  memory adds up.
+
+Run the browser suites with `dart test -p chrome` (and `-c dart2wasm`).
+
 ## Libraries
 
-- `package:litertlm_dart/litertlm_dart.dart`: the API above (native only).
+- `package:litertlm_dart/litertlm_dart.dart`: the API above, native and web.
 - `package:litertlm_dart/bindings.dart`, `litert_bindings.dart`: the raw
   ffigen bindings to LiteRT-LM's and LiteRT's C APIs, outside the
+  compatibility promise; native only.
+- `package:litertlm_dart/internal.dart` (no `dart:io`, `dart:ffi` or
+  `dart:js_interop`), `internal_io.dart` (native) and `internal_web.dart`
+  (web): what `flutter_edge_ai_litertlm` and its tests build on; no
   compatibility promise.
-- `package:litertlm_dart/internal.dart`, `internal_io.dart`: what
-  `flutter_edge_ai_litertlm` and its tests build on; no compatibility promise.
+
+Everything LiteRT-LM lives here. LiteRT.js `.tflite` embeddings (EmbeddingGemma
+1, Gecko) stay in `flutter_edge_ai_litertlm`: they are a `flutter_edge_ai`
+`TokenEmbeddingPass`, built on core's embedding SPI, as the native `.tflite`
+pass is.

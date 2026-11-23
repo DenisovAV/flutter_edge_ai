@@ -102,7 +102,7 @@ summary=""
 # Packages whose browser suites run a second time under --wasm (see the
 # browser step below). Space-separated; add a package once its suites pass
 # under dart2wasm.
-wasm_browser_packages="flutter_edge_ai"
+wasm_browser_packages="flutter_edge_ai flutter_edge_ai_litertlm litertlm_dart"
 
 # The public-surface guard first: seconds, no Flutter, and a red test further
 # down cannot hide it. It fails on deep imports of core internals and on
@@ -236,9 +236,14 @@ for dir in packages/*/ packages/*/example/; do
     # from ever completing under --wasm (#854,
     # test/web/web_model_body_test.dart). Core's set takes about 20 s.
     if [[ " $wasm_browser_packages " == *" $pkg "* ]]; then
-      echo "::group::flutter test --platform chrome --wasm — $pkg"
-      # shellcheck disable=SC2086  # word splitting is the point
-      (cd "$dir" && flutter test --platform chrome --wasm --exclude-tags slow $browser_files)
+      echo "::group::test --platform chrome --wasm — $pkg"
+      if ! grep -q 'sdk: flutter' "${dir}pubspec.yaml"; then
+        # shellcheck disable=SC2086  # word splitting is the point
+        (cd "$dir" && dart test -p chrome -c dart2wasm --exclude-tags slow $browser_files)
+      else
+        # shellcheck disable=SC2086  # word splitting is the point
+        (cd "$dir" && flutter test --platform chrome --wasm --exclude-tags slow $browser_files)
+      fi
       rc=$?
       echo "::endgroup::"
       if [[ $rc -eq 0 ]]; then

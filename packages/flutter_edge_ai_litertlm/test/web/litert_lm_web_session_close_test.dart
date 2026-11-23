@@ -1,11 +1,11 @@
 // Closing a web `.litertlm` session mid-generation. `conversation.cancel()`
 // only asks the JS stream to stop: the pump keeps reading it to its end and
-// holds the page lock (litert_lm_page_lock.dart) until then. close() must wait
+// holds the page lock (litertlm_dart lib/src/web/page_lock.dart) until then. close() must wait
 // for that, or the owning model deletes its engine while a call is still
 // suspended inside the page's WebAssembly module — and a stream that never
 // ends would keep every EmbeddingGemma 2 call on the page waiting.
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Run:
+// tool/test_all.sh runs it in Chrome (dart2js and dart2wasm). By hand:
 //   flutter test --platform chrome test/web/litert_lm_web_session_close_test.dart
 @TestOn('browser')
 library;

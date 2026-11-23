@@ -8,7 +8,7 @@
 // `too_long` answer as the typed overflow. The same rules over a fake bundle
 // run on the VM (test/litert_js_embedding_pass_test.dart).
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Run:
+// tool/test_all.sh runs it in Chrome (dart2js and dart2wasm). By hand:
 //   flutter test --platform chrome test/web/litert_js_embedding_pass_page_lane_test.dart
 @TestOn('browser')
 library;

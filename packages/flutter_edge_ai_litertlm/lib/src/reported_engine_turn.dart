@@ -94,7 +94,7 @@ EngineTurn reportedEngineTurn(
 }
 
 /// What a LiteRT-LM turn that ran to its end reports when no turn-end record
-/// says how: a placeholder. The web runtime (`@litert-lm/core` 0.18) has no
+/// says how: a placeholder. The web runtime (`@litert-lm/core`) has no
 /// such record, and natively it is missing only on a libLiteRtLm without
 /// `patch_c_api.sh` section 23, which the release gate refuses. Without it a
 /// natural end cannot be told from `maxOutputTokens`, nor a full context in

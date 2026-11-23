@@ -316,7 +316,7 @@ on Web, so a browser without WebGPU fails the embedder's load with an
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
   window.Engine = m.Engine;
   window.EmbeddingEngine = m.EmbeddingEngine;
   return m.Engine;
@@ -343,11 +343,15 @@ Storage mode, set in `FlutterEdgeAi.initialize(webStorageMode: ...)`:
 | `streaming` | larger models — streams through OPFS |
 | `none` | no persistence; downloads every launch |
 
-The `.litertlm` web engine loads the web build of a model —
-`gemma-4-E2B-it-web.litertlm` (2.0 GB, under 2 GiB, so the default `cacheApi`
-holds it), not
-`gemma-4-E2B-it.litertlm`. It is text-only: an image or audio message throws
-`UnsupportedError`. LoRA is not supported on any `.litertlm` path, native
+The `.litertlm` web engine loads a web build of a model: for Gemma 4 E2B its
+GPU export, `LiteRtLmModels.gemma4E2bIt.webGpu`
+(`gemma-4-E2B-it-gpu.litertlm`, 2.34 GB, so install it with
+`WebStorageMode.streaming`), not `gemma-4-E2B-it.litertlm`. The older
+`gemma-4-E2B-it-web.litertlm` and the E4B web build are withheld: on
+`@litert-lm/core` 0.19.0 the E2B one answers a tool result with an empty
+reply. With `supportImage`/`supportAudio` it takes images and audio as
+natively; without them an image or audio message throws `UnsupportedError`.
+LoRA is not supported on any `.litertlm` path, native
 included: a session `loraPath` throws `UnsupportedError`, and an adapter
 installed with `withLora…` is downloaded but not applied. LoRA needs a MediaPipe
 `.task` model (flutter-edge-ai-mediapipe) or, natively, a `.gguf` model

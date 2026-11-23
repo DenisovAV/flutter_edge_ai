@@ -21,12 +21,14 @@ import '../adapter/web_inference_model.dart';
 ///
 /// [supportImage] loads the vision encoder on the GPU, [supportAudio] the
 /// audio encoder on the CPU, as the native Gemma 4 bundles declare it; both
-/// ran on 0.19.0 with Gemma 4 E2B's GPU export (2026-11-23).
+/// ran on 0.19.0 with Gemma 4 E2B's GPU export (2026-11-23). [maxNumImages]
+/// is the images a conversation reserves there (unset: 1).
 Future<WebLlmEngine> createLiteRtLmWebEngine(
   WebModelSourceResolver resolver, {
   required int maxTokens,
   bool supportImage = false,
   bool supportAudio = false,
+  int? maxNumImages,
 }) async {
   final resolved = await resolver.resolveActiveInferenceModel();
   final Engine engine;
@@ -39,6 +41,7 @@ Future<WebLlmEngine> createLiteRtLmWebEngine(
           maxNumTokens: maxTokens,
           visionBackend: supportImage ? const lm.Backend.gpu() : null,
           audioBackend: supportAudio ? const lm.Backend.cpu() : null,
+          maxNumImages: supportImage ? maxNumImages : null,
         ),
       );
     case final OpfsStreamModelSource source:
@@ -49,6 +52,7 @@ Future<WebLlmEngine> createLiteRtLmWebEngine(
           maxNumTokens: maxTokens,
           visionBackend: supportImage ? const lm.Backend.gpu() : null,
           audioBackend: supportAudio ? const lm.Backend.cpu() : null,
+          maxNumImages: supportImage ? maxNumImages : null,
         ),
         model: await source.openStream(),
       );

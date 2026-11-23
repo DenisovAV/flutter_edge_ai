@@ -232,11 +232,12 @@ final class EngineConfig {
   final Backend backend;
 
   /// Where the vision encoder runs; null loads none, as in Kotlin and Swift.
-  /// `BundleInfo.declaredVisionBackend` is what the file asks for. Refused on
-  /// the web (see the README, "On the web").
+  /// `BundleInfo.declaredVisionBackend` is what the file asks for. On the
+  /// web the GPU or the CPU (see the README, "On the web").
   final Backend? visionBackend;
 
-  /// Where the audio encoder runs; null loads none. Refused on the web.
+  /// Where the audio encoder runs; null loads none. On the web the CPU or the
+  /// GPU.
   final Backend? audioBackend;
 
   /// The context window: the prompt, the history and every reply, the KV
@@ -247,7 +248,8 @@ final class EngineConfig {
   final int? maxNumTokens;
 
   /// The most images one message may carry; null is 1 with a vision encoder.
-  /// Refused on the web.
+  /// On the web the most images of a whole conversation, whose space the
+  /// model reserves up front.
   final int? maxNumImages;
 
   /// Where LiteRT-LM keeps its caches (compiled programs, weight caches).

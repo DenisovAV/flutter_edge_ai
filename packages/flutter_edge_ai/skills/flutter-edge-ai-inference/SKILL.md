@@ -258,7 +258,8 @@ Linux and Windows CPU, Android Adreno/Mali, Qualcomm or Google Tensor NPUs on
 Android, and Intel NPUs on Windows. Linux Vulkan, Windows D3D12, iOS, Android
 CPU/PowerVR/MediaTek, and unverified Linux arm64 accelerators use virtual
 sessions that replay full messages, including media, into one shared
-conversation. The `.litertlm` web engine is also virtual but text-only and uses
+conversation. The `.litertlm` web engine has one runtime conversation per
+session, takes images and audio with Gemma 4 E2B's GPU export, and uses
 core's defaults, so pass `modelType:` for a non-Gemma model. Hybrid models such
 as LFM2 rebuild from full messages when recovery is needed and never rewind.
 Native sessions cost memory while idle: Gemma 4 E2B on an M5 Pro added 36.8 MiB
@@ -353,7 +354,7 @@ try {
 }
 ```
 
-On web, images need a MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` (same Hugging Face repo as the `.litertlm`, `ModelFileType.task`, the flutter-edge-ai-mediapipe skill). On that build Gemma 4 has no thinking, and its tools never reach the model. The `.litertlm` web engine is text-only: `supportImage: true` loads without error, but `addQueryChunk` with an image throws `UnsupportedError`.
+On web, the `.litertlm` engine takes images and audio with Gemma 4 E2B's GPU export (`LiteRtLmModels.gemma4E2bIt.webGpu`, `@litert-lm/core` 0.19.0, installed with `WebStorageMode.streaming`) when the model loads with `supportImage`/`supportAudio`; a conversation reserves one image unless `maxNumImages` says more. A MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` (the flutter-edge-ai-mediapipe skill) also takes images, but on it Gemma 4 has no thinking, and its tools never reach the model.
 
 ## Audio
 

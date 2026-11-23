@@ -44,7 +44,7 @@ This release runs:
 | | |
 |---|---|
 | Native | LiteRT-LM 0.19.1, our build `native-v0.19.1-c` |
-| Web | `@litert-lm/core` 0.18.0 |
+| Web | `@litert-lm/core` 0.19.0 |
 
 `dart pub add litertlm_dart` writes `^0.19.1+1`, which for a 0.x
 version also takes later 0.19.x releases; those follow newer LiteRT-LM
@@ -75,8 +75,8 @@ final engine = await Engine.create(
     maxNumTokens: 4096, // the context window, not the reply length
     cacheDir: cacheDir, // optional: compiled programs, weight caches
   ),
-  // On the web pass Backend.gpu(): the default Backend.cpu() fails a web
-  // export of Gemma 4 there (see On the web).
+  // On the web pass Backend.gpu(): the default Backend.cpu() fails Gemma 4's
+  // GPU export there (see On the web).
 );
 // ... create conversations ...
 await engine.close();
@@ -543,13 +543,13 @@ fix (`native/litert_lm/patch_c_api.sh`).
 ## On the web
 
 The same `Engine`, `Conversation` and `EmbeddingEngine` run in a browser over
-`@litert-lm/core` 0.18.0, which the page loads itself. Add to
+`@litert-lm/core` 0.19.0, which the page loads itself. Add to
 `web/index.html`:
 
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
   window.Engine = m.Engine;
   window.EmbeddingEngine = m.EmbeddingEngine;
   return m.Engine;
@@ -557,57 +557,65 @@ window.litertLmReady = (async () => {
 </script>
 ```
 
-`EngineConfig.modelPath` is then a URL the page can fetch (`blob:`, `https:`):
-a `.litertlm` web export such as `gemma-4-E2B-it-web.litertlm`, with
-`backend: Backend.gpu()` (the default `Backend.cpu()` fails it, below).
-Import exactly the version above: this release is measured on it, and
-another (0.19.0 answers empty after a tool result with Gemma 4 E2B's web
-export) is said once with `print` when the page fetched it by a versioned
-URL. A page that does not load the module, lacks `window.Engine`, or loads a
-runtime without a call this release makes is refused with a `StateError`
-naming what is missing and the version above.
+`EngineConfig.modelPath` is then a URL the page can fetch (`blob:`, `https:`),
+with `backend: Backend.gpu()`. For Gemma 4 E2B use its GPU export
+`gemma-4-E2B-it-gpu.litertlm` of 2026-11-11 (2.34 GB, so open it as a stream:
+a `blob:` URL of more than 2 GB fails in Chrome); the older
+`gemma-4-E2B-it-web.litertlm` of 2026-05-19 answers a tool result with an
+empty reply on 0.19.0. Import exactly the version above: this release is
+measured on it, and another is said once with `print` when the page fetched
+it by a versioned URL. A page that does not load the module, lacks
+`window.Engine`, or loads a runtime without a call this release makes is
+refused with a `StateError` naming what is missing and the version above.
 
-What differs on the web, measured on `@litert-lm/core` 0.18.0 with Gemma 4
-E2B's web export in Chrome 157 (2026-11-23):
+What differs on the web, measured on `@litert-lm/core` 0.19.0 with Gemma 4
+E2B's GPU export in Chrome 157 (2026-11-23):
 
-- **Text only.** 0.18.0's `Engine` takes no vision or audio backend, and an
-  image or audio part fails ("Audio or image item must contain a path or
-  blob."), so `visionBackend`, `audioBackend` and `maxNumImages` are refused,
-  and so is a message with an image or audio.
+- **Images and audio** run with a `visionBackend` (GPU or CPU) and an
+  `audioBackend` (CPU or GPU). A part goes as its bytes (`Content.imageBytes`,
+  `Content.audioBytes`); a file path is refused, since the page cannot read
+  it. `maxNumImages` counts the images of a whole conversation, not of a
+  message: the model reserves their space up front, a second image past it
+  fails ("Image index 1 must be less than 1."), and unset is 1 with a vision
+  encoder.
 - **A stop mid-reply is a rebuild.** After `cancel()` (or a cancelled
   subscription) stops a reply before its end, the runtime refuses every later
   send on that conversation ("Task cancelled"), so the next message goes to a
-  new conversation built from the preface, the exchanges so far and the
-  stopped one (its text). A stop with nothing in flight, or after the last
-  chunk, changes nothing. A stopped generation that does not end within 30 s,
-  after a stop or a close, makes the page unusable for LiteRT-LM (the module
-  may still be suspended in it): the turn, `close()` and every later call
-  fail and say so.
+  new conversation built from the preface, the exchanges so far (images and
+  audio included) and the stopped one (its text). A stop with nothing in
+  flight, or after the last chunk, changes nothing. A stopped generation that
+  does not end within 30 s, after a stop or a close, makes the page unusable
+  for LiteRT-LM (the module may still be suspended in it): the turn,
+  `close()` and every later call fail and say so.
 - **Per conversation, not per message:** thinking and the template variables
   (`extraContext`). Repetition penalties, no-repeat n-grams, suppressed
   tokens, a thinking token budget, response formats and speculative decoding
   are refused.
 - **The sampler** of the model file cannot be read: a conversation without a
   `samplerConfig` samples with 0.8 / 40 / 0.95 / seed 1, said once per engine.
-- **The context window** (`maxNumTokens`) is passed through as given; the
-  1024-token floor of the native CPU and GPU executors does not apply, nor
-  does the native float32 rule for Gemma 4 on the GPU above 2,048 tokens: the
-  web runtime takes no activation type and uses its own.
+- **The context window** (`maxNumTokens`) is passed through as given (unset:
+  the bundle's, 8192 for the GPU export); the 1024-token floor of the native
+  CPU and GPU executors does not apply, nor does the native float32 rule for
+  Gemma 4 on the GPU above 2,048 tokens: the web runtime takes no activation
+  type and uses its own.
 - **Refused:** the NPU, `cacheDir`, `activationDataType`, the tokenizer,
   option scoring, `benchmark()`, `Conversation.getBenchmarkInfo()`,
-  `readBundleInfo`, `readBundleGenericData`. `Backend.cpu` (WebAssembly),
-  the default of `EngineConfig`, is handed to the runtime, but it refuses
-  Gemma 4 E2B's web export ("tf_lite_prefill_decode not found in the
-  model."): pass `Backend.gpu()`.
+  `readBundleInfo`, `readBundleGenericData`. `Backend.cpu` (WebAssembly), the
+  default of `EngineConfig`, is handed to the runtime, but Gemma 4's GPU
+  export fails at the first send there ("Environment was not initialized
+  during streaming."): pass `Backend.gpu()`.
 - **EmbeddingGemma 2** runs on WebGPU only: the CPU (WebAssembly) path of
   `@litert-lm/core` cannot read the bundles' external weights ("Failed to get
   external weight"), so `Backend.cpu` — the default of `EmbeddingEngineConfig`
   — is refused; pass `backend: Backend.gpu()`. `cacheDir` and
   `requireWeightCache` are refused (the web keeps no weight cache). A page
-  without WebGPU is refused before anything loads.
+  without WebGPU is refused before anything loads. Images on the 270m and
+  audio on the 270m or the 440m are refused from the bundle's header: the
+  runtime creates those towers and fails only the first input.
 - **One module per page.** An LLM and an embedder share the page's
-  WebAssembly module and WebGPU device: their calls take turns, and their GPU
-  memory adds up.
+  WebAssembly module (4 GB) and WebGPU device: their calls take turns, and
+  their memory adds up. The 440m with images loads next to Gemma 4 E2B's GPU
+  export and embeds while a reply streams.
 
 Run the browser suites with `dart test -p chrome` (and `-c dart2wasm`).
 

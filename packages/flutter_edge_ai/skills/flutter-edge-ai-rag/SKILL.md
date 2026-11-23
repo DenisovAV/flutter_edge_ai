@@ -610,9 +610,10 @@ page itself: there are no isolates there.
   do not depend on it. `forActiveModel` ids follow file names only, so an app
   that changes the budget puts it in the namespace (`'photos-vis70'`).
 - On Web the page's `@litert-lm/core` module has 4 GB of WebAssembly memory,
-  and the 440m's vision engine (about 3.3 GB) and Gemma 4 E2B do not share it —
-  whichever loads second fails, the embedder with an `EmbeddingLoadException`
-  that says to close the LLM first. Text-only embedding loads next to the LLM.
+  shared with a loaded `.litertlm` LLM. On 0.19.0 the 440m's vision engine
+  loads next to Gemma 4 E2B's GPU export and embeds while a reply streams
+  (measured 2026-11-23). Should a load not fit, the `EmbeddingLoadException`
+  says to close the LLM first.
 - Cost (CPU, measured): 388 MB on disk plus a 218 MB vision weight cache
   written every time the model loads — also when it only embeds text. The
   first image adds RAM: about 385 MB on an M4 Pro Mac, about 500 MB on a

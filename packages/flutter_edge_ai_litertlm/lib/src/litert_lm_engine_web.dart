@@ -76,6 +76,7 @@ class LiteRtLmEngine
         maxTokens: config.maxTokens,
         supportImage: config.supportImage,
         supportAudio: config.supportAudio,
+        maxNumImages: config.maxNumImages,
       ),
       maxTokens: config.maxTokens,
       modelType: spec.modelType,

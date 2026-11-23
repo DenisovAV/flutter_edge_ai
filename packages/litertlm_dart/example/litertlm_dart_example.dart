@@ -6,15 +6,16 @@
 // hook bundles libLiteRtLm.
 //
 // On the web: compile it into a page whose index.html loads @litert-lm/core
-// 0.18.0 (the README's "On the web"), with the model's web export as a URL
-// the page can fetch, e.g. gemma-4-E2B-it-web.litertlm.
+// 0.19.0 (the README's "On the web"), with a URL the page can fetch, e.g.
+// Gemma 4 E2B's GPU export, gemma-4-E2B-it-gpu.litertlm.
 import 'package:litertlm_dart/litertlm_dart.dart';
 
 Future<void> main(List<String> args) async {
   final modelPath = args.isNotEmpty
       ? args.first
       : 'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
-            'resolve/main/gemma-4-E2B-it-web.litertlm';
+            'resolve/cccc664ea93091c52eeb7867ad4e5466357e14f3/'
+            'gemma-4-E2B-it-gpu.litertlm';
   final engine = await Engine.create(
     EngineConfig(modelPath: modelPath, backend: const Backend.gpu()),
   );

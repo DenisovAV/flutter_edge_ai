@@ -707,9 +707,9 @@ page.
   `EmbeddingLoadException`. Text vectors do not depend on it. Image vectors
   do, so give an image store an id that names the budget: the text profile id
   plus `-vis140` (or `-vis70`).
-- **Next to an LLM on the web** the vision encoder does not fit: see
-  [Web setup](#web-setup-early-preview). Close the `.litertlm` LLM before
-  loading the 440m with images, or embed text only.
+- **Next to an LLM on the web** the vision encoder loads beside Gemma 4 E2B's
+  GPU export on `@litert-lm/core` 0.19.0: see
+  [Web setup](#web-setup-early-preview).
 - **Cost** (CPU, measured): a 388 MB bundle; at every load the engine writes a
   218 MB vision weight cache next to the 71 MB text cache in the app's cache
   directory, also when you only embed text. The first image adds about 385 MB
@@ -1022,16 +1022,21 @@ Native embeddings need no web files; the platform setup under
 
 ## Web setup (early preview)
 
-`.litertlm` web inference runs via `@litert-lm/core` 0.18.0 on WebGPU, through
+`.litertlm` web inference runs via `@litert-lm/core` 0.19.0 on WebGPU, through
 [litertlm_dart](https://pub.dev/packages/litertlm_dart)'s web arm (its README,
-"On the web", lists what differs). Load a model's web export
-(`gemma-4-E2B-it-web.litertlm`, not `gemma-4-E2B-it.litertlm`). It is
-text-only: an image or audio message throws `UnsupportedError` (0.18.0's
-`Engine` takes no vision or audio backend), and
-`loraPath` throws too. A stopped reply is kept: the next message goes to a
-conversation rebuilt from the history, because the runtime refuses every send
-after a stop. `openSession(maxOutputTokens:)` is honoured here as it
-is on native.
+"On the web", lists what differs). For Gemma 4 E2B install its GPU export,
+`LiteRtLmModels.gemma4E2bIt.webGpu` (`gemma-4-E2B-it-gpu.litertlm`, 2.34 GB),
+with `FlutterEdgeAi.initialize(webStorageMode: WebStorageMode.streaming)`: a
+`cacheApi` install takes at most 2 GiB. The older web exports of Gemma 4 E2B
+and E4B are withheld (the E2B one answers a tool result with an empty reply
+on 0.19.0). `supportImage` and `supportAudio` load the vision encoder on the
+GPU and the audio encoder on the CPU, and a session then sends images and
+audio as natively; without them an image or audio message throws
+`UnsupportedError` rather than being dropped. `loraPath` throws. A stopped
+reply is kept: the next message goes to a conversation rebuilt from the
+history, because the runtime refuses every send after a stop mid-reply.
+`openSession(maxOutputTokens:)` is honoured here as it is on native, and
+`maxTokens` reaches the runtime (core's default context is 1024 tokens).
 Add the handshake below to your app's `web/index.html` `<head>` — the ESM doesn't
 assign window globals and module scripts are deferred, so Dart awaits
 `window.litertLmReady` (which resolves to the `Engine` constructor):
@@ -1039,7 +1044,7 @@ assign window globals and module scripts are deferred, so Dart awaits
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
   window.Engine = m.Engine;
   window.EmbeddingEngine = m.EmbeddingEngine;
   return m.Engine;
@@ -1054,19 +1059,18 @@ the embedder's load with an `EmbeddingLoadException` that names it; so does a
 browser without WebGPU, which has no fallback here (the CPU path of
 `@litert-lm/core` cannot read these bundles' external weights). The LLM
 engine does not need the line. A page whose `@litert-lm/core` lacks the calls
-litertlm_dart makes is refused, naming 0.18.0.
+litertlm_dart makes is refused, naming 0.19.0.
 
 An LLM and an EmbeddingGemma 2 embedder on the same page share one WebAssembly
 module and one WebGPU device, so they take turns and their GPU memory adds up:
 an embedding, or an embedder's load, waits while a reply is being generated
 (until its stream ends; a reply you stop listening to is stopped, and the wait
 lasts until the runtime has ended it), and a reply waits for an embedding in
-progress. The module has 4 GB of memory (WebAssembly is 32-bit), and the
-440m's vision encoder does not fit in it next to Gemma 4 E2B (measured: the
-vision engine alone takes about 3.3 GB): whichever loads second fails, the
-embedder with an `EmbeddingLoadException` that says to close the LLM first. A
-text-only embedder — the 270m, or the 440m without `supportImage` — loads next
-to the LLM.
+progress. The module has 4 GB of memory (WebAssembly is 32-bit). On 0.19.0
+the 440m with its vision encoder loads next to Gemma 4 E2B's GPU export and
+embeds while a reply streams (Apple GPU, Chrome 157, 2026-11-23; on 0.18.0 it
+did not fit). Should a load not fit, the embedder's `EmbeddingLoadException`
+says to close the LLM first.
 
 Native platforms need no web setup.
 
@@ -1078,7 +1082,7 @@ Native platforms need no web setup.
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
-| Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text, images and audio on WebGPU) |
+| Web      | ⚠️ early preview via `@litert-lm/core` 0.19.0 (CDN; LLM text, images and audio with Gemma 4 E2B's GPU export; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
 The native library (`native-v0.19.1-c`, LiteRT-LM v0.19.1) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still

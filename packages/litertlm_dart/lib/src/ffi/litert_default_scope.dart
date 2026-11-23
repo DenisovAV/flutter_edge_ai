@@ -221,7 +221,7 @@ String _poisonedBy(String soname) =>
     'call, and bionic does not promote an already-loaded library, so the '
     'condition is permanent for this process — a Flutter hot restart will '
     'NOT clear it, since linker state outlives the isolate; a full app '
-    'restart is required. Load it before flutter_edge_ai does and with '
+    'restart is required. Load it before litertlm_dart does and with '
     'RTLD_GLOBAL. Note that a Java `System.loadLibrary` cannot request '
     'RTLD_GLOBAL at all, so from Java the only remedy is not to preload it.';
 

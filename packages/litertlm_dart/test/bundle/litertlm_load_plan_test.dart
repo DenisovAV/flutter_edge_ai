@@ -177,8 +177,7 @@ void main() {
         refusedWith(
           LiteRtLmBundleProblem.wrongBackend,
           '$noNpuGraph. Load it on the GPU or the CPU (Backend.gpu() or '
-          'Backend.cpu(); in flutter_edge_ai, preferredBackend: '
-          'PreferredBackend.gpu or .cpu, or none); to run on the NPU, install '
+          'Backend.cpu()); to run on the NPU, install '
           "the bundle compiled for this device's NPU.",
         ),
       );
@@ -337,8 +336,7 @@ void main() {
         () => plan(info: npuOrCpu, preferred: npu, fallback: false),
         refusedWith(
           LiteRtLmBundleProblem.wrongBackend,
-          '$noNpuGraph. Load it on the CPU (Backend.cpu(); in flutter_edge_ai, '
-          'preferredBackend: PreferredBackend.cpu, or none); to run on the '
+          '$noNpuGraph. Load it on the CPU (Backend.cpu()); to run on the '
           "NPU, install the bundle compiled for this device's NPU.",
         ),
       );
@@ -348,8 +346,7 @@ void main() {
           LiteRtLmBundleProblem.wrongBackend,
           'model.litertlm declares that its text model runs on npu, cpu '
           '(backend_constraint), not on gpu. Load it on the CPU '
-          '(Backend.cpu(); in flutter_edge_ai, preferredBackend: '
-          'PreferredBackend.cpu, or none).',
+          '(Backend.cpu()).',
         ),
       );
       expect(npuAsked, 0);
@@ -473,7 +470,7 @@ void main() {
           'model.litertlm has sections the load turns on compiled for '
           'different NPUs (Qualcomm SM8750, Google Tensor_G5); '
           "litertlm_dart runs one NPU's dispatch per load. Load it "
-          'without its encoders (visionBackend: null, audioBackend: null; in flutter_edge_ai, without supportImage or supportAudio) to run the text model alone, '
+          'without its encoders (visionBackend: null, audioBackend: null) to run the text model alone, '
           'or install a bundle compiled for one NPU throughout.',
         ),
       );
@@ -667,7 +664,7 @@ void main() {
           LiteRtLmBundleProblem.unsupportedNpu,
           "model.litertlm's vision encoder is compiled for the Qualcomm SM8750 "
           'NPU, which runs on android_arm64 and linux_arm64 only, and this is '
-          'macos_arm64; load it without its vision encoder (visionBackend: null; in flutter_edge_ai, without supportImage), or install the generic '
+          'macos_arm64; load it without its vision encoder (visionBackend: null), or install the generic '
           'bundle of this model to run it here.',
         ),
       );
@@ -678,7 +675,7 @@ void main() {
           "model.litertlm's audio encoder is compiled for the Qualcomm SM8750 "
           'NPU, which runs on android_arm64 and linux_arm64 only, and this is '
           'windows_x64; load it without its audio encoder (audioBackend: '
-          'null; in flutter_edge_ai, without supportAudio)',
+          'null)',
         ),
       );
       for (final backend in BackendKind.values) {
@@ -709,7 +706,7 @@ void main() {
           LiteRtLmBundleProblem.unsupportedNpu,
           "model.litertlm's audio encoder is compiled for the Samsung E9955 "
           'NPU. litertlm_dart runs Qualcomm, Google Tensor, MediaTek and Intel '
-          'NPU bundles only; load it without its audio encoder (audioBackend: null; in flutter_edge_ai, without supportAudio), or install',
+          'NPU bundles only; load it without its audio encoder (audioBackend: null), or install',
         ),
       );
     });
@@ -725,8 +722,8 @@ void main() {
           'then cpu, not on the NPU alone. litertlm_dart runs an '
           'encoder on the NPU only together with a text model on the NPU (a '
           'bundle compiled for the NPU throughout). Load it without its '
-          'vision encoder (visionBackend: null; in flutter_edge_ai, without '
-          'supportImage) to run the text model alone, or install the generic '
+          'vision encoder (visionBackend: null) to run the text model alone, '
+          'or install the generic '
           'bundle of this model.',
         ),
       );
@@ -776,8 +773,7 @@ void main() {
         refusedWith(
           LiteRtLmBundleProblem.wrongBackend,
           '$noNpuGraph. Load it on the GPU or the CPU (Backend.gpu() or '
-          'Backend.cpu(); in flutter_edge_ai, preferredBackend: '
-          'PreferredBackend.gpu or .cpu, or none); to run on the NPU, install '
+          'Backend.cpu()); to run on the NPU, install '
           "the bundle compiled for this device's NPU.",
         ),
       );

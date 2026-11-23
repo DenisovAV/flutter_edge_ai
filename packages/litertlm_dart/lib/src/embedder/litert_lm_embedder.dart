@@ -855,8 +855,7 @@ final class LiteRtLmEmbedder {
         throw EmbedderLoadException(
           target == null
               ? 'LiteRT-LM could not run $_file on the GPU: $message. Load it '
-                    'on the CPU to embed there (Backend.cpu(); in '
-                    'flutter_edge_ai, preferredBackend: PreferredBackend.cpu).'
+                    'on the CPU to embed there (Backend.cpu()).'
               : 'LiteRT-LM could not run $_file on the NPU of this device: '
                     '$message. The bundle is compiled for $target; '
                     '${liteRtLmNpuProbeFailureCauses(target)}, it fails this '
@@ -1614,8 +1613,7 @@ final class LiteRtLmEmbedder {
               : _config.gpu
               ? 'LiteRT-LM could not create the embedding engine for $_file '
                     'on the GPU: $message. Load it on the CPU to embed there '
-                    '(Backend.cpu(); in flutter_edge_ai, preferredBackend: '
-                    'PreferredBackend.cpu).'
+                    '(Backend.cpu()).'
               // Measured: a missing or read-only cache dir is code 3 at create.
               : code == _statusInvalidArgument
               ? 'LiteRT-LM refused the embedding cache directory $cacheDir '

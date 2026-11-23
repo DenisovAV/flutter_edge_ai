@@ -101,9 +101,7 @@ String streamFailureMessage({
   if (backend != 'gpu' || !_compiledModelFailure.hasMatch(nativeError)) {
     return message;
   }
-  const cpu =
-      'on the CPU (Backend.cpu(); in flutter_edge_ai, '
-      'PreferredBackend.cpu)';
+  const cpu = 'on the CPU (Backend.cpu())';
   if (activationDataType != 0) {
     if (!android) return message;
     return '$message (the GPU turn failed inside LiteRT. A known cause on '

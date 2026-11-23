@@ -255,6 +255,37 @@ void main() {
     );
   });
 
+  test('a failed GPU turn that names Backend.cpu() reaches core with the '
+      'line in core\'s terms', () async {
+    final handle = _Handle()..turnEnd = NativeLastTurnEnd.failed;
+    final turn = startEngineTurnForTest(_session(handle));
+    final text = turn.text.toList();
+    await handle.sent.future;
+
+    handle.send.failed(
+      const lm.LiteRtLmNativeException(
+        'Stream error: INTERNAL. Load it on the CPU (Backend.cpu()).',
+      ),
+    );
+
+    await expectLater(
+      text,
+      throwsA(
+        isA<Exception>().having(
+          (e) => '$e',
+          'message',
+          allOf(
+            contains('(Backend.cpu())'),
+            contains(
+              'In flutter_edge_ai: preferredBackend: '
+              'PreferredBackend.cpu, or none.',
+            ),
+          ),
+        ),
+      ),
+    );
+  });
+
   test('liteRtLmCompletedTurnEnd: each record, and the guess without one', () {
     for (final end in [...NativeLastTurnEnd.values, null]) {
       for (final cap in [null, 64]) {

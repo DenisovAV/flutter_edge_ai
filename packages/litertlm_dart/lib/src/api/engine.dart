@@ -206,8 +206,7 @@ final class _DartNpuPlatform implements NpuPlatform {
   ) => throw NpuDispatchUnavailableException(
     'the ${vendor.label} NPU libraries need a dispatch directory on Android, '
     'which plain Dart cannot prepare: pass Backend.npu(dispatchDir:) with a '
-    "directory holding that vendor's libraries only (flutter_edge_ai_litertlm "
-    'prepares one through its platform channel)',
+    "directory holding that vendor's libraries only, copied out of the APK",
   );
 
   @override

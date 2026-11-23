@@ -2108,9 +2108,9 @@ class LiteRtLmFfiClient {
       // `.litertlm` (FFI) requires arm64.
       if (Abi.current() != Abi.androidArm64) {
         throw UnsupportedError(
-          'flutter_edge_ai .litertlm models require an arm64-v8a Android device '
-          '(got ${Abi.current()}). Use a `.task` MediaPipe model on this ABI '
-          'or run on an arm64-v8a device / Apple Silicon emulator.',
+          'LiteRT-LM requires an arm64-v8a Android device (got '
+          '${Abi.current()}): it ships no other Android ABI. Run on an '
+          'arm64-v8a device or an Apple Silicon emulator.',
         );
       }
       // No [preload] on Android. The first open of libLiteRtLm has to stay
@@ -2538,8 +2538,7 @@ class LiteRtLmFfiClient {
           'This .litertlm model requires the "$constraint" backend — it '
           'declares section_backend_constraint: $constraint, but the '
           '"$backend" backend was requested. Load it on the $constraint '
-          '(Backend.$constraint(); in flutter_edge_ai, preferredBackend: '
-          'PreferredBackend.$constraint, or none).',
+          '(Backend.$constraint()).',
           nativeCode: nativeCode,
           nativeMessage: nativeMessage,
         );

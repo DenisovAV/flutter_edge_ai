@@ -14,10 +14,9 @@ void main() {
       final notice = _notice('windows_arm64')!;
       expect(notice, startsWith('[litertlm_dart] '));
       expect(notice, contains('litertlm-windows_arm64.tar.gz'));
-      expect(notice, contains('MediaPipe has no desktop engine'));
-      expect(notice, contains('flutter_edge_ai_onnx'));
-      expect(notice, contains('not run on ARM64 hardware'));
-      expect(notice, contains('x64'));
+      expect(notice, contains('Upstream LiteRT-LM does not build for Windows'));
+      expect(notice, contains('build the app for x64'));
+      expect(notice, isNot(contains('flutter_edge_ai_')));
       expect(notice, contains('issues/326'));
     },
   );

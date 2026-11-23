@@ -21,6 +21,7 @@ import 'package:litertlm_dart/litertlm_dart.dart'
     show LiteRtLmBundleException, LiteRtLmLogLevel;
 
 import 'adapter/backend_fallback.dart';
+import 'adapter/core_hints.dart';
 import 'adapter/ffi_inference_model.dart';
 import 'adapter/runtime_log_binding.dart';
 import 'adapter/runtime_mapping.dart';
@@ -143,6 +144,20 @@ class LiteRtLmEngine
 
   @override
   Future<InferenceModel> createModel(
+    InferenceModelSpec spec,
+    RuntimeConfig config,
+  ) async {
+    try {
+      return await _createModel(spec, config);
+    } catch (e, st) {
+      // litertlm_dart words its refusals in its own API; the app sets core's.
+      final hinted = withCoreHintError(e);
+      if (identical(hinted, e)) rethrow;
+      Error.throwWithStackTrace(hinted, st);
+    }
+  }
+
+  Future<InferenceModel> _createModel(
     InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {

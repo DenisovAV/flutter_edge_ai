@@ -32,6 +32,7 @@ import '../litertlm_decision_section.dart';
 import '../option_scoring_self_check.dart';
 import '../reported_engine_turn.dart';
 import 'runtime_log_binding.dart';
+import 'core_hints.dart';
 import 'runtime_mapping.dart';
 
 /// Whether the scoring self-check is skipped as in a release build:
@@ -822,7 +823,9 @@ class FfiInferenceModelSession extends InferenceModelSession
     if (error is lm.TurnFailedException) {
       final cause = turnFailureCause(error);
       // A native failure mid-turn as at session open: a plain Exception.
-      if (cause is lm.LiteRtLmNativeException) return Exception(cause.message);
+      if (cause is lm.LiteRtLmNativeException) {
+        return Exception(withCoreHint(cause.message));
+      }
       if (cause != null) return mapRuntimeError(cause);
     }
     if (error is lm.ContextFullException) {

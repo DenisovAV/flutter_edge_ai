@@ -27,9 +27,6 @@ String? missingArchiveNotice({
       '$dirName ($archiveName), so `.litertlm` inference cannot run in a '
       'native Windows ARM64 process. The build continues for apps that use '
       'another engine. Upstream LiteRT-LM does not build for Windows ARM64, '
-      'and MediaPipe has no desktop engine. The ONNX engine '
-      '(`flutter_edge_ai_onnx`, ONNX models) bundles Windows ARM64 archives '
-      'but has not run on ARM64 hardware yet; the other option is to build '
-      'the app for x64, which runs under Windows x64 emulation. '
+      'so build the app for x64, which runs under Windows x64 emulation. '
       'See https://github.com/DenisovAV/flutter_edge_ai/issues/326';
 }

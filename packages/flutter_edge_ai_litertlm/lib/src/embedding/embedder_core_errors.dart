@@ -12,6 +12,7 @@ import 'package:litertlm_dart/internal.dart'
         EmbedderLoadException,
         EmbedderModality;
 
+import '../adapter/core_hints.dart';
 import 'litert_lm_embedding_common.dart' show liteRtLmEngineTag;
 
 /// Core's request as the runtime's: [taskType]'s prefix in front of the text
@@ -46,14 +47,14 @@ EmbeddingModality coreModalityOf(EmbedderModality modality) =>
 Object coreEmbedderError(Object error) => switch (error) {
   EmbedderLoadException(:final message, :final nativeCode, :final cause) =>
     EmbeddingLoadException(
-      message,
+      withCoreHint(message),
       engine: liteRtLmEngineTag,
       nativeCode: nativeCode,
       cause: cause,
     ),
   EmbedderEngineException(:final message, :final nativeCode, :final cause) =>
     EmbeddingEngineException(
-      message,
+      withCoreHint(message),
       engine: liteRtLmEngineTag,
       nativeCode: nativeCode,
       cause: cause,

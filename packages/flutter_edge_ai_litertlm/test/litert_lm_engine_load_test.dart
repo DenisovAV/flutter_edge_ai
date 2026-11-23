@@ -971,7 +971,8 @@ void main() {
                       "vision encoder is compiled for the Samsung "
                       'E9955 NPU',
                     ),
-                    contains('in flutter_edge_ai, without supportImage'),
+                    contains('(visionBackend: null)'),
+                    contains('\nIn flutter_edge_ai: without supportImage.'),
                   ),
                 ),
           ),

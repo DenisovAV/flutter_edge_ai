@@ -195,22 +195,13 @@ void main() {
         startsWith('litertlm_dart: LiteRT-LM did not load on macOS'),
       );
       expect(message, contains('LLM, embeddings, speech'));
-      expect(message, contains('Swift Package Manager'));
-      // With it on, the Swift package brings them: a stale build, not a
-      // missing setup step (#689).
-      expect(message, contains("Swift Package Manager on (Flutter's default)"));
-      // An app on litertlm_dart alone has nothing that embeds them: a
-      // `flutter clean` there loops, so the message names the package that
-      // does.
-      expect(message, contains('depends on litertlm_dart alone'));
-      expect(message, contains('adds flutter_edge_ai_litertlm'));
+      // What to embed, by name: an app on litertlm_dart alone has nothing
+      // that does it, and the build hook does not yet.
+      expect(message, contains('GemmaModelConstraintProvider.framework'));
+      expect(message, contains('LiteRtLmMetalAccelerator.framework'));
+      expect(message, contains('the build hook does not embed them yet'));
       expect(message, contains('flutter clean'));
-      expect(message, contains('enable-swift-package-manager: false'));
-      // Flutter's generated Podfile has a post_install already; a second one
-      // fails `pod install`.
-      expect(message, contains('replace the post_install block'));
-      expect(message, contains('keeping any lines of your own'));
-      expect(message, contains('https://flutteredge.ai/docs/desktop#macos'));
+      expect(message, isNot(contains('flutter_edge_ai')));
       expect(message, endsWith('dyld: $_missingCompanion'));
     });
 
@@ -249,7 +240,7 @@ void main() {
       // not turn into a CPU attempt that hides it.
       expect(thrown, isNot(isA<Exception>()));
       final message = '${(thrown! as ArgumentError).message}';
-      expect(message, contains('Swift Package Manager'));
+      expect(message, contains('companion libraries are not in the app'));
       expect(message, contains("Failed to load dynamic library '"));
     });
 
@@ -310,7 +301,7 @@ void main() {
       expect(asked, isFalse);
       expect(thrown, isA<UnsupportedError>());
       final message = '${(thrown! as UnsupportedError).message}';
-      expect(message, contains('Swift Package Manager'));
+      expect(message, contains('companion libraries are not in the app'));
       expect(message, contains('dyld: '));
     });
 
@@ -428,7 +419,10 @@ void main() {
       expect(message, contains('Library not loaded'));
       expect(message, contains('Not found: /gone/libLiteRtLm.dylib'));
       // An app's advice would be wrong for a host test.
-      expect(message, isNot(contains('Swift Package Manager')));
+      expect(
+        message,
+        isNot(contains('companion libraries are not in the app')),
+      );
       expect(message, isNot(contains('is not in the app')));
     });
 
@@ -508,7 +502,7 @@ void main() {
       );
       expect(thrown, isA<ArgumentError>());
       final message = '${(thrown! as ArgumentError).message}';
-      expect(message, contains('Swift Package Manager'));
+      expect(message, contains('companion libraries are not in the app'));
       // A copy the Podfile stager touched names the provider in its framework
       // form, so the spelling is not pinned.
       expect(message, contains('Library not loaded: @rpath/'));

@@ -216,6 +216,10 @@ enum LiteRtLmWebRuntimeState {
   /// The loader ran, but `window.EmbeddingEngine` is not set: an index.html
   /// written for the LLM engine only.
   embeddingEngineMissing,
+
+  /// `window.EmbeddingEngine` is from another `@litert-lm/core` than
+  /// [liteRtLmWebRuntimeVersion].
+  otherRuntimeVersion,
 }
 
 /// Whether the browser can give the runtime a WebGPU device.
@@ -468,19 +472,42 @@ final class LiteRtLmWebEmbedder {
   int? _maxInputTokens;
   bool _images = false;
   bool _audio = false;
-  bool _loading = false;
-  bool _loaded = false;
-  bool _closed = false;
+  _EmbedderState _state = _EmbedderState.fresh;
 
   String get _file => _config.fileName;
 
   /// Creates the engine and embeds the probe: the dimension, the input
-  /// limit and that the vectors are usable. Runs once, before [close].
+  /// limit and that the vectors are usable. Runs once, before [close]. A load
+  /// that fails, or is closed while it runs, deletes the engine it created
+  /// before it returns.
   Future<LiteRtLmWebEmbedderInfo> load() async {
-    if (_loading || _loaded || _closed) {
+    if (_state != _EmbedderState.fresh) {
       throw StateError('LiteRtLmWebEmbedder.load() runs once, before close');
     }
-    _loading = true;
+    _state = _EmbedderState.loading;
+    try {
+      final info = await _load();
+      if (_state == _EmbedderState.closed) {
+        throw StateError('The embedder was closed while it loaded.');
+      }
+      _state = _EmbedderState.loaded;
+      return info;
+    } catch (_) {
+      if (_state != _EmbedderState.closed) _state = _EmbedderState.failed;
+      final engine = _engine;
+      _engine = null;
+      if (engine != null) {
+        try {
+          await engine.delete();
+        } catch (e) {
+          runtimeLog('[LiteRtLmWebEmbedder] deleting a failed load: $e');
+        }
+      }
+      rethrow;
+    }
+  }
+
+  Future<LiteRtLmWebEmbedderInfo> _load() async {
     final media = _config.declaredMedia;
     await _requireRuntime();
     if (_config.backend == LiteRtLmWebBackend.gpu) await _requireWebGpu();
@@ -517,7 +544,9 @@ final class LiteRtLmWebEmbedder {
       // the model stream), so they take the page lock the LLM engine takes
       // too.
       (settings, probe, maxInputTokens) = await liteRtLmPageLock.run(() async {
+        _checkNotClosed();
         final settings = await _createEngine(url, images: images, audio: audio);
+        _checkNotClosed();
         final engine = _engine!;
         try {
           final probe = await engine.computeEmbedding(
@@ -563,7 +592,6 @@ final class LiteRtLmWebEmbedder {
     _maxInputTokens = maxInputTokens;
     _images = images;
     _audio = audio;
-    _loaded = true;
     runtimeLog(
       '[LiteRtLmWebEmbedder] loaded $_file: dim=$dimension, '
       'maxInputTokens=$maxInputTokens, $settings',
@@ -642,8 +670,8 @@ final class LiteRtLmWebEmbedder {
         throw const EmbedderLoadException(
           'web/index.html does not load @litert-lm/core, so there is no '
           'EmbeddingEngine for EmbeddingGemma 2. Add the module script from '
-          "flutter_edge_ai_litertlm's README (Web setup): it imports "
-          '@litert-lm/core@$liteRtLmWebRuntimeVersion, sets window.Engine = m.Engine; and '
+          "litertlm_dart's README (On the web): it imports "
+          '$liteRtLmWebModuleUrl, sets window.Engine = m.Engine; and '
           '$liteRtLmWebShimLine',
         );
       case LiteRtLmWebRuntimeState.embeddingEngineMissing:
@@ -652,6 +680,12 @@ final class LiteRtLmWebEmbedder {
           '@litert-lm/core for the LLM engine only. Add '
           '$liteRtLmWebShimLine next to window.Engine = m.Engine; in its '
           'module script.',
+        );
+      case LiteRtLmWebRuntimeState.otherRuntimeVersion:
+        throw const EmbedderLoadException(
+          'web/index.html loads another @litert-lm/core than '
+          '$liteRtLmWebRuntimeVersion, which this release drives: import '
+          '$liteRtLmWebModuleUrl in its module script.',
         );
     }
   }
@@ -755,7 +789,7 @@ final class LiteRtLmWebEmbedder {
   /// any other failure.
   Future<List<double>> embed(EmbedderInput input) async {
     final engine = _engine;
-    if (!_loaded || _closed || engine == null) {
+    if (_state != _EmbedderState.loaded || engine == null) {
       throw const EmbedderEngineException(
         'LiteRtLmWebEmbedder.embed() needs a loaded, open embedder',
       );
@@ -791,9 +825,11 @@ final class LiteRtLmWebEmbedder {
 
     final LiteRtLmWebEmbedding response;
     try {
-      response = await liteRtLmPageLock.run(
-        () => engine.computeEmbedding(request, _options),
-      );
+      response = await liteRtLmPageLock.run(() {
+        // Closed while it waited for the page: the engine is deleted.
+        _checkNotClosed();
+        return engine.computeEmbedding(request, _options);
+      });
     } catch (e) {
       throw EmbedderEngineException(
         'LiteRT-LM could not embed the $what for $_file: $e',
@@ -858,10 +894,17 @@ final class LiteRtLmWebEmbedder {
     actualTokens: actual,
   );
 
-  /// Deletes the engine; waits for a call in flight inside the runtime.
+  void _checkNotClosed() {
+    if (_state == _EmbedderState.closed) {
+      throw StateError('The embedder for $_file is closed.');
+    }
+  }
+
+  /// Deletes the engine; waits for a call in flight inside the runtime. A
+  /// call still queued on the page lock is refused when its turn comes.
   Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
+    if (_state == _EmbedderState.closed) return;
+    _state = _EmbedderState.closed;
     final engine = _engine;
     _engine = null;
     // Waits for a call in flight inside the runtime (its own mutex): the
@@ -869,6 +912,8 @@ final class LiteRtLmWebEmbedder {
     if (engine != null) await engine.delete();
   }
 }
+
+enum _EmbedderState { fresh, loading, loaded, failed, closed }
 
 /// A vector no normalised embedding can be: a NaN or infinity, or all zeros.
 bool _unusable(List<double> vector) =>

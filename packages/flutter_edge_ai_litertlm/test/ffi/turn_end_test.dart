@@ -31,7 +31,7 @@ class _Handle implements ConversationHandle {
   void cancelGeneration() => turns.cancel('c');
 
   @override
-  void close() => turns.release('c');
+  Future<void> close() async => turns.release('c');
 
   @override
   Future<int?> tokenCount(String text) async => text.length;

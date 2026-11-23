@@ -32,7 +32,7 @@ final class ContextFullException extends LiteRtLmException {
 /// Native failed the turn, or cancelled it without being asked. The next
 /// message rebuilds the conversation from its history.
 final class TurnFailedException extends LiteRtLmException {
-  const TurnFailedException(super.message, {Object? cause}) : _cause = cause;
+  const TurnFailedException(super.message, {this._cause});
 
   final Object? _cause;
 }
@@ -330,7 +330,7 @@ final class Conversation {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    _handle.close();
+    await _handle.close();
   }
 }
 

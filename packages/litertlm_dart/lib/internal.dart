@@ -101,7 +101,11 @@ export 'src/runtime/runtime_log.dart'
         runtimeLogSinkSetByApp;
 export 'src/runtime/send_options.dart' show SendOptions;
 export 'src/web/page_lock.dart'
-    show LiteRtLmPageLease, LiteRtLmPageLock, liteRtLmPageLock;
+    show
+        LiteRtLmPageLease,
+        LiteRtLmPageLock,
+        LiteRtLmPagePoisonedError,
+        liteRtLmPageLock;
 export 'src/web/web_embedder.dart'
     show
         LiteRtLmWebAudio,

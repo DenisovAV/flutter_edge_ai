@@ -66,16 +66,12 @@ Object? _plain(Object? value) => switch (value) {
 /// The hook's defines: the current key's, then the legacy key's.
 final class HookDefines {
   HookDefines({
-    required Object? Function(String key) current,
-    required Uri? Function(String key) currentPath,
-    Map<String, Object?> legacy = const {},
-    Uri? legacyBase,
+    required this._current,
+    required this._currentPath,
+    this._legacy = const {},
+    this._legacyBase,
     void Function(String message)? warn,
-  }) : _current = current,
-       _currentPath = currentPath,
-       _legacy = legacy,
-       _legacyBase = legacyBase,
-       _warn = warn ?? stderr.writeln;
+  }) : _warn = warn ?? stderr.writeln;
 
   final Object? Function(String key) _current;
   final Uri? Function(String key) _currentPath;

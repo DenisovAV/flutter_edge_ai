@@ -146,7 +146,7 @@ class _Conversation implements ConversationHandle {
 
   /// Like the native handle: closing cancels a turn that still runs.
   @override
-  void close() {
+  Future<void> close() async {
     closed = true;
     cancels++;
   }

@@ -162,7 +162,9 @@ abstract class ConversationHandle {
   /// [NativeLastTurnEnd.contextFull]; null when [lastTurnEnd] is.
   int? get lastTurnCode;
 
-  void close();
+  /// Ends the conversation; completes once it is torn down (on the web: its
+  /// generation drained and its runtime conversation deleted).
+  Future<void> close();
 }
 
 /// One prefill or decode turn of LiteRT-LM's benchmark record: its tokens

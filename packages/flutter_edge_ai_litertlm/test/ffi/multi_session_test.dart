@@ -109,7 +109,7 @@ class _FakeConversationHandle implements ConversationHandle {
   int? get lastTurnCode => null;
 
   @override
-  void close() => isClosed = true;
+  Future<void> close() async => isClosed = true;
 }
 
 void main() {

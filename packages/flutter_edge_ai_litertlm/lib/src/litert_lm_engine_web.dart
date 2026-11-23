@@ -73,7 +73,8 @@ class LiteRtLmEngine
     bindRuntimeLogToCore();
     final sourceResolver = WebModelSourceResolver.forActiveModel();
     return LiteRtLmWebInferenceModel(
-      createEngine: () => createLiteRtLmWebEngine(sourceResolver),
+      createEngine: () =>
+          createLiteRtLmWebEngine(sourceResolver, maxTokens: config.maxTokens),
       maxTokens: config.maxTokens,
       modelType: spec.modelType,
       maxConcurrentSessions: config.maxConcurrentSessions,

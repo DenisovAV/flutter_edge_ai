@@ -13,3 +13,11 @@ const liteRtLmWebModuleUrl =
 
 /// `@litert-lm/core` with its version, as messages name it.
 const liteRtLmWebRuntime = '@litert-lm/core $liteRtLmWebRuntimeVersion';
+
+/// The message refusing an image or audio part on the web.
+const webNoMediaMessage =
+    'The web Engine sends text only: $liteRtLmWebRuntime creates an engine '
+    'with a vision or audio backend, but Gemma 4 E2B\'s web export then fails '
+    'the first image ("Vision executor should not be null, please '
+    'TryLoadingVisionExecutor() first.") and clip (the audio equivalent), '
+    'measured 2026-11-23.';

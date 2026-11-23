@@ -92,6 +92,8 @@ void _installEngine() => _js('''
   window.__eg2 = { settings: [], inputs: [], options: [], deletes: 0,
                    maxSeq: 1024, createError: null, computeError: null };
   window.EmbeddingEngine = function () {};
+  // The static 0.19.0 added; the version check looks for it.
+  window.EmbeddingEngine.createExclusive = function () {};
   window.EmbeddingEngine.create = async function (settings) {
     const s = window.__eg2;
     s.settings.push(settings);
@@ -146,12 +148,17 @@ String _blobUrl(Uint8List bytes) {
 }
 
 /// The model an app gets: describe() → the pass → core's inline host. With
-/// [audio], [modelPath] must be a URL the page can read (a bundle header).
+/// [images] or [audio] the embedder reads the bundle's container header, so
+/// [modelPath] must be a URL the page can read: by default then the 740m's
+/// header (vision and audio towers).
 Future<EmbeddingModel> _start({
   bool images = false,
   bool audio = false,
-  String modelPath = 'blob:https://example.com/eg2',
+  String? modelPath,
 }) async {
+  modelPath ??= images || audio
+      ? _blobUrl(eg2Header740m)
+      : 'blob:https://example.com/eg2';
   final descriptor = await const LiteRtEmbeddingBackend().describe(
     _bundle440m,
     _config(supportImage: images, supportAudio: audio, modelPath: modelPath),
@@ -248,10 +255,26 @@ void main() {
         _js('''
         window.litertLmReady = new Promise((resolve) => setTimeout(() => {
           window.EmbeddingEngine = function () {};
+          window.EmbeddingEngine.createExclusive = function () {};
           resolve(null);
         }, 50));
       ''');
         expect(await runtime.ensureReady(), LiteRtLmWebRuntimeState.ready);
+      },
+    );
+
+    test(
+      'an EmbeddingEngine of 0.18.0 (no createExclusive): another '
+      'runtime version, which the load refuses naming the pinned one',
+      () async {
+        _js('''
+        window.litertLmReady = Promise.resolve(null);
+        window.EmbeddingEngine = function () {};
+      ''');
+        expect(
+          await runtime.ensureReady(),
+          LiteRtLmWebRuntimeState.otherRuntimeVersion,
+        );
       },
     );
 
@@ -426,41 +449,46 @@ void main() {
     }
   });
 
-  test('JS rejections: create → EmbeddingLoadException naming the 440m when '
-      'images were declared; computeEmbedding → EmbeddingEngineException with '
-      'the JS message', () async {
-    _installEngine();
-    _stubGpu();
-    _js("window.__eg2.createError = 'NOT_FOUND: no vision encoder';");
-    await expectLater(
-      _start(images: true),
-      throwsA(
-        isA<EmbeddingLoadException>()
-            .having((e) => e.message, 'message', contains('NOT_FOUND'))
-            .having(
-              (e) => e.message,
-              'message',
-              contains('install embeddinggemma-2-text-vision-440m'),
-            ),
-      ),
-    );
-
-    _installEngine();
-    final model = await _start();
-    try {
-      _js("window.__eg2.computeError = 'wasm trap';");
+  test(
+    'JS rejections: create → EmbeddingLoadException with the runtime\'s reason when '
+    'images were declared; computeEmbedding → EmbeddingEngineException with '
+    'the JS message',
+    () async {
+      _installEngine();
+      _stubGpu();
+      _js("window.__eg2.createError = 'NOT_FOUND: no vision encoder';");
       await expectLater(
-        model.embed(EmbeddingInput.text('x'), taskType: TaskType.none),
+        _start(images: true),
         throwsA(
-          isA<EmbeddingEngineException>()
-              .having((e) => e.engine, 'engine', 'LiteRT-LM')
-              .having((e) => e.message, 'message', contains('wasm trap')),
+          isA<EmbeddingLoadException>()
+              .having((e) => e.message, 'message', contains('NOT_FOUND'))
+              .having(
+                (e) => e.message,
+                'message',
+                // A bundle without a vision encoder is refused from its
+                // header before create; a create failure says what else it is.
+                contains('close it first'),
+              ),
         ),
       );
-    } finally {
-      await model.close();
-    }
-  });
+
+      _installEngine();
+      final model = await _start();
+      try {
+        _js("window.__eg2.computeError = 'wasm trap';");
+        await expectLater(
+          model.embed(EmbeddingInput.text('x'), taskType: TaskType.none),
+          throwsA(
+            isA<EmbeddingEngineException>()
+                .having((e) => e.engine, 'engine', 'LiteRT-LM')
+                .having((e) => e.message, 'message', contains('wasm trap')),
+          ),
+        );
+      } finally {
+        await model.close();
+      }
+    },
+  );
 
   group('readPrefix (the page\'s fetch)', () {
     const runtime = WindowLiteRtLmWebRuntime();

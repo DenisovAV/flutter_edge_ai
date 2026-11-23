@@ -15,7 +15,7 @@ import 'message.dart';
 final class EmbeddingEngineConfig {
   EmbeddingEngineConfig({
     required this.modelPath,
-    required this.cacheDir,
+    this.cacheDir,
     Backend? backend,
     this.visionBackend,
     this.audioBackend,
@@ -23,34 +23,44 @@ final class EmbeddingEngineConfig {
     this.requireWeightCache = false,
   }) : backend = backend ?? const Backend.cpu();
 
-  /// The EmbeddingGemma 2 `.litertlm` bundle.
+  /// The EmbeddingGemma 2 `.litertlm` bundle. On the web: a URL the page can
+  /// fetch (`blob:`, `https:`).
   final String modelPath;
 
   /// Where the engine keeps one weight-cache directory per bundle copy. Use a
   /// directory that is not backed up; a purged cache is rebuilt at the next
-  /// load.
-  final String cacheDir;
+  /// load. Natively it is required: `EmbeddingEngine.create` refuses a null
+  /// one with an [ArgumentError]. On the web the runtime keeps no weight
+  /// cache, and a given one is refused, as `EngineConfig.cacheDir` is.
+  final String? cacheDir;
 
-  /// The text tower's backend. A per-SoC bundle runs on the NPU only, a
-  /// generic one never there; the GPU is taken where it was measured, for the
-  /// bundles measured there, and refused elsewhere (never moved to the CPU).
+  /// The text tower's backend. Natively: a per-SoC bundle runs on the NPU
+  /// only, a generic one never there; the GPU is taken where it was measured,
+  /// for the bundles measured there, and refused elsewhere (never moved to
+  /// the CPU). On the web: [Backend.gpu] (WebGPU) only — the CPU
+  /// (WebAssembly) path of the pinned `@litert-lm/core` cannot read these
+  /// bundles' external weights, so `Backend.cpu`, the default, is refused
+  /// there, as is the NPU.
   final Backend backend;
 
   /// Null: images are not taken. Set: they are, and a bundle without a vision
-  /// tower is refused. The vision tower runs on the NPU beside an NPU text
-  /// tower and on the CPU otherwise; any other backend is refused.
+  /// tower is refused. Natively the vision tower runs on the NPU beside an
+  /// NPU text tower and on the CPU otherwise; any other backend is refused.
+  /// On the web it runs on the text tower's backend, and another is refused.
   final Backend? visionBackend;
 
   /// Null: audio is not taken. Set: it is, and a bundle without an audio
-  /// tower is refused. The audio tower runs on the CPU only; any other
-  /// backend is refused.
+  /// tower is refused. Natively the audio tower runs on the CPU only; on the
+  /// web on [Backend.gpu] (measured some 65 times faster than its WebAssembly
+  /// CPU path) or [Backend.cpu].
   final Backend? audioBackend;
 
   /// Vision tokens per image: 140 (null) or 70.
   final int? visionTokensPerImage;
 
   /// Refuse a load that leaves no real weight cache behind, instead of
-  /// warning.
+  /// warning. Native only: the web keeps no weight cache, and `true` is
+  /// refused there.
   final bool requireWeightCache;
 }
 

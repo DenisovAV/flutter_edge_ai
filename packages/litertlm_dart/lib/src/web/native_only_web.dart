@@ -16,7 +16,7 @@ import '../bundle/litertlm_generic_limits.dart';
 import 'web_runtime_version.dart';
 
 /// Refused on the web: the page cannot read a file by path.
-Future<BundleInfo> readBundleInfo(String path) => throw UnsupportedError(
+Future<BundleInfo> readBundleInfo(String path) async => throw UnsupportedError(
   'readBundleInfo reads a .litertlm file by path, which the web cannot.',
 );
 
@@ -25,7 +25,7 @@ Future<Uint8List?> readBundleGenericData(
   String path,
   String name, {
   int maxBytes = maxGenericDataBytes,
-}) => throw UnsupportedError(
+}) async => throw UnsupportedError(
   'readBundleGenericData reads a .litertlm file by path, which the web '
   'cannot.',
 );
@@ -43,7 +43,8 @@ Future<LlmBenchmarkResult> benchmark({
   int? maxNumTokens,
   String? cacheDir,
   SamplerConfig? samplerConfig,
-}) => throw UnsupportedError(
-  'benchmark() runs LiteRT-LM\'s native benchmark mode, which the web runtime '
-  '($liteRtLmWebRuntime) does not have.',
+}) async => throw UnsupportedError(
+  'benchmark() runs exactly the prefill and decode token counts asked for; '
+  '$liteRtLmWebRuntime\'s benchmark mode (benchmarkEnabled) takes no token '
+  'counts and reports only the last turn.',
 );

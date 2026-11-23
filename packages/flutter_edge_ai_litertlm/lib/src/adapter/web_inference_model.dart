@@ -24,7 +24,7 @@ import 'package:mutex/mutex.dart';
 import '../reported_engine_turn.dart';
 
 /// What the web model needs of a loaded engine: conversations with the
-/// adapter's resolved sampler, a conversation's full close, and the engine's.
+/// adapter's resolved sampler, and the engine's close.
 abstract interface class WebLlmEngine {
   /// A conversation of [config], with [defaultSamplerConfig] as the model's
   /// own sampler when [config] sets none.
@@ -32,10 +32,6 @@ abstract interface class WebLlmEngine {
     lm.ConversationConfig config,
     lm.SamplerConfig? defaultSamplerConfig,
   );
-
-  /// Completes once a closed [conversation] has let its generation end (at
-  /// most 30 s) and freed its runtime conversation.
-  Future<void> conversationClosed(lm.Conversation conversation);
 
   /// Closes every conversation and deletes the engine.
   Future<void> close();
@@ -208,7 +204,6 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
 
       final session = _session = LiteRtLmWebSession(
         conversation: conversation,
-        conversationClosed: _engine!.conversationClosed,
         modelType: modelType,
         fileType: fileType,
         generationMutex: generationMutex,
@@ -307,7 +302,6 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     late final LiteRtLmWebSession session;
     session = LiteRtLmWebSession(
       conversation: conversation,
-      conversationClosed: _engine!.conversationClosed,
       modelType: modelType,
       fileType: fileType,
       generationMutex: generationMutex,
@@ -434,7 +428,6 @@ class LiteRtLmWebSession extends InferenceModelSession
     with RawSdkResponseSession {
   LiteRtLmWebSession({
     required this.conversation,
-    required this.conversationClosed,
     required this.modelType,
     required this.fileType,
     required this.generationMutex,
@@ -443,10 +436,6 @@ class LiteRtLmWebSession extends InferenceModelSession
   });
 
   final lm.Conversation conversation;
-
-  /// Completes once a closed conversation has let its generation end
-  /// ([WebLlmEngine.conversationClosed]).
-  final Future<void> Function(lm.Conversation) conversationClosed;
   final ModelType modelType;
   final ModelFileType fileType;
 
@@ -753,9 +742,14 @@ class LiteRtLmWebSession extends InferenceModelSession
     if (_isClosed) return;
     _isClosed = true;
     _isCancelled = true;
-    await conversation.close();
-    await conversationClosed(conversation);
-    _queryBuffer.clear();
-    onClose();
+    try {
+      // Waits for the runtime to have ended the turn and freed the
+      // conversation; fails when a stopped turn never ended (the page is then
+      // unusable, and says so).
+      await conversation.close();
+    } finally {
+      _queryBuffer.clear();
+      onClose();
+    }
   }
 }

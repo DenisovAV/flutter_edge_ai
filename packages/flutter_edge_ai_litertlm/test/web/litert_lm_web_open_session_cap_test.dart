@@ -28,6 +28,19 @@ class _Resolver implements WebModelSourceResolver {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// A stand-in for `window.Engine`: a function (as the page's is) with the
+/// 0.19.0 `createExclusive` the version check looks for, whose `create`
+/// returns [engine].
+JSObject _engineConstructor(JSObject engine) =>
+    (globalContext.callMethod<JSObject>(
+        'eval'.toJS,
+        '(function Engine() {})'.toJS,
+      ))
+      ..['createExclusive'] = (() {}).toJS
+      ..['create'] = ((JSAny? options) => Future<JSObject>.value(
+        engine,
+      ).toJS).toJS;
+
 void main() {
   test('two openSession calls that overlap cannot both pass '
       'maxConcurrentSessions, and a failed one frees its slot', () async {
@@ -48,13 +61,10 @@ void main() {
       }).toJS
       ..['delete'] = (() => Future<void>.value().toJS).toJS;
     globalContext['litertLmReady'] = Future<void>.value().toJS;
-    globalContext['Engine'] = JSObject()
-      ..['create'] = ((JSAny? options) => Future<JSObject>.value(
-        engine,
-      ).toJS).toJS;
+    globalContext['Engine'] = _engineConstructor(engine);
 
     final model = LiteRtLmWebInferenceModel(
-      createEngine: () => createLiteRtLmWebEngine(_Resolver()),
+      createEngine: () => createLiteRtLmWebEngine(_Resolver(), maxTokens: 1024),
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
       maxConcurrentSessions: 1,
@@ -95,22 +105,23 @@ void main() {
               .toJS
       ..['delete'] = (() => Future<void>.value().toJS).toJS;
     globalContext['litertLmReady'] = Future<void>.value().toJS;
-    globalContext['Engine'] = JSObject()
-      ..['create'] = ((JSAny? options) => Future<JSObject>.value(
-        engine,
-      ).toJS).toJS;
+    globalContext['Engine'] = _engineConstructor(engine);
 
     final model = LiteRtLmWebInferenceModel(
-      createEngine: () => createLiteRtLmWebEngine(_Resolver()),
+      createEngine: () => createLiteRtLmWebEngine(_Resolver(), maxTokens: 1024),
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
       onClose: () {},
     );
     final open = model.openSession();
     await pumpEventQueue();
-    await model.close();
+    // close() waits for the conversation being created: it finishes once the
+    // runtime answers, and is deleted rather than handed out.
+    final opened = expectLater(open, throwsStateError);
+    final closing = model.close();
     gate.complete();
-    await expectLater(open, throwsStateError);
+    await closing;
+    await opened;
     expect(deleted, 1);
     expect(model.sessions, isEmpty);
   });

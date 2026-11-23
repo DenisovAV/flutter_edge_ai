@@ -22,6 +22,7 @@
 library;
 
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 import 'web_runtime_version.dart';
 
@@ -29,6 +30,19 @@ import 'web_runtime_version.dart';
 /// `GPU: 4`, for the version the page pins ([liteRtLmWebRuntimeVersion]).
 const liteRtLmWebBackendCpu = 3;
 const liteRtLmWebBackendGpu = 4;
+
+/// `Backend.GPU_ARTISAN`: what `engine.settings.backend` reports for a web
+/// export such as `gemma-4-E2B-it-web.litertlm` asked for on the GPU (0.19.0,
+/// measured 2026-11-23): the same WebGPU, through the runtime's legacy
+/// executor.
+const liteRtLmWebBackendGpuArtisan = 2;
+
+/// Whether the page's `Engine` (or `EmbeddingEngine`) constructor is from
+/// the version this release drives: 0.19.0 added the static
+/// `createExclusive` both run their creates through
+/// (`runExclusiveEngineCreation`), which 0.18.0 has not.
+bool liteRtLmWebRuntimeIsCurrent(JSObject constructor) =>
+    constructor.has('createExclusive');
 
 /// `@JS('Engine')` makes the static `create` resolve against
 /// `globalThis.Engine.create` (where the page's `window.Engine = m.Engine`
@@ -58,14 +72,21 @@ extension type JsLiteRtLmConversation._(JSObject _) implements JSObject {
   /// object.
   external JSObject sendMessageStreaming(JSAny message);
 
-  /// Asks the generation in flight to stop.
+  /// Asks the generation in flight to stop. The stream then rejects with
+  /// "Task cancelled", and so does every later send on this conversation
+  /// (0.18.0 and 0.19.0, measured 2026-11-23): a stopped conversation is
+  /// replaced by one rebuilt from [getHistory].
   external void cancel();
+
+  /// The conversation's messages: its completed exchanges (a cancelled turn
+  /// is not in it).
+  external JSPromise<JSArray<JSObject>> getHistory();
 
   /// Frees the conversation once its executor is free.
   external JSPromise<JSAny?> delete();
 }
 
-/// `iter.next()` on a JS AsyncIterator: a Promise of `{value, done}`.
-extension JsAsyncIterator on JSObject {
+/// A JS AsyncIterator: `next()` is a Promise of `{value, done}`.
+extension type JsAsyncIterator._(JSObject _) implements JSObject {
   external JSPromise<JSObject> next();
 }

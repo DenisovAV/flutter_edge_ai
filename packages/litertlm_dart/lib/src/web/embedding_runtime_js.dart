@@ -45,7 +45,11 @@ import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
 import '../runtime/runtime_log.dart';
-import 'litert_lm_js.dart' show liteRtLmWebBackendCpu, liteRtLmWebBackendGpu;
+import 'litert_lm_js.dart'
+    show
+        liteRtLmWebBackendCpu,
+        liteRtLmWebBackendGpu,
+        liteRtLmWebRuntimeIsCurrent;
 import 'web_embedder.dart';
 import 'web_runtime_version.dart';
 
@@ -86,8 +90,10 @@ extension type _EmbeddingResponse._(JSObject _) implements JSObject {
   external JSNumber? get numChunks;
 }
 
-@JS('fetch')
-external JSPromise<_Response> _fetch(JSString url, JSObject init);
+/// The page's `fetch`, looked up at each call: a page (or a test) that
+/// replaces `window.fetch` gets its own on dart2wasm as on dart2js.
+JSPromise<_Response> _fetch(JSString url, JSObject init) =>
+    globalContext.callMethod<JSPromise<_Response>>('fetch'.toJS, url, init);
 
 extension type _Response._(JSObject _) implements JSObject {
   external bool get ok;
@@ -120,7 +126,7 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
 
   @override
   Future<LiteRtLmWebRuntimeState> ensureReady() async {
-    if (_hasEmbeddingEngine) return LiteRtLmWebRuntimeState.ready;
+    if (_hasEmbeddingEngine) return _versionState;
     final ready = globalContext['litertLmReady'];
     if (ready == null || ready.isUndefinedOrNull) {
       return LiteRtLmWebRuntimeState.loaderMissing;
@@ -131,9 +137,14 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
       await (ready as JSPromise<JSAny?>).toDart;
     }
     return _hasEmbeddingEngine
-        ? LiteRtLmWebRuntimeState.ready
+        ? _versionState
         : LiteRtLmWebRuntimeState.embeddingEngineMissing;
   }
+
+  static LiteRtLmWebRuntimeState get _versionState =>
+      liteRtLmWebRuntimeIsCurrent(globalContext['EmbeddingEngine']! as JSObject)
+      ? LiteRtLmWebRuntimeState.ready
+      : LiteRtLmWebRuntimeState.otherRuntimeVersion;
 
   /// `navigator.gpu.requestAdapter({powerPreference: 'high-performance'})`:
   /// the adapter `@litert-lm/core` itself asks for before it creates

@@ -16,7 +16,6 @@ import 'package:litertlm_dart/src/bundle/litertlm_npu_target.dart';
 import 'package:test/test.dart';
 
 import 'litertlm_container_fixture.dart';
-import 'package:litertlm_dart/src/bundle/litertlm_bundle_info.dart';
 
 void main() {
   late Directory root;

@@ -245,7 +245,7 @@ const windowsPreloadLibraries = [
 ];
 
 /// Callback typedef with Uint8 for bool (C _Bool = 1 byte)
-typedef _StreamCallbackNative =
+typedef StreamCallbackNative =
     Void Function(
       Pointer<Void> callbackData,
       Pointer<Char> chunk,
@@ -261,12 +261,12 @@ typedef _StreamCallbackNative =
 /// null, with the out-param null, when one is missing.
 typedef _ProxyCreateNative =
     Pointer<Void> Function(
-      Pointer<NativeFunction<_StreamCallbackNative>> dartCallback,
+      Pointer<NativeFunction<StreamCallbackNative>> dartCallback,
       Pointer<Void> dartData,
       Pointer<Void> getText,
       Pointer<Void> getError,
       Pointer<Void> isFinal,
-      Pointer<Pointer<NativeFunction<_StreamCallbackNative>>> outProxyFn,
+      Pointer<Pointer<NativeFunction<StreamCallbackNative>>> outProxyFn,
     );
 typedef _ProxyCreateDart = _ProxyCreateNative;
 
@@ -574,7 +574,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   }
 
   @override
-  void close() {
+  Future<void> close() async {
     final conv = _conversation;
     if (conv == null) return;
     _conversation = null;
@@ -1421,12 +1421,12 @@ class LiteRtLmFfiClient {
   @visibleForTesting
   void streamForTest({
     required Pointer<Void> Function(
-      Pointer<NativeFunction<_StreamCallbackNative>> dartCallback,
+      Pointer<NativeFunction<StreamCallbackNative>> dartCallback,
       Pointer<Void> dartData,
       Pointer<Void> getText,
       Pointer<Void> getError,
       Pointer<Void> isFinal,
-      Pointer<Pointer<NativeFunction<_StreamCallbackNative>>> outProxyFn,
+      Pointer<Pointer<NativeFunction<StreamCallbackNative>>> outProxyFn,
     )
     createProxy,
     required void Function(Pointer<Char> str) freeString,
@@ -1517,7 +1517,7 @@ class LiteRtLmFfiClient {
       _sentConvs.contains(conv);
 
   Object? _nativeTurnStallError;
-  Completer<Object> _nativeTurnStall = Completer<Object>();
+  final Completer<Object> _nativeTurnStall = Completer<Object>();
 
   void _markNativeTurnStalled(Object error) {
     if (_nativeTurnStallError != null) return;
@@ -3858,7 +3858,7 @@ class LiteRtLmFfiClient {
         ? extraContext.toNativeUtf8()
         : nullptr;
 
-    late final NativeCallable<_StreamCallbackNative> callable;
+    late final NativeCallable<StreamCallbackNative> callable;
 
     var nativeReleased = false;
     final gate = SendCallGate(
@@ -3924,7 +3924,7 @@ class LiteRtLmFfiClient {
     // invoked from the native background thread that LiteRT-LM uses
     // for streaming, and Dart will marshal it to the right isolate.
     // Dart callback — receives heap-copied strings from proxy
-    callable = NativeCallable<_StreamCallbackNative>.listener((
+    callable = NativeCallable<StreamCallbackNative>.listener((
       Pointer<Void> data,
       Pointer<Char> chunk,
       int isFinal,
@@ -3974,7 +3974,7 @@ class LiteRtLmFfiClient {
       rethrow;
     }
 
-    final outProxyFn = calloc<Pointer<NativeFunction<_StreamCallbackNative>>>();
+    final outProxyFn = calloc<Pointer<NativeFunction<StreamCallbackNative>>>();
     final proxyData = createProxy(
       callable.nativeFunction,
       nullptr,

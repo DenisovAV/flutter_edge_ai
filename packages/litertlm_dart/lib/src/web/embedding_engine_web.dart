@@ -28,16 +28,29 @@ final class EmbeddingEngine {
   final EmbedderInfo info;
 
   /// Loads [config.modelPath], a URL the page can fetch (`blob:`, `https:`),
-  /// on WebGPU ([Backend.gpu]; a page without WebGPU is refused) or
-  /// WebAssembly ([Backend.cpu]). The vision tower, when [config.visionBackend]
+  /// on WebGPU ([Backend.gpu]; a page without WebGPU is refused). The vision tower, when [config.visionBackend]
   /// is set, runs on the text tower's backend; the audio tower on
   /// [config.audioBackend].
   ///
-  /// [config.cacheDir] and [config.requireWeightCache] are read natively
-  /// only: the web runtime keeps no weight cache. Throws [UnsupportedError]
-  /// for the NPU, and [EmbedderLoadException] for a bundle or a page that
-  /// cannot run as asked.
+  /// Throws [UnsupportedError] for what does not run here: the CPU text
+  /// tower, the NPU, a CPU thread count, a `cacheDir` or `requireWeightCache`
+  /// (the web runtime keeps no weight cache); [EmbedderLoadException] for a
+  /// bundle or a page that cannot run as asked.
   static Future<EmbeddingEngine> create(EmbeddingEngineConfig config) async {
+    if (config.cacheDir != null || config.requireWeightCache) {
+      throw UnsupportedError(
+        'The web runtime ($liteRtLmWebRuntime) keeps no weight cache: leave '
+        'cacheDir unset and requireWeightCache false on the web.',
+      );
+    }
+    if (config.backend is CpuBackend) {
+      throw UnsupportedError(
+        'EmbeddingGemma 2 runs on WebGPU only on the web: the CPU '
+        '(WebAssembly) path of $liteRtLmWebRuntime cannot read the bundles\' '
+        'external weights ("Failed to get external weight", measured '
+        '2026-11-23). Pass backend: Backend.gpu().',
+      );
+    }
     final backend = _webBackend(config.backend, 'backend');
     final audio = config.audioBackend;
     final budget =

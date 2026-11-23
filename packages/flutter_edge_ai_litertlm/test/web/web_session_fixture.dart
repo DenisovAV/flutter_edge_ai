@@ -24,10 +24,12 @@ LiteRtLmWebSession webSessionOver(
     enableThinking: false,
     extraContext: const {},
     onGeneration: () {},
+    // A stop marks the conversation for a rebuild before its NEXT turn; these
+    // suites send none after a stop.
+    rebuild: (_) => throw StateError('no rebuild in this fixture'),
   );
   return LiteRtLmWebSession(
     conversation: conversationForTest(handle),
-    conversationClosed: (_) => handle.closed,
     modelType: modelType,
     fileType: ModelFileType.litertlm,
     generationMutex: generationMutex ?? Mutex(),

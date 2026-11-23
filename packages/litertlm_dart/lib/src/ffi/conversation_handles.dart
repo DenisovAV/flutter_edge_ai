@@ -649,7 +649,7 @@ class RecoveringConversationHandle implements ConversationHandle {
   int? get lastTurnCode => _latestSent ? _live.lastTurnCode : null;
 
   @override
-  void close() {
+  Future<void> close() async {
     if (_closed) return;
     _closed = true;
     _history.clear();
@@ -949,7 +949,7 @@ class VirtualConversationHandle implements ConversationHandle {
       _latestStarted ? client.virtualLastTurnCode(token) : null;
 
   @override
-  void close() {
+  Future<void> close() async {
     if (_closed) return;
     _closed = true;
     _history.clear();

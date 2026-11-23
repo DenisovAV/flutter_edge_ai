@@ -71,7 +71,7 @@ class _ImageRecordingHandle implements ConversationHandle {
   int? get lastTurnCode => null;
 
   @override
-  void close() {}
+  Future<void> close() async {}
 }
 
 Uint8List _bytes(List<int> values) => Uint8List.fromList(values);

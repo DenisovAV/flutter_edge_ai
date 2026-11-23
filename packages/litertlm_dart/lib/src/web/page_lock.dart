@@ -38,18 +38,37 @@ import 'dart:async';
 
 /// A FIFO async lock: [acquire] queues the caller behind every earlier
 /// caller, at the moment it is called.
+///
+/// A lock can be [poison]ed: a holder that cannot end (a stopped generation
+/// that never returned from the module) is let go of, and then nothing may
+/// enter the module again — every waiting and later [acquire] fails with
+/// [LiteRtLmPagePoisonedError] instead of running beside a suspended call.
 final class LiteRtLmPageLock {
   Future<void> _tail = Future<void>.value();
+
+  LiteRtLmPagePoisonedError? _poison;
+
+  /// Why the lock is poisoned; null while it is not.
+  LiteRtLmPagePoisonedError? get poison => _poison;
 
   /// Waits for every earlier lease to be released, then returns this
   /// caller's. The place in the queue is taken when this is CALLED, not when
   /// the future is awaited. The lease must be released on every path, or
-  /// every later caller waits forever.
+  /// every later caller waits forever. Fails with [LiteRtLmPagePoisonedError]
+  /// once the lock is poisoned.
   Future<LiteRtLmPageLease> acquire() {
+    if (_poison case final poison?) return Future.error(poison);
     final previous = _tail;
     final lease = LiteRtLmPageLease._();
     _tail = lease._released.future;
-    return previous.then((_) => lease);
+    return previous.then((_) {
+      if (_poison case final poison?) {
+        // Pass the turn on, so every waiter behind this one fails too.
+        lease.release();
+        throw poison;
+      }
+      return lease;
+    });
   }
 
   /// Runs [body] holding the lock; releases it however [body] ends.
@@ -61,6 +80,31 @@ final class LiteRtLmPageLock {
       lease.release();
     }
   }
+
+  /// Gives up on [holder], a lease whose call into the module never ended,
+  /// for good: [holder] is released so the waiters behind it get their turn,
+  /// and each of them, as every later [acquire], fails with an error that
+  /// says [why]. Said once with `print`, as release builds show it.
+  void poisonFor(LiteRtLmPageLease holder, String why) {
+    if (_poison == null) {
+      final poison = _poison = LiteRtLmPagePoisonedError(why);
+      // ignore: avoid_print
+      print('[litertlm_dart] ERROR: ${poison.message}');
+    }
+    holder.release();
+  }
+}
+
+/// The page's `@litert-lm/core` module may still be suspended in a call that
+/// never ended, so litertlm_dart runs nothing more on this page: reload it.
+final class LiteRtLmPagePoisonedError extends StateError {
+  LiteRtLmPagePoisonedError(String why)
+    : super(
+        '$why The page\'s @litert-lm/core WebAssembly module may still be '
+        'suspended in that call, and another call beside it would corrupt it, '
+        'so litertlm_dart runs no more LLM or EmbeddingGemma 2 work on this '
+        'page. Reload the page.',
+      );
 }
 
 /// One holder's turn on a [LiteRtLmPageLock].

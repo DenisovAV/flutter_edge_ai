@@ -81,6 +81,14 @@ final class EmbeddingEngine {
 Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
   EmbeddingEngineConfig config,
 ) async {
+  final cacheBase =
+      config.cacheDir ??
+      (throw ArgumentError.value(
+        null,
+        'cacheDir',
+        'is required natively: the directory the engine keeps its weight '
+            'caches in (one that is not backed up)',
+      ));
   if (config.backend case CpuBackend(
     :final threadCount?,
   ) when threadCount < 1) {
@@ -224,7 +232,7 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
       : (vision: false, audio: false);
   return LiteRtLmEmbeddingConfig(
     modelPath: path,
-    cacheBase: config.cacheDir,
+    cacheBase: cacheBase,
     declaredMedia: declared,
     numThreads: switch (backend) {
       CpuBackend(:final threadCount) => threadCount,

@@ -58,6 +58,7 @@ WebConversationHandle _handle(JsLiteRtLmConversation conversation) =>
       enableThinking: false,
       extraContext: const {},
       onGeneration: () {},
+      rebuild: (_) => throw StateError('no rebuild in this suite'),
     );
 
 final _hi = jsonEncode({

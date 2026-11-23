@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:litertlm_dart/internal_io.dart';
-import 'package:litertlm_dart/litertlm_dart.dart' show ActivationDataType;
 import 'package:test/test.dart';
 
 /// Real bundle headers, see fixtures/README.md. Only FunctionGemma and Gemma 4

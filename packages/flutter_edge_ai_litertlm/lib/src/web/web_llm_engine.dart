@@ -6,12 +6,7 @@ import 'package:flutter_edge_ai/engine_web.dart';
 // The web Engine by name: through the public library the analyzer would see
 // the native one.
 import 'package:litertlm_dart/internal_web.dart'
-    show
-        Engine,
-        WebConversationHandle,
-        conversationHandle,
-        createConversationWithDefault,
-        createWebEngine;
+    show Engine, createConversationWithDefault, createWebEngine;
 import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 
 import '../adapter/web_inference_model.dart';
@@ -20,21 +15,30 @@ import '../adapter/web_inference_model.dart';
 /// by default: a `blob:` URL, or under `WebStorageMode.streaming` the OPFS
 /// file as a stream, which a model over 2 GB needs (a `blob:` URL fetch trips
 /// Chrome's `ERR_BLOB_OUT_OF_MEMORY`).
+///
+/// [maxTokens] is the context window, passed through as natively: the web
+/// runtime takes it as given (no 1024-token floor there).
 Future<WebLlmEngine> createLiteRtLmWebEngine(
-  WebModelSourceResolver resolver,
-) async {
+  WebModelSourceResolver resolver, {
+  required int maxTokens,
+}) async {
   final resolved = await resolver.resolveActiveInferenceModel();
   final Engine engine;
   switch (resolved.model) {
     case BlobUrlModelSource(:final url):
       engine = await createWebEngine(
-        lm.EngineConfig(modelPath: url, backend: const lm.Backend.gpu()),
+        lm.EngineConfig(
+          modelPath: url,
+          backend: const lm.Backend.gpu(),
+          maxNumTokens: maxTokens,
+        ),
       );
     case final OpfsStreamModelSource source:
       engine = await createWebEngine(
         lm.EngineConfig(
           modelPath: source.filename,
           backend: const lm.Backend.gpu(),
+          maxNumTokens: maxTokens,
         ),
         model: await source.openStream(),
       );
@@ -52,10 +56,6 @@ final class _LmWebLlmEngine implements WebLlmEngine {
     lm.ConversationConfig config,
     lm.SamplerConfig? defaultSamplerConfig,
   ) => createConversationWithDefault(_engine, config, defaultSamplerConfig);
-
-  @override
-  Future<void> conversationClosed(lm.Conversation conversation) =>
-      (conversationHandle(conversation) as WebConversationHandle).closed;
 
   @override
   Future<void> close() => _engine.close();

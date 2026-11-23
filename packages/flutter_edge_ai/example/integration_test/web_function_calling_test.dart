@@ -370,10 +370,44 @@ void main() {
         await chat.close();
       }
     }, timeout: const Timeout(Duration(minutes: 10)));
+
+    testWidgets('6. a stop right after the tool call: the next message is '
+        'answered', (tester) async {
+      _started.add(7);
+      final chat = await _openChat(await _ensureModel());
+      try {
+        await chat.addQueryChunk(
+          const Message(text: 'Make the background orange.', isUser: true),
+        );
+        final events = <ModelResponse>[];
+        await tester.runAsync(() async {
+          await for (final e in chat.generateChatResponseAsync()) {
+            events.add(e);
+            if (e is FunctionCallResponse) await chat.stopGeneration();
+          }
+        });
+        expect(
+          events.whereType<FunctionCallResponse>(),
+          isNotEmpty,
+          reason:
+              'no call to stop after; got ${events.map((e) => e.runtimeType)}',
+        );
+
+        await chat.addQueryChunk(
+          const Message(text: 'Say hello in one word.', isUser: true),
+        );
+        final reply = await tester.runAsync(chat.generateChatResponse);
+
+        expect(reply, isA<TextResponse>(), reason: '$reply');
+        expect((reply! as TextResponse).token.trim(), isNotEmpty);
+      } finally {
+        await chat.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 10)));
   });
 
   // Rule 6b: under flutter drive a test that never ran reads as a pass.
   testWidgets('every test above started', (tester) async {
-    expect(_started, hasLength(7));
+    expect(_started, hasLength(8));
   });
 }

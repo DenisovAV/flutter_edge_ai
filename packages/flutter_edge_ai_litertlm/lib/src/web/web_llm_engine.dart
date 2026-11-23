@@ -18,8 +18,9 @@ import '../adapter/web_inference_model.dart';
 
 /// Loads the model [resolver] resolves on WebGPU, as `@litert-lm/core` does
 /// by default: a `blob:` URL, or under `WebStorageMode.streaming` the OPFS
-/// file as a stream, which a model over 2 GB needs (a `blob:` URL fetch trips
-/// Chrome's `ERR_BLOB_OUT_OF_MEMORY`).
+/// file as a stream. A model over 2 GiB is installed only under `streaming`:
+/// a `cacheApi` install reads the file whole into one `ArrayBuffer`, which
+/// browsers cap near 2 GiB.
 ///
 /// [maxTokens] is the context window, passed through as natively: the web
 /// runtime takes it as given (no 1024-token floor there).

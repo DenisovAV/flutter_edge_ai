@@ -441,6 +441,17 @@ window.__litertlmProbe = async (url, image, audio) => {
     await x.delete();
     return s;
   });
+  // N4: the model as a `blob:` URL of more than 2 GiB, as a cacheApi install
+  // hands it over: what Engine.create says.
+  await attempt('create_from_blob_url_over_2gib', async () => {
+    const blob = await (await fetch(url)).blob();
+    const blobUrl = URL.createObjectURL(blob);
+    try {
+      const x = await Engine.create({model: blobUrl});
+      await x.delete();
+      return {bytes: blob.size, created: true};
+    } finally { URL.revokeObjectURL(blobUrl); }
+  });
   // Not probed: replaying the history as the runtime returns it, its image
   // as {bytes: [...]}, aborted the module on 0.19.0 ("Aborted()", 2026-11-23),
   // and the CPU probes above end the page's module too.
@@ -510,6 +521,7 @@ void main() {
       'preface_empty_assistant_text',
       'history_after_empty_reply',
       'history_after_failure_mid_decode',
+      'create_from_blob_url_over_2gib',
       'history_with_audio',
       'rebuilt_from_history_with_audio_as_base64',
       'cpu_default',
@@ -535,6 +547,11 @@ void main() {
       'cancel_at_end',
       'explicit_gpu_backend',
       'rebuilt_from_history',
+      'rebuilt_after_failed_turn_trimmed',
+      'preface_dangling_tool_call',
+      'preface_tool_call_and_response',
+      'preface_from_tool_round_trip_history',
+      'preface_empty_assistant_text',
     ]) {
       expect(
         (record[probe]! as Map)['ok'],
@@ -542,5 +559,16 @@ void main() {
         reason: '$probe failed: ${record[probe]}',
       );
     }
+    // M1/N1: the failed message stays at the end of the history with no
+    // reply, a rebuild with it fails again, and one without it answers.
+    final failed =
+        (record['history_after_failed_turn']! as Map)['value'] as Map;
+    final roles = (failed['roles']! as List).cast<String>();
+    expect(roles.sublist(roles.length - 2), ['assistant', 'user']);
+    expect(
+      (record['rebuilt_after_failed_turn']! as Map)['ok'],
+      isFalse,
+      reason: 'a rebuild that replays the failed message answered',
+    );
   }, timeout: const Timeout(Duration(minutes: 60)));
 }

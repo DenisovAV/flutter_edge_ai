@@ -405,10 +405,9 @@ String _incompleteRuntime(String what, List<String> missing) =>
     'this release calls: import $liteRtLmWebModuleUrl in its module script.';
 
 /// [Engine.create], with [model] — a `ReadableStream<Uint8Array>` or a `Blob`
-/// — in place of [EngineConfig.modelPath] when given: what a model of more
-/// than 2 GB needs, which a `blob:` URL fetch cannot carry
-/// (`ERR_BLOB_OUT_OF_MEMORY`). [EngineConfig.modelPath] then only names it
-/// in the log.
+/// — in place of [EngineConfig.modelPath] when given, such as a model file
+/// read from the page's own storage. [EngineConfig.modelPath] then only names
+/// it in the log.
 ///
 /// [toolCallsOf] reads the tool calls of a reply stopped mid-turn, which the
 /// rebuilt conversation replays as calls, as natively

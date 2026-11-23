@@ -123,7 +123,8 @@
   backends: [gpu]
   status: documented
   source: website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:252-253
-- what: Gemma 3n on the web, text only
+- what: Gemma 3n on the web, text only (documented on @litert-lm/core 0.18.0; not
+    measured on 0.19.0)
   variants: [gemma-3n-e2b-it/web, gemma-3n-e4b-it/web]
   hosts: [web]
   backends: [gpu]

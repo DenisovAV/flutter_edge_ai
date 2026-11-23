@@ -12,8 +12,10 @@ meta:
 apps change nothing.
 
 - **Import 0.19.0 in `web/index.html`.** 0.18.0 fails the engine create
-  with "Unsupported backend: 2", and the error names the page's version.
-  Change the version in the handshake's import:
+  with "Unsupported backend: 2", and the error names the page's version when
+  the page fetched `@litert-lm/core` by a versioned URL
+  (`@litert-lm/core@X.Y.Z`); a copy hosted under a URL without its version
+  is not recognised. Change the version in the handshake's import:
 
   ```
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
@@ -24,15 +26,20 @@ apps change nothing.
   keeps loading it. On 0.19.0 the E2B one answers a tool result with an
   empty reply; the E4B one is not measured there. The new E2B build is
   2.34 GB, more than the 2 GiB a `WebStorageMode.cacheApi` install holds.
-  To move:
-  1. While the app still runs with the storage mode it installed the old
-     file under (`cacheApi` unless it chose another), uninstall it:
+  The storage mode is read once per page load (a second `initialize` with
+  another mode only logs a warning), so the move takes two runs:
+  1. In a run that still initializes with the storage mode the old file was
+     installed under (`cacheApi` unless the app chose another), uninstall it:
 
      ```
      await FlutterEdgeAi.uninstallModel('gemma-4-E2B-it-web.litertlm');
      // or 'gemma-4-E4B-it-web.litertlm'
      ```
-  2. Initialize with `webStorageMode: WebStorageMode.streaming`.
+
+     What an uninstall under `streaming` removes of a file installed under
+     `cacheApi` is not measured: uninstall first.
+  2. In the next run (after a reload), initialize with
+     `webStorageMode: WebStorageMode.streaming`.
   3. Install the new build:
 
      ```

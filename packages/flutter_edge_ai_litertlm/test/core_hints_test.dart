@@ -106,13 +106,6 @@ void main() {
       );
     });
 
-    test('Chrome\'s blob limit names the streaming storage mode', () {
-      expect(
-        coreHintFor('could not create the engine: ERR_BLOB_OUT_OF_MEMORY'),
-        contains('WebStorageMode.streaming'),
-      );
-    });
-
     test('a message naming none of the runtime\'s API gets no line', () {
       expect(coreHintFor('The file is incomplete.'), isNull);
     });

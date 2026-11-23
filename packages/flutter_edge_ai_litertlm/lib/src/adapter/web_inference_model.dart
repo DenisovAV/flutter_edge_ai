@@ -56,9 +56,9 @@ abstract interface class WebLlmEngine {
 /// - LoRA throws [UnsupportedError] (parity with FFI path).
 /// - `stopGeneration()` closes the local stream and stops the runtime's
 ///   generation (`conversation.cancel()`).
-/// - For models >2 GB use `WebStorageMode.streaming`: the engine then reads
-///   the model as a stream from OPFS, as a `blob:` URL fetch trips Chrome's
-///   `ERR_BLOB_OUT_OF_MEMORY` limit.
+/// - For models over 2 GiB use `WebStorageMode.streaming`: a `cacheApi`
+///   install reads the file whole into one `ArrayBuffer`, which browsers cap
+///   near 2 GiB; the engine then reads the model as a stream from OPFS.
 class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
   LiteRtLmWebInferenceModel({
     required this.createEngine,

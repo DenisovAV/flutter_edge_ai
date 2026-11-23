@@ -20,8 +20,9 @@ add brings its own capabilities. This page shows what you can swap for what.
 
 All means Android, iOS, macOS, Windows, Linux and Web; Native means all of
 them except Web; Mobile means Android and iOS. On the Web, LiteRT-LM text
-generation runs only dedicated `-web.litertlm` exports (Gemma 4 and Gemma 3n
-today). MediaPipe's LLM Inference API is maintenance-only upstream, so new apps
+generation runs the builds made for it: Gemma 4 E2B's GPU export, measured on
+`@litert-lm/core` 0.19.0, and the Gemma 3n `-web.litertlm` exports, documented
+on 0.18.0 and not measured on 0.19.0. MediaPipe's LLM Inference API is maintenance-only upstream, so new apps
 should use LiteRT-LM (`.litertlm`). The packages are
 `flutter_edge_ai_litertlm` (plus `flutter_edge_ai_speech` for speech),
 `flutter_edge_ai_onnx`, `flutter_edge_ai_mediapipe` and

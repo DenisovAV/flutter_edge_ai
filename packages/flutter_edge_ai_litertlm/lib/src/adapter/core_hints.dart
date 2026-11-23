@@ -63,12 +63,6 @@ String? coreHintFor(String message) {
       '${m.group(0)}',
     );
   }
-  if (message.contains('ERR_BLOB_OUT_OF_MEMORY')) {
-    hints.add(
-      'a model over 2 GB loads on the web only with '
-      'FlutterEdgeAi.initialize(webStorageMode: WebStorageMode.streaming)',
-    );
-  }
   if (hints.isEmpty) return null;
   return 'In flutter_edge_ai: ${hints.join('; ')}.';
 }

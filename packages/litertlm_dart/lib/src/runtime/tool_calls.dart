@@ -7,6 +7,7 @@
 import 'dart:convert';
 
 import '../api/message.dart' show messageFromJson;
+import 'runtime_log.dart';
 
 /// The tool calls in a raw LiteRT-LM reply: each call's name and arguments.
 /// Reading them is chat-template knowledge (a model can write a call as
@@ -78,13 +79,24 @@ Iterable<Map<String, Object?>> concatenatedJsonObjects(String text) sync* {
 
 /// The assistant turn to replay: its tool calls when it made any, so the
 /// tool results recorded after it still answer something, and its text
-/// otherwise.
+/// otherwise, also when [toolCallsOf] throws (which is logged).
 Map<String, Object?> assistantTurnMessage(
   ToolCallReader toolCallsOf,
   String text,
   String raw,
 ) {
-  final calls = toolCallsOf(raw);
+  List<({String name, Map<String, Object?> arguments})> calls;
+  try {
+    calls = toolCallsOf(raw);
+  } catch (e) {
+    // A reader that throws must not keep a turn from ending (it runs in the
+    // turn's cleanup): the reply is kept as its text, and that is said.
+    runtimeLog(
+      '[litertlm_dart] could not read the tool calls of a reply ($e); its '
+      'text is kept',
+    );
+    calls = const [];
+  }
   if (calls.isEmpty) {
     return {
       'role': 'assistant',

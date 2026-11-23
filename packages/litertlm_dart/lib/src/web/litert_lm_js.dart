@@ -26,6 +26,7 @@ library;
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
+import '../runtime/runtime_log.dart';
 import 'web_runtime_version.dart';
 
 /// `Backend` of `@litert-lm/core` (`wasm_binding_types.js`): `CPU: 3`,
@@ -88,15 +89,16 @@ final _deleteFailuresNoted = <String>{};
 /// version. Empty when none was fetched by a versioned URL.
 Set<String> liteRtLmWebFetchedVersions() {
   final performance = globalContext['performance'];
-  if (performance == null || !performance.isA<JSObject>()) return const {};
+  if (performance == null || !performance.isA<JSObject>()) return <String>{};
   final JSArray<JSObject> entries;
   try {
     entries = (performance as JSObject).callMethod<JSArray<JSObject>>(
       'getEntriesByType'.toJS,
       'resource'.toJS,
     );
-  } catch (_) {
-    return const {};
+  } catch (e) {
+    runtimeLog('[litertlm_dart/web] could not list the page\'s resources: $e');
+    return <String>{};
   }
   return {
     for (final entry in entries.toDart)
@@ -127,6 +129,19 @@ void noteOtherWebRuntimeVersion() {
 }
 
 bool _versionNoted = false;
+
+/// The sentence a failed create ends with when the page fetched another
+/// `@litert-lm/core` than [liteRtLmWebRuntimeVersion] by a versioned URL;
+/// null when it did not, or when the runtime was self-hosted under a URL
+/// without its version.
+String? otherWebRuntimeVersionSentence() {
+  final others = liteRtLmWebFetchedVersions()
+    ..remove(liteRtLmWebRuntimeVersion);
+  if (others.isEmpty) return null;
+  return 'The page loaded @litert-lm/core ${others.join(', ')}; this release '
+      'runs on $liteRtLmWebRuntimeVersion: import $liteRtLmWebModuleUrl in '
+      'the page\'s module script.';
+}
 
 /// Awaits [result] when it is a thenable: `delete()` is a Promise in the
 /// typings of 0.18.0 and 0.19.0, but nothing here relies on it.

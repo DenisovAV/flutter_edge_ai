@@ -52,7 +52,8 @@ import 'litert_lm_js.dart'
         awaitIfThenable,
         liteRtLmWebRuntimeMissing,
         noteOtherWebRuntimeVersion,
-        noteWebDeleteFailure;
+        noteWebDeleteFailure,
+        otherWebRuntimeVersionSentence;
 import 'web_embedder.dart';
 import 'web_runtime_version.dart';
 
@@ -141,6 +142,8 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
     // module. A rejection (the CDN import failed) propagates.
     if (ready.typeofEquals('object') && (ready as JSObject).has('then')) {
       await (ready as JSPromise<JSAny?>).toDart;
+      // The module the shim imported is fetched by now.
+      noteOtherWebRuntimeVersion();
     }
     return _hasEmbeddingEngine
         ? _versionState
@@ -205,7 +208,14 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
     if (settings.visionTokensPerImage case final budget?) {
       js['visionTokensPerImage'] = budget.toJS;
     }
-    final engine = await _EmbeddingEngine.create(js).toDart;
+    final _EmbeddingEngine engine;
+    try {
+      engine = await _EmbeddingEngine.create(js).toDart;
+    } catch (e) {
+      final version = otherWebRuntimeVersionSentence();
+      if (version == null) rethrow;
+      throw _OtherVersionCreateFailure('$e. $version');
+    }
     return _WindowEngine(engine);
   }
 
@@ -329,4 +339,16 @@ final class _WindowEngine implements LiteRtLmWebEngine {
     }
     return number.toInt();
   }
+}
+
+/// A failed `EmbeddingEngine.create` on a page that loaded another
+/// `@litert-lm/core` than this release runs on: the runtime's error, then
+/// the version to import.
+final class _OtherVersionCreateFailure implements Exception {
+  const _OtherVersionCreateFailure(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }

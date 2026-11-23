@@ -8,6 +8,11 @@ import 'package:litertlm_dart/internal.dart'
         EmbedderEngineException,
         EmbedderInputTooLongException,
         EmbedderLoadException,
+        LibraryLoadArgumentError,
+        LibraryLoadFailedException,
+        LibraryLoadFailure,
+        LibraryLoadStateError,
+        LibraryLoadUnsupportedError,
         LiteRtLmBundleException,
         LiteRtLmEngineCreateException,
         NpuDispatchUnavailableException;
@@ -120,13 +125,30 @@ Object withCoreHintError(Object error) => switch (error) {
       nativeCode: nativeCode,
       cause: cause,
     ),
+  // A library that failed to load keeps its LibraryLoadFailure type, which
+  // the backend fallback reads.
+  LibraryLoadArgumentError(:final loadMessage)
+      when coreHintFor(loadMessage) != null =>
+    LibraryLoadArgumentError(withCoreHint(loadMessage)),
+  LibraryLoadStateError(:final loadMessage)
+      when coreHintFor(loadMessage) != null =>
+    LibraryLoadStateError(withCoreHint(loadMessage)),
+  LibraryLoadUnsupportedError(:final loadMessage)
+      when coreHintFor(loadMessage) != null =>
+    LibraryLoadUnsupportedError(withCoreHint(loadMessage)),
+  LibraryLoadFailedException(:final loadMessage)
+      when coreHintFor(loadMessage) != null =>
+    LibraryLoadFailedException(withCoreHint(loadMessage)),
+  LibraryLoadFailure() => error,
   UnsupportedError(:final message?) when coreHintFor(message) != null =>
     UnsupportedError(withCoreHint(message)),
   // A RangeError keeps its type and bounds as they are.
   RangeError() => error,
   ArgumentError(:final message, :final name, :final invalidValue)
       when message is String && coreHintFor(message) != null =>
-    ArgumentError.value(invalidValue, name, withCoreHint(message)),
+    invalidValue == null
+        ? ArgumentError(withCoreHint(message), name)
+        : ArgumentError.value(invalidValue, name, withCoreHint(message)),
   EmbedderInputTooLongException() => error,
   _ => error,
 };

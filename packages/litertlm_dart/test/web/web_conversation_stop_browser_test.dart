@@ -165,6 +165,35 @@ void main() {
       await reading.close();
     });
 
+    test('a tool-call reader that throws keeps the stopped turn\'s text, and '
+        'the turn after it is answered', () async {
+      final throwing = await web.createWebEngine(
+        webConfig(),
+        pageLock: web.LiteRtLmPageLock(),
+        toolCallsOf: (_) => throw StateError('bad reader'),
+      );
+      final conversation = await throwing.createConversation(
+        ConversationConfig(tools: [_tool]),
+      );
+      final stopped = conversation
+          .sendMessageStream(Message.user('Call f'))
+          .drain<void>();
+      await settle();
+      js(
+        '__chunk',
+        '{"role":"assistant","tool_calls":[{"type":"function",'
+            '"function":{"name":"f","arguments":{}}}]}',
+      );
+      await settle();
+      conversation.cancel();
+      await stopped;
+
+      await exchange(conversation, 'Next', 'Ok');
+
+      expect(prefaceMessages(1), [userPart('Call f'), assistantPart('')]);
+      await throwing.close();
+    });
+
     test('a stop before any chunk keeps nothing of the stopped turn', () async {
       final conversation = await engine.createConversation();
       final stopped = conversation
@@ -275,6 +304,55 @@ void main() {
         assistantPart('Uno'),
       ]);
       expect(list('sent').last, 'Two');
+    });
+
+    test('a rebuild after it names the failed turn when it fails', () async {
+      await failedTurn('Broken');
+      setOnPage('conversationErrorAfter', 1);
+
+      await expectLater(
+        conversation.sendMessageStream(Message.user('Two')),
+        emitsError(
+          isA<TurnFailedException>().having(
+            (e) => '${web.turnFailureCause(e)}',
+            'cause',
+            contains('Could not rebuild the conversation after a failed turn'),
+          ),
+        ),
+      );
+    });
+
+    test('a failed message already left out is not left out of a later '
+        'rebuild', () async {
+      await failedTurn('Note');
+      await exchange(conversation, 'Two', 'Dos');
+      setOnPage('historyTail', [
+        {'role': 'user', 'content': 'Note'},
+      ]);
+      await stoppedExchange(conversation, 'Three', 'Tr');
+
+      await exchange(conversation, 'Four', 'Cuatro');
+
+      expect(
+        prefaceMessages(2),
+        contains(equals({'role': 'user', 'content': 'Note'})),
+      );
+    });
+
+    test('only the failed message is left out of the rebuild, not another '
+        'message at the end of the history', () async {
+      await exchange(conversation, 'One', 'Uno');
+      setOnPage('historyTail', [
+        {'role': 'user', 'content': 'Note'},
+      ]);
+      await stoppedExchange(conversation, 'Two', 'Do');
+
+      await exchange(conversation, 'Three', 'Tres');
+
+      expect(
+        prefaceMessages(1),
+        contains(equals({'role': 'user', 'content': 'Note'})),
+      );
     });
 
     test('a stop after the last chunk records no stopped exchange: a failed '
@@ -490,6 +568,35 @@ void main() {
     await engine.close();
   });
 
+  test('a stop while a rebuild fails ends the turn as stopped and logs the '
+      'rebuild\'s failure', () async {
+    final logged = <String>[];
+    final saved = web.runtimeLogSink;
+    web.runtimeLogSink = (message, {verbose = false}) => logged.add(message);
+    addTearDown(() => web.runtimeLogSink = saved);
+    final engine = await webEngine();
+    final conversation = await engine.createConversation();
+    await stoppedExchange(conversation, 'One', 'Un');
+    setOnPage('holdHistory', true);
+    setOnPage('conversationErrorAfter', 1);
+    final reply = conversation
+        .sendMessageStream(Message.user('Two'))
+        .drain<void>();
+    await settle();
+
+    conversation.cancel();
+    js('__releaseHistories');
+    await reply;
+
+    expect(
+      logged,
+      contains(
+        contains('Could not rebuild the conversation after a stopped reply'),
+      ),
+    );
+    await engine.close();
+  });
+
   group('a stopped generation that never ends', () {
     late Duration saved;
     setUp(() {
@@ -637,6 +744,32 @@ void main() {
       contains('BigInt'),
     );
     expect(lock.poison, isNull);
+    await engine.close();
+  });
+
+  test('a rebuild after a chunk it could not read names that cause when it '
+      'fails', () async {
+    final engine = await webEngine();
+    final conversation = await engine.createConversation();
+    final faulted = conversation
+        .sendMessageStream(Message.user('Hello'))
+        .drain<void>()
+        .catchError((Object _) {});
+    await settle();
+    js('__unwritable');
+    await faulted;
+    setOnPage('conversationErrorAfter', 1);
+
+    await expectLater(
+      conversation.sendMessageStream(Message.user('Again')),
+      emitsError(
+        isA<TurnFailedException>().having(
+          (e) => '${web.turnFailureCause(e)}',
+          'cause',
+          contains('after a reply litertlm_dart could not read'),
+        ),
+      ),
+    );
     await engine.close();
   });
 

@@ -242,6 +242,92 @@ void main() {
       },
     );
 
+    test('an image turn stopped before any output frees its image for one '
+        'sent right after the stop', () async {
+      final engine = await _multimodalEngine();
+      final conversation = await engine.createConversation();
+      final stopped = conversation
+          .sendMessageStream(_withImage('Which shape?'))
+          .drain<void>();
+      await settle();
+      conversation.cancel();
+      final next = conversation
+          .sendMessageStream(_withImage('And this one?'))
+          .drain<void>();
+      await stopped;
+      await settle();
+      js('__end');
+      await next;
+
+      expect(list('sent'), hasLength(2));
+      await engine.close();
+    });
+
+    test('an image whose reply stream could not be read is freed by the '
+        'rebuild', () async {
+      final engine = await _multimodalEngine();
+      final conversation = await engine.createConversation();
+      setOnPage('unreadable', true);
+      await conversation
+          .sendMessageStream(_withImage('Which shape?'))
+          .drain<void>()
+          .catchError((Object _) {});
+      setOnPage('unreadable', false);
+
+      await _answered(conversation, _withImage('And this one?'));
+
+      expect(list('sent'), hasLength(2));
+      await engine.close();
+    });
+
+    test('of two image turns queued on the handle under a reservation of '
+        'one, the second is refused when its turn comes', () async {
+      final engine = await _multimodalEngine();
+      final handle = web.conversationHandle(await engine.createConversation());
+      String image(String text) => jsonEncode({
+        'role': 'user',
+        'content': [
+          {'type': 'image', 'blob': base64Encode(_png)},
+          {'type': 'text', 'text': text},
+        ],
+      });
+      final first = handle.chatRawMessage(image('Which shape?')).drain<void>();
+      final second = expectLater(
+        handle.chatRawMessage(image('And this one?')),
+        emitsError(errorWith<UnsupportedError>('maxNumImages: 1')),
+      );
+      await settle();
+      js('__end');
+      await first;
+      await second;
+
+      expect(list('sent'), hasLength(1));
+      await engine.close();
+    });
+
+    test('a message with more images than it is refused before it is '
+        'queued', () async {
+      final engine = await _multimodalEngine();
+      final conversation = await engine.createConversation();
+
+      await expectLater(
+        conversation.sendMessageStream(
+          Message(
+            role: Role.user,
+            contents: [
+              Content.imageBytes(_png),
+              Content.imageBytes(_png),
+              Content.text('Both?'),
+            ],
+          ),
+        ),
+        emitsError(errorWith<UnsupportedError>('the message has 2')),
+      );
+
+      expect(list('sent'), isEmpty);
+      await engine.close();
+    });
+
     test('an initial image counts against it', () async {
       final engine = await _multimodalEngine();
       final conversation = await engine.createConversation(

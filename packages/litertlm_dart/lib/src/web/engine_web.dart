@@ -240,7 +240,7 @@ final class Engine {
         try {
           await awaitIfThenable(conversation.delete());
         } catch (e) {
-          noteWebDeleteFailure('A conversation', e);
+          noteWebDeleteFailure('An incomplete conversation', e);
         }
         throw StateError(_incompleteRuntime('conversation', missing));
       }
@@ -275,7 +275,7 @@ final class Engine {
       try {
         await awaitIfThenable(js.delete());
       } catch (e) {
-        noteWebDeleteFailure('A conversation', e);
+        noteWebDeleteFailure('A conversation opened during the close', e);
       }
       _pendingCreates.remove(pending.future);
       pending.complete();

@@ -101,8 +101,18 @@ final class WebConversationHandle implements ConversationHandle {
   final int? _maxImages;
 
   /// The images the current runtime conversation holds: its preface's, its
-  /// replayed exchanges' and every message sent on it since.
+  /// replayed exchanges' and every message sent on it since. A turn that
+  /// failed or was stopped still counts until the rebuild it forces recounts
+  /// what the new conversation holds.
   late int _images = _imagesIn(_preface);
+
+  /// The message of the last turn the runtime failed (not a stop): the
+  /// runtime keeps it at the end of its history with no reply (M1, N1,
+  /// 0.19.0), and the rebuild leaves it out.
+  Map<String, Object?>? _failed;
+
+  /// Why the conversation must be rebuilt, for the errors of a rebuild.
+  String _rebuildCause = 'a stopped reply';
   final bool _audio;
 
   final bool _enableThinking;
@@ -266,6 +276,7 @@ final class WebConversationHandle implements ConversationHandle {
           st,
         );
         _mustRebuild = true;
+        _rebuildCause = 'a reply stream litertlm_dart could not read';
         _stopJs(turn, 'its reply stream could not be read');
         _fence().then((_) => finishAsked(StackTrace.current));
         return;
@@ -334,6 +345,7 @@ final class WebConversationHandle implements ConversationHandle {
                 ),
                 st,
               );
+              _rebuildCause = 'a reply litertlm_dart could not read';
               _stopJs(turn, 'its turn failed in litertlm_dart ($e)');
             }
           }
@@ -347,6 +359,7 @@ final class WebConversationHandle implements ConversationHandle {
           // 0.19.0).
           _mustRebuild = true;
           if (turn.stopAsked && turn.streamed) {
+            _rebuildCause = 'a stopped reply';
             _stopped = (
               message: turn.message,
               reply: assistantTurnMessage(
@@ -355,9 +368,9 @@ final class WebConversationHandle implements ConversationHandle {
                 turn.raw.toString(),
               ),
             );
-          } else {
-            // The rebuilt conversation will not hold this turn's images.
-            _images -= _imagesIn([turn.message]);
+          } else if (!turn.asked && turn.fault == null) {
+            _rebuildCause = 'a failed turn';
+            _failed = turn.message;
           }
           // 0.19.0 rejects from inside the generation's chunk callback:
           // wait until it has left the module before the page is let go.
@@ -411,6 +424,9 @@ final class WebConversationHandle implements ConversationHandle {
         if (_mustRebuild) await _rebuildConversation();
       } catch (e, st) {
         if (turn.asked) {
+          // Stopped meanwhile: the turn ends as stopped, and the rebuild's
+          // failure is only said here; the next message tries again.
+          runtimeLog('[WebConversationHandle] $e');
           finishAsked(st);
         } else {
           finish(error: e, stack: st);
@@ -419,6 +435,12 @@ final class WebConversationHandle implements ConversationHandle {
       }
       if (turn.asked) {
         finishAsked(StackTrace.current);
+        return;
+      }
+      // Counted here, once a rebuild has settled what the conversation
+      // holds, and after every turn queued before this one was sent.
+      if (_imageRefusal(_imagesIn([turn.message])) case final refusal?) {
+        finish(error: refusal, stack: StackTrace.current);
         return;
       }
       try {
@@ -494,17 +516,11 @@ final class WebConversationHandle implements ConversationHandle {
       );
     }
     final json = jsonDecode(messageJson);
-    final images = _imagesIn([json]);
-    if (_vision && images > 0) {
-      if (_maxImages case final max? when _images + images > max) {
-        return UnsupportedError(
-          'This conversation holds $_images of the $max images its engine '
-          'reserves per conversation (maxNumImages: $max): on the web the '
-          'model reserves their space up front, and an image past it fails '
-          '("Image index $max must be less than $max.", 0.19.0). Load the '
-          'model with a larger maxNumImages, or start a new conversation.',
-        );
-      }
+    // The images the conversation already holds are counted when the turn
+    // is sent (onListen): a failed or stopped turn's are only settled by the
+    // rebuild before it. A message that alone holds more never fits.
+    if (_maxImages case final max? when _vision && _imagesIn([json]) > max) {
+      return _imagesRefused(0, _imagesIn([json]), max);
     }
     if (json case {'content': final List<Object?> parts}) {
       for (final part in parts) {
@@ -527,6 +543,26 @@ final class WebConversationHandle implements ConversationHandle {
     }
     return null;
   }
+
+  /// The refusal of a message of [adding] images on this conversation, or
+  /// null when they fit in what its engine reserves.
+  UnsupportedError? _imageRefusal(int adding) {
+    if (!_vision || adding == 0) return null;
+    if (_maxImages case final max? when _images + adding > max) {
+      return _imagesRefused(_images, adding, max);
+    }
+    return null;
+  }
+
+  static UnsupportedError _imagesRefused(int held, int adding, int max) =>
+      UnsupportedError(
+        'This conversation holds $held of the $max images its engine '
+        'reserves per conversation (maxNumImages: $max), and the message has '
+        '$adding: on the web the model reserves their space up front, and an '
+        'image past it fails ("Image index $max must be less than $max.", '
+        '0.19.0). Load the model with a larger maxNumImages, or start a new '
+        'conversation.',
+      );
 
   /// The message as `sendMessageStreaming` takes it: a user message of one
   /// text part as its bare string, which `@litert-lm/core` turns into a user
@@ -597,18 +633,20 @@ final class WebConversationHandle implements ConversationHandle {
       ];
     } catch (e) {
       throw LiteRtLmNativeException(
-        'Could not read the history of the stopped conversation ($e). '
-        '$_untilRebuilt',
+        'Could not read the history of the conversation after '
+        '$_rebuildCause ($e). $_untilRebuilt',
       );
     }
     // The runtime's history holds no preface (P1, 0.18.0 and 0.19.0
     // measured): it is the exchanges since this conversation was created. A
-    // turn the runtime failed (not a stop) stays in it as a user message
-    // with no reply, and replaying it fails again (M1, 0.19.0: an image past
-    // maxNumImages), so an unanswered tail is not replayed.
+    // turn the runtime failed (not a stop) stays at its end as the user
+    // message with no reply, and replaying it fails again (M1, 0.19.0: an
+    // image past maxNumImages), while the history without it answers (N1):
+    // that message, and only it, is left out.
     final exchanges = [...history];
-    while (exchanges.isNotEmpty &&
-        (exchanges.last as Map?)?['role'] != 'assistant') {
+    if (_failed case final failed?
+        when exchanges.isNotEmpty &&
+            _jsonEquals(_asSent(exchanges.last), _asSent(failed))) {
       exchanges.removeLast();
     }
     final replay = [
@@ -621,7 +659,7 @@ final class WebConversationHandle implements ConversationHandle {
       next = await _rebuild(replay);
     } catch (e) {
       throw LiteRtLmNativeException(
-        'Could not rebuild the conversation after a stop: '
+        'Could not rebuild the conversation after $_rebuildCause: '
         '${e is LiteRtLmNativeException ? e.message : e}. $_untilRebuilt',
       );
     }
@@ -631,8 +669,9 @@ final class WebConversationHandle implements ConversationHandle {
     _images = _imagesIn([..._preface, ...replay]);
     _mustRebuild = false;
     _stopped = null;
+    _failed = null;
     runtimeLog(
-      '[WebConversationHandle] rebuilt the conversation after a stop '
+      '[WebConversationHandle] rebuilt the conversation after $_rebuildCause '
       '(${_preface.length + replay.length} messages replayed)',
     );
     try {
@@ -643,9 +682,9 @@ final class WebConversationHandle implements ConversationHandle {
   }
 
   static const _untilRebuilt =
-      'The runtime refuses every send on a conversation stopped mid-reply, so '
-      'it cannot be used until a rebuild succeeds; the next message tries '
-      'again.';
+      'The runtime refuses every send on a conversation after a reply stopped '
+      'mid-way or a failed turn, so it cannot be used until a rebuild '
+      'succeeds; the next message tries again.';
 
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
@@ -758,6 +797,20 @@ Object? _replayable(Object? message) {
   }
   return message;
 }
+
+/// [message] (a history entry or a sent message) in one form for comparing:
+/// a text content as its one text part, as the runtime's history gives a
+/// message sent as a bare string. Anything that is not a message is itself.
+Object? _asSent(Object? message) => switch (message) {
+  {'role': final role, 'content': final String text} => {
+    ...(message as Map),
+    'role': role,
+    'content': [
+      {'type': 'text', 'text': text},
+    ],
+  },
+  _ => message,
+};
 
 /// One turn of a [WebConversationHandle]: whether it was asked to end, and
 /// the page lease it holds while its stream runs.

@@ -22,7 +22,11 @@ export 'src/runtime/errors.dart'
     show ConstraintUnsupportedException, ScoringCancelledException;
 export 'src/runtime/load_errors.dart'
     show
+        LibraryLoadArgumentError,
+        LibraryLoadFailedException,
         LibraryLoadFailure,
+        LibraryLoadStateError,
+        LibraryLoadUnsupportedError,
         markLibraryLoadFailure,
         LiteRtLmEngineCreateException,
         NpuDispatchUnavailableException;

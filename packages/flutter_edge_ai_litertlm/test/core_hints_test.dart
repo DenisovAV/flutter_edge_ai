@@ -7,7 +7,15 @@ import 'package:flutter_edge_ai_litertlm/src/adapter/core_hints.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/embedder_core_errors.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:litertlm_dart/internal.dart'
-    show EmbedderLoadException, LiteRtLmBundleException, LiteRtLmBundleProblem;
+    show
+        EmbedderLoadException,
+        LibraryLoadArgumentError,
+        LibraryLoadFailedException,
+        LibraryLoadFailure,
+        LibraryLoadStateError,
+        LibraryLoadUnsupportedError,
+        LiteRtLmBundleException,
+        LiteRtLmBundleProblem;
 
 void main() {
   group('coreHintFor', () {
@@ -174,6 +182,53 @@ void main() {
               as UnsupportedError;
 
       expect(hinted.message, contains('MediaPipe `.task` model'));
+    });
+
+    test('a message-only ArgumentError keeps its form', () {
+      final hinted = withCoreHintError(
+        ArgumentError('Load it on the CPU (Backend.cpu()).'),
+      );
+
+      expect(
+        hinted.toString(),
+        'Invalid argument(s): Load it on the CPU (Backend.cpu()).\n'
+        'In flutter_edge_ai: preferredBackend: PreferredBackend.cpu, or none.',
+      );
+    });
+
+    const companions = "LiteRT-LM's companion libraries are not in the app: …";
+    const companionsHinted =
+        '$companions\nIn flutter_edge_ai: '
+        "flutter_edge_ai_litertlm's Swift package embeds them.";
+
+    test('a library load ArgumentError stays a LibraryLoadFailure', () {
+      final hinted = withCoreHintError(LibraryLoadArgumentError(companions));
+
+      expect(hinted, isA<LibraryLoadArgumentError>());
+      expect(hinted.toString(), companionsHinted);
+    });
+
+    test('a library load StateError stays a LibraryLoadFailure', () {
+      final hinted = withCoreHintError(LibraryLoadStateError(companions));
+
+      expect(hinted, isA<LibraryLoadStateError>());
+      expect((hinted as LibraryLoadFailure).loadMessage, companionsHinted);
+    });
+
+    test('a library load UnsupportedError stays a LibraryLoadFailure', () {
+      final hinted = withCoreHintError(LibraryLoadUnsupportedError(companions));
+
+      expect(hinted, isA<LibraryLoadUnsupportedError>());
+      expect((hinted as LibraryLoadFailure).loadMessage, companionsHinted);
+    });
+
+    test('a library load exception stays a LibraryLoadFailure', () {
+      final hinted = withCoreHintError(
+        const LibraryLoadFailedException(companions),
+      );
+
+      expect(hinted, isA<LibraryLoadFailedException>());
+      expect(hinted.toString(), companionsHinted);
     });
 
     test('an ArgumentError keeps its invalid value and name', () {

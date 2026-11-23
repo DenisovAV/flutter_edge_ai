@@ -27,7 +27,7 @@ const _stub = r'''
   const p = window.__page = {
     createSettings: [], conversationOptions: [], sent: [],
     cancels: 0, conversationDeletes: 0, engineDeletes: 0, streams: [],
-    tokenCounts: 0, fences: [], histories: [],
+    tokenCounts: 0, fences: [], histories: [], conversations: [],
     resolvedBackend: 4, maxNumTokens: 4096,
     createError: null, conversationError: null, conversationErrorAfter: null,
     historyError: null, holdFence: false, holdHistory: false,
@@ -100,7 +100,7 @@ const _stub = r'''
       if (p.holdHistory) {
         return new Promise((resolve) => p.histories.push(() => resolve(c.history)));
       }
-      return Promise.resolve(c.history);
+      return Promise.resolve([...c.history, ...(p.historyTail || [])]);
     };
     c.getTokenCount = () => {
       p.tokenCounts++;
@@ -156,6 +156,7 @@ const _stub = r'''
   };
   window.__releaseFences = () => { for (const f of p.fences.splice(0)) f(); };
   window.__releaseHistories = () => { for (const f of p.histories.splice(0)) f(); };
+  window.__releaseConversations = () => { for (const f of p.conversations.splice(0)) f(); };
   window.Engine = function Engine() {};
   window.Engine.prototype.createConversation = function () {};
   window.Engine.prototype.delete = function () {};
@@ -170,6 +171,9 @@ const _stub = r'''
     return {
       settings: settingsOut,
       createConversation: async (options) => {
+        if (p.holdConversation) {
+          await new Promise((resolve) => p.conversations.push(resolve));
+        }
         p.conversationOptions.push(options);
         if (p.conversationError) throw new Error(p.conversationError);
         if (p.conversationErrorAfter !== null &&

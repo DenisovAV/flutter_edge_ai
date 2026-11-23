@@ -248,7 +248,7 @@ export 'src/bundle/litertlm_bundle_sampler.dart'
 export 'src/bundle/litertlm_generic_section.dart'
     show genericDataRange, maxGenericDataBytes;
 export 'src/ffi/conversation_handles.dart'
-    show concatenatedJsonObjects, nativeToolCalls;
+    show assistantTurnMessage, concatenatedJsonObjects, nativeToolCalls;
 export 'src/ffi/send_options.dart'
     show Constraint, ConversationExtras, SendOptions, sendExtraContext;
 export 'src/api/config.dart' show samplerFor;

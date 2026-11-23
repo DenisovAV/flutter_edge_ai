@@ -45,6 +45,55 @@ void main() {
     expect(printed.last, contains('engine busy'));
   });
 
+  test('a conversation missing a member, whose delete fails, is printed '
+      'when it is refused', () async {
+    final engine = await webEngine();
+    setOnPage('missingMember', 'cancel');
+    setOnPage('deleteError', 'conversation busy');
+
+    final printed = await printsOf(
+      () => engine.createConversation().then((_) {}, onError: (Object _) {}),
+    );
+
+    expect(
+      printed.where(
+        (l) => l.contains('An incomplete conversation failed to free'),
+      ),
+      hasLength(1),
+    );
+    setOnPage('deleteError', null);
+    setOnPage('missingMember', null);
+    await engine.close();
+  });
+
+  test('a conversation the runtime built while the engine closed, whose '
+      'delete fails, is printed', () async {
+    final engine = await webEngine();
+    setOnPage('holdConversation', true);
+
+    // The create's continuation prints, so it starts inside printsOf.
+    final printed = await printsOf(() async {
+      final create = engine.createConversation().then(
+        (_) {},
+        onError: (Object _) {},
+      );
+      await settle();
+      final closing = engine.close().then((_) {}, onError: (Object _) {});
+      setOnPage('deleteError', 'conversation busy');
+      js('__releaseConversations');
+      await create;
+      await closing;
+    });
+
+    expect(
+      printed.where(
+        (l) =>
+            l.contains('A conversation opened during the close failed to free'),
+      ),
+      hasLength(1),
+    );
+  });
+
   test('another @litert-lm/core is named in the create failure, with the '
       'module to import, and printed before the create', () async {
     _fetched('0.18.0');
@@ -72,6 +121,30 @@ void main() {
           contains("The page's @litert-lm/core 0.18.0 could not create"),
           contains('Unsupported backend: 2'),
           contains(web.liteRtLmWebModuleUrl),
+        ),
+      ),
+    );
+  });
+
+  test('a page whose resources cannot be listed still gets the runtime\'s '
+      'create failure', () async {
+    globalContext.callMethod(
+      'eval'.toJS,
+      '''Object.defineProperty(performance, 'getEntriesByType', {
+          configurable: true,
+          value: () => { throw new Error('no entries'); },
+        });'''
+          .toJS,
+    );
+    setOnPage('createError', 'Out of memory');
+
+    await expectLater(
+      Engine.create(webConfig()),
+      throwsA(
+        isA<LiteRtLmEngineCreateException>().having(
+          (e) => e.message,
+          'message',
+          contains('Out of memory'),
         ),
       ),
     );

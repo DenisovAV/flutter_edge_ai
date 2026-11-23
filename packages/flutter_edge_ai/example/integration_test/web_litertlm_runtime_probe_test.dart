@@ -181,11 +181,68 @@ window.__litertlmProbe = async (url, image, audio) => {
       await h.delete();
       return {chunks: n, end, history, next};
     });
+    // N2: tool calls in a preface. A stop mid tool call keeps the call
+    // (as natively), so a rebuild replays it with or without its response.
+    const tools = [{type: 'function', function: {name: 'get_weather', description: 'The weather in a city', parameters: {type: 'object', properties: {city: {type: 'string'}}, required: ['city']}}}];
+    const call = {role: 'assistant', tool_calls: [{type: 'function', function: {name: 'get_weather', arguments: {city: 'Paris'}}}]};
+    const asked = {role: 'user', content: [{type: 'text', text: 'What is the weather in Paris? Use the tool.'}]};
+    const answered = {role: 'tool', content: [{type: 'tool_response', name: 'get_weather', response: {temperature: 21, sky: 'clear'}}]};
+    const withPreface = async (messages, next) => {
+      const k = await e.createConversation({...greedy, preface: {tools, messages}});
+      try { return await text(k, next); } finally { await k.delete(); }
+    };
+    await attempt('preface_dangling_tool_call', () => withPreface([asked, call], 'Say yes.'));
+    await attempt('preface_tool_call_and_response', () => withPreface([asked, call, answered], 'Thanks. Is that warm? One word.'));
+    await attempt('preface_from_tool_round_trip_history', async () => {
+      const k = await e.createConversation({...greedy, preface: {tools}});
+      const first = [];
+      for await (const chunk of k.sendMessageStreaming(asked)) first.push(chunk);
+      const second = await text(k, answered);
+      const h = await k.getHistory();
+      await k.delete();
+      const answer = await withPreface(h, 'Thanks. Is that warm? One word.');
+      return {first: JSON.stringify(first).slice(0, 300), second,
+              roles: h.map((m) => m.role), history: JSON.stringify(h).slice(0, 1200), answer};
+    });
+    await attempt('preface_empty_assistant_text', () => withPreface([
+      {role: 'user', content: [{type: 'text', text: 'Why is the sky blue?'}]},
+      {role: 'assistant', content: [{type: 'text', text: ''}]}], 'Say yes.'));
+    // N3: an empty reply that succeeds, and a reply that fails mid-decode:
+    // what each leaves in the history.
+    await attempt('history_after_empty_reply', async () => {
+      const k = await e.createConversation({...greedy, sessionConfig: {...greedy.sessionConfig, maxOutputTokens: 0}});
+      let reply;
+      try { reply = 'answered: ' + await text(k, 'Say yes.'); }
+      catch (err) { reply = 'rejected: ' + ((err && err.message) || err); }
+      const h = await k.getHistory();
+      await k.delete();
+      return {reply, roles: h.map((m) => m.role), history: JSON.stringify(h).slice(0, 600)};
+    });
     await c.delete();
     const deleted = e.delete();
     r.engineDeleteReturnsThenable = !!(deleted && typeof deleted.then === 'function');
     await deleted;
   }
+
+  // N3: a reply that fails mid-decode (the context fills): what the history
+  // keeps of it, and whether the conversation answers again.
+  await attempt('history_after_failure_mid_decode', async () => {
+    const x = await Engine.create({model: await stream(), mainExecutorSettings: {maxNumTokens: 128}});
+    try {
+      const k = await x.createConversation(greedy);
+      let chunks = 0, end;
+      try {
+        for await (const _ of k.sendMessageStreaming('Count from 1 to 300, one number per line.')) chunks++;
+        end = 'done';
+      } catch (err) { end = 'rejected: ' + ((err && err.message) || err); }
+      const h = await k.getHistory();
+      let next;
+      try { next = 'answered: ' + await text(k, 'Say yes.'); }
+      catch (err) { next = 'rejected: ' + ((err && err.message) || err); }
+      await k.delete();
+      return {chunks, end, roles: h.map((m) => m.role), history: JSON.stringify(h).slice(0, 800), next};
+    } finally { await x.delete(); }
+  });
 
   // P4: the GPU named explicitly.
   await attempt('explicit_gpu_backend', async () => {
@@ -293,6 +350,16 @@ window.__litertlmProbe = async (url, image, audio) => {
                   lastUser: JSON.stringify(failedHistory.filter((m) => m.role === 'user').pop()).slice(0, 200)};
         });
         await attempt('send_after_failed_turn', () => text(c, 'Say yes.'));
+        // N1: the rebuild as WebConversationHandle does it: the unanswered
+        // tail dropped.
+        await attempt('rebuilt_after_failed_turn_trimmed', async () => {
+          const trimmed = [...failedHistory];
+          while (trimmed.length && trimmed[trimmed.length - 1].role !== 'assistant') trimmed.pop();
+          const r6 = await v.createConversation({...greedy, preface: {messages: toBase64(trimmed)}});
+          const answer = await text(r6, 'Say yes.');
+          await r6.delete();
+          return {messages: trimmed.length, answer};
+        });
         await attempt('rebuilt_after_failed_turn', async () => {
           const r4 = await v.createConversation({...greedy, preface: {messages: toBase64(failedHistory)}});
           const answer = await text(r4, 'Say yes.');
@@ -436,6 +503,13 @@ void main() {
       'history_after_failed_turn',
       'send_after_failed_turn',
       'rebuilt_after_failed_turn',
+      'rebuilt_after_failed_turn_trimmed',
+      'preface_dangling_tool_call',
+      'preface_tool_call_and_response',
+      'preface_from_tool_round_trip_history',
+      'preface_empty_assistant_text',
+      'history_after_empty_reply',
+      'history_after_failure_mid_decode',
       'history_with_audio',
       'rebuilt_from_history_with_audio_as_base64',
       'cpu_default',

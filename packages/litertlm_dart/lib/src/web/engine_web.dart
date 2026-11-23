@@ -183,8 +183,11 @@ final class Engine {
       // so the next decode round aborted with `Invalid token at state N`
       // (google-ai-edge/LiteRT-LM#2434; web_function_calling_test.dart). On
       // 0.19.0 a tool call and the turn after its result ran with it on
-      // (web_litertlm_runtime_probe_test.dart, 2026-11-23); it stays off until
-      // web_function_calling_test.dart passes with it on.
+      // (web_litertlm_runtime_probe_test.dart, 2026-11-23), but turning it on
+      // for tool conversations does not fix 0.19.0's empty reply to a tool
+      // result in web_function_calling_test.dart case 5 (failing alike with
+      // it off and on, and on main's code with 0.19.0; passing on 0.18.0),
+      // so it stays off.
       return js;
     }
 

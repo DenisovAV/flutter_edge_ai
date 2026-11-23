@@ -16,6 +16,15 @@
 # EmbeddingGemma 2 bundles, and on Linux arm64 everything but the CPU and what
 # the Arduino VENTUNO Q (QCS8275) runs below.
 
+# --- The web on @litert-lm/core 0.19.0 (PR #872, 2026-11-23) ---------------
+- what: Gemma 4 E2B's GPU export on the web, text, images and audio, on @litert-lm/core
+    0.19.0 (Chrome 157, Apple GPU)
+  variants: [gemma-4-e2b-it/web-gpu]
+  hosts: [web]
+  backends: [gpu]
+  status: documented
+  source: "PR #872, the nine web drive suites on @litert-lm/core 0.19.0"
+
 # --- The native-v0.18.0-f release run (PR #688, 2026-10-19) ---------------
 - what: Gemma 4 E2B, litertlm_ffi_test on CPU and GPU
   variants: [gemma-4-e2b-it/generic]

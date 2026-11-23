@@ -4529,7 +4529,8 @@
      "cells": {
       "web": {
        "gpu": {
-        "status": "untested"
+        "status": "documented",
+        "source": "PR #872, the nine web drive suites on @litert-lm/core 0.19.0"
        }
       }
      }

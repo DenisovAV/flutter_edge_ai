@@ -118,6 +118,12 @@ final class WebConversationHandle implements ConversationHandle {
   /// (N7, 0.19.0).
   bool _rebuilt = false;
 
+  /// Whether [_replayedTokens] is a count the runtime gave: set once a
+  /// conversation this one replaced had prefilled (a count above 0, which
+  /// holds the preface and the BOS token). Until then the size of what a
+  /// rebuild replays is unknown, and a refusal teaches nothing.
+  bool _replayedKnown = false;
+
   /// A lower bound on the tokens the chat template adds to a message, learnt
   /// from refusals (N7: "Input token ids are too long… X >= Y" counts what
   /// that call would prefill). The web cannot read the template, as natively
@@ -182,14 +188,17 @@ final class WebConversationHandle implements ConversationHandle {
   ) {
     if (_maxTokens <= 0) return false;
     final held = max(count ?? 0, _rebuilt ? _replayedTokens : 0);
-    // Learnt on a rebuilt conversation, whose first call prefills the
-    // replayed history, then the message. A new conversation's first call
-    // also holds its preface and the BOS token, so it teaches nothing. Once a
-    // conversation has prefilled, a count is the message alone, refused for
-    // being longer than the window: with the replay taken off it bounds
-    // nothing (a token is at least a byte), which is harmless.
+    // Learnt only where what precedes the message is a known count: a
+    // rebuilt conversation's first call prefills the replayed history (the
+    // preface and the BOS token included, as the count it was rebuilt from
+    // has them), then the message. A conversation that never prefilled has
+    // no such count, so neither its first call (its preface, the BOS token)
+    // nor a rebuild of it teaches anything. Once a conversation has
+    // prefilled, a count is the message alone, refused for being longer than
+    // the window: with the replay taken off it bounds nothing (a token is at
+    // least a byte), which is harmless.
     final counts = RegExp(r'(\d+) >= \d+').firstMatch('$error');
-    if (counts != null && _rebuilt) {
+    if (counts != null && _rebuilt && _replayedKnown) {
       if (_textBytes(message) case final bytes?) {
         final turnTokens = int.parse(counts.group(1)!) - _replayedTokens;
         _overheadAtLeast = max(_overheadAtLeast, turnTokens - bytes);
@@ -821,9 +830,14 @@ final class WebConversationHandle implements ConversationHandle {
     }
     final old = _conversation;
     // A conversation refused before anything was prefilled on it counts 0
-    // (N5) but still holds the history it was rebuilt with; the history only
-    // grows (a refused message is not counted, nor replayed).
-    _replayedTokens = max(await _fence() ?? 0, _replayedTokens);
+    // (N5) but still holds the history it was rebuilt with: the count it was
+    // rebuilt from stays. One that prefilled counts all of it (the history
+    // only grows; a refused message is neither counted nor replayed).
+    final replaced = await _fence() ?? 0;
+    if (replaced > 0) {
+      _replayedTokens = replaced;
+      _replayedKnown = true;
+    }
     _rebuilt = true;
     _conversation = next;
     _replayed = replay;

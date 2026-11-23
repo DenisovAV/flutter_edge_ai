@@ -757,6 +757,37 @@ void main() {
       );
     });
 
+    test('a rebuild of a conversation that never prefilled teaches nothing: '
+        'what it replays has no count', () async {
+      setOnPage('tokenCount', 4000);
+      final prefaced = await engine.createConversation(
+        ConversationConfig(initialMessages: [Message.user('Remember this.')]),
+      );
+      Future<Object?> refusedOn(String text, String how, [String? counts]) {
+        final reply = prefaced
+            .sendMessageStream(Message.user(text))
+            .drain<void>()
+            .then<Object?>((_) => null, onError: (Object e) => e);
+        return settle().then((_) {
+          js(how, counts);
+          return reply;
+        });
+      }
+
+      // Refused before anything was prefilled, then refused again on the
+      // rebuild, whose count holds the preface (4000 tokens) too.
+      await refusedOn('Long', '__contextFull');
+      await refusedOn('Hi', '__tooLong', '4009,4096');
+      // A shorter turn is answered, and the history counts 4000.
+      await exchange(prefaced, 'Short', 'Ok');
+
+      // 96 tokens of room take a message.
+      expect(
+        await refusedOn('Hi', '__contextFull'),
+        errorWith<ContextFullException>('Send a shorter message'),
+      );
+    });
+
     test(
       'a refused message with a part that is not text teaches nothing',
       () async {

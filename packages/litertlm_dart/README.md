@@ -609,7 +609,9 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   read it, so it learns a lower bound from the runtime's refusals ("Input
   token ids are too long… X >= Y" counts what that call would prefill: on a
   rebuilt conversation's first call the replayed history and the message) —
-  that count less the history and the message's UTF-8 bytes — and takes a
+  that count less the history and the message's UTF-8 bytes, learnt only
+  when the history has a count (a conversation it replaced had prefilled) —
+  and takes a
   room within that bound plus one token as none. The bound is low by the
   bytes a token spans, so a conversation one or two tokens from that point
   may be told to send a shorter message once more before it ends. A reply that fills the window ends normally (0.19.0

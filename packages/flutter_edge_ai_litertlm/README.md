@@ -1029,14 +1029,16 @@ Native embeddings need no web files; the platform setup under
 with `FlutterEdgeAi.initialize(webStorageMode: WebStorageMode.streaming)`: a
 `cacheApi` install takes at most 2 GiB. The older web exports of Gemma 4 E2B
 and E4B are withheld (the E2B one answers a tool result with an empty reply
-on 0.19.0). `supportImage` and `supportAudio` load the vision encoder on the
+on 0.19.0); an app that installed one moves as
+[the migration guide](https://flutteredge.ai/docs/migration) says. `supportImage` and `supportAudio` load the vision encoder on the
 GPU and the audio encoder on the CPU, and a session then sends images and
 audio; without them an image or audio message throws `UnsupportedError`
 rather than being dropped. `maxNumImages` counts a whole conversation's
 images on the web (natively a message's): the model reserves their space up
 front (unset: 1), and an image past it is refused before it is sent. `loraPath` throws. A stopped
-reply is kept: the next message goes to a conversation rebuilt from the
-history, because the runtime refuses every send after a stop mid-reply.
+reply is kept as on native (its text, or the tool calls it made): the next
+message goes to a conversation rebuilt from the history, because the runtime
+refuses every send after a stop mid-reply.
 `openSession(maxOutputTokens:)` is honoured here as it is on native, and
 `maxTokens` reaches the runtime (core's default context is 1024 tokens).
 The page must import `@litert-lm/core` 0.19.0: 0.18.0 refuses the GPU export

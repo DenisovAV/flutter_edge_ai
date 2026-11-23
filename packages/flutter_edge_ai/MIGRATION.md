@@ -1,5 +1,48 @@
 # Migration guide
 
+## Unreleased: flutter_edge_ai_litertlm web on `@litert-lm/core` 0.19.0
+
+`.litertlm` models on the web now run on `@litert-lm/core` 0.19.0. Native
+apps change nothing.
+
+- **Import 0.19.0 in `web/index.html`.** 0.18.0 fails the engine create
+  with "Unsupported backend: 2", and the error names the page's version.
+  Change the version in the handshake's import:
+
+  ```
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
+  ```
+- **Gemma 4 E2B on the web is `LiteRtLmModels.gemma4E2bIt.webGpu`.** The
+  catalog no longer offers `gemma4E2bIt.web` or `gemma4E4bIt.web` (the
+  `-web.litertlm` exports) on the web. An app that installed one of them
+  keeps loading it. On 0.19.0 the E2B one answers a tool result with an
+  empty reply; the E4B one is not measured there. The new E2B build is
+  2.34 GB, more than the 2 GiB a `WebStorageMode.cacheApi` install holds.
+  To move:
+  1. While the app still runs with the storage mode it installed the old
+     file under (`cacheApi` unless it chose another), uninstall it:
+
+     ```
+     await FlutterEdgeAi.uninstallModel('gemma-4-E2B-it-web.litertlm');
+     // or 'gemma-4-E4B-it-web.litertlm'
+     ```
+  2. Initialize with `webStorageMode: WebStorageMode.streaming`.
+  3. Install the new build:
+
+     ```
+     await FlutterEdgeAi.installModelFromCatalog(
+       LiteRtLmModels.gemma4E2bIt.webGpu,
+     ).install();
+     ```
+- **`maxTokens` reaches the web runtime.** The default context is 1024
+  tokens, as on native. Before, the web arm did not send it, and the runtime
+  used the model's own context. A prompt longer than 1024 tokens needs a
+  larger `maxTokens`.
+- **`maxNumImages` counts a whole conversation on the web** (natively, one
+  message), 1 when unset. An image past it is refused with an
+  `UnsupportedError` before it is sent. To send more images in one chat,
+  pass a larger `maxNumImages` to `getActiveModel`.
+
 ## Unreleased: Hugging Face resolvers per role
 
 - A `HuggingFaceResolver` implementation adds the role it serves:

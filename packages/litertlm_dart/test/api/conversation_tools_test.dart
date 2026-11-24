@@ -764,6 +764,69 @@ void main() {
     },
   );
 
+  for (final how in ['conversation', 'engine', 'subscription']) {
+    final event = how == 'subscription'
+        ? 'cancelling the subscription'
+        : 'closing the $how';
+    test('$event while the first of two calls runs: the second execute is '
+        'never called', () async {
+      final handle = _Handle();
+      final gate = Completer<Object?>();
+      final ran = <String>[];
+      final engineListeners = <void Function()>{};
+      var engineClosed = false;
+      final conversation = conversationForTest(
+        handle,
+        config: ConversationConfig(
+          tools: [
+            Tool(
+              name: 'first',
+              execute: (_) {
+                ran.add('first');
+                return gate.future;
+              },
+            ),
+            Tool(
+              name: 'second',
+              execute: (_) {
+                ran.add('second');
+                return 2;
+              },
+            ),
+          ],
+        ),
+        engineClosed: () => engineClosed,
+        engineCloseListeners: engineListeners,
+      );
+      final events = <Object>[];
+      final subscription = conversation
+          .sendMessageStream(Message.user('x'))
+          .listen(events.add, onError: events.add);
+      await pumpEventQueue();
+      handle.sends.single
+        ..chunk(_calls([('first', {}), ('second', {})]))
+        ..finished();
+      await pumpEventQueue();
+      expect(ran, ['first']);
+      switch (how) {
+        case 'conversation':
+          await conversation.close();
+        case 'engine':
+          engineClosed = true;
+          for (final listener in engineListeners.toList()) {
+            listener();
+          }
+        default:
+          await subscription.cancel();
+      }
+      gate.complete(1);
+      await pumpEventQueue();
+      expect(ran, ['first'], reason: 'nothing runs after $event');
+      expect(handle.sends, hasLength(1));
+      await subscription.cancel();
+    });
+  }
+
   test('a close as native ends the round runs no tool', () async {
     final handle = _Handle();
     final seen = <Map<String, Object?>>[];

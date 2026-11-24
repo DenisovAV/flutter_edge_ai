@@ -72,7 +72,8 @@ Object? turnFailureCause(TurnFailedException e) => e._cause;
 /// run ends the reply with their calls: the calls have run, only their
 /// results were not sent to the model, so a caller must not run them again
 /// blindly. A close while the tools run ends the reply at once with
-/// [ConversationClosedException]; their late results are dropped.
+/// [ConversationClosedException]; their late results are dropped, and the
+/// calls after the one running are not run.
 ///
 /// On the web the runtime refuses every send after a stop, so the next message
 /// goes to a new runtime conversation built from the history, the stopped
@@ -348,8 +349,14 @@ final class Conversation {
           _engineCloseListeners.add(closedWhileRunning);
           unawaited(() async {
             try {
-              final responses = await _runTools(calls, tools);
-              if (over) return;
+              // A close, or a cancelled subscription, while a call runs
+              // stops the calls after it: nobody will read their results.
+              final responses = await _runTools(
+                calls,
+                tools,
+                stopped: () => over || cancelled,
+              );
+              if (responses == null || over) return;
               over = true;
               // The subscription was cancelled while the tools ran: the
               // turn is over, and nothing is listening.
@@ -500,13 +507,23 @@ final class Conversation {
   /// (`Error: …`), as Kotlin's `ToolManager` answers them with its own text
   /// (`Error occured. …`), and printed as a warning, release builds included:
   /// the model gets the text, the developer needs the cause.
-  static Future<List<Content>> _runTools(
+  ///
+  /// Null when [stopped] became true before a call: that call and the ones
+  /// after it are not run.
+  static Future<List<Content>?> _runTools(
     List<ToolCall> calls,
-    Map<String, Tool> tools,
-  ) async => [
-    for (final call in calls)
-      Content.toolResponse(call.name, await _runTool(call, tools[call.name])),
-  ];
+    Map<String, Tool> tools, {
+    required bool Function() stopped,
+  }) async {
+    final responses = <Content>[];
+    for (final call in calls) {
+      if (stopped()) return null;
+      responses.add(
+        Content.toolResponse(call.name, await _runTool(call, tools[call.name])),
+      );
+    }
+    return responses;
+  }
 
   static Future<Object?> _runTool(ToolCall call, Tool? tool) async {
     final execute = tool?.execute;

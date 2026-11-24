@@ -299,7 +299,8 @@ of every round, not the calls it ran; `sendMessage` returns the last answer.
 A stop (`cancel()` or a cancelled subscription) also stops the loop. A stop
 while the tools run ends the reply with their calls: they have run, only their
 results were not sent to the model, so do not run them again blindly. A close
-while the tools run ends the reply at once with `ConversationClosedException`.
+while the tools run ends the reply at once with `ConversationClosedException`,
+and the calls after the one running are not run.
 Natively, with a `responseFormat`, a message goes without it while a tool has
 `execute`, so the model can call it; the replies to tool results keep it (the
 web refuses a `responseFormat`).

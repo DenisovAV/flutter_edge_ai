@@ -5,8 +5,9 @@
 // a client got as far as the (missing) model, which LiteRT-LM refuses by its
 // path, and, on Linux and Windows, when the GPU accelerator is loaded under
 // the bare name LiteRT's GPU registry opens it by (and on Windows Dawn and
-// the shader compiler with it): the GPU's own load is not run, as CI has no
-// GPU.
+// the shader compiler with it), and on macOS when libLiteRtLm carries the
+// statically linked Metal accelerator LiteRT registers first: the GPU's own
+// load is not run, as CI has no GPU.
 //
 // Internal to the repository's CI: it reads the runtime's private library
 // lookup, which the published API does not expose.
@@ -38,7 +39,7 @@ Future<void> main() async {
     stderr.writeln('FAIL: ${plainDartAssetsMessage(lookup)}');
     exit(1);
   }
-  openLiteRtLmLibrary();
+  final liteRtLm = openLiteRtLmLibrary();
   stdout.writeln('opened ${nativeAssetPath(dir, liteRtLmAssetFile)}');
   LiteRtBindings.open();
   stdout.writeln('opened the LiteRT C API');
@@ -60,6 +61,23 @@ Future<void> main() async {
     );
     exit(1);
   }
+  if (Platform.isMacOS) {
+    // LiteRT's gpu_registry registers this definition before it looks for any
+    // accelerator library; it is set by the accelerator linked into
+    // libLiteRtLm when the library loads.
+    const symbol = 'LiteRtStaticLinkedAcceleratorGpuDef';
+    if (!liteRtLm.providesSymbol(symbol) ||
+        liteRtLm.lookup<Pointer<Void>>(symbol).value == nullptr) {
+      stderr.writeln(
+        'FAIL: libLiteRtLm has no statically linked GPU accelerator ($symbol '
+        'missing or null)',
+      );
+      exit(1);
+    }
+    stdout.writeln(
+      'GPU: Metal accelerator statically linked ($symbol set in libLiteRtLm)',
+    );
+  }
   final notLoaded = [
     for (final name in _gpuLibraries())
       if (!_loadedByBareName(name)) name,
@@ -71,7 +89,9 @@ Future<void> main() async {
     );
     exit(1);
   }
-  stdout.writeln('GPU libraries loaded: ${_gpuLibraries().join(', ')}');
+  if (_gpuLibraries().isNotEmpty) {
+    stdout.writeln('GPU libraries loaded: ${_gpuLibraries().join(', ')}');
+  }
   stdout.writeln('OK');
 }
 
@@ -106,14 +126,24 @@ bool _loadedByBareName(String name) {
   }
   const rtldLazy = 0x1;
   const rtldNoload = 0x4;
-  final dlopen = DynamicLibrary.process()
+  final process = DynamicLibrary.process();
+  final dlopen = process
       .lookupFunction<
         Pointer<Void> Function(Pointer<Utf8>, Int32),
         Pointer<Void> Function(Pointer<Utf8>, int)
       >('dlopen');
+  final dlclose = process
+      .lookupFunction<
+        Int32 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('dlclose');
   final path = name.toNativeUtf8();
   try {
-    return dlopen(path, rtldLazy | rtldNoload) != nullptr;
+    final handle = dlopen(path, rtldLazy | rtldNoload);
+    if (handle == nullptr) return false;
+    // RTLD_NOLOAD still takes a reference: give it back.
+    dlclose(handle);
+    return true;
   } finally {
     malloc.free(path);
   }

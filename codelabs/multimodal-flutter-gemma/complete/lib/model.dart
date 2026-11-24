@@ -60,7 +60,7 @@ abstract final class Models {
   /// holding two of them open by now; this one holds one.
   ///
   /// The web build is a separate file from the same repository, built for
-  /// `@litert-lm/core` rather than the native FFI engine — 2.0 GB against
+  /// `@litert-lm/core` rather than the native FFI engine — 2.34 GB against
   /// 2.59 GB, and text-only either way (see `capabilities.dart`).
   static const gemma4 = ModelChoice(
     label: 'Gemma 4 E2B',
@@ -71,9 +71,9 @@ abstract final class Models {
     nativeSize: '2.59 GB',
     webUrl:
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
-        'resolve/main/gemma-4-E2B-it-web.litertlm',
-    webFileName: 'gemma-4-E2B-it-web.litertlm',
-    webSize: '2.0 GB',
+        'resolve/cccc664ea93091c52eeb7867ad4e5466357e14f3/gemma-4-E2B-it-gpu.litertlm',
+    webFileName: 'gemma-4-E2B-it-gpu.litertlm',
+    webSize: '2.34 GB',
     modelType: ModelType.gemma4,
     supportsImage: true,
     supportsAudio: true,

@@ -15,7 +15,7 @@ Future<void> main() async {
   // the first getActiveModel() throws a StateError telling you to add one.
   //
   // `WebStorageMode.streaming` is what the size demands on web: Gemma 4 E2B's
-  // web build is 2.0 GB, right on the ~2 GB blob ceiling the default cacheApi
+  // web build is 2.34 GB, over the ~2 GB blob ceiling the default cacheApi
   // mode would have to buffer it into, so the @litert-lm/core engine reads it
   // from OPFS via a ReadableStream. Native platforms ignore this option.
   await FlutterEdgeAi.initialize(

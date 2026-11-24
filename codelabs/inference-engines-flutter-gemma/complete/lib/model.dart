@@ -80,13 +80,13 @@ abstract final class Models {
   /// same Gemma 4 E2B, the smallest one published.
   static const gemma4Web = ModelChoice(
     label: 'Gemma 4 E2B (web build)',
-    id: 'gemma-4-E2B-it-web.litertlm',
+    id: 'gemma-4-E2B-it-gpu.litertlm',
     modelType: ModelType.gemma4,
     fileType: ModelFileType.litertlm,
     url:
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
-        'resolve/main/gemma-4-E2B-it-web.litertlm',
-    sizeLabel: '2.0 GB',
+        'resolve/cccc664ea93091c52eeb7867ad4e5466357e14f3/gemma-4-E2B-it-gpu.litertlm',
+    sizeLabel: '2.34 GB',
   );
 
   /// The model the app downloads when it is not running the built-in engine.

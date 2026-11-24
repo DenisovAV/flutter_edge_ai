@@ -30,8 +30,8 @@ Future<void> main() async {
   try {
     await FlutterEdgeAi.initialize(
       inferenceEngines: [LiteRtLmEngine()],
-      // OPFS streaming, not the Cache API default: the web build is 2.0 GB,
-      // right on the ~2 GB blob ceiling, so it is not worth buffering.
+      // OPFS streaming, not the Cache API default: the web build is 2.34 GB,
+      // over the ~2 GB blob ceiling, so it is not worth buffering.
       webStorageMode: WebStorageMode.streaming,
     );
   } catch (error) {

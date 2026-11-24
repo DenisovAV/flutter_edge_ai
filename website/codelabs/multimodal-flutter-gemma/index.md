@@ -83,7 +83,7 @@ each.
 * Room for **0.36 GB** from Step 1 on native, and for **2.59 GB** from Step 3
   on — plus the memory to open the larger one, roughly 6 GB of RAM. A 4 GB phone
   is killed by the OS rather than told no. On the **web**, Step 1 already
-  needs Gemma 4 E2B's **2.0 GB** web build (SmolVLM2 has none), so leave about
+  needs Gemma 4 E2B's **2.34 GB** web build (SmolVLM2 has none), so leave about
   3 GB free for it per step you run in the browser — a browser close to its
   storage quota refuses the write rather than slowing down. Every step uses
   the same file there, but each step app downloads it again on the web; Step 3
@@ -153,10 +153,10 @@ text.
     webLabel: 'Gemma 4 E2B',
     webUrl:
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
-        'resolve/main/gemma-4-E2B-it-web.litertlm',
-    webFileName: 'gemma-4-E2B-it-web.litertlm',
+        'resolve/cccc664ea93091c52eeb7867ad4e5466357e14f3/gemma-4-E2B-it-gpu.litertlm',
+    webFileName: 'gemma-4-E2B-it-gpu.litertlm',
     webModelType: ModelType.gemma4,
-    webSize: '2.0 GB',
+    webSize: '2.34 GB',
   );
 ```
 
@@ -207,7 +207,7 @@ a guard against a prompt that was never going to be corrupted.
 this codelab starts here rather than on the 2.59 GB model it ends on: you
 should be reading a model's description of your own photograph before you have
 finished reading this page, not waiting out a multi-gigabyte download to find
-out whether the wiring is right. (On the web the download is the 2.0 GB Gemma 4
+out whether the wiring is right. (On the web the download is the 2.34 GB Gemma 4
 build above, and Step 2 explains why there is no photograph to describe there.)
 
 The repository is ungated, so there is no Hugging Face plumbing in `main.dart`
@@ -218,8 +218,8 @@ at all — no token, no `--dart-define`, no 401 to explain. What there is, is a
   try {
     await FlutterEdgeAi.initialize(
       inferenceEngines: [LiteRtLmEngine()],
-      // OPFS streaming, not the Cache API default: the web build is 2.0 GB,
-      // right on the ~2 GB blob ceiling, so it is not worth buffering.
+      // OPFS streaming, not the Cache API default: the web build is 2.34 GB,
+      // over the ~2 GB blob ceiling, so it is not worth buffering.
       webStorageMode: WebStorageMode.streaming,
     );
   } catch (error) {
@@ -245,7 +245,7 @@ arrived at all, not that streaming became compulsory. The reason to set it
 here is size. The default `WebStorageMode.cacheApi` buffers the whole download
 in memory as one blob, and browsers cap a single blob at roughly 2 GB — Chrome
 refuses past it with `ERR_BLOB_OUT_OF_MEMORY`. The Gemma 4 E2B web build this
-codelab installs in the browser is 2.0 GB, right on that line. Close enough that
+codelab installs in the browser is 2.34 GB, over that line. Close enough that
 every `.litertlm` install in this codelab uses `WebStorageMode.streaming`:
 streaming writes the download into OPFS and reads the model back from there
 instead of holding it whole in memory. It is not the only thing a web
@@ -531,7 +531,7 @@ there. So this step does the thing the rest of the codelab spends its time
 telling you that you rarely need to do: it changes models.
 
 **This step downloads 2.59 GB** on Android, iOS and desktop. On the web the
-model is the 2.0 GB build Step 2 already used, because SmolVLM2 has no web
+model is the 2.34 GB build Step 2 already used, because SmolVLM2 has no web
 build of its own (see Step 1) — but this step app downloads it again; see
 below. Gemma 4 E2B is seven times the size of SmolVLM2 on native, and there is
 no honest way to shrink that number: audio needs weights that were trained
@@ -563,9 +563,9 @@ ships exactly one model, and it is this one.
     nativeSize: '2.59 GB',
     webUrl:
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
-        'resolve/main/gemma-4-E2B-it-web.litertlm',
-    webFileName: 'gemma-4-E2B-it-web.litertlm',
-    webSize: '2.0 GB',
+        'resolve/cccc664ea93091c52eeb7867ad4e5466357e14f3/gemma-4-E2B-it-gpu.litertlm',
+    webFileName: 'gemma-4-E2B-it-gpu.litertlm',
+    webSize: '2.34 GB',
     modelType: ModelType.gemma4,
   );
 ```
@@ -589,7 +589,7 @@ the delete button in `step_02_vision` before you move on if you want that
 0.36 GB back.
 
 On the **web**, the model does not change. Step 2's `ModelChoice` — the one
-Step 1 introduced — already resolves to `gemma-4-E2B-it-web.litertlm` in the
+Step 1 introduced — already resolves to `gemma-4-E2B-it-gpu.litertlm` in the
 browser (see Step 1), so there
 is no id to change, and Step 3's only contribution is the `supportAudio` flag
 below. The download screen comes back all the same. Browser storage belongs to
@@ -597,7 +597,7 @@ one origin in one browser profile, and `flutter run -d chrome` runs each step
 folder in a Chrome profile of its own (kept in that folder's
 `.dart_tool/chrome-device`) and, unless you pass `--web-port`, on a random
 port — a new origin, with no install record and no bytes. So
-`isModelInstalled` answers no and the 2.0 GB comes down again. To share one
+`isModelInstalled` answers no and the 2.34 GB comes down again. To share one
 install record across the steps, serve every one of them from the same origin
 — `flutter run -d web-server --web-port=8080`, then open
 `http://localhost:8080` in the same Chrome window each time. The download
@@ -1015,7 +1015,7 @@ from Step 1 on, which is what routes those bytes through OPFS rather than the
 Cache API default; see
 Step 1 for why a 2 GB model is streamed rather than buffered. And `model.dart`
 installs a different file on the web than everywhere else —
-`gemma-4-E2B-it-web.litertlm` rather than `gemma-4-E2B-it.litertlm`, a separate
+`gemma-4-E2B-it-gpu.litertlm` rather than `gemma-4-E2B-it.litertlm`, a separate
 build of the same checkpoint built for `@litert-lm/core` (see Step 3). All
 three are invisible to the compiler: the web build still compiles and still
 runs `flutter analyze` clean without them. Drop the scripts or the web model

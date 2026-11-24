@@ -1612,7 +1612,8 @@ Uri _stagePointedAtCompanionFrameworks(
 /// the Dart SDK finds LiteRtLm's reference to it by.
 ///
 /// `dart run` and `dart test` (no linking: the JIT) write the file's absolute
-/// path in a temporary directory into its header, where Google's build left
+/// path (in a temporary directory since Dart 3.14, in the root package's
+/// `.dart_tool/lib/` before) into its header, where Google's build left
 /// little room: a directory too long for it fails the build here, naming a
 /// fix, instead of in the SDK's install_name_tool step.
 Uri _stageConstraintProviderForDart(Uri src, BuildInput input) {
@@ -1628,12 +1629,21 @@ Uri _stageConstraintProviderForDart(Uri src, BuildInput input) {
       '-D',
       src.toFilePath(),
     ]).trim().split('\n').last.trim();
-    final refusal = dartRunTempDirRefusal(
-      resolvedTempDir: Directory.systemTemp.resolveSymbolicLinksSync(),
-      slack: machOHeaderSlack(source.readAsBytesSync()),
-      currentId: currentId,
-    );
-    if (refusal != null) throw StateError(refusal);
+    // The SDK running this hook is the one that invoked it.
+    final projectRoot = dartToolOwnerOf(input.outputDirectoryShared);
+    final DartJitAssetDir? dir = dartJitUsesTempDir(Platform.version)
+        ? DartJitTempDir(Directory.systemTemp.resolveSymbolicLinksSync())
+        : projectRoot == null
+        ? null
+        : DartJitProjectDir(projectRoot);
+    if (dir != null) {
+      final refusal = dartJitInstallNameRefusal(
+        dir: dir,
+        slack: machOHeaderSlack(source.readAsBytesSync()),
+        currentId: currentId,
+      );
+      if (refusal != null) throw StateError(refusal);
+    }
   }
   final dest = File.fromUri(
     input.outputDirectory.resolve(macOSConstraintProviderAssetFile),

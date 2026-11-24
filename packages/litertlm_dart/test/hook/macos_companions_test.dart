@@ -98,7 +98,7 @@ void main() {
     );
   });
 
-  group('dartRunTempDirRefusal', () {
+  group('the JIT asset directory', () {
     const id = '@rpath/libGemmaModelConstraintProvider.dylib';
 
     test('an LC_ID_DYLIB is 24 bytes, the name and its NUL, to 8', () {
@@ -107,55 +107,112 @@ void main() {
       expect(dylibIdCommandSize('x' * 8), 40);
     });
 
-    test('the install name dart run gives the provider', () {
+    test('a temporary directory since Dart 3.14, .dart_tool/lib before', () {
+      for (final (version, temp) in [
+        (
+          '3.14.0 (stable) (Wed Nov 4 16:28:39 2026 -0800) on "macos_arm64"',
+          true,
+        ),
+        ('3.15.0-12.0.dev (dev) on "macos_arm64"', true),
+        ('4.0.0 (stable) on "macos_arm64"', true),
+        (
+          '3.13.7 (stable) (Thu Oct 22 14:28:57 2026 -0700) on "macos_arm64"',
+          false,
+        ),
+        (
+          '3.12.0 (stable) (Fri May 8 01:51:14 2026 -0700) on "macos_arm64"',
+          false,
+        ),
+      ]) {
+        expect(dartJitUsesTempDir(version), temp, reason: version);
+      }
+      // An SDK this hook cannot read the version of is a current one.
+      expect(dartJitUsesTempDir('main (dev)'), isTrue);
+    });
+
+    test('the root package is the one owning the hooks runner', () {
       expect(
-        dartRunInstallName('/private/var/folders/ab/cd/T/'),
-        '/private/var/folders/ab/cd/T/dart_native_assets_XXXXXX/lib/'
-        'libLtGmcp.dylib',
+        dartToolOwnerOf(
+          Uri.directory(
+            '/w/app/.dart_tool/hooks_runner/shared/litertlm_dart/build/',
+          ),
+        ),
+        '/w/app',
+      );
+      expect(dartToolOwnerOf(Uri.directory('/w/app/out/')), isNull);
+      // A .dart_tool the hooks runner does not own (build_runner's).
+      expect(
+        dartToolOwnerOf(Uri.directory('/w/app/.dart_tool/build/generated/')),
+        isNull,
       );
     });
 
-    test("macOS's default temporary directory fits in 64 bytes", () {
+    test('the directories the SDKs write', () {
+      expect(
+        const DartJitTempDir('/private/var/folders/ab/cd/T/').path,
+        '/private/var/folders/ab/cd/T/dart_native_assets_XXXXXX/lib',
+      );
+      expect(const DartJitProjectDir('/w/app').path, '/w/app/.dart_tool/lib');
+    });
+
+    test("3.14+: macOS's default temporary directory fits in 64 bytes", () {
       // /var/folders/xx/<28>/T with its symbolic link resolved.
       const macOSDefault =
           '/private/var/folders/3h/0y5_f3c539n_829qycm5gd6h0000gn/T';
       expect(macOSDefault, hasLength(56));
-      expect(
-        dartRunTempDirRefusal(
-          resolvedTempDir: macOSDefault,
-          slack: 64,
-          currentId: id,
-        ),
-        isNull,
-      );
-      expect(
-        dartRunTempDirRefusal(
-          resolvedTempDir: '/tmp',
-          slack: 64,
-          currentId: id,
-        ),
-        isNull,
-      );
+      for (final tmp in [macOSDefault, '/tmp']) {
+        expect(
+          dartJitInstallNameRefusal(
+            dir: DartJitTempDir(tmp),
+            slack: 64,
+            currentId: id,
+          ),
+          isNull,
+        );
+      }
     });
 
-    test('65 characters fit; 66 are refused, naming the fix', () {
+    test('3.14+: 65 characters fit; 66 are refused, naming TMPDIR', () {
       expect(
-        dartRunTempDirRefusal(
-          resolvedTempDir: '/${'t' * 64}',
+        dartJitInstallNameRefusal(
+          dir: DartJitTempDir('/${'t' * 64}'),
           slack: 64,
           currentId: id,
         ),
         isNull,
       );
-      final refusal = dartRunTempDirRefusal(
-        resolvedTempDir: '/${'t' * 65}',
+      final refusal = dartJitInstallNameRefusal(
+        dir: DartJitTempDir('/${'t' * 65}'),
         slack: 64,
         currentId: id,
       );
+      expect(refusal, contains('temporary directory'));
       expect(refusal, contains('(66 characters)'));
       expect(refusal, contains('65 characters at most'));
       expect(refusal, contains('TMPDIR=/tmp'));
       expect(refusal, contains('dart build cli is not affected'));
+    });
+
+    test('3.12/3.13: a package path of 80 characters fits; 81 are refused, '
+        'naming the package path', () {
+      expect(
+        dartJitInstallNameRefusal(
+          dir: DartJitProjectDir('/${'p' * 79}'),
+          slack: 64,
+          currentId: id,
+        ),
+        isNull,
+      );
+      final refusal = dartJitInstallNameRefusal(
+        dir: DartJitProjectDir('/${'p' * 80}'),
+        slack: 64,
+        currentId: id,
+      );
+      expect(refusal, contains("the package's directory /ppp"));
+      expect(refusal, contains('(81 characters)'));
+      expect(refusal, contains('80 characters at most'));
+      expect(refusal, contains('shorter path'));
+      expect(refusal, isNot(contains('TMPDIR')));
     });
   });
 }

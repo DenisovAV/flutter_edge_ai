@@ -568,8 +568,9 @@ the web arm in a browser page. What an app does itself:
 
 `dart run`, `dart test` and `dart build cli` bundle the native libraries
 through the build hook, as a Flutter build does; the library lookup follows
-the program's code assets. [`example/cli`](example/cli) is a command-line
-chat:
+the program's code assets. Measured on macOS arm64; on Linux and Windows it is
+implemented, not yet measured. [`example/cli`](example/cli) is a
+command-line chat:
 
 ```sh
 cd example/cli
@@ -580,10 +581,13 @@ dart build cli    # build/cli/<os>_<arch>/bundle/: bin/ + lib/, movable
 - **CPU only** in this release: `Backend.gpu()` and `Backend.npu()`, for
   the engine, an encoder or EmbeddingGemma 2, are refused by name
   (`UnsupportedError` from `Engine.create`, `EmbedderLoadException` from
-  `EmbeddingEngine.create`), never moved to the CPU.
-- **macOS:** the program's `pubspec.yaml` (the workspace root's in a pub
-  workspace) bundles the companion library as a code asset instead of a
-  Flutter app's framework. Never set it for a Flutter app:
+  `EmbeddingEngine.create`), never moved to the CPU. GPU delegates a program
+  sets up itself through the raw LiteRT bindings are not checked.
+- **macOS:** the define below bundles the companion library as a code asset
+  instead of a Flutter app's framework. It goes in the pubspec.yaml of the
+  package you run (the workspace root's in a pub workspace), and never in a
+  Flutter app's: one pub resolution serves either a Flutter app or a plain
+  Dart program on macOS, not both.
 
   ```yaml
   hooks:
@@ -592,13 +596,19 @@ dart build cli    # build/cli/<os>_<arch>/bundle/: bin/ + lib/, movable
         macos_companions: code_assets
   ```
 
-- **macOS, `dart run` and `dart test`:** the temporary directory (`$TMPDIR`,
-  symbolic links resolved) must be 65 characters or shorter: the Dart SDK
-  writes each library's path under it into the library, and Google's prebuilt
-  constraint provider has room for no more. macOS's default fits; the build
-  hook refuses a longer one, naming the fix (`TMPDIR=/tmp dart run`).
-  `dart build cli` is not affected. Each `dart run` copies the libraries
-  (about 50 MB) into a fresh temporary directory.
+- **macOS, `dart run` and `dart test`:** the Dart SDK writes each library's
+  path into the library, and Google's prebuilt constraint provider has room
+  for a short one only. Dart 3.14 and later put the libraries in a fresh
+  temporary directory, which (`$TMPDIR`, symbolic links resolved) must be 65
+  characters or shorter: macOS's default fits, otherwise run with
+  `TMPDIR=/tmp`. Dart 3.12 and 3.13 put them in the package's
+  `.dart_tool/lib/`, so the package's path must be 80 characters or
+  shorter. The build hook refuses a longer one, naming the fix. `dart build
+  cli` is not affected.
+- **Copies:** each `dart run` and `dart test` copies the libraries into the
+  temporary directory (Dart 3.14 and later): about 50 MB on macOS, 90 MB on
+  Linux and 245 MB on Windows, whose libraries include the Intel NPU stack
+  (OpenVINO and TBB, 120 MB) and the DirectX shader compiler.
 - `dart compile exe` runs no build hooks, so it cannot bundle LiteRT-LM; use
   `dart build cli`.
 

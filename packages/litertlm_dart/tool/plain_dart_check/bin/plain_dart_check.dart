@@ -6,15 +6,19 @@
 //
 // Internal to the repository's CI: it reads the runtime's private library
 // lookup, which the published API does not expose.
-// ignore_for_file: implementation_imports
 import 'dart:io';
 
 import 'package:litertlm_dart/litert_bindings.dart' show LiteRtBindings;
+// ignore: implementation_imports — the client, to check a load gets as far as the model.
 import 'package:litertlm_dart/src/ffi/litert_lm_client.dart';
+// ignore: implementation_imports — the plain LiteRtLm opener under test.
 import 'package:litertlm_dart/src/ffi/litert_lm_library.dart';
+// ignore: implementation_imports — the code-asset directory lookup under test.
 import 'package:litertlm_dart/src/ffi/native_asset_dir.dart';
+// ignore: implementation_imports — tells a library-load failure from a model failure.
 import 'package:litertlm_dart/src/runtime/load_errors.dart'
     show LibraryLoadFailure;
+// ignore: implementation_imports — prints the native release the hook bundled.
 import 'package:litertlm_dart/src/runtime/native_release.dart';
 
 Future<void> main() async {

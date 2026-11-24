@@ -80,8 +80,8 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
   final String abiName;
   final bool npuShips;
 
-  /// False by default: the backend rules below are those of a Flutter app.
-  /// A plain Dart program runs on the CPU only (the test of that).
+  /// False by default: the host of a Flutter app. A plain Dart program runs
+  /// the same backends (the test of that).
   @override
   final bool outsideFlutter;
 
@@ -840,85 +840,61 @@ void main() {
     expect(host.nativeLevels, [LiteRtLmLogLevel.silent, null]);
   });
 
-  test('a plain Dart program runs on the CPU only: a GPU or NPU engine or '
-      'encoder is refused by name before any engine, never moved', () async {
-    host = _Host(outsideFlutter: true);
-    debugEngineHost = host;
-    final path = write('enc.litertlm', _bundle(vision: 'gpu'));
-    for (final (backend, vision, audio, named) in [
-      (const Backend.gpu(), null, null, 'The engine on Backend.gpu()'),
-      (Backend.npu(), null, null, 'The engine on Backend.npu()'),
-      (null, const Backend.gpu(), null, 'The vision encoder on Backend.gpu()'),
-      (null, null, Backend.npu(), 'The audio encoder on Backend.npu()'),
-    ]) {
-      await expectLater(
-        create(
-          path,
-          backend: backend,
-          visionBackend: vision,
-          audioBackend: audio,
-        ),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (e) => e.message,
-            'message',
-            allOf(
-              contains(named),
-              contains('not supported outside Flutter'),
-              contains('CPU only'),
-            ),
-          ),
-        ),
-        reason: named,
-      );
-    }
-    expect(host.creates, isEmpty);
-    expect(host.prepared, isEmpty, reason: 'no NPU dispatch prepared');
-
-    final cpu = await create(
-      write('g.litertlm', _bundle()),
-      visionBackend: const Backend.cpu(),
-      audioBackend: const Backend.cpu(),
-    );
-    expect(host.creates.single.backend, 'cpu');
-    await cpu.close();
-  });
-
-  test('a plain Dart program refuses a file the CPU cannot run before the '
-      'load plan, whose advice (another backend) does not apply', () async {
-    host = _Host(outsideFlutter: true);
-    debugEngineHost = host;
+  test('a plain Dart program runs every backend an app runs: the GPU and '
+      'the NPU, for the engine and its encoders, reach the same engine '
+      'create, and a file is refused as in an app', () async {
+    final generic = write('g.litertlm', _bundle());
     final npu = write('n.litertlm', _bundle(npu: ('Qualcomm', 'SM8750')));
-    final gpuVision = write('v.litertlm', _bundle(vision: 'gpu'));
     final gpuText = write('t.litertlm', _bundle(text: 'gpu'));
-    for (final (path, vision, named) in [
-      (npu, null, 'compiled for an NPU'),
-      (gpuVision, const Backend.cpu(), 'vision encoder declares'),
-      (gpuText, null, 'declares that it runs on gpu'),
-    ]) {
-      await expectLater(
-        create(path, visionBackend: vision),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (e) => e.message,
-            'message',
-            allOf(
-              contains(named),
-              contains('CPU only'),
-              isNot(contains('Omit')),
-            ),
-          ),
-        ),
-        reason: named,
+    final cases = [
+      (generic, const Backend.gpu(), null, null),
+      (generic, const Backend.gpu(), const Backend.gpu(), const Backend.cpu()),
+      (generic, null, const Backend.gpu(), null),
+      (npu, Backend.npu(), null, null),
+      (npu, const Backend.cpu(), null, null),
+      (gpuText, const Backend.cpu(), null, null),
+      (gpuText, null, null, null),
+    ];
+    Future<(List<_Create>, List<NpuStack>, List<String>)> run(
+      bool outsideFlutter,
+    ) async {
+      host = _Host(
+        abiName: 'linux_arm64',
+        npuShips: true,
+        outsideFlutter: outsideFlutter,
       );
+      debugEngineHost = host;
+      final outcomes = <String>[];
+      for (final (path, backend, vision, audio) in cases) {
+        try {
+          final engine = await create(
+            path,
+            backend: backend,
+            visionBackend: vision,
+            audioBackend: audio,
+          );
+          outcomes.add('created');
+          await engine.close();
+        } on Object catch (e) {
+          outcomes.add('${e.runtimeType}: $e');
+        }
+      }
+      return (host.creates, host.prepared, outcomes);
     }
-    expect(host.creates, isEmpty);
-    // Names the load plan does not know are not a refusal, as there.
-    final unknown = await create(write('u.litertlm', _bundle(text: 'tpu')));
-    await unknown.close();
-    // A GPU-only vision encoder is not in the way when images are off.
-    final engine = await create(gpuVision);
-    await engine.close();
+
+    final app = await run(false);
+    final plainDart = await run(true);
+    expect(plainDart.$3, app.$3);
+    expect(plainDart.$1, app.$1);
+    expect(plainDart.$2, app.$2);
+    // What the app does with them: every backend reached the create.
+    expect([for (final c in app.$1) c.backend], containsAll(['gpu', 'npu']));
+    expect(
+      app.$1.any((c) => c.enableVision && c.visionBackend == 'gpu'),
+      isTrue,
+    );
+    expect(app.$2, [NpuStack.qualcomm]);
+    expect(app.$3.where((o) => o == 'created'), hasLength(4));
   });
 
   test('the real host is a plain Dart program under dart test', () {

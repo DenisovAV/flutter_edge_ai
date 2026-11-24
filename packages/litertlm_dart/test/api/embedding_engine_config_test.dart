@@ -22,8 +22,8 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
   });
   final String abiName;
 
-  /// False by default: the placements below are those of a Flutter app. A
-  /// plain Dart program runs on the CPU only (the test of that).
+  /// False by default: the host of a Flutter app. A plain Dart program
+  /// places EmbeddingGemma 2 the same way (the test of that).
   @override
   final bool outsideFlutter;
   final bool stackMissing;
@@ -51,9 +51,8 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
       '/prepared/${vendor.name}';
 }
 
-/// The real host with a Flutter app's backend rules: the placements below are
-/// those of an app; a plain Dart program runs on the CPU only (the test of
-/// that).
+/// The real host, as a Flutter app's: a plain Dart program places
+/// EmbeddingGemma 2 the same way (the test of that).
 class _InFlutter extends EngineHost {
   const _InFlutter();
 
@@ -379,63 +378,41 @@ void main() {
     },
   );
 
-  test('a plain Dart program runs EmbeddingGemma 2 on the CPU only: a GPU or '
-      'NPU tower is refused by name, never moved', () async {
-    debugEngineHost = const _Host('macos_arm64', outsideFlutter: true);
-    final path = write('g.litertlm', eg2Container(vision: true, audio: true));
-    for (final (backend, vision, audio, named) in [
-      (const Backend.gpu(), null, null, 'EmbeddingGemma 2 on Backend.gpu()'),
-      (Backend.npu(), null, null, 'EmbeddingGemma 2 on Backend.npu()'),
-      (
-        null,
-        const Backend.gpu(),
-        null,
-        "EmbeddingGemma 2's vision tower on Backend.gpu()",
-      ),
-      (
-        null,
-        null,
-        Backend.npu(),
-        "EmbeddingGemma 2's audio tower on Backend.npu()",
-      ),
-    ]) {
-      await expectLater(
-        embedderConfigFor(
-          config(path, backend: backend, vision: vision, audio: audio),
-        ),
-        throwsA(
-          isA<EmbedderLoadException>().having(
-            (e) => e.message,
-            'message',
-            allOf(contains(named), contains('not supported outside Flutter')),
-          ),
-        ),
-        reason: named,
-      );
-    }
-    final placed = await embedderConfigFor(
-      config(path, vision: const Backend.cpu(), audio: const Backend.cpu()),
-    );
-    expect(placed.gpu, isFalse);
-    expect(placed.npuTarget, isNull);
-  });
-
-  test('a plain Dart program is pointed at the generic bundle, not at the '
-      'NPU, for a per-SoC bundle', () async {
-    debugEngineHost = const _Host('android_arm64', outsideFlutter: true);
-    final path = write(
+  test('a plain Dart program places EmbeddingGemma 2 as an app does: on the '
+      'GPU, on the NPU of a per-SoC bundle, and refused where an app is '
+      'refused', () async {
+    final generic = write('g.litertlm', eg2Container());
+    final npu = write(
       'n.litertlm',
       eg2Container(textStamp: ('Qualcomm', 'SM8650')),
     );
-    await expectLater(
-      embedderConfigFor(config(path)),
-      throwsA(
-        isA<EmbedderLoadException>().having(
-          (e) => e.message,
-          'message',
-          allOf(contains('generic EmbeddingGemma 2'), contains('CPU only')),
-        ),
-      ),
-    );
+    final cases = [
+      ('macos_arm64', generic, const Backend.gpu()),
+      ('linux_x64', generic, const Backend.gpu()),
+      ('windows_x64', generic, const Backend.gpu()),
+      ('linux_arm64', npu, Backend.npu()),
+      ('linux_arm64', npu, null),
+      ('linux_arm64', generic, Backend.npu()),
+      ('linux_arm64', generic, const Backend.gpu()),
+    ];
+    Future<List<String>> run(bool outsideFlutter) async => [
+      for (final (abi, path, backend) in cases)
+        await () async {
+          debugEngineHost = _Host(abi, outsideFlutter: outsideFlutter);
+          try {
+            final c = await embedderConfigFor(config(path, backend: backend));
+            return 'gpu=${c.gpu} npu=${c.npuTarget} dir=${c.npuDispatchDir}';
+          } on EmbedderLoadException catch (e) {
+            return 'refused: ${e.message}';
+          }
+        }(),
+    ];
+
+    final app = await run(false);
+    expect(await run(true), app);
+    // What the app does with them.
+    expect(app.take(3), everyElement('gpu=true npu=null dir=null'));
+    expect(app[3], contains('dir=/prepared/qualcomm'));
+    expect(app.skip(4), everyElement(startsWith('refused: ')));
   });
 }

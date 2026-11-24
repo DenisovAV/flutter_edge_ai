@@ -320,4 +320,33 @@ void main() {
       );
     }
   }, skip: hostHasArchive ? false : 'no native archive for this host');
+
+  test('a plain Dart program on Windows loads the GPU libraries from the '
+      'code assets in order, and names the one that did not load', () {
+    final loaded = <String>[];
+    preloadWindowsGpuAssets(r'C:\a\lib', load: loaded.add);
+    expect(loaded, [
+      for (final name in windowsGpuAssetLibraries) 'C:\\a\\lib\\$name',
+    ]);
+    loaded.clear();
+    expect(
+      () => preloadWindowsGpuAssets(
+        r'C:\a\lib',
+        load: (path) {
+          if (path.endsWith('dxcompiler.dll')) {
+            throw ArgumentError('error 126');
+          }
+          loaded.add(path);
+        },
+      ),
+      throwsA(
+        isA<Exception>().having(
+          (e) => '$e',
+          'message',
+          allOf(contains(r'C:\a\lib\dxcompiler.dll'), contains('error 126')),
+        ),
+      ),
+    );
+    expect(loaded.last, endsWith('dxil.dll'), reason: 'stops at the failure');
+  });
 }

@@ -28,7 +28,6 @@ import '../bundle/litertlm_bundle_info.dart' show LiteRtLmBundleException;
 import 'dart:io' show FileSystemException;
 import '../runtime/types.dart' show BackendKind;
 import 'backend.dart';
-import 'plain_dart_backends.dart';
 import 'engine.dart' show currentEngineHost;
 import 'embedding_engine_config.dart';
 import 'message.dart';
@@ -47,9 +46,7 @@ final class EmbeddingEngine {
 
   /// Loads [config.modelPath]. Throws [EmbedderLoadException] for a bundle
   /// that cannot run as asked (never moved to another backend: vectors of an
-  /// NPU bundle and of the generic one live in different spaces), and in a
-  /// plain Dart program (no Flutter), which this release runs on the CPU
-  /// only, for a GPU or NPU backend.
+  /// NPU bundle and of the generic one live in different spaces).
   static Future<EmbeddingEngine> create(EmbeddingEngineConfig config) async =>
       createEmbeddingEngineWith(await embedderConfigFor(config));
 
@@ -120,19 +117,6 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
     }
   }
 
-  // A plain Dart program runs EmbeddingGemma 2 on the CPU only in this
-  // release (plain_dart_backends.dart).
-  if (currentEngineHost.outsideFlutter) {
-    for (final (what, backend) in [
-      ('EmbeddingGemma 2', config.backend),
-      ("EmbeddingGemma 2's vision tower", config.visionBackend),
-      ("EmbeddingGemma 2's audio tower", config.audioBackend),
-    ]) {
-      if (plainDartBackendRefusal(what, backend) case final refusal?) {
-        refuse(refusal);
-      }
-    }
-  }
   final target = await read(() => readLiteRtLmNpuTarget(path));
   final backend = config.backend;
   final abi = currentEngineHost.abi;
@@ -142,13 +126,7 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
   switch (backend) {
     case CpuBackend():
       if (target != null) {
-        refuse(
-          currentEngineHost.outsideFlutter
-              ? 'litertlm_dart: $file is compiled for the $target NPU, and '
-                    '$plainDartCpuOnly: load the generic EmbeddingGemma 2 '
-                    'bundle.'
-              : '$file is compiled for the $target NPU and runs only there.',
-        );
+        refuse('$file is compiled for the $target NPU and runs only there.');
       }
     case GpuBackend():
       if (target != null) {

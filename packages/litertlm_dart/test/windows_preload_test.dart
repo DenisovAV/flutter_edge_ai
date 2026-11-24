@@ -12,6 +12,8 @@ import 'dart:io';
 
 import 'package:litertlm_dart/src/ffi/litert_lm_client.dart'
     show windowsPreloadLibraries;
+import 'package:litertlm_dart/src/ffi/native_asset_dir.dart'
+    show windowsGpuAssetLibraries;
 import 'package:litertlm_dart/src/runtime/npu_stacks.dart' show intelNpuLibs;
 import 'package:test/test.dart';
 
@@ -90,6 +92,23 @@ void main() {
     expect(windowsPreloadLibraries.last, 'LiteRtLm.dll');
   });
 
+  test('a plain Dart program loads LiteRt, the shader compiler and Dawn '
+      'before the GPU accelerator, every one a file of the archive', () {
+    final list = windowsGpuAssetLibraries;
+    expect(_windowsArchive, containsAll(list));
+    expect(list.first, 'LiteRt.dll');
+    expect(list.last, 'libLiteRtWebGpuAccelerator.dll');
+    // The name LiteRT's GPU registry opens, and the one the app preloads.
+    expect(windowsPreloadLibraries, contains(list.last));
+    // The accelerator's PE import, and the compiler's runtime dependency.
+    expect(
+      list,
+      containsAll(['webgpu_dawn.dll', 'dxcompiler.dll', 'dxil.dll']),
+    );
+    expect(list.indexOf('dxil.dll'), lessThan(list.indexOf('dxcompiler.dll')));
+    expect(list.toSet(), hasLength(list.length));
+  });
+
   test('every Windows extra the hook registers is a file of the archive', () {
     final extras = [
       for (final name in _hookList(hook, 'windowsExtraLibs')) '$name.dll',
@@ -105,6 +124,7 @@ void main() {
     expect(forbidden, contains('libLiteRtTopKWebGpuSampler.dll'));
     final named = {
       ...windowsPreloadLibraries,
+      ...windowsGpuAssetLibraries,
       for (final name in [
         ..._hookList(hook, 'windowsExtraLibs'),
         ..._hookList(hook, 'companions'),

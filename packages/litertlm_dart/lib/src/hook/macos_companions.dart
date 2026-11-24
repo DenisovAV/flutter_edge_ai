@@ -6,8 +6,8 @@
 // pointed at them. `code_assets`, for a plain Dart program (`dart run`,
 // `dart test`, `dart build cli`): the constraint provider is a code asset
 // under a short file name, LiteRtLm keeps its own reference (the Dart SDK
-// rewrites it), and the Metal accelerator is not bundled (a plain Dart
-// program runs on the CPU only in this release). The hook cannot tell a
+// rewrites it), and the Metal accelerator is not bundled (libLiteRtLm's
+// statically linked one serves the GPU). The hook cannot tell a
 // Flutter build from a plain Dart one, so the program says which it is.
 //
 // `dart run` and `dart test` give each code asset its absolute path as its

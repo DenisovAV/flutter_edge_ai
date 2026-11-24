@@ -316,10 +316,12 @@ DynamicLibrary _openLiteRt() {
   }
   // Windows does need the std-handle realignment: embeddings or speech can be
   // the first to load this static-CRT DLL (windows_std_handles.dart).
+  // A plain Dart program loads what the GPU needs with it
+  // (preloadWindowsGpuAssets), LiteRt.dll first.
   if (Platform.isWindows) {
     if (assetDir == null) return openBundledWindowsLibrary('LiteRt.dll');
+    preloadWindowsGpuAssets(assetDir);
     final liteRtPath = nativeAssetPath(assetDir, 'LiteRt.dll');
-    loadWindowsAssetWithItsDirectory(liteRtPath);
     return openBundledWindowsLibrary(liteRtPath);
   }
   throw UnsupportedError(

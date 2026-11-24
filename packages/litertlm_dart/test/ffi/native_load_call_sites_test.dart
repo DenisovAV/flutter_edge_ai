@@ -124,6 +124,57 @@ void main() {
     },
   );
 
+  test('Linux loads the GPU accelerator with RTLD_GLOBAL in a plain Dart '
+      'program too: one list, no library skipped', () {
+    final linux = _slice(
+      client,
+      r'\} else if \(Platform\.isLinux\) \{',
+      r'\} else if \(Platform\.isWindows\) \{',
+    );
+    expect(_count(linux, r'for \(final name in linuxGlobalLibraries\)'), 1);
+    expect(linux, isNot(contains('continue')));
+    expect(linuxGlobalLibraries.first, 'libLiteRt.so');
+    expect(linuxGlobalLibraries.last, 'libLiteRtLm.so');
+    expect(
+      linuxGlobalLibraries.indexOf('libLiteRtWebGpuAccelerator.so'),
+      inInclusiveRange(1, linuxGlobalLibraries.length - 2),
+    );
+  });
+
+  test('Windows: a plain Dart program loads the GPU libraries before the '
+      'preloads, and skips none of them', () {
+    final windows = _slice(
+      client,
+      r'\} else if \(Platform\.isWindows\) \{',
+      r'\} else if \(Platform\.isAndroid\) \{',
+    );
+    final gpu = _at(
+      windows,
+      r'if \(assetDir != null\) preloadWindowsGpuAssets\(assetDir\);',
+    );
+    expect(gpu, isNonNegative, reason: windows);
+    expect(
+      gpu,
+      lessThan(_at(windows, r'for \(final name in windowsPreloadLibraries\)')),
+    );
+    expect(windows, isNot(contains("name == 'libLiteRtWebGpuAccelerator")));
+    // The other two openers of a plain Dart program's libraries on Windows.
+    for (final (file, open) in [
+      (
+        'litert_lm_library.dart',
+        r"nativeAssetPath\(assetDir, 'LiteRtLm\.dll'\)",
+      ),
+      ('litert_bindings.dart', r"nativeAssetPath\(assetDir, 'LiteRt\.dll'\)"),
+    ]) {
+      final source = _withoutComments(
+        File('lib/src/ffi/$file').readAsStringSync().replaceAll('\r\n', '\n'),
+      );
+      final at = _at(source, r'preloadWindowsGpuAssets\(assetDir\);');
+      expect(at, isNonNegative, reason: file);
+      expect(at, lessThan(_at(source, open)), reason: file);
+    }
+  });
+
   test('the preload swallows only the loader\'s ArgumentError', () {
     final preload = _slice(
       client,

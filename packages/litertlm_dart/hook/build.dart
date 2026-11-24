@@ -25,11 +25,14 @@ const _packageName = 'litertlm_dart';
 late HookDefines _defines;
 
 /// The macOS companion a plain Dart program (`macos_companions:
-/// code_assets`) does not bundle: the Metal accelerator, as such a program
-/// runs on the CPU only. Companions of other OSes are not in the macOS
-/// archive and are skipped by their absence; a new macOS one that is
-/// neither this nor the constraint provider fails the build, so that it is
-/// not dropped without a decision.
+/// code_assets`) does not bundle: the Metal accelerator. libLiteRtLm links
+/// one statically on Apple since LiteRT-LM 0.19 (build_macos.sh), and every
+/// LiteRT environment it creates registers that one before it looks for a
+/// library (gpu_registry.cc), so the engine, its encoders and EmbeddingGemma
+/// 2 run on Metal without the framework. Companions of other OSes are not in
+/// the macOS archive and are skipped by their absence; a new macOS one that
+/// is neither this nor the constraint provider fails the build, so that it
+/// is not dropped without a decision.
 const _companionsLeftOutOfMacOSCodeAssets = {'LiteRtLmMetalAccelerator'};
 
 // ============================================================================
@@ -855,8 +858,8 @@ Future<void> _processBundle({
     final fileUri = prebuiltDir.resolve(fileName);
     if (companionsAsCodeAssets) {
       // A plain Dart program on macOS: the provider only, under a short file
-      // name. The Metal accelerator is not bundled: such a program runs on
-      // the CPU only in this release.
+      // name. The Metal accelerator is not bundled: libLiteRtLm's statically
+      // linked one serves the GPU ([_companionsLeftOutOfMacOSCodeAssets]).
       if (name != 'GemmaModelConstraintProvider') {
         if (File.fromUri(fileUri).existsSync() &&
             !_companionsLeftOutOfMacOSCodeAssets.contains(name)) {

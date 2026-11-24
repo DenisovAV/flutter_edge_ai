@@ -26,8 +26,9 @@ sealed class Backend {
   /// The NPU of the vendor the bundle is compiled for: Kotlin's
   /// `Backend.NPU(nativeLibraryDir)`. [dispatchDir] is a directory holding
   /// that vendor's dispatch libraries, and only that vendor's (LiteRT loads
-  /// the first dispatch it finds there); null looks beside the executable,
-  /// which is where the build puts them on Linux and Windows.
+  /// the first dispatch it finds there); null looks where the build puts
+  /// them on Linux and Windows: beside an app's executable, among a plain
+  /// Dart program's code assets.
   ///
   /// On Android the libraries are inside the APK: an app's
   /// `nativeLibraryDir` holds them only with `extractNativeLibs="true"`, and

@@ -21,6 +21,8 @@ import '../runtime/npu_stacks.dart';
 import 'backend_preference.dart'
     show npuNoVendorReason, npuUnreachable, platformNpuProbes;
 import 'intel_weight_banks.dart';
+import 'native_asset_dir.dart'
+    show liteRtLmOutsideFlutter, requireNativeAssetDir;
 import '../runtime/runtime_log.dart';
 import 'npu_stack_manifest.dart';
 import '../runtime/npu_platform.dart';
@@ -39,7 +41,7 @@ abstract interface class LiteRtLmNpuHost {
 
   /// Whether this build carries [vendor]'s NPU stack where LiteRT will load
   /// it ([npuStackOf]): the opt-in Qualcomm stack in NativeAssetsManifest.json,
-  /// Intel's dispatch beside the executable.
+  /// Intel's dispatch where the build put the native libraries.
   Future<NpuStackCheck> stack(NpuStack vendor);
 
   /// Why this device cannot run [vendor]'s stack, or null when it can
@@ -57,6 +59,25 @@ abstract interface class LiteRtLmNpuHost {
 /// the running app.
 String executableDirOf([String? executable]) =>
     File(executable ?? Platform.resolvedExecutable).parent.path;
+
+/// The directory a build put this package's native libraries in on [os],
+/// where LiteRT loads an NPU dispatch and the dispatch its stack from: in a
+/// plain Dart program the code assets' directory (native_asset_dir.dart),
+/// which is not the executable's (`dart run` runs the SDK's); in a Flutter
+/// app [appNativeLibraryDirOf] the app's [executableDir]
+/// ([NpuPlatform.executableDir]).
+String nativeLibraryDirOf(String os, String executableDir) =>
+    liteRtLmOutsideFlutter
+    ? requireNativeAssetDir()
+    : appNativeLibraryDirOf(os, executableDir);
+
+/// Where a Flutter app's build put the native libraries: the bundle's `lib/`
+/// beside [executableDir] on Linux, [executableDir] itself on Windows.
+@visibleForTesting
+String appNativeLibraryDirOf(String os, String executableDir) => switch (os) {
+  'linux' => '$executableDir/lib',
+  _ => executableDir,
+};
 
 /// The host this process runs on, with what only the app's platform layer
 /// can answer coming from [platform].
@@ -366,17 +387,19 @@ bool npuStagesWeightBanks(NpuStack vendor) => switch (vendor) {
 /// Whether this build carries [vendor]'s NPU stack where LiteRT will load it:
 /// for Qualcomm, what NativeAssetsManifest.json says the build bundled
 /// ([checkNpuStackInManifest], read through [platform] and cached per
-/// vendor); for Intel, whether its dispatch is beside the executable
-/// ([checkIntelNpuStack]) — the directory LiteRT is pointed at, and a stack
-/// that answers [NpuStackCheck.unknown] there would go unchecked: Intel's
-/// [prepareNpuDispatchDir] checks nothing (it only sweeps stale weight banks).
+/// vendor); for Intel, whether its dispatch is where the build put the
+/// native libraries ([checkIntelNpuStack], [nativeLibraryDirOf]) — the
+/// directory LiteRT is pointed at, and a stack that answers
+/// [NpuStackCheck.unknown] there would go unchecked: Intel's
+/// [prepareNpuDispatchDir] checks nothing (it only sweeps stale weight
+/// banks).
 Future<NpuStackCheck> npuStackOf(NpuStack vendor, NpuPlatform platform) async =>
     switch (vendor) {
       NpuStack.qualcomm => await _checkManifest(vendor, platform),
       NpuStack.googleTensor => await _checkManifest(vendor, platform),
       NpuStack.mediatek => await _checkManifest(vendor, platform),
       NpuStack.intel => checkIntelNpuStack(
-        windowsNpuDispatchDirOf(platform.executableDir),
+        nativeLibraryDirOf('windows', platform.executableDir),
       ),
     };
 
@@ -408,7 +431,9 @@ Future<String> prepareNpuDispatchDir(
       vendor,
       platform,
     ),
-    'linux' => prepareLinuxNpuDispatchDir(platform.executableDir),
+    'linux' => prepareLinuxNpuDispatchDir(
+      nativeLibraryDirOf('linux', platform.executableDir),
+    ),
     final os => throw StateError(
       'NpuStack.qualcomm has no dispatch directory on $os',
     ),
@@ -435,7 +460,9 @@ Future<String> prepareNpuDispatchDir(
     ),
   },
   NpuStack.intel => switch (operatingSystem ?? Platform.operatingSystem) {
-    'windows' => await _prepareIntelDispatchDir(platform.executableDir),
+    'windows' => await _prepareIntelDispatchDir(
+      nativeLibraryDirOf('windows', platform.executableDir),
+    ),
     final os => throw StateError(
       'NpuStack.intel has no dispatch directory on $os',
     ),
@@ -490,10 +517,9 @@ Future<String> prepareAndroidNpuDispatchDir(
 /// LD_LIBRARY_PATH and the system — never the app — and LD_LIBRARY_PATH cannot
 /// change after the process started. A library already loaded under that
 /// SONAME is matched first, so the Stubs are loaded here by full path, after
-/// the libcdsprpc.so shim they NEED. [executableDir] is the running app's
-/// directory ([NpuPlatform.executableDir]).
-String prepareLinuxNpuDispatchDir(String executableDir) {
-  final libDir = '$executableDir/lib';
+/// the libcdsprpc.so shim they NEED. [libDir] is where the build put them
+/// ([nativeLibraryDirOf]).
+String prepareLinuxNpuDispatchDir(String libDir) {
   final missing = [
     for (final n in qualcommNpuLibsLinux)
       if (!File('$libDir/${androidLibFileName(n)}').existsSync())
@@ -521,11 +547,12 @@ String prepareLinuxNpuDispatchDir(String executableDir) {
   return libDir;
 }
 
-/// [windowsNpuDispatchDirOf], after deleting the weight banks earlier processes
-/// left behind ([sweepStaleIntelWeightBanks]): before this load stages its
-/// own, so on a disk the last ones filled, the next one fits. On another
-/// isolate: it lists the temp directory and can delete gigabytes.
-Future<String> _prepareIntelDispatchDir(String executableDir) async {
+/// [libDir], the Intel NPU's dispatch directory ([nativeLibraryDirOf]), after
+/// deleting the weight banks earlier processes left behind
+/// ([sweepStaleIntelWeightBanks]): before this load stages its own, so on a
+/// disk the last ones filled, the next one fits. On another isolate: it lists
+/// the temp directory and can delete gigabytes.
+Future<String> _prepareIntelDispatchDir(String libDir) async {
   if (Platform.isWindows) {
     await Isolate.run(
       () => sweepStaleIntelWeightBanks(
@@ -533,13 +560,8 @@ Future<String> _prepareIntelDispatchDir(String executableDir) async {
       ),
     );
   }
-  return windowsNpuDispatchDirOf(executableDir);
+  return libDir;
 }
-
-/// The directory of the running executable, [executableDir]: where Native
-/// Assets puts a Windows app's DLLs, the Intel NPU stack among them, and the
-/// `dispatch_lib_dir` LiteRT gets for an Intel NPU.
-String windowsNpuDispatchDirOf(String executableDir) => executableDir;
 
 /// The library LiteRT loads from the dispatch directory for an Intel NPU: our
 /// OpenVINO dispatch, which the Windows x64 native archive carries with
@@ -559,8 +581,13 @@ NpuStackCheck checkIntelNpuStack(String dir) =>
     File('$dir${Platform.pathSeparator}$intelNpuDispatchLib').existsSync()
     ? const NpuStackCheck.bundled()
     : NpuStackCheck.missing(
-        '$intelNpuDispatchLib is not beside the executable ($dir). Every '
-        'Windows x64 build with litertlm_dart puts the Intel NPU '
-        'stack there; ship all the DLLs the build put next to the executable '
-        'with the app',
+        liteRtLmOutsideFlutter
+            ? "$intelNpuDispatchLib is not among this program's code assets "
+                  '($dir). Every Windows x64 build with litertlm_dart puts '
+                  'the Intel NPU stack there: run the program with dart run '
+                  'or dart test, or ship the whole dart build cli bundle'
+            : '$intelNpuDispatchLib is not beside the executable ($dir). Every '
+                  'Windows x64 build with litertlm_dart puts the Intel NPU '
+                  'stack there; ship all the DLLs the build put next to the '
+                  'executable with the app',
       );

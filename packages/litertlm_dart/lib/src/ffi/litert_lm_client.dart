@@ -245,6 +245,16 @@ const windowsPreloadLibraries = [
   'LiteRtLm.dll',
 ];
 
+/// What the Linux client loads with RTLD_GLOBAL, in order, before it opens
+/// libLiteRtLm.so, in a Flutter app and in a plain Dart program alike.
+@visibleForTesting
+const linuxGlobalLibraries = [
+  'libLiteRt.so',
+  'libGemmaModelConstraintProvider.so',
+  'libLiteRtWebGpuAccelerator.so',
+  'libLiteRtLm.so',
+];
+
 /// Callback typedef with Uint8 for bool (C _Bool = 1 byte)
 typedef StreamCallbackNative =
     Void Function(
@@ -2123,20 +2133,7 @@ class LiteRtLmFfiClient {
       // A plain Dart program says why a preload failed; a Flutter app's
       // loads stay as they were.
       final dlerror = assetDir == null ? null : _dlerrorFunction();
-      for (final name in const [
-        'libLiteRt.so',
-        'libGemmaModelConstraintProvider.so',
-        'libLiteRtWebGpuAccelerator.so',
-        'libLiteRtLm.so',
-      ]) {
-        // A plain Dart program runs on the CPU only (plain_dart_backends.dart),
-        // so it does not preload the GPU accelerator. LiteRT's GPU registry
-        // still loads it itself (and Dawn through its NEEDED): libLiteRt.so's
-        // RUNPATH $ORIGIN finds it among the code assets (measured on a
-        // Linux x64 VM: both mapped, no libvulkan).
-        if (assetDir != null && name == 'libLiteRtWebGpuAccelerator.so') {
-          continue;
-        }
+      for (final name in linuxGlobalLibraries) {
         final fullPath = '$libDir/$name';
         final pathPtr = fullPath.toNativeUtf8();
         final handle = loadGlobal(pathPtr);
@@ -2167,7 +2164,9 @@ class LiteRtLmFfiClient {
       // its absolute path in the code assets' directory
       // (native_asset_dir.dart), and the preloads go through LoadLibraryExW
       // with the flag stream_proxy_load_global passes, which takes a path
-      // outside the ANSI code page (the user's profile, for `dart run`).
+      // outside the ANSI code page (the user's profile, for `dart run`). It
+      // also loads the shader compiler and Dawn, which an app has beside its
+      // executable (preloadWindowsGpuAssets).
       final assetDir = liteRtLmOutsideFlutter ? requireNativeAssetDir() : null;
       String bundled(String name) =>
           assetDir == null ? name : nativeAssetPath(assetDir, name);
@@ -2180,14 +2179,8 @@ class LiteRtLmFfiClient {
             Pointer Function(Pointer<Utf8>),
             Pointer Function(Pointer<Utf8>)
           >('stream_proxy_load_global');
+      if (assetDir != null) preloadWindowsGpuAssets(assetDir);
       for (final name in windowsPreloadLibraries) {
-        // A plain Dart program runs on the CPU only (plain_dart_backends.dart),
-        // so it does not preload the GPU accelerator. LiteRT's GPU registry
-        // looks it up by bare name, which does not search the code assets'
-        // directory: on a Panther Lake PC no accelerator or Dawn DLL loaded.
-        if (assetDir != null && name == 'libLiteRtWebGpuAccelerator.dll') {
-          continue;
-        }
         if (assetDir != null) {
           try {
             loadWindowsAssetWithItsDirectory(bundled(name));

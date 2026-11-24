@@ -379,3 +379,41 @@ void loadWindowsAssetWithItsDirectory(String path) {
     'imports is not loadable from ${File(path).parent.path}.',
   );
 }
+
+/// What a plain Dart program loads on Windows before LiteRT can reach the
+/// GPU, in order, each from the code assets' directory: LiteRT's GPU
+/// registry opens the WebGPU accelerator by its bare name, and Dawn may open
+/// the DirectX shader compiler (which opens dxil.dll) the same way. A bare
+/// name resolves to a module already loaded under it, but not to the code
+/// assets' directory, which is not the executable's; a Flutter app has them
+/// beside its executable. Every one is a file of the Windows native archive
+/// (test/windows_preload_test.dart).
+const windowsGpuAssetLibraries = [
+  'LiteRt.dll',
+  'dxil.dll',
+  'dxcompiler.dll',
+  'webgpu_dawn.dll',
+  'libLiteRtWebGpuAccelerator.dll',
+];
+
+/// Loads [windowsGpuAssetLibraries] from [assetDir], in order
+/// ([loadWindowsAssetWithItsDirectory]), before a plain Dart program opens
+/// LiteRtLm.dll or LiteRt.dll on Windows. Throws an [Exception] naming the
+/// file that did not load: the CPU needs none of them, but each is in every
+/// Windows build, so a missing one is a broken bundle, not a CPU-only one.
+void preloadWindowsGpuAssets(
+  String assetDir, {
+  void Function(String path) load = loadWindowsAssetWithItsDirectory,
+}) {
+  for (final name in windowsGpuAssetLibraries) {
+    final path = pathInAssetDir(assetDir, name, windows: true);
+    try {
+      load(path);
+    } on ArgumentError catch (e, stack) {
+      Error.throwWithStackTrace(
+        Exception('Failed to preload $path: ${e.message}'),
+        stack,
+      );
+    }
+  }
+}

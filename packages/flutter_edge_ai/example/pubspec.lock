@@ -273,14 +273,14 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "2.7.0"
+    version: "2.7.2"
   flutter_edge_ai_agent:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_agent"
       relative: true
     source: path
-    version: "0.4.3"
+    version: "0.4.4"
   flutter_edge_ai_builtin_ai:
     dependency: "direct main"
     description:
@@ -308,7 +308,7 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.21.0"
+    version: "1.21.1"
   flutter_edge_ai_mediapipe:
     dependency: "direct main"
     description:
@@ -329,7 +329,7 @@ packages:
       path: "../../flutter_edge_ai_qdrant"
       relative: true
     source: path
-    version: "2.1.1"
+    version: "2.2.0"
   flutter_edge_ai_rag:
     dependency: "direct main"
     description:
@@ -758,12 +758,12 @@ packages:
     source: hosted
     version: "1.0.1"
   litertlm_dart:
-    dependency: "direct overridden"
+    dependency: "direct dev"
     description:
       path: "../../litertlm_dart"
       relative: true
     source: path
-    version: "0.19.1+1"
+    version: "0.19.1+2"
   logging:
     dependency: transitive
     description:

@@ -4,9 +4,9 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
-  flutter_edge_ai
   flutter_inappwebview_windows
   flutter_local_ai
+  flutter_edge_ai
   permission_handler_windows
   record_windows
   url_launcher_windows

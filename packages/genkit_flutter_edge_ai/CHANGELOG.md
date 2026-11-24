@@ -1,4 +1,4 @@
-## Unreleased
+## 0.12.2
 - Require `genkit` ^1.0.1, which wraps primitive tool inputs as `{input: …}`.
 
 ## 0.12.1

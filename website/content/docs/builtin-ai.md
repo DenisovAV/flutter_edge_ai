@@ -42,7 +42,7 @@ engines your app uses:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.7.0
+  flutter_edge_ai: ^2.7.2
   flutter_edge_ai_builtin_ai: ^0.4.3   # OS/browser built-in AI
 ```
 

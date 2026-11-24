@@ -1,4 +1,5 @@
-## Unreleased
+## 1.21.1
+- Requires `litertlm_dart` 0.19.1+2.
 - Web: the message after a stopped reply no longer fails with "Task cancelled".
 - Web: maxTokens now reaches the runtime; the default context is 1024 tokens, as on native.
 - Web: needs `@litert-lm/core` 0.19.0 and Gemma 4 E2B `webGpu`; images and audio ([migration](https://flutteredge.ai/docs/migration)).

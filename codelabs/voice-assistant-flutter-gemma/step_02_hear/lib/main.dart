@@ -28,7 +28,7 @@ Future<void> main() async {
     // `getActiveStt()` throws and names the package to add.
     sttBackends: [const LiteRtSttBackend()],
     huggingFaceToken: _hfToken.isEmpty ? null : _hfToken,
-    // Kept from the starter, where it is OPFS streaming for the 2.0 GB web
+    // Kept from the starter, where it is OPFS streaming for the 2.34 GB web
     // model. This app has no web target — speech needs dart:ffi — and the
     // platforms it runs on ignore this option.
     webStorageMode: WebStorageMode.streaming,

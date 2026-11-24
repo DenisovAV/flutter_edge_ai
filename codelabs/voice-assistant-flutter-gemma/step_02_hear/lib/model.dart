@@ -69,10 +69,10 @@ abstract final class Models {
     label: 'Gemma 4 E2B (web build)',
     url:
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
-        'resolve/main/gemma-4-E2B-it-web.litertlm',
-    fileName: 'gemma-4-E2B-it-web.litertlm',
+        'resolve/cccc664ea93091c52eeb7867ad4e5466357e14f3/gemma-4-E2B-it-gpu.litertlm',
+    fileName: 'gemma-4-E2B-it-gpu.litertlm',
     modelType: ModelType.gemma4,
-    sizeLabel: '2.0 GB',
+    sizeLabel: '2.34 GB',
     requiresToken: false,
   );
 }

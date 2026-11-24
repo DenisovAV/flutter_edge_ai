@@ -46,7 +46,7 @@ of decisions the API asks you to make, and this codelab is built around them:
 * Free space and a connection that can pull it: about 1 GB on native for
   Gemma 3 1B (0.6 GB), or about 3 GB if you take the no-account path, Gemma 4
   E2B (2.59 GB). About 3 GB on the web too, where the app downloads a
-  different model — 2.0 GB, and a browser
+  different model — 2.34 GB, and a browser
   that is nearly out of storage refuses a write rather than slowing down, so
   leave it headroom (Step 2 explains why the web model is a different one)
 * Optionally, a free Hugging Face account (Step 2 explains when you need one —
@@ -269,7 +269,7 @@ are already in the starter's `web/`:
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
   window.Engine = m.Engine;
   return m.Engine;
 })();
@@ -305,7 +305,7 @@ With `streaming`, a `.litertlm` install on the web goes through OPFS (Origin
 Private File System) and is read back as a stream. The default `cacheApi` mode
 instead buffers the whole download in memory as one blob, and browsers cap a
 single blob at roughly 2 GB — Chrome refuses past it with
-`ERR_BLOB_OUT_OF_MEMORY`. The web model below is 2.0 GB, right on that line.
+`ERR_BLOB_OUT_OF_MEMORY`. The web model below is 2.34 GB, over that line.
 Close enough that every codelab in this series uses `streaming` rather than
 find out, browser by browser, where the real limit sits.
 
@@ -332,7 +332,7 @@ That is `@litert-lm/core` refusing a file it was never built for — it is a
 native export, and the browser engine only runs a `.litertlm` file
 **exported for the web**. Gemma 3 1B has none published.
 [Gemma 4 E2B](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm)
-does — `gemma-4-E2B-it-web.litertlm`, 2.0 GB, and ungated, so no Hugging Face
+does — `gemma-4-E2B-it-gpu.litertlm`, 2.34 GB, and ungated, so no Hugging Face
 token either — and it is what this codelab's apps download on web instead.
 "Same code, different platform" still holds: `main.dart` picks the model with
 one `kIsWeb` check, and every line after that — install, chat, streaming — is
@@ -356,7 +356,7 @@ Future<void> main() async {
   await FlutterEdgeAi.initialize(
     inferenceEngines: [LiteRtLmEngine()],
     huggingFaceToken: _hfToken.isEmpty ? null : _hfToken,
-    // OPFS streaming. On web the model is 2.0 GB, right on the ~2 GB blob
+    // OPFS streaming. On web the model is 2.34 GB, over the ~2 GB blob
     // ceiling the default `cacheApi` mode would have to buffer it into.
     // The other platforms ignore this option.
     webStorageMode: WebStorageMode.streaming,
@@ -401,10 +401,10 @@ abstract final class Models {
     label: 'Gemma 4 E2B (web build)',
     url:
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
-        'resolve/main/gemma-4-E2B-it-web.litertlm',
-    fileName: 'gemma-4-E2B-it-web.litertlm',
+        'resolve/cccc664ea93091c52eeb7867ad4e5466357e14f3/gemma-4-E2B-it-gpu.litertlm',
+    fileName: 'gemma-4-E2B-it-gpu.litertlm',
     modelType: ModelType.gemma4,
-    sizeLabel: '2.0 GB',
+    sizeLabel: '2.34 GB',
     requiresToken: false,
   );
 }

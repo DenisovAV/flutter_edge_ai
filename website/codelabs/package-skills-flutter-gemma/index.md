@@ -45,7 +45,7 @@ By the end you will have:
   package, `litertlm_dart`, ships an arm64 library and nothing else, so a
   32-bit or x86_64 image has no runtime to load (an Apple-silicon Mac's
   emulator is arm64)
-* About 3.5 GB of free space: Gemma 4 E2B is 2.6 GB on a device and 2.0 GB on
+* About 3.5 GB of free space: Gemma 4 E2B is 2.6 GB on a device and 2.34 GB on
   the web, and neither a phone nor a browser near its storage limit takes a
   write that only just fits, so leave headroom
 
@@ -307,7 +307,7 @@ skills it used; and if it wrote code without one, tell it to use the
 flutter-edge-ai skills in this project. An assistant can skip a skill it should have
 loaded, and then you are back to whatever it remembers from training.
 
-Let it finish, then run the app. The download is 2.6 GB (2.0 GB on the web).
+Let it finish, then run the app. The download is 2.6 GB (2.34 GB on the web).
 
 ### Check the code
 
@@ -341,8 +341,8 @@ app builds, the download works, and the first `getActiveModel()` throws a
 `StateError` asking for an engine package. On web, leave `webStorageMode` out
 and the default `cacheApi` mode buffers the whole download in memory as one
 blob — and browsers cap a single blob at roughly 2 GB, Chrome refusing past it
-with `ERR_BLOB_OUT_OF_MEMORY`. Gemma 4 E2B's web build is 2.0 GB, right on
-that line: close enough that this codelab streams. `streaming` writes the
+with `ERR_BLOB_OUT_OF_MEMORY`. Gemma 4 E2B's web build is 2.34 GB, past
+that line, so this codelab streams. `streaming` writes the
 download into OPFS and reads the model back from there instead; native
 platforms ignore the option.
 

@@ -58,9 +58,9 @@ abstract final class Models {
     nativeSize: '2.59 GB',
     webUrl:
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
-        'resolve/main/gemma-4-E2B-it-web.litertlm',
-    webFileName: 'gemma-4-E2B-it-web.litertlm',
-    webSize: '2.0 GB',
+        'resolve/cccc664ea93091c52eeb7867ad4e5466357e14f3/gemma-4-E2B-it-gpu.litertlm',
+    webFileName: 'gemma-4-E2B-it-gpu.litertlm',
+    webSize: '2.34 GB',
     modelType: ModelType.gemma4,
   );
 }

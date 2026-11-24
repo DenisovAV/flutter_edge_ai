@@ -20,7 +20,7 @@ dependencies:
   # Step 3: Uncomment to add On-device AI (LiteRT-LM engine)
   # genkit_flutter_edge_ai: ^0.12.1
   # flutter_edge_ai: ^2.7.0
-  # flutter_edge_ai_litertlm: ^1.21.0
+  # flutter_edge_ai_litertlm: ^1.21.1
   # flutter_edge_ai_embeddings: ^2.3.3
 
 dev_dependencies:

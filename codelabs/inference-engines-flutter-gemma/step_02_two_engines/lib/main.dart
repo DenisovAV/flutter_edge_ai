@@ -18,7 +18,7 @@ Future<void> main() async {
   // can open; the registry picks one per model from `ModelFileType`. Nothing
   // in the chat code knows or cares which engine ends up answering.
   await FlutterEdgeAi.initialize(
-    // OPFS-backed storage. On web the model is 2.0 GB, right on the ~2 GB
+    // OPFS-backed storage. On web the model is 2.34 GB, over the ~2 GB
     // blob ceiling the default `cacheApi` mode would have to buffer it into,
     // so `.litertlm` streams out of OPFS instead.
     webStorageMode: WebStorageMode.streaming,

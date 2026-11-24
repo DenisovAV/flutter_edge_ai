@@ -8,13 +8,13 @@ import 'ai_service.dart';
 
 // The on-device LLM installs straight from Hugging Face by repo + file. The
 // browser engine only runs dedicated web builds — Gemma 3 1B has none — so on
-// web this installs Gemma 4 E2B's public web build instead (~2.0 GB, vs
+// web this installs Gemma 4 E2B's public web build instead (~2.34 GB, vs
 // ~0.6 GB for the gated native file).
 const String _hfRepo = kIsWeb
     ? 'litert-community/gemma-4-E2B-it-litert-lm'
     : 'litert-community/Gemma3-1B-IT';
 const String _hfModelFile = kIsWeb
-    ? 'gemma-4-E2B-it-web.litertlm'
+    ? 'gemma-4-E2B-it-gpu.litertlm'
     : 'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
 const ModelType _modelType = kIsWeb ? ModelType.gemma4 : ModelType.gemmaIt;
 
@@ -45,7 +45,7 @@ class LocalAIService implements AIService {
 
     // flutter_edge_ai registers no engine by default — opt into LiteRT-LM.
     // `webStorageMode: streaming` (OPFS-backed) is what the size demands: the
-    // 2.0 GB web build sits right on the ~2 GB blob ceiling the default
+    // 2.34 GB web build sits over the ~2 GB blob ceiling the default
     // cacheApi mode would have to buffer it into, so the @litert-lm/core
     // engine reads it from OPFS as a ReadableStream. Ignored on non-web.
     await FlutterEdgeAi.initialize(

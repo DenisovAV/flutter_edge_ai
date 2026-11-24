@@ -219,7 +219,7 @@ WebStorageMode.streaming` matters only on the web: it stores a downloaded
 `.litertlm` in OPFS and reads it back as a stream, rather than buffering the
 whole file in memory as one Cache API blob. Browsers cap a single blob at
 roughly 2 GB — Chrome refuses past it with `ERR_BLOB_OUT_OF_MEMORY` — and the
-web model here is 2.0 GB, right on that line. Close enough that every codelab
+web model here is 2.34 GB, over that line. Close enough that every codelab
 in this series streams. Native platforms ignore the option entirely.
 
 ### Rename these first
@@ -660,7 +660,7 @@ That is the finished app. Run `complete` on whatever you have:
   Foundry through `flutter_local_ai`
 * A browser without the Prompt API (another browser, or Chrome before 148) →
   the same fallback, but
-  the model that downloads is `Models.gemma4Web` (2.0 GB, ungated) rather than
+  the model that downloads is `Models.gemma4Web` (2.34 GB, ungated) rather than
   Gemma 3 1B — the browser engine cannot open the native file at all
 
 Same chat page every way.

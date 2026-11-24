@@ -568,15 +568,20 @@ the web arm in a browser page. What an app does itself:
 
 `dart run`, `dart test` and `dart build cli` bundle the native libraries
 through the build hook, as a Flutter build does; the library lookup follows
-the program's code assets. Measured on macOS arm64; on Linux and Windows it is
-implemented, not yet measured. [`example/cli`](example/cli) is a
-command-line chat:
+the program's code assets. Measured with Gemma 4 E2B on the CPU on macOS
+arm64, Linux x64 and Windows x64 (`dart run`, `dart test`, and a `dart
+build cli` bundle moved elsewhere); not yet on Linux arm64.
+[`example/cli`](example/cli) is a command-line chat:
 
 ```sh
 cd example/cli
 dart run bin/litertlm_chat.dart gemma-4-E2B-it.litertlm
 dart build cli    # build/cli/<os>_<arch>/bundle/: bin/ + lib/, movable
 ```
+
+The bundle's `lib/` holds the native libraries beside the program (on
+Linux the program itself is `lib/libdartaot*.so`, run by the executable in
+`bin/`); move the whole `bundle/` directory, not `bin/` alone.
 
 - **CPU only** in this release: `Backend.gpu()` and `Backend.npu()`, for
   the engine, an encoder or EmbeddingGemma 2, are refused by name
@@ -606,9 +611,12 @@ dart build cli    # build/cli/<os>_<arch>/bundle/: bin/ + lib/, movable
   shorter. The build hook refuses a longer one, naming the fix. `dart build
   cli` is not affected.
 - **Copies:** each `dart run` and `dart test` copies the libraries into the
-  temporary directory (Dart 3.14 and later): about 50 MB on macOS, 90 MB on
-  Linux and 245 MB on Windows, whose libraries include the Intel NPU stack
-  (OpenVINO and TBB, 120 MB) and the DirectX shader compiler.
+  temporary directory (Dart 3.14 and later): about 50 MB on macOS, 96 MB on
+  Linux and 243 MB on Windows, whose libraries include the Intel NPU stack
+  (OpenVINO and TBB, 120 MB) and the DirectX shader compiler. A `dart build
+  cli` bundle carries the same.
+- **Linux:** on the CPU LiteRT still loads its GPU accelerator and Dawn from
+  the bundle (they need no Vulkan to load); nothing runs on them.
 - `dart compile exe` runs no build hooks, so it cannot bundle LiteRT-LM; use
   `dart build cli`.
 

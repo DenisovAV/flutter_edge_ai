@@ -4,3 +4,6 @@
 # fetches the release archives instead.
 native/litert_lm/prebuilt/
 native/litert_lm/__pycache__/
+# The repository's CI check of a plain Dart build; it reads the runtime's
+# private library lookup.
+tool/plain_dart_check/

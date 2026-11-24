@@ -48,7 +48,7 @@ used below).
 ```
 dependencies:
   flutter_edge_ai: ^2.7.2
-  flutter_edge_ai_agent: ^0.4.3
+  flutter_edge_ai_agent: ^0.4.4
   flutter_edge_ai_litertlm: ^1.21.1   # an inference engine (LiteRtLmEngine)
 ```
 

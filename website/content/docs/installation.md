@@ -37,7 +37,7 @@ dependencies:
   flutter_edge_ai_speech: ^0.6.2               # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
 
   # Optional — on-device agent skills:
-  flutter_edge_ai_agent: ^0.4.3                # agent skills the model runs itself (text / JS / native-intent / MCP)
+  flutter_edge_ai_agent: ^0.4.4                # agent skills the model runs itself (text / JS / native-intent / MCP)
 
   # Optional — memory diagnostics (Android + iOS + macOS + Linux + Windows):
   flutter_edge_ai_diagnostics: ^0.6.1          # what a model costs in memory the OS cannot reclaim, read from the OS

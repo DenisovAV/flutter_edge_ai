@@ -142,7 +142,8 @@ share one and replay their messages when they take it over.
 
 `sendMessage` returns the whole reply; `sendMessageStream` streams it as
 `Message` pieces (text, a thought in `channels['thought']`, tool calls in
-`toolCalls`).
+`toolCalls`; the calls of tools with `execute` are run for you, see
+[Function calling](#function-calling)).
 
 ```dart
 import 'dart:io';
@@ -254,10 +255,11 @@ declare the CPU.
 ## Function calling
 
 Declare a tool with its parameters as a JSON Schema object (the shape of
-Kotlin's `OpenApiTool` description). The model's calls arrive as
-`ToolCall`s; you run them and answer with `Message.tool`. There is no
-automatic tool loop (Kotlin's default, `automaticToolCalling = true`): which
-code runs is the caller's decision.
+Kotlin's `OpenApiTool` description). Give it an `execute` function and the
+conversation runs the model's calls itself, as Kotlin's and Swift's do by
+default (`automaticToolCalling: true`): it runs every call of a reply in
+order, sends the results back as one `Message.tool`, and streams the model's
+next reply as part of the same message, until a reply calls no tool.
 
 ```dart
 import 'package:litertlm_dart/litertlm_dart.dart';
@@ -272,12 +274,55 @@ final weather = Tool(
     },
     'required': ['city'],
   },
+  execute: (arguments) =>
+      {'city': arguments['city'], 'temperature': 25, 'condition': 'sunny'},
 );
 final engine = await Engine.create(EngineConfig(modelPath: modelPath));
 final conversation = await engine.createConversation(
   ConversationConfig(tools: [weather]),
 );
 
+final reply = await conversation.sendMessage(
+  Message.user("What's the weather like in London?"),
+);
+print(reply.text);
+```
+
+`execute` may be `async` and returns any JSON value (a map, a list, a
+string, a number, a bool or null). If it throws, or returns something that is
+not JSON, the model gets the error as text (`Error: …`) and answers on; a
+call to a name no tool declares gets `Error: Tool not found: <name>`. After 25
+rounds of calls in one message (Kotlin's and Swift's limit) the send fails
+with a `TurnFailedException`. `sendMessageStream` streams the text and thought
+of every round, not the calls it ran; `sendMessage` returns the last answer.
+A stop (`cancel()` or a cancelled subscription) also stops the loop: a stop
+while the tools run ends the reply with their calls, whose results are not
+sent. With a `responseFormat`, a message goes without it while a tool has
+`execute`, so the model can call it; the replies to tool results keep it.
+
+To run the calls yourself, leave `execute` out (a reply calling such a tool is
+returned to you with nothing run, even beside calls that have it) or set
+`automaticToolCalling: false`. The calls arrive as `ToolCall`s; answer them
+with `Message.tool`:
+
+```dart
+final weather = Tool(
+  name: 'get_current_weather',
+  description: 'Get the current weather for a city.',
+  parameters: {
+    'type': 'object',
+    'properties': {
+      'city': {'type': 'string', 'description': 'The city name.'},
+    },
+    'required': ['city'],
+  },
+);
+final engine = await Engine.create(EngineConfig(modelPath: modelPath));
+final conversation = await engine.createConversation(
+  // A tool without execute is the caller's already; automaticToolCalling:
+  // false makes every tool the caller's.
+  ConversationConfig(tools: [weather], automaticToolCalling: false),
+);
 var reply = await conversation.sendMessage(
   Message.user("What's the weather like in London?"),
 );
@@ -480,7 +525,7 @@ so compare runs with the same `run.maxNumTokens`.
 | Load | `Engine(config)`, then `initialize()` | `await Engine.create(config)` |
 | Streaming | `sendMessageAsync` (Kotlin), `sendMessageStream` (Swift) | `sendMessageStream`, a `Stream<Message>` |
 | System prompt | `systemInstruction` (Kotlin), `systemMessage` (Swift) | `systemInstruction`, a `String` |
-| Tools | Kotlin functions or `OpenApiTool`, called automatically by default | `Tool` with a JSON Schema, called by you |
+| Tools | Kotlin functions or `OpenApiTool`, called automatically by default | `Tool` with a JSON Schema; with `execute` called automatically, as in Kotlin and Swift; limit 25 |
 | Speculative decoding | `ExperimentalFlags.enableSpeculativeDecoding` | `EngineConfig.speculativeDecoding`, per conversation too |
 | Thinking budget | -1 unlimited, 0 off | unset, or 1 to 2,147,483,647; `enableThinking: false` is off |
 | Several conversations per engine | — | yes, a stopped, refused or failed turn recovered before the next |

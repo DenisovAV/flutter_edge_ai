@@ -1,3 +1,6 @@
+## Unreleased
+- Automatic tool calling: `Tool.execute` and `ConversationConfig.automaticToolCalling`, as in Kotlin.
+
 ## 0.19.1+2
 - Runs on the web over `@litert-lm/core` 0.19.0, images and audio included.
 - Breaking: `EmbeddingEngineConfig.cacheDir` is now `String?`; natively a null one is refused.

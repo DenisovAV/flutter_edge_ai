@@ -106,6 +106,7 @@ void main() {
           ..sort();
 
     final first = await openWithSource();
+    addTearDown(first.dispose); // idempotent; reopening needs it closed first
     for (final (id, source) in [
       ('a1', 'a.md'),
       ('a2', 'a.md'),

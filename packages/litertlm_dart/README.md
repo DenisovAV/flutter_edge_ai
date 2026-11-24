@@ -10,8 +10,8 @@ the page's [`@litert-lm/core`](https://www.npmjs.com/package/@litert-lm/core)
 loads a `.litertlm` model, a `Conversation` sends it messages, an
 `EmbeddingEngine` embeds with EmbeddingGemma 2.
 
-It runs inside Flutter apps, in plain Dart programs on the CPU (`dart run`,
-`dart test`, `dart build cli`), and in a browser (see
+It runs inside Flutter apps, in plain Dart programs (`dart run`, `dart
+test`, `dart build cli`), and in a browser (see
 [Where it runs today](#where-it-runs-today)).
 
 ```dart
@@ -587,7 +587,9 @@ Linux the program itself is `lib/libdartaot*.so`, run by the executable in
   run is refused by name, never moved to the CPU. `Backend.npu()` without a
   `dispatchDir` loads the dispatch from the program's code assets: Intel's
   on Windows x64, Qualcomm's on Linux arm64 with `qualcomm_npu: true` in the
-  program's pubspec.yaml (Build options below).
+  program's pubspec.yaml (Build options below). The raw LiteRT bindings
+  (`litert_bindings.dart`) open the same libraries and reach the GPU
+  accelerator the same way as in an app.
 - **macOS:** the define below bundles the companion library as a code asset
   instead of a Flutter app's framework. It goes in the pubspec.yaml of the
   package you run, the root of its pub resolution, and never in a

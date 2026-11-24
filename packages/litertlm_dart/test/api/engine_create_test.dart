@@ -12,6 +12,8 @@ import 'dart:typed_data';
 
 import 'package:litertlm_dart/internal_io.dart';
 import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/src/ffi/native_asset_dir.dart'
+    show liteRtLmOutsideFlutter;
 import 'package:test/test.dart';
 
 import '../litertlm_container_fixture.dart';
@@ -70,20 +72,10 @@ class _BenchClient extends LiteRtLmFfiClient {
 }
 
 class _Host extends EngineHost implements LiteRtLmNpuHost {
-  _Host({
-    this.abiName = 'macos_arm64',
-    this.npuShips = false,
-    this.client,
-    this.outsideFlutter = false,
-  });
+  _Host({this.abiName = 'macos_arm64', this.npuShips = false, this.client});
 
   final String abiName;
   final bool npuShips;
-
-  /// False by default: the host of a Flutter app. A plain Dart program runs
-  /// the same backends (the test of that).
-  @override
-  final bool outsideFlutter;
 
   /// The client every create gets; null: a fresh real one.
   final LiteRtLmFfiClient? client;
@@ -840,64 +832,34 @@ void main() {
     expect(host.nativeLevels, [LiteRtLmLogLevel.silent, null]);
   });
 
-  test('a plain Dart program runs every backend an app runs: the GPU and '
-      'the NPU, for the engine and its encoders, reach the same engine '
-      'create, and a file is refused as in an app', () async {
+  test('dart test is a plain Dart program, and there the GPU and the NPU, '
+      'for the engine and its encoders, reach the engine create: a re-added '
+      'plain-Dart refusal fails here', () async {
+    expect(liteRtLmOutsideFlutter, isTrue);
+    host = _Host(abiName: 'linux_arm64', npuShips: true);
+    debugEngineHost = host;
     final generic = write('g.litertlm', _bundle());
     final npu = write('n.litertlm', _bundle(npu: ('Qualcomm', 'SM8750')));
-    final gpuText = write('t.litertlm', _bundle(text: 'gpu'));
-    final cases = [
-      (generic, const Backend.gpu(), null, null),
-      (generic, const Backend.gpu(), const Backend.gpu(), const Backend.cpu()),
-      (generic, null, const Backend.gpu(), null),
-      (npu, Backend.npu(), null, null),
-      (npu, const Backend.cpu(), null, null),
-      (gpuText, const Backend.cpu(), null, null),
-      (gpuText, null, null, null),
-    ];
-    Future<(List<_Create>, List<NpuStack>, List<String>)> run(
-      bool outsideFlutter,
-    ) async {
-      host = _Host(
-        abiName: 'linux_arm64',
-        npuShips: true,
-        outsideFlutter: outsideFlutter,
+    for (final (path, backend, vision) in [
+      (generic, const Backend.gpu(), null),
+      (generic, const Backend.gpu(), const Backend.gpu()),
+      (npu, Backend.npu(), null),
+    ]) {
+      final engine = await create(
+        path,
+        backend: backend,
+        visionBackend: vision,
       );
-      debugEngineHost = host;
-      final outcomes = <String>[];
-      for (final (path, backend, vision, audio) in cases) {
-        try {
-          final engine = await create(
-            path,
-            backend: backend,
-            visionBackend: vision,
-            audioBackend: audio,
-          );
-          outcomes.add('created');
-          await engine.close();
-        } on Object catch (e) {
-          outcomes.add('${e.runtimeType}: $e');
-        }
-      }
-      return (host.creates, host.prepared, outcomes);
+      await engine.close();
     }
-
-    final app = await run(false);
-    final plainDart = await run(true);
-    expect(plainDart.$3, app.$3);
-    expect(plainDart.$1, app.$1);
-    expect(plainDart.$2, app.$2);
-    // What the app does with them: every backend reached the create.
-    expect([for (final c in app.$1) c.backend], containsAll(['gpu', 'npu']));
-    expect(
-      app.$1.any((c) => c.enableVision && c.visionBackend == 'gpu'),
-      isTrue,
+    expect([for (final c in host.creates) c.backend], ['gpu', 'gpu', 'npu']);
+    expect(host.creates[1].visionBackend, 'gpu');
+    expect(host.prepared, [NpuStack.qualcomm]);
+    // What only the load plan refuses, in an app too: a file compiled for an
+    // NPU on the CPU.
+    await expectLater(
+      create(npu, backend: const Backend.cpu()),
+      throwsA(isA<LiteRtLmBundleException>()),
     );
-    expect(app.$2, [NpuStack.qualcomm]);
-    expect(app.$3.where((o) => o == 'created'), hasLength(4));
-  });
-
-  test('the real host is a plain Dart program under dart test', () {
-    expect(const EngineHost().outsideFlutter, isTrue);
   });
 }

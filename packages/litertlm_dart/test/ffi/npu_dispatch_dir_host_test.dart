@@ -11,7 +11,7 @@ import 'package:test/test.dart';
 
 /// An app's platform layer whose executable is nowhere near the code assets,
 /// as `dart run`'s is (the SDK's dart).
-final class _Platform implements NpuPlatform {
+base class _Platform implements NpuPlatform {
   @override
   Future<String> readNativeAssetsManifest() => Future.error('no manifest');
   @override
@@ -21,6 +21,12 @@ final class _Platform implements NpuPlatform {
   ) async => null;
   @override
   String get executableDir => '/nowhere';
+}
+
+/// A platform whose executable directory fails the test when it is read.
+final class _Unread extends _Platform {
+  @override
+  String get executableDir => fail('a plain Dart program read executableDir');
 }
 
 final class _Host implements LiteRtLmNpuHost {
@@ -69,6 +75,10 @@ void main() {
   test('under dart test the Intel and the Linux Qualcomm stacks are looked for '
       'in the code assets, not beside the executable', () async {
     final assets = requireNativeAssetDir();
+    for (final os in ['linux', 'windows']) {
+      // The executable's directory is not even read.
+      expect(nativeLibraryDirOf(os, _Unread()), assets, reason: os);
+    }
     // No Intel dispatch in this host's code assets (none outside Windows;
     // on Windows the check passes, naming no directory).
     final intel = await npuStackOf(NpuStack.intel, _Platform());

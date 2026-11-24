@@ -64,12 +64,12 @@ String executableDirOf([String? executable]) =>
 /// where LiteRT loads an NPU dispatch and the dispatch its stack from: in a
 /// plain Dart program the code assets' directory (native_asset_dir.dart),
 /// which is not the executable's (`dart run` runs the SDK's); in a Flutter
-/// app [appNativeLibraryDirOf] the app's [executableDir]
-/// ([NpuPlatform.executableDir]).
-String nativeLibraryDirOf(String os, String executableDir) =>
+/// app [appNativeLibraryDirOf] of [platform]'s [NpuPlatform.executableDir],
+/// which only an app reads.
+String nativeLibraryDirOf(String os, NpuPlatform platform) =>
     liteRtLmOutsideFlutter
     ? requireNativeAssetDir()
-    : appNativeLibraryDirOf(os, executableDir);
+    : appNativeLibraryDirOf(os, platform.executableDir);
 
 /// Where a Flutter app's build put the native libraries: the bundle's `lib/`
 /// beside [executableDir] on Linux, [executableDir] itself on Windows.
@@ -399,7 +399,7 @@ Future<NpuStackCheck> npuStackOf(NpuStack vendor, NpuPlatform platform) async =>
       NpuStack.googleTensor => await _checkManifest(vendor, platform),
       NpuStack.mediatek => await _checkManifest(vendor, platform),
       NpuStack.intel => checkIntelNpuStack(
-        nativeLibraryDirOf('windows', platform.executableDir),
+        nativeLibraryDirOf('windows', platform),
       ),
     };
 
@@ -412,8 +412,8 @@ Future<NpuStackCheck> _checkManifest(NpuStack vendor, NpuPlatform platform) =>
 
 /// The `dispatch_lib_dir` to hand LiteRT for [vendor] on this host: the
 /// prepared Qualcomm libraries on Android ([prepareAndroidNpuDispatchDir]) and
-/// on Linux ([prepareLinuxNpuDispatchDir]), [windowsNpuDispatchDirOf] for
-/// Intel, after deleting the weight banks of Intel loads whose process is
+/// on Linux ([prepareLinuxNpuDispatchDir]), [nativeLibraryDirOf] for Intel,
+/// after deleting the weight banks of Intel loads whose process is
 /// gone. [platform] answers what only the app's platform layer can.
 /// Throws [NpuDispatchUnavailableException] when the stack cannot be prepared.
 ///
@@ -432,7 +432,7 @@ Future<String> prepareNpuDispatchDir(
       platform,
     ),
     'linux' => prepareLinuxNpuDispatchDir(
-      nativeLibraryDirOf('linux', platform.executableDir),
+      nativeLibraryDirOf('linux', platform),
     ),
     final os => throw StateError(
       'NpuStack.qualcomm has no dispatch directory on $os',
@@ -461,7 +461,7 @@ Future<String> prepareNpuDispatchDir(
   },
   NpuStack.intel => switch (operatingSystem ?? Platform.operatingSystem) {
     'windows' => await _prepareIntelDispatchDir(
-      nativeLibraryDirOf('windows', platform.executableDir),
+      nativeLibraryDirOf('windows', platform),
     ),
     final os => throw StateError(
       'NpuStack.intel has no dispatch directory on $os',

@@ -27,7 +27,6 @@ import '../ffi/backend_preference.dart'
 import '../ffi/channel_content_filter.dart';
 import '../ffi/conversation_handles.dart';
 import '../ffi/litert_lm_client.dart';
-import '../ffi/native_asset_dir.dart' show liteRtLmOutsideFlutter;
 import '../ffi/npu_vendor_host.dart';
 import '../ffi/open_session_backing.dart';
 import '../runtime/constrained_decoding_hosts.dart';
@@ -190,8 +189,9 @@ void resetAndroidGemma4Float16Note() => _notedAndroidGemma4Float16 = false;
 
 /// A platform for code that passed no [NpuPlatform]: the manifest is not
 /// readable (the stack is then checked by loading it), Android cannot prepare
-/// a dispatch directory, and the dispatch is looked for beside the
-/// executable.
+/// a dispatch directory, and the dispatch is looked for where the build put
+/// the native libraries (`nativeLibraryDirOf`: beside an app's executable,
+/// among a plain Dart program's code assets).
 final class _DartNpuPlatform implements NpuPlatform {
   const _DartNpuPlatform();
 
@@ -221,12 +221,6 @@ class EngineHost {
 
   /// `Abi.current()`, as its `toString()`.
   String get abi => '${Abi.current()}';
-
-  /// Whether this is a plain Dart program (`dart run`, `dart test`, `dart
-  /// build cli`), whose libraries, GPU accelerators and NPU dispatch are
-  /// looked up among its code assets (native_asset_dir.dart) rather than in
-  /// an app bundle. Every backend runs there as in an app.
-  bool get outsideFlutter => liteRtLmOutsideFlutter;
 
   /// The NPU answers for [platform].
   LiteRtLmNpuHost npuHost(NpuPlatform? platform) =>

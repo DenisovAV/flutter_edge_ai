@@ -6,6 +6,8 @@ import 'dart:typed_data';
 
 import 'package:litertlm_dart/internal_io.dart';
 import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/src/ffi/native_asset_dir.dart'
+    show liteRtLmOutsideFlutter;
 import 'package:test/test.dart';
 
 import '../litertlm_container_fixture.dart';
@@ -18,14 +20,9 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     this.abiName, {
     this.stackMissing = false,
     this.unreachableBecause,
-    this.outsideFlutter = false,
   });
   final String abiName;
 
-  /// False by default: the host of a Flutter app. A plain Dart program
-  /// places EmbeddingGemma 2 the same way (the test of that).
-  @override
-  final bool outsideFlutter;
   final bool stackMissing;
   final String? unreachableBecause;
 
@@ -51,20 +48,11 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
       '/prepared/${vendor.name}';
 }
 
-/// The real host, as a Flutter app's: a plain Dart program places
-/// EmbeddingGemma 2 the same way (the test of that).
-class _InFlutter extends EngineHost {
-  const _InFlutter();
-
-  @override
-  bool get outsideFlutter => false;
-}
-
 void main() {
   late Directory dir;
   setUp(() {
     dir = Directory.systemTemp.createTempSync('eg2_config');
-    debugEngineHost = const _InFlutter();
+    debugEngineHost = const EngineHost();
   });
   tearDown(() {
     debugEngineHost = null;
@@ -378,41 +366,24 @@ void main() {
     },
   );
 
-  test('a plain Dart program places EmbeddingGemma 2 as an app does: on the '
-      'GPU, on the NPU of a per-SoC bundle, and refused where an app is '
-      'refused', () async {
+  test('dart test is a plain Dart program, and there EmbeddingGemma 2 is '
+      'placed on the GPU and on the NPU of a per-SoC bundle: a re-added '
+      'plain-Dart refusal fails here', () async {
+    expect(liteRtLmOutsideFlutter, isTrue);
     final generic = write('g.litertlm', eg2Container());
     final npu = write(
       'n.litertlm',
       eg2Container(textStamp: ('Qualcomm', 'SM8650')),
     );
-    final cases = [
-      ('macos_arm64', generic, const Backend.gpu()),
-      ('linux_x64', generic, const Backend.gpu()),
-      ('windows_x64', generic, const Backend.gpu()),
-      ('linux_arm64', npu, Backend.npu()),
-      ('linux_arm64', npu, null),
-      ('linux_arm64', generic, Backend.npu()),
-      ('linux_arm64', generic, const Backend.gpu()),
-    ];
-    Future<List<String>> run(bool outsideFlutter) async => [
-      for (final (abi, path, backend) in cases)
-        await () async {
-          debugEngineHost = _Host(abi, outsideFlutter: outsideFlutter);
-          try {
-            final c = await embedderConfigFor(config(path, backend: backend));
-            return 'gpu=${c.gpu} npu=${c.npuTarget} dir=${c.npuDispatchDir}';
-          } on EmbedderLoadException catch (e) {
-            return 'refused: ${e.message}';
-          }
-        }(),
-    ];
-
-    final app = await run(false);
-    expect(await run(true), app);
-    // What the app does with them.
-    expect(app.take(3), everyElement('gpu=true npu=null dir=null'));
-    expect(app[3], contains('dir=/prepared/qualcomm'));
-    expect(app.skip(4), everyElement(startsWith('refused: ')));
+    for (final abi in ['macos_arm64', 'linux_x64', 'windows_x64']) {
+      debugEngineHost = _Host(abi);
+      final c = await embedderConfigFor(
+        config(generic, backend: const Backend.gpu()),
+      );
+      expect(c.gpu, isTrue, reason: abi);
+    }
+    debugEngineHost = const _Host('linux_arm64');
+    final c = await embedderConfigFor(config(npu, backend: Backend.npu()));
+    expect(c.npuDispatchDir, '/prepared/qualcomm');
   });
 }

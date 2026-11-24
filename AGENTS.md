@@ -366,7 +366,7 @@ flutter analyze packages/ && dart format . && tool/test_all.sh
 
 | File | Purpose |
 |------|---------|
-| `lib/src/qdrant_vector_store.dart` | `QdrantVectorStore` (VectorStoreRepository) |
+| `lib/src/qdrant_vector_store.dart` | `QdrantVectorStore` (VectorStoreRepository); `removeDocumentsWhere` counts then deletes by the encoded filter |
 | `lib/src/{qdrant_edge_client,point_id_hasher,filter_codec}.dart` | thin wrapper over the `qdrant_edge` SDK + UUIDv5 hasher + Filter codec |
 | *(no `hook/build.dart`, no `native/`)* | 1.3.0: the engine and its Native Assets hook moved to the `qdrant_edge` SDK |
 
@@ -374,8 +374,8 @@ flutter analyze packages/ && dart format . && tool/test_all.sh
 
 | File | Purpose |
 |------|---------|
-| `lib/src/{sqlite_vector_store,web_sqlite_vector_store}.dart` | `SqliteVectorStore` (native, `package:sqlite3` FFI) / `WebSqliteVectorStore` (web, `package:sqlite3/wasm.dart`) — both on `vec0` |
-| `lib/src/filter_to_vec0.dart` | `Filter` DSL → vec0 declared-column SQL `WHERE` + binds (one dialect, both arms) |
+| `lib/src/{sqlite_vector_store,web_sqlite_vector_store}.dart` | `SqliteVectorStore` (native, `package:sqlite3` FFI) / `WebSqliteVectorStore` (web, `package:sqlite3/wasm.dart`) — both on `vec0`; `removeDocumentsWhere` deletes the filter's matches from vec0 and the text index in one transaction |
+| `lib/src/filter_to_vec0.dart` | `Filter` DSL → vec0 declared-column SQL `WHERE` + binds (one dialect, both arms), and the `removeWhere` refusals of a filter that constrains nothing |
 | `lib/src/sqlite_text_index.dart`, `sqlite_text_tokenizer.dart` | Text search (2.2.0), shared by both arms: `rag_text_documents` (typed filter columns, `_rag_rowid`) + external-content FTS5 `rag_text_fts`; written in the vec0 write's transaction; on every open reconciled with vec0 by an id/content/metadata anti-join (writes by releases without it; 151 ms at 50k docs on an M-series Mac); tokenizer fixed at creation |
 | `hook/build.dart` | Native Assets hook — fetches the per-platform `vec0` loadable extension |
 | `web/rag/sqlite3.wasm` | custom `sqlite3.wasm` with `sqlite-vec`/`vec0` statically linked (app copies to its web root) |

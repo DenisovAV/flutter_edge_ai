@@ -29,7 +29,7 @@ dependencies:
 
   # Optional — independent RAG orchestration plus one storage provider:
   flutter_edge_ai_rag: ^1.2.0               # RagIndex, profiles, filters
-  flutter_edge_ai_qdrant: ^2.1.1            # qdrant-edge; fastest on native
+  flutter_edge_ai_qdrant: ^2.2.0            # qdrant-edge; fastest on native
   flutter_edge_ai_sqlite: ^2.2.0            # sqlite-vec / vec0; all platforms incl. web — needs Flutter 3.47
 
   # Optional — on-device speech (STT + TTS):

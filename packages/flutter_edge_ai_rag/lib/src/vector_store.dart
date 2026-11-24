@@ -224,8 +224,8 @@ abstract base class VectorStoreRepository {
   /// declared in [filterSchema], and with no other operation on the index
   /// running, so the count is exactly what was removed. An implementation
   /// throws [ArgumentError] rather than remove every document when [filter]
-  /// is empty or constrains nothing (a range with no bound, a range on a text
-  /// field, excluding an empty set, or only undeclared fields).
+  /// is empty or constrains nothing (a range with no bound, a range on a
+  /// string field, excluding an empty set, or only undeclared fields).
   ///
   /// Throws [UnsupportedError] when [supportsRemoveWhere] is false: the
   /// default implementation throws it whatever the filter.

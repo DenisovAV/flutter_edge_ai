@@ -58,7 +58,7 @@ dependencies:
   flutter_edge_ai_embeddings: ^2.3.3 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.2.0
   flutter_edge_ai_sqlite: ^2.2.0 # all six platforms, including Web
-  # flutter_edge_ai_qdrant: ^2.1.1 # native alternative
+  # flutter_edge_ai_qdrant: ^2.2.0 # native alternative
 ```
 
 <Warning>
@@ -907,8 +907,9 @@ final removed = await index.removeWhere(
 
 An empty filter throws **ArgumentError** (use **clear()** to remove
 everything), and so does one that constrains nothing: a range with no bound,
-a range on a text field, excluding an empty set. A removed document also leaves the text index, and a store that
-does not implement it throws **UnsupportedError**.
+a range on a string field, excluding an empty set. A removed document also
+leaves the text index, and a store that does not implement it throws
+**UnsupportedError**.
 
 ## Text and hybrid search
 

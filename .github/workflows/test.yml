@@ -97,6 +97,18 @@ jobs:
       - name: Run tests (all packages)
         run: tool/test_all.sh --coverage
 
+      # litertlm_dart in a plain Dart program, no model: dart run, then dart
+      # build cli with the bundle moved away and run from /: an AOT
+      # build keeps or drops what the lookup needs on its own.
+      - name: litertlm_dart loads in plain Dart (dart run, moved dart build cli)
+        working-directory: packages/litertlm_dart/tool/plain_dart_check
+        run: |
+          dart pub get
+          dart run bin/plain_dart_check.dart
+          dart build cli -o "$RUNNER_TEMP/plain_dart_check_build"
+          mv "$RUNNER_TEMP/plain_dart_check_build/bundle" "$RUNNER_TEMP/plain_dart_check_moved"
+          cd / && "$RUNNER_TEMP/plain_dart_check_moved/bin/plain_dart_check"
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
@@ -325,6 +337,18 @@ jobs:
         working-directory: packages/litertlm_dart
         run: dart test
 
+      # litertlm_dart in a plain Dart program, no model: dart run, then dart
+      # build cli with the bundle moved away and run from /: an AOT
+      # build keeps or drops what the lookup needs on its own.
+      - name: litertlm_dart loads in plain Dart (dart run, moved dart build cli)
+        working-directory: packages/litertlm_dart/tool/plain_dart_check
+        run: |
+          dart pub get
+          dart run bin/plain_dart_check.dart
+          dart build cli -o "$RUNNER_TEMP/plain_dart_check_build"
+          mv "$RUNNER_TEMP/plain_dart_check_build/bundle" "$RUNNER_TEMP/plain_dart_check_moved"
+          cd / && "$RUNNER_TEMP/plain_dart_check_moved/bin/plain_dart_check"
+
       # Build twice: the macOS companion-dylib staging is patched by a
       # CocoaPods build phase that the always-out-of-date Flutter embed phase
       # clobbers. A single build masks the bug (the phase runs last on a clean
@@ -394,3 +418,91 @@ jobs:
       - name: Test flutter_edge_ai_diagnostics (Windows host group included)
         working-directory: packages/flutter_edge_ai_diagnostics
         run: flutter test
+
+  # litertlm_dart in a plain Dart program on Windows: `dart test` runs the
+  # hook and loads LiteRtLm.dll from the directory the Dart SDK copied the
+  # code assets into (native_asset_dir.dart), no model needed. Linux runs the
+  # same suites in tool/test_all.sh, macOS in the macOS job.
+  # Linux arm64 (Qualcomm IoT boards, arm servers): litertlm_dart's own
+  # suites, the adapter's host suites and the plain-Dart load check on a real
+  # arm64 host. Flutter publishes no linux-arm64 archive, so the SDK comes from
+  # a stable clone, which bootstraps an arm64 Dart SDK itself.
+  test-litertlm-dart-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter (stable clone)
+        run: |
+          git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Test litertlm_dart
+        working-directory: packages/litertlm_dart
+        run: dart test
+
+      - name: Test flutter_edge_ai_litertlm (host)
+        working-directory: packages/flutter_edge_ai_litertlm
+        run: flutter test
+
+      - name: litertlm_dart loads in plain Dart (dart run, moved dart build cli)
+        working-directory: packages/litertlm_dart/tool/plain_dart_check
+        run: |
+          dart pub get
+          dart run bin/plain_dart_check.dart
+          dart build cli -o "$RUNNER_TEMP/plain_dart_check_build"
+          mv "$RUNNER_TEMP/plain_dart_check_build/bundle" "$RUNNER_TEMP/plain_dart_check_moved"
+          cd / && "$RUNNER_TEMP/plain_dart_check_moved/bin/plain_dart_check"
+
+  test-litertlm-dart-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Test the plain-Dart load path of litertlm_dart
+        working-directory: packages/litertlm_dart
+        run: >-
+          dart test
+          test/ffi/native_asset_dir_test.dart
+          test/ffi/library_load_off_main_isolate_test.dart
+          test/ffi/windows_std_handles_test.dart
+          test/ffi/windows_std_handles_windows_test.dart
+          test/hook/macos_companions_test.dart
+
+      # dart run, then dart build cli with the bundle moved away and run from
+      # C:\ (a Windows AOT build once dropped what the lookup needs).
+      - name: litertlm_dart loads in plain Dart (dart run, moved dart build cli)
+        working-directory: packages/litertlm_dart/tool/plain_dart_check
+        shell: pwsh
+        run: |
+          dart pub get
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dart run bin/plain_dart_check.dart
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dart build cli -o "$env:RUNNER_TEMP\plain_dart_check_build"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Move-Item "$env:RUNNER_TEMP\plain_dart_check_build\bundle" "$env:RUNNER_TEMP\plain_dart_check_moved"
+          Set-Location C:\
+          & "$env:RUNNER_TEMP\plain_dart_check_moved\bin\plain_dart_check.exe"
+          exit $LASTEXITCODE

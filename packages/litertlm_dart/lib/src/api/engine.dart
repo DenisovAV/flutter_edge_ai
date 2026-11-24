@@ -27,6 +27,7 @@ import '../ffi/backend_preference.dart'
 import '../ffi/channel_content_filter.dart';
 import '../ffi/conversation_handles.dart';
 import '../ffi/litert_lm_client.dart';
+import '../ffi/native_asset_dir.dart' show liteRtLmOutsideFlutter;
 import '../ffi/npu_vendor_host.dart';
 import '../ffi/open_session_backing.dart';
 import '../runtime/constrained_decoding_hosts.dart';
@@ -39,6 +40,7 @@ import '../runtime/npu_stacks.dart';
 import '../runtime/runtime_log.dart';
 import '../runtime/types.dart';
 import 'backend.dart';
+import 'plain_dart_backends.dart';
 import 'config.dart';
 import 'conversation.dart';
 import 'message.dart';
@@ -221,6 +223,12 @@ class EngineHost {
   /// `Abi.current()`, as its `toString()`.
   String get abi => '${Abi.current()}';
 
+  /// Whether this is a plain Dart program, where this release runs LiteRT-LM
+  /// on the CPU only (plain_dart_backends.dart). It governs those refusals
+  /// only; where the libraries are looked up follows `liteRtLmOutsideFlutter`
+  /// itself (native_asset_dir.dart).
+  bool get outsideFlutter => liteRtLmOutsideFlutter;
+
   /// The NPU answers for [platform].
   LiteRtLmNpuHost npuHost(NpuPlatform? platform) =>
       LiteRtLmPlatformNpuHost(platform ?? const _DartNpuPlatform());
@@ -381,7 +389,9 @@ final class Engine {
   /// reached (both before any engine exists), and
   /// [LiteRtLmEngineCreateException] when LiteRT-LM refuses the engine, and
   /// [LiteRtLmLibraryException] when libLiteRtLm did not load or is not a
-  /// build this release drives. A bad argument is an [ArgumentError].
+  /// build this release drives. A bad argument is an [ArgumentError]. In a
+  /// plain Dart program (no Flutter) this release runs on the CPU only: a GPU
+  /// or NPU backend, for the engine or an encoder, is an [UnsupportedError].
   /// Creations run one at a time in the process: what one touches is
   /// process-wide (the Qualcomm dispatch's environment, the cache files).
   static Future<Engine> create(EngineConfig config) => _createPublic(config);
@@ -437,6 +447,17 @@ final class Engine {
         'must be 1 or more',
       );
     }
+    if (host.outsideFlutter) {
+      for (final (what, backend) in [
+        ('The engine', config.backend),
+        ('The vision encoder', config.visionBackend),
+        ('The audio encoder', config.audioBackend),
+      ]) {
+        if (plainDartBackendRefusal(what, backend) case final refusal?) {
+          throw UnsupportedError(refusal);
+        }
+      }
+    }
     final kind = backendKindOf(config.backend);
     final path = config.modelPath;
     final platform =
@@ -454,6 +475,15 @@ final class Engine {
     final supportImage = config.visionBackend != null;
     final supportAudio = config.audioBackend != null;
     final bundle = (read ?? await readEngineBundle(path)).info;
+    if (host.outsideFlutter) {
+      final refusal = plainDartFileRefusal(
+        path: path,
+        bundle: bundle,
+        supportImage: supportImage,
+        supportAudio: supportAudio,
+      );
+      if (refusal != null) throw UnsupportedError(refusal);
+    }
     // An encoder asked for where its file wants it is the file's choice: the
     // plan checks a request against the file, and the file's own default
     // passes by definition (its declared constraint, even without a stamp).

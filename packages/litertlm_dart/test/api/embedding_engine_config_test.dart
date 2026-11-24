@@ -18,8 +18,14 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     this.abiName, {
     this.stackMissing = false,
     this.unreachableBecause,
+    this.outsideFlutter = false,
   });
   final String abiName;
+
+  /// False by default: the placements below are those of a Flutter app. A
+  /// plain Dart program runs on the CPU only (the test of that).
+  @override
+  final bool outsideFlutter;
   final bool stackMissing;
   final String? unreachableBecause;
 
@@ -45,9 +51,22 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
       '/prepared/${vendor.name}';
 }
 
+/// The real host with a Flutter app's backend rules: the placements below are
+/// those of an app; a plain Dart program runs on the CPU only (the test of
+/// that).
+class _InFlutter extends EngineHost {
+  const _InFlutter();
+
+  @override
+  bool get outsideFlutter => false;
+}
+
 void main() {
   late Directory dir;
-  setUp(() => dir = Directory.systemTemp.createTempSync('eg2_config'));
+  setUp(() {
+    dir = Directory.systemTemp.createTempSync('eg2_config');
+    debugEngineHost = const _InFlutter();
+  });
   tearDown(() {
     debugEngineHost = null;
     dir.deleteSync(recursive: true);
@@ -359,4 +378,64 @@ void main() {
       );
     },
   );
+
+  test('a plain Dart program runs EmbeddingGemma 2 on the CPU only: a GPU or '
+      'NPU tower is refused by name, never moved', () async {
+    debugEngineHost = const _Host('macos_arm64', outsideFlutter: true);
+    final path = write('g.litertlm', eg2Container(vision: true, audio: true));
+    for (final (backend, vision, audio, named) in [
+      (const Backend.gpu(), null, null, 'EmbeddingGemma 2 on Backend.gpu()'),
+      (Backend.npu(), null, null, 'EmbeddingGemma 2 on Backend.npu()'),
+      (
+        null,
+        const Backend.gpu(),
+        null,
+        "EmbeddingGemma 2's vision tower on Backend.gpu()",
+      ),
+      (
+        null,
+        null,
+        Backend.npu(),
+        "EmbeddingGemma 2's audio tower on Backend.npu()",
+      ),
+    ]) {
+      await expectLater(
+        embedderConfigFor(
+          config(path, backend: backend, vision: vision, audio: audio),
+        ),
+        throwsA(
+          isA<EmbedderLoadException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains(named), contains('not supported outside Flutter')),
+          ),
+        ),
+        reason: named,
+      );
+    }
+    final placed = await embedderConfigFor(
+      config(path, vision: const Backend.cpu(), audio: const Backend.cpu()),
+    );
+    expect(placed.gpu, isFalse);
+    expect(placed.npuTarget, isNull);
+  });
+
+  test('a plain Dart program is pointed at the generic bundle, not at the '
+      'NPU, for a per-SoC bundle', () async {
+    debugEngineHost = const _Host('android_arm64', outsideFlutter: true);
+    final path = write(
+      'n.litertlm',
+      eg2Container(textStamp: ('Qualcomm', 'SM8650')),
+    );
+    await expectLater(
+      embedderConfigFor(config(path)),
+      throwsA(
+        isA<EmbedderLoadException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('generic EmbeddingGemma 2'), contains('CPU only')),
+        ),
+      ),
+    );
+  });
 }

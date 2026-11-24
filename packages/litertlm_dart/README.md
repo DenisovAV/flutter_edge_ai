@@ -10,7 +10,8 @@ the page's [`@litert-lm/core`](https://www.npmjs.com/package/@litert-lm/core)
 loads a `.litertlm` model, a `Conversation` sends it messages, an
 `EmbeddingEngine` embeds with EmbeddingGemma 2.
 
-Today it runs inside Flutter apps, and in a browser (see
+It runs inside Flutter apps, in plain Dart programs on the CPU (`dart run`,
+`dart test`, `dart build cli`), and in a browser (see
 [Where it runs today](#where-it-runs-today)).
 
 ```dart
@@ -545,7 +546,8 @@ so compare runs with the same `run.maxNumTokens`.
 ## Where it runs today
 
 The runtime and the hook run in Flutter apps on Android, iOS, macOS, Linux
-and Windows, and the web arm in a browser page. What an app does itself:
+and Windows, in plain Dart programs on macOS arm64, Linux and Windows, and
+the web arm in a browser page. What an app does itself:
 
 - **Android:** the GPU and the NPU load vendor libraries Android hands out
   only when the app's manifest declares them as `<uses-native-library
@@ -558,15 +560,68 @@ and Windows, and the web arm in a browser page. What an app does itself:
 - **macOS:** two companion frameworks, `GemmaModelConstraintProvider` and
   `LiteRtLmMetalAccelerator` (on the `native-v*` release as xcframework
   zips), must be embedded in the app's `Frameworks`; the hook does not do it
-  yet. Without them, and in a plain Dart program on macOS, the engine does
-  not load.
-- **Library lookup** follows a Flutter app bundle; `dart run` and
-  `dart build cli` layouts are not looked up yet.
+  yet. Without them the engine does not load.
 - **One `libLiteRtLm` per app:** another package that bundles its own
   `libLiteRtLm` through a build hook leaves which build runs undefined.
 
-A plain Dart program and the macOS companions are planned with a
-command-line example.
+### In a plain Dart program
+
+`dart run`, `dart test` and `dart build cli` bundle the native libraries
+through the build hook, as a Flutter build does; the library lookup follows
+the program's code assets. Measured with Gemma 4 E2B on the CPU on macOS
+arm64, Linux x64 and Windows x64 (Linux arm64 not yet run): `dart run`,
+`dart test`, and a `dart build cli` bundle moved elsewhere.
+[`example/cli`](example/cli) is a command-line chat:
+
+```sh
+cd example/cli
+dart run bin/litertlm_chat.dart gemma-4-E2B-it.litertlm
+dart build cli    # build/cli/<os>_<arch>/bundle/: bin/ + lib/, movable
+```
+
+The bundle's `lib/` holds the native libraries beside the program (on
+Linux the program itself is `lib/libdartaot*.so`, run by the executable in
+`bin/`); move the whole `bundle/` directory, not `bin/` alone.
+
+- **CPU only** in this release: `Backend.gpu()` and `Backend.npu()`, for
+  the engine, an encoder or EmbeddingGemma 2, are refused by name, never
+  moved to the CPU: `Engine.create` throws an `UnsupportedError`,
+  `EmbeddingEngine.create` an `EmbedderLoadException`. So is a file the CPU
+  cannot run (one compiled for an NPU, or whose model or enabled encoder
+  declares other backends). GPU delegates a program sets up itself through
+  the raw LiteRT bindings are not checked.
+- **macOS:** the define below bundles the companion library as a code asset
+  instead of a Flutter app's framework. It goes in the pubspec.yaml of the
+  package you run, the root of its pub resolution, and never in a
+  resolution that also holds a Flutter app (a pub workspace with an app in
+  it): give the command-line program its own pubspec. A Flutter app built
+  with it refuses to load LiteRT-LM, naming the define.
+
+  ```yaml
+  hooks:
+    user_defines:
+      litertlm_dart:
+        macos_companions: code_assets
+  ```
+
+- **macOS, `dart run` and `dart test`:** the Dart SDK writes each library's
+  path into the library, and Google's prebuilt constraint provider has room
+  for a short one only. Dart 3.14 and later put the libraries in a fresh
+  temporary directory, which (`$TMPDIR`, symbolic links resolved) must be 65
+  characters or shorter: macOS's default fits, otherwise run with
+  `TMPDIR=/tmp`. Dart 3.12 and 3.13 put them in the package's
+  `.dart_tool/lib/`, so the package's path must be 80 characters or
+  shorter. The build hook refuses a longer one, naming the fix. `dart build
+  cli` is not affected.
+- **Copies:** each `dart run` and `dart test` copies the libraries into the
+  temporary directory (Dart 3.14 and later): about 50 MB on macOS, 96 MB on
+  Linux and 243 MB on Windows, whose libraries include the Intel NPU stack
+  (OpenVINO and TBB, 120 MB) and the DirectX shader compiler. A `dart build
+  cli` bundle carries the same.
+- **Linux:** on the CPU LiteRT still loads its GPU accelerator and Dawn from
+  the bundle (they need no Vulkan to load); nothing runs on them.
+- `dart compile exe` runs no build hooks, so it cannot bundle LiteRT-LM; use
+  `dart build cli`.
 
 ## Build options
 

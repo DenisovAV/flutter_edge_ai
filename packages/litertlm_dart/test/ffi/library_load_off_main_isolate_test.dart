@@ -3,8 +3,6 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:litertlm_dart/src/ffi/litert_lm_client.dart';
-import 'package:litertlm_dart/src/ffi/macos_load_error.dart'
-    show macOSLiteRtLmFramework;
 import 'package:litertlm_dart/src/runtime/load_errors.dart'
     show LibraryLoadFailure;
 import 'package:test/test.dart';
@@ -84,6 +82,24 @@ void main() {
     };
     final client = LiteRtLmFfiClient();
 
+    // `dart test` is a plain Dart program. On macOS a code-asset build takes
+    // the `macos_companions: code_assets` define, which this package's own
+    // test run does not set: the load is refused, naming it, before anything
+    // is loaded (a preload of the framework's name could load a stray copy).
+    if (Platform.isMacOS) {
+      await expectLater(
+        client.initialize(modelPath: '/no/such/model.litertlm'),
+        throwsA(
+          isA<LibraryLoadFailure>().having(
+            (e) => '$e',
+            'message',
+            contains('macos_companions: code_assets'),
+          ),
+        ),
+      );
+      expect(preloaded, isEmpty);
+      return;
+    }
     await expectLater(
       client.initialize(modelPath: '/no/such/model.litertlm'),
       throwsA(isA<_Preloaded>()),
@@ -91,35 +107,54 @@ void main() {
           'the test host has no LiteRT-LM, so a DynamicLibrary.open before '
           "the system loader would have failed with the Dart loader's error",
     );
-    final libDir = '${File(Platform.resolvedExecutable).parent.path}/lib';
-    final expected = switch (Platform.operatingSystem) {
-      'macos' => macOSLiteRtLmFramework,
-      'linux' => '$libDir/libStreamProxy.so',
-      'windows' => 'StreamProxy.dll',
+    // On Linux and Windows the libraries are opened by absolute path from the
+    // directory the Dart SDK copied the code assets into (a fresh
+    // `dart_native_assets_*/lib` since Dart 3.14, the package's
+    // `.dart_tool/lib` before).
+    final assetDir = RegExp(
+      r'[/\\](dart_native_assets_[^/\\]+[/\\]lib|\.dart_tool[/\\]lib)[/\\]',
+    );
+    final Matcher? expected = switch (Platform.operatingSystem) {
+      'linux' => allOf(
+        startsWith('/'),
+        matches(assetDir),
+        endsWith('/libStreamProxy.so'),
+      ),
+      'windows' => allOf(matches(assetDir), endsWith(r'\StreamProxy.dll')),
       _ => null,
     };
     if (expected != null) {
-      expect(preloaded, [
+      expect(
+        preloaded.first,
         expected,
-      ], reason: 'the first library the platform code opens, by its own path');
+        reason: 'the first library the platform code opens, by its own path',
+      );
+      expect(preloaded, hasLength(1));
     }
   });
 
-  test('a loader set on the calling isolate is the one the warm-up isolate '
-      'uses', () async {
-    // The real runner: a spawned isolate starts with its own copy of every
-    // top-level variable, so the loader has to be handed over.
-    offMainIsolate = Isolate.run;
-    preloadNativeLibrary = (path) => throw _Preloaded(path);
+  test(
+    'a loader set on the calling isolate is the one the warm-up isolate '
+    'uses',
+    () async {
+      // The real runner: a spawned isolate starts with its own copy of every
+      // top-level variable, so the loader has to be handed over.
+      offMainIsolate = Isolate.run;
+      preloadNativeLibrary = (path) => throw _Preloaded(path);
 
-    await expectLater(
-      LiteRtLmFfiClient().initialize(modelPath: '/no/such/model.litertlm'),
-      throwsA(isA<_Preloaded>()),
-      reason:
-          'with the default loader the warm-up isolate would go on to '
-          "DynamicLibrary.open and fail with the Dart loader's error",
-    );
-  });
+      await expectLater(
+        LiteRtLmFfiClient().initialize(modelPath: '/no/such/model.litertlm'),
+        throwsA(isA<_Preloaded>()),
+        reason:
+            'with the default loader the warm-up isolate would go on to '
+            "DynamicLibrary.open and fail with the Dart loader's error",
+      );
+    },
+    skip: Platform.isMacOS
+        ? "this package's own dart test on macOS sets no macos_companions "
+              'define, so the load is refused before any library is loaded'
+        : false,
+  );
 
   test('a failed system load says why', () {
     if (Platform.isWindows) return;

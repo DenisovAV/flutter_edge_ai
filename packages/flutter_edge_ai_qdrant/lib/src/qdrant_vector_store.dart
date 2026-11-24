@@ -1316,6 +1316,48 @@ final class QdrantVectorStore extends VectorStoreRepository {
   }
 
   @override
+  bool get supportsRemoveWhere => true;
+
+  @override
+  Future<int> removeDocumentsWhere(Filter filter) async {
+    if (filter.isEmpty) {
+      throw ArgumentError.value(
+        filter,
+        'filter',
+        'is empty, so it would match every document; use clear()',
+      );
+    }
+    // Null: every condition constrains nothing (a range with no bound, a
+    // range on a text field, excluding an empty set, or only undeclared
+    // fields), so every document would match: refused like an empty filter.
+    final filterJson = FilterCodec.encode(filter, _filterSchema);
+    if (filterJson == null) {
+      throw ArgumentError.value(
+        filter,
+        'filter',
+        'constrains nothing, so it would match every document; use clear()',
+      );
+    }
+    _assertUsable('removeDocumentsWhere');
+    final lease = await _requireEmbeddingProfile('removeDocumentsWhere');
+    final checkpoint = qdrantProfileOperationCheckpointForTesting;
+    if (checkpoint != null) await checkpoint('removeDocumentsWhere');
+    _assertProfileLeaseCurrent(lease, 'removeDocumentsWhere');
+    final c = _client;
+    if (c == null) return 0; // nothing was ever written
+    try {
+      // RagIndex runs this with no other operation on the index, so the count
+      // is what the delete removes.
+      final matched = await c.count(filterJson: filterJson);
+      if (matched == 0) return 0;
+      await c.deleteByFilter(filterJson);
+      return matched;
+    } on QdrantException catch (e) {
+      throw VectorStoreException('removeDocumentsWhere failed', e);
+    }
+  }
+
+  @override
   Future<List<RetrievalResult>> searchSimilar({
     required List<double> queryEmbedding,
     required int topK,

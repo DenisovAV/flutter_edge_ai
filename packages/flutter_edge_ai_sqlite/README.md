@@ -174,6 +174,11 @@ a no-op, and with no `filterSchema` it ignores filters entirely.
 Supported operators: `=`, `!=`, `>`, `>=`, `<`, `<=`, `BETWEEN`, `IN`
 (`FieldEquals`, `FieldRange`, `FieldMatchAny`); max 16 declared columns.
 
+`RagIndex.removeWhere` (from 2.3.0, native and web) removes the documents a
+filter matches, in one transaction with the text index, and returns how many
+it removed. The filter means what it means for search; one that constrains
+nothing (no WHERE) is refused with `ArgumentError`, as an empty one is.
+
 ## Text search (FTS5)
 
 `VectorStoreSpec(enableTextSearch: true)` adds an SQLite

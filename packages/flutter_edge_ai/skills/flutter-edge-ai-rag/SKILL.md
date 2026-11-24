@@ -762,6 +762,14 @@ batch: it is required for qdrant durability, a Web SQLite durability fence,
 and a no-op on native SQLite. Every field a `Filter` names must be declared in
 `filterSchema`; an undeclared one throws `ArgumentError`.
 
+`removeWhere(filter)` (rag 1.3.0, sqlite 2.3.0, qdrant 2.3.0) removes every
+document the filter matches and returns the count; it also drops them from the
+text index. To re-index a file, declare a field such as `source`, set it on
+every chunk, and remove by it before adding the new chunks. An empty filter,
+or one that constrains nothing (an unbounded range, a range on a text field,
+excluding an empty set), throws `ArgumentError` (that is `clear()`); a store without it
+(`supportsRemoveWhere` false) throws `UnsupportedError`.
+
 Chunk text below the embedder's input limit,
 `(await FlutterEdgeAi.getActiveEmbedder()).maxInputTokens` — 256 tokens for the
 EmbeddingGemma seq256 file above, task prefix, BOS and EOS included. A longer

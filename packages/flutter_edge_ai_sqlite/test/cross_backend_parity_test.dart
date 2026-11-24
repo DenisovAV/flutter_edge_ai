@@ -126,6 +126,82 @@ void main() {
         expect(await ids(q, c.filter), want, reason: 'qdrant-edge');
       });
     }
+
+    // removeWhere over the same table: a filter removes exactly what it
+    // returns from search, and the count says so, on both stores.
+    Future<List<String>> all(VectorStoreRepository store) async {
+      final hits = await store.searchSimilar(
+        queryEmbedding: embedding,
+        topK: docs.length,
+        threshold: -1,
+      );
+      return hits.map((h) => h.id).toList()..sort();
+    }
+
+    for (final c in cases) {
+      test('removeWhere: ${c.name}', () async {
+        // A filter that constrains nothing is refused on both stores, with
+        // nothing removed; the rest remove exactly what search returns.
+        final refused = removeWhereRefused.contains(c.name);
+        final kept = [
+          for (final d in docs)
+            if (refused || !c.expected.contains(d.id)) d.id,
+        ]..sort();
+        for (final (store, name) in [
+          (sqlite, 'sqlite-vec'),
+          if (qdrant case final q?) (q, 'qdrant-edge'),
+        ]) {
+          if (refused) {
+            await expectLater(
+              store.removeDocumentsWhere(c.filter),
+              throwsArgumentError,
+              reason: name,
+            );
+          } else {
+            expect(
+              await store.removeDocumentsWhere(c.filter),
+              c.expected.length,
+              reason: name,
+            );
+          }
+          expect(await all(store), kept, reason: name);
+        }
+      });
+    }
+
+    test('removeWhere: a filter that constrains nothing is refused', () async {
+      for (final store in [sqlite, ?qdrant]) {
+        for (final f in unconstrainedFilters) {
+          await expectLater(
+            store.removeDocumentsWhere(f),
+            throwsArgumentError,
+            reason: '${store.runtimeType} $f',
+          );
+          expect(await all(store), hasLength(docs.length));
+        }
+      }
+    });
+
+    test(
+      'removeWhere: a filter that can match nothing removes nothing',
+      () async {
+        for (final store in [sqlite, ?qdrant]) {
+          for (final f in [
+            Filter(mustNot: [FieldRange(key: 'price')]),
+            Filter(
+              should: [FieldMatchAny(key: 'lang', values: [])],
+            ),
+          ]) {
+            expect(
+              await store.removeDocumentsWhere(f),
+              0,
+              reason: '${store.runtimeType} $f',
+            );
+            expect(await all(store), hasLength(docs.length));
+          }
+        }
+      },
+    );
   }, skip: vec0Skip);
 
   // Not a decoration. Three review passes found nine cross-backend defects, and

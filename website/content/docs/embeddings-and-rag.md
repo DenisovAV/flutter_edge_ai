@@ -894,6 +894,22 @@ match ^[A-Za-z][A-Za-z0-9_]*$ and cannot reuse **id**, **embedding**,
 **content**, **metadata**, **distance**, or **k**; this narrower set is portable
 to Qdrant.
 
+**removeWhere** (rag 1.3.0, sqlite 2.3.0, qdrant 2.3.0) removes every document
+whose metadata matches a filter and returns how many it removed. Only declared
+fields can be used, so re-indexing a file needs a field such as **source** set
+on every chunk added from it:
+
+```dart
+final removed = await index.removeWhere(
+  Filter(must: [FieldEquals(key: 'source', value: 'notes/a.md')]),
+);
+```
+
+An empty filter throws **ArgumentError** (use **clear()** to remove
+everything), and so does one that constrains nothing: a range with no bound,
+a range on a text field, excluding an empty set. A removed document also leaves the text index, and a store that
+does not implement it throws **UnsupportedError**.
+
 ## Text and hybrid search
 
 A text index ranks documents by the words they contain, which finds names,
@@ -948,8 +964,8 @@ share its future across widgets. This is mandatory on Web, where the SQLite
 provider holds an exclusive Web Lock for the location until **dispose()**.
 
 **flush()** is required for qdrant-edge, drains IndexedDB for Web SQLite, and is
-a no-op for native SQLite. **clear()** is an exclusive operation and preserves
-the binding.
+a no-op for native SQLite. **clear()** and **removeWhere()** are exclusive
+operations; **clear()** preserves the binding.
 
 ## Choosing a store
 

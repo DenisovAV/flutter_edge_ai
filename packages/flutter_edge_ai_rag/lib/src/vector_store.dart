@@ -213,6 +213,26 @@ abstract base class VectorStoreRepository {
 
   Future<void> removeDocument({required String id});
 
+  /// Whether this store implements [removeDocumentsWhere]. Defaults to false.
+  bool get supportsRemoveWhere => false;
+
+  /// Removes every document whose metadata matches [filter] and returns how
+  /// many it removed. Each removed document also leaves the location's text
+  /// index, when it has one.
+  ///
+  /// `RagIndex` calls this only with a non-empty [filter] whose fields are all
+  /// declared in [filterSchema], and with no other operation on the index
+  /// running, so the count is exactly what was removed. An implementation
+  /// throws [ArgumentError] rather than remove every document when [filter]
+  /// is empty or constrains nothing (a range with no bound, a range on a text
+  /// field, excluding an empty set, or only undeclared fields).
+  ///
+  /// Throws [UnsupportedError] when [supportsRemoveWhere] is false: the
+  /// default implementation throws it whatever the filter.
+  Future<int> removeDocumentsWhere(Filter filter) => Future.error(
+    UnsupportedError('$runtimeType does not implement removeWhere.'),
+  );
+
   /// Conditions on fields not declared in [filterSchema] have no effect at
   /// this level; `RagIndex` refuses them before calling this. [threshold] may
   /// be negative: hybrid search passes `-double.maxFinite` to keep every

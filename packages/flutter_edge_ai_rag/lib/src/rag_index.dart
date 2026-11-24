@@ -324,6 +324,42 @@ final class RagIndex {
     return _accept(() => _gate.runShared(() => _store.removeDocument(id: id)));
   });
 
+  /// Removes every document whose metadata matches [filter] and returns how
+  /// many it removed.
+  ///
+  /// Only fields declared in the spec's `filterSchema` can be used
+  /// ([ArgumentError] otherwise), so removing what one source file produced
+  /// needs a declared field such as `source`, set on every document added
+  /// from it. An empty [filter] is an [ArgumentError]: [clear] removes every
+  /// document. So is a filter that constrains nothing, which the store
+  /// refuses: a range with no bound, a range on a text field, excluding an
+  /// empty set. Runs with no other operation on this index, so the count is
+  /// exactly what was removed.
+  ///
+  /// Fails with [UnsupportedError] when the index's store does not implement
+  /// it (`VectorStoreRepository.supportsRemoveWhere`).
+  Future<int> removeWhere(Filter filter) => Future.sync(() {
+    _ensureUsable();
+    if (filter.isEmpty) {
+      throw ArgumentError.value(
+        filter,
+        'filter',
+        'is empty, so it would match every document; use clear() to remove '
+            'them all',
+      );
+    }
+    _validateFilter(filter);
+    if (!_store.supportsRemoveWhere) {
+      throw UnsupportedError(
+        'The vector store behind this RagIndex (${_store.runtimeType}) does '
+        'not implement removeWhere().',
+      );
+    }
+    return _accept(
+      () => _gate.runExclusive(() => _store.removeDocumentsWhere(filter)),
+    );
+  });
+
   Future<VectorStoreStats> stats() =>
       _accept(() => _gate.runShared(_store.getStats));
 

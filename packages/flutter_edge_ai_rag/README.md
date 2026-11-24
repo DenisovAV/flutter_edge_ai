@@ -156,6 +156,26 @@ final vectors = await rag.openVectors(
 
 `addVector` and `searchVector` also work on an index opened with an embedder.
 
+## Removing documents by filter
+
+`removeWhere` (rag 1.3.0, sqlite 2.3.0, qdrant 2.3.0) removes every document
+whose metadata matches a `Filter` and returns how many it removed. Only fields
+declared in `filterSchema` can be used, so re-indexing a file needs a field
+such as `source` set on every chunk added from it:
+
+```dart
+final removed = await index.removeWhere(
+  Filter(must: [FieldEquals(key: 'source', value: 'notes/a.md')]),
+);
+```
+
+An empty filter throws `ArgumentError` (use `clear()` to remove everything),
+and so does one that constrains nothing: a range with no bound, a range on a
+text field, excluding an empty set.
+It runs with no other operation on the index, so the count is exactly what was
+removed, and a removed document also leaves the text index. A store that does
+not implement it throws `UnsupportedError`.
+
 ## Text and hybrid search
 
 A text index ranks documents by the words they contain, which finds names,
@@ -307,8 +327,8 @@ final migrated = await rag.openVectors(
 ## Ownership and durability
 
 `RagIndex` owns and closes its vector store. The embedder is always borrowed.
-Normal reads and writes may overlap; `flush`, `clear`, and `dispose` are
-exclusive barriers. Dispose rejects new work immediately and waits for work
+Normal reads and writes may overlap; `flush`, `clear`, `removeWhere`, and
+`dispose` are exclusive barriers. Dispose rejects new work immediately and waits for work
 already accepted by the index. `clear()` removes documents but intentionally
 keeps the persistent binding: one location remains one embedding space and one
 document modality for its lifetime.
@@ -364,3 +384,9 @@ serve) and `searchText`. It reads `VectorStoreSpec.enableTextSearch` in
 keeps an existing text index in step with every write either way. Hybrid
 search and fusion live in `RagIndex`, so the store implements only the text
 leg.
+
+Removing by filter is optional too. A store that implements it overrides
+`supportsRemoveWhere` and `removeDocumentsWhere`, which returns the number of
+documents removed and drops them from the text index as well. `RagIndex`
+passes it only a non-empty filter whose fields are all declared, with no other
+operation running; the default throws `UnsupportedError`.

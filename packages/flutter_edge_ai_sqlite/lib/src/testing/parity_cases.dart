@@ -251,3 +251,32 @@ final cases = <Case>[
 /// A vector that is the same for every document, so distance never decides the
 /// result set and any difference is the filter's doing.
 final embedding = List<double>.filled(4, 0.5);
+
+/// The [cases] whose filter constrains nothing: search returns every document
+/// for them, and `removeWhere` refuses them with an [ArgumentError] instead of
+/// removing everything.
+const removeWhereRefused = {
+  'an always-true arm makes the whole should bucket true',
+  'excluding an empty set excludes nothing',
+};
+
+/// Non-empty filters that constrain nothing over [schema], each refused by
+/// `removeWhere` the way an empty filter is. The last one names only an
+/// undeclared field: `RagIndex` refuses it first, a store called directly
+/// refuses it too.
+final unconstrainedFilters = <Filter>[
+  Filter(must: [FieldRange(key: 'price')]),
+  Filter(must: [FieldRange(key: 'lang', gte: 1)]),
+  Filter(
+    should: [
+      FieldEquals(key: 'lang', value: 'en'),
+      FieldRange(key: 'price'),
+    ],
+  ),
+  Filter(
+    mustNot: [FieldMatchAny(key: 'lang', values: [])],
+  ),
+  Filter(
+    must: [FieldEquals(key: 'nosuchfield', value: 'x')],
+  ),
+];

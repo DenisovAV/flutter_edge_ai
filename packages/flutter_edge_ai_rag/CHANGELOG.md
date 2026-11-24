@@ -1,3 +1,6 @@
+## Unreleased
+- `RagIndex.removeWhere(filter)`: remove documents by metadata filter, returns the count (#860).
+
 ## 1.2.0
 - Text and hybrid (RRF) search: `searchText`, `searchHybrid`, `VectorStoreSpec.enableTextSearch`.
 

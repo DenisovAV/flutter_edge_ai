@@ -148,6 +148,14 @@ void main() {
       expect(() => machOLoadCommands(bytes), throwsFormatException);
     });
 
+    test('a sizeofcmds no library has is refused before any read', () {
+      final header = _machO([]);
+      ByteData.sublistView(header).setUint32(20, (1 << 20) + 1, Endian.little);
+      expect(() => machOHeaderAndCommandsLength(header), throwsFormatException);
+      ByteData.sublistView(header).setUint32(20, 1 << 20, Endian.little);
+      expect(machOHeaderAndCommandsLength(header), 32 + (1 << 20));
+    });
+
     test('the header length is not taken from a non-Mach-O', () {
       expect(() => machOHeaderAndCommandsLength(fat), throwsFormatException);
     });

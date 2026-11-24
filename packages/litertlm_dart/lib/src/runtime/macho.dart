@@ -25,12 +25,23 @@ typedef MachOLoadCommand = ({int cmd, int offset, int size});
 /// How many bytes from the start of the file hold the header and the load
 /// commands of [header], the file's first [machOHeaderSize] bytes or more.
 /// Throws a [FormatException] for anything but a 64-bit little-endian
-/// Mach-O, before any length is taken from it.
+/// Mach-O, before any length is taken from it, and for `sizeofcmds` above
+/// [machOMaxCommandsSize], before anything is allocated for it.
 int machOHeaderAndCommandsLength(Uint8List header) {
   _checkMagic(header);
-  return machOHeaderSize +
-      ByteData.sublistView(header).getUint32(20, Endian.little);
+  final sizeofcmds = ByteData.sublistView(header).getUint32(20, Endian.little);
+  if (sizeofcmds > machOMaxCommandsSize) {
+    throw FormatException(
+      'sizeofcmds of $sizeofcmds bytes, more than any library this reads',
+    );
+  }
+  return machOHeaderSize + sizeofcmds;
 }
+
+/// The most load-command bytes [machOHeaderAndCommandsLength] accepts: a
+/// read is sized by it, and libLiteRtLm's are under 4 KB (3,856 bytes in
+/// native-v0.19.1-c).
+const machOMaxCommandsSize = 1 << 20;
 
 void _checkMagic(Uint8List bytes) {
   if (bytes.length < machOHeaderSize ||

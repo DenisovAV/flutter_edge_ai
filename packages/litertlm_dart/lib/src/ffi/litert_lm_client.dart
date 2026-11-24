@@ -2094,7 +2094,10 @@ class LiteRtLmFfiClient {
         'libLiteRtLm.so',
       ]) {
         // A plain Dart program runs on the CPU only (plain_dart_backends.dart),
-        // so it does not load the GPU accelerator (and its Dawn) at all.
+        // so it does not preload the GPU accelerator. LiteRT's GPU registry
+        // still loads it itself (and Dawn through its NEEDED): libLiteRt.so's
+        // RUNPATH $ORIGIN finds it among the code assets (measured on a
+        // Linux x64 VM: both mapped, no libvulkan).
         if (assetDir != null && name == 'libLiteRtWebGpuAccelerator.so') {
           continue;
         }
@@ -2141,7 +2144,9 @@ class LiteRtLmFfiClient {
           >('stream_proxy_load_global');
       for (final name in windowsPreloadLibraries) {
         // A plain Dart program runs on the CPU only (plain_dart_backends.dart),
-        // so it does not load the GPU accelerator (and its Dawn) at all.
+        // so it does not preload the GPU accelerator. LiteRT's GPU registry
+        // looks it up by bare name, which does not search the code assets'
+        // directory: on a Panther Lake PC no accelerator or Dawn DLL loaded.
         if (assetDir != null && name == 'libLiteRtWebGpuAccelerator.dll') {
           continue;
         }

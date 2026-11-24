@@ -975,7 +975,7 @@ operations; **clear()** preserves the binding.
 |---|---|---|
 | Platforms | Android, iOS, macOS, Linux, Windows | Android, iOS, Web, macOS, Linux, Windows |
 | Search | HNSW approximate | Exact KNN inside SQLite |
-| Text search | — | FTS5 (BM25), hybrid with RRF |
+| Text search | BM25 (2.2.0), hybrid with RRF | FTS5 (BM25), hybrid with RRF |
 | Best fit | Native throughput at larger scale | Web, portability, deterministic exact results |
 | Provider ID | qdrant | sqlite |
 

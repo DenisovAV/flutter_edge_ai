@@ -1,15 +1,17 @@
 // LiteRT-LM's Kotlin/Swift `Conversation`: messages in, a streamed reply out,
 // over one of the conversation handles of `ffi/conversation_handles.dart`
-// (its own native conversation, or a turn of the shared one).
+// (its own native conversation, or a turn of the shared one) or, on the web,
+// over `web/web_conversation_handle.dart`. No dart:ffi, no dart:io: the same
+// class on every platform.
 
 import 'dart:async';
 import 'dart:convert' show JsonUnsupportedObjectError, jsonEncode;
 
-import '../ffi/litert_lm_client.dart'
-    show ConversationHandle, NativeBenchmark, NativeLastTurnEnd;
 import '../ffi/native_turns.dart'
     show LiteRtLmTurnCancelledException, LiteRtLmTurnClosedException;
-import '../ffi/send_options.dart';
+import '../runtime/conversation_handle.dart'
+    show ConversationHandle, NativeBenchmark, NativeLastTurnEnd;
+import '../runtime/send_options.dart';
 import '../runtime/errors.dart';
 import '../runtime/types.dart' show BenchmarkInfo;
 import 'config.dart';
@@ -30,7 +32,7 @@ final class ContextFullException extends LiteRtLmException {
 /// Native failed the turn, or cancelled it without being asked. The next
 /// message rebuilds the conversation from its history.
 final class TurnFailedException extends LiteRtLmException {
-  const TurnFailedException(super.message, {Object? cause}) : _cause = cause;
+  const TurnFailedException(super.message, {this._cause});
 
   final Object? _cause;
 }
@@ -54,6 +56,14 @@ Object? turnFailureCause(TurnFailedException e) => e._cause;
 /// turn keeps its message and the part of the reply that was generated,
 /// closed as a finished exchange; a turn that produced nothing, failed or did
 /// not fit is taken back.
+///
+/// On the web the runtime refuses every send after a stop, so the next message
+/// goes to a new runtime conversation built from the history, the stopped
+/// exchange put back. Thinking and template variables are the conversation's
+/// (a message that asks for others, or for a repetition penalty, a no-repeat
+/// n-gram, suppressed tokens or a thinking budget, ends with an
+/// [UnsupportedError]); there is no [ContextFullException] (the runtime's own
+/// error is a [TurnFailedException]).
 final class Conversation {
   Conversation._(
     this._handle, {
@@ -231,9 +241,11 @@ final class Conversation {
             if (!nativeEnded.isCompleted) nativeEnded.complete();
           });
         if (sub.isPaused) sub.resume();
-        // Bounded: the native turn layer already gives a stopped turn 2 s and
-        // says so when it does not end; this only keeps the cancel from
-        // waiting longer than that layer.
+        // Bounded: the native turn layer gives a stopped turn 2 s and says so
+        // when it does not end; this only keeps the cancel from waiting
+        // longer than that. On the web the handle's own drain timer (30 s)
+        // decides when a stopped generation is given up on, and the page
+        // lock stays held until then: this bound only lets the cancel return.
         return nativeEnded.future.timeout(
           const Duration(seconds: 5),
           onTimeout: sub.cancel,
@@ -320,19 +332,21 @@ final class Conversation {
     return TurnFailedException('$error', cause: error);
   }
 
-  /// What LiteRT-LM's benchmark reports about this conversation.
+  /// What LiteRT-LM's benchmark reports about this conversation. Refused on
+  /// the web with an [UnsupportedError]: the runtime reports it only in its
+  /// benchmark mode, which litertlm_dart does not turn on there.
   BenchmarkInfo getBenchmarkInfo() => _handle.getSessionMetrics();
 
   /// Ends the conversation. A reply still streaming ends with
-  /// [ConversationClosedException]; a later send is a [StateError].
-  Future<void> close() async {
-    if (_closed) return;
+  /// [ConversationClosedException]; a later send is a [StateError]. A second
+  /// call completes when the first does.
+  Future<void> close() {
     _closed = true;
-    _handle.close();
+    return _handle.close();
   }
 }
 
-/// A conversation over [handle], as [Engine] makes one.
+/// A conversation over [handle], as `Engine` makes one.
 Conversation newConversation(
   ConversationHandle handle, {
   required ConversationConfig config,

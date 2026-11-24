@@ -56,8 +56,7 @@ String streamStartFailureMessage({
   if (reason == null) {
     buffer.write(
       ' LiteRT-LM reported no reason here; '
-      'LiteRtLmLog.nativeLevel = LiteRtLmLogLevel.verbose (in flutter_edge_ai, '
-      'LiteRtLmEngine(nativeLogLevel: LiteRtLmLogLevel.verbose)) shows its log.',
+      'LiteRtLmLog.nativeLevel = LiteRtLmLogLevel.verbose shows its log.',
     );
   }
   return buffer.toString();

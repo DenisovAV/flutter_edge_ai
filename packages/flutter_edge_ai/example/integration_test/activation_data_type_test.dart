@@ -50,7 +50,7 @@
 /// otherwise the float32 test prints INCONCLUSIVE.
 ///
 /// On web only the default test runs. The web engine does not read
-/// `activationDataType` (`@litert-lm/core` 0.18.0 has no such setting), runs the
+/// `activationDataType` (`@litert-lm/core` has no such setting; litertlm_dart refuses it), runs the
 /// `-web.litertlm` files on its own GPU executor, and reports neither a backend
 /// nor session metrics, so no time to first token is printed there.
 ///
@@ -104,10 +104,11 @@ const _file = 'gemma-4-$_variant-it.litertlm';
 /// `--dart-define=MIN_PREFILL_RATIO=1.1`. Empty (the default) only prints it.
 const _minPrefillRatio = String.fromEnvironment('MIN_PREFILL_RATIO');
 
-/// The web engine takes only the `-web.litertlm` build of each model.
+/// The web engine takes each model's GPU export (the older `-web.litertlm`
+/// builds are withheld on @litert-lm/core 0.19.0).
 String get _url =>
     'https://huggingface.co/litert-community/gemma-4-$_variant-it-litert-lm/'
-    'resolve/main/${kIsWeb ? 'gemma-4-$_variant-it-web.litertlm' : _file}';
+    'resolve/main/${kIsWeb ? 'gemma-4-$_variant-it-gpu.litertlm' : _file}';
 
 Future<void>? _installed;
 

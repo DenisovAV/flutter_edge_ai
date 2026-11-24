@@ -3,6 +3,7 @@
 // choice, the LLM client and its conversation handles, the EmbeddingGemma 2
 // embedder. For this repository's packages only: no compatibility promise,
 // changed with any release. Apps use `package:litertlm_dart/litertlm_dart.dart`.
+// Native only (dart:ffi, dart:io); the web arm's are internal_web.dart.
 library;
 
 export 'internal.dart';
@@ -247,7 +248,7 @@ export 'src/bundle/litertlm_bundle_sampler.dart'
 export 'src/bundle/litertlm_generic_section.dart'
     show genericDataRange, maxGenericDataBytes;
 export 'src/ffi/conversation_handles.dart'
-    show concatenatedJsonObjects, nativeToolCalls;
+    show assistantTurnMessage, concatenatedJsonObjects, nativeToolCalls;
 export 'src/ffi/send_options.dart'
     show Constraint, ConversationExtras, SendOptions, sendExtraContext;
 export 'src/api/config.dart' show samplerFor;

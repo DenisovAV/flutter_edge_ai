@@ -7,16 +7,15 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'litertlm_flatbuffer.dart';
+import 'litertlm_generic_limits.dart';
+
+export 'litertlm_generic_limits.dart';
 
 /// `AnySectionDataType.GenericBinaryData` in `litertlm_header_schema.fbs`.
 const _genericBinaryData = 1;
 
 /// `VData.StringValue`: the union discriminator (NONE is 0).
 const _stringValue = 9;
-
-/// The largest section [readBundleGenericData] reads by default: a bigger
-/// range is taken for a corrupt file rather than read into memory.
-const maxGenericDataBytes = 4 << 20;
 
 /// The bytes of the `GenericBinaryData` section of the `.litertlm` file at
 /// [path] whose `name` item is [name], or null when it has none. Reads the

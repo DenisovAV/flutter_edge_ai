@@ -63,7 +63,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 | llama.cpp (`.gguf`) ³ | ✅ | ✅ ⁴ | ✅ | ✅ ⁴ | ✅ | ✅ |
 | Built-in AI | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 
-¹ Web `.litertlm` takes text input only — an image or audio message throws `UnsupportedError`; function calling and thinking work.
+¹ Web `.litertlm` runs on `@litert-lm/core` 0.19.0: text, function calling and thinking, and images and audio with Gemma 4 E2B's GPU export loaded with `supportImage`/`supportAudio` (without them an image or audio message throws `UnsupportedError`).
 
 ² CPU only: a GPU `.task` does not load on iOS; use a `.litertlm` for the iOS GPU.
 
@@ -80,8 +80,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.6.0
-  flutter_edge_ai_litertlm: ^1.20.0   # or any other engine from the table
+  flutter_edge_ai: ^2.7.2
+  flutter_edge_ai_litertlm: ^1.21.1   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with

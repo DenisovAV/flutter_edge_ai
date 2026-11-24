@@ -409,6 +409,15 @@
       "linux_x64": [],
       "linux_arm64": [],
       "windows_x64": [],
+      "web": []
+    },
+    "gemma-4-e2b-it/web-gpu": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
       "web": [
         "gpu"
       ]
@@ -526,9 +535,7 @@
       "linux_x64": [],
       "linux_arm64": [],
       "windows_x64": [],
-      "web": [
-        "gpu"
-      ]
+      "web": []
     },
     "lfm2.5-230m/int4": {
       "android_arm64": [

@@ -5,11 +5,14 @@ import 'catalog/litert_catalog.dart' show LiteRtLmModels;
 import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 import 'thinking_token_budget.dart';
-import 'web/litert_lm_web_inference.dart';
+import 'adapter/runtime_log_binding.dart';
+import 'adapter/web_inference_model.dart';
+import 'web/web_llm_engine.dart';
 
 /// Web LiteRT-LM (`@litert-lm/core`) inference engine. A REAL engine (not a
-/// stub): builds [LiteRtLmWebInferenceModel] from a [WebModelSourceResolver]
-/// it constructs itself via `forActiveModel()`. `createModel` is a pure factory
+/// stub): builds [LiteRtLmWebInferenceModel] over litertlm_dart's web engine,
+/// from a [WebModelSourceResolver] it constructs itself via
+/// `forActiveModel()`. `createModel` is a pure factory
 /// — core owns the singleton lifecycle via [InferenceModel.addCloseListener].
 class LiteRtLmEngine
     implements
@@ -29,8 +32,9 @@ class LiteRtLmEngine
   /// Read by the native engine only: the web runtime has no such setting.
   final LiteRtLmLogLevel? nativeLogLevel;
 
-  /// Checked as natively, then ignored: `@litert-lm/core` 0.18.0 takes no
-  /// thinking budget. A load with one set says so once per isolate, in debug.
+  /// Checked as natively, then ignored: the web runtime takes no thinking
+  /// budget (litertlm_dart refuses one there). A load with one set says so
+  /// once per isolate, in debug.
   final int? thinkingTokenBudget;
 
   @override
@@ -64,14 +68,22 @@ class LiteRtLmEngine
   ) async {
     checkThinkingTokenBudget(thinkingTokenBudget);
     if (thinkingTokenBudget != null) noticeThinkingTokenBudgetIgnoredOnWeb();
-    // config.multimodalOrder is not read: the web session sends text only and
-    // throws on an image or audio message (LiteRtLmWebSession.addQueryChunk).
-    // A web path that sends media must put them where the order says.
+    bindRuntimeLogToCore();
+    final sourceResolver = activeWebModelSource();
     return LiteRtLmWebInferenceModel(
-      sourceResolver: WebModelSourceResolver.forActiveModel(),
+      createEngine: () => createLiteRtLmWebEngine(
+        sourceResolver,
+        maxTokens: config.maxTokens,
+        supportImage: config.supportImage,
+        supportAudio: config.supportAudio,
+        maxNumImages: config.maxNumImages,
+      ),
       maxTokens: config.maxTokens,
       modelType: spec.modelType,
       maxConcurrentSessions: config.maxConcurrentSessions,
+      supportImage: config.supportImage,
+      supportAudio: config.supportAudio,
+      multimodalOrder: config.multimodalOrder,
       onClose: () {}, // core resets its state via addCloseListener
     );
   }

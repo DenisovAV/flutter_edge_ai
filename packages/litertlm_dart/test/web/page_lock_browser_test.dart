@@ -1,28 +1,24 @@
-// The LLM web session's half of the page lock (lib/src/web/
-// litert_lm_page_lock.dart): a generation holds the lock from before
+// The conversation's half of the page lock (lib/src/web/page_lock.dart): a
+// generation of a WebConversationHandle holds the lock from before
 // `sendMessageStreaming` until the JS stream has ENDED — through every chunk,
-// after a consumer that cancelled early (the session drains the stream), and
-// it lets go when the stream fails. A Dart-driven stub stands in for the
+// after a listener that left early (the handle drains the stream), and it
+// lets go when the stream fails. A Dart-driven stub stands in for the
 // `@litert-lm/core` Conversation, so each `iterator.next()` resolves when the
-// test says. The EmbeddingGemma 2 pass's half is the VM suite
-// test/litert_lm_page_lock_test.dart; both on the real runtime is
+// test says. The EmbeddingGemma 2 embedder's half is the VM suite
+// test/web/page_lock_test.dart; both on the real runtime is
 // example/integration_test/web_eg2_llm_test.dart.
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Run on the GCE VM:
-//   flutter test --platform chrome test/web/litert_lm_page_lock_web_test.dart
+// Run: dart test -p chrome test/web/page_lock_browser_test.dart
 @TestOn('browser')
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
-import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_page_lock.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web_inference.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:mutex/mutex.dart';
+import 'package:litertlm_dart/internal_web.dart';
+import 'package:test/test.dart';
 
 /// A Conversation whose stream advances one `next()` at a time, on command.
 final class _StubStream {
@@ -36,11 +32,13 @@ final class _StubStream {
     conversation =
         (JSObject()
               ..['sendMessageStreaming'] = ((JSAny? message) => iterator).toJS
-              ..['cancel'] = (() {}).toJS)
-            as LiteRtLmConversation;
+              ..['cancel'] = (() {}).toJS
+              ..['getTokenCount'] = (() => Future.value(0.toJS).toJS).toJS
+              ..['delete'] = (() => Future<void>.value().toJS).toJS)
+            as JsLiteRtLmConversation;
   }
 
-  late final LiteRtLmConversation conversation;
+  late final JsLiteRtLmConversation conversation;
   final _pending = <Completer<JSObject>>[];
 
   /// `next()` calls the session made that are still unanswered.
@@ -55,14 +53,21 @@ final class _StubStream {
       _pending.removeAt(0).completeError(StateError('generation failed'));
 }
 
-LiteRtLmWebSession _session(LiteRtLmConversation conversation) =>
-    LiteRtLmWebSession(
-      conversation: conversation,
-      modelType: ModelType.gemma4,
-      fileType: ModelFileType.litertlm,
-      generationMutex: Mutex(),
-      onClose: () {},
+WebConversationHandle _handle(JsLiteRtLmConversation conversation) =>
+    WebConversationHandle(
+      conversation,
+      enableThinking: false,
+      extraContext: const {},
+      onGeneration: () {},
+      rebuild: (_) => throw StateError('no rebuild in this suite'),
     );
+
+final _hi = jsonEncode({
+  'role': 'user',
+  'content': [
+    {'type': 'text', 'text': 'hi'},
+  ],
+});
 
 Future<void> _settle() async {
   for (var i = 0; i < 5; i++) {
@@ -74,12 +79,13 @@ Future<void> _settle() async {
 /// first chunk.
 Future<(_StubStream, StreamSubscription<String>)> _generate() async {
   final stub = _StubStream();
-  final session = _session(stub.conversation);
-  await session.addQueryChunk(const Message(text: 'hi', isUser: true));
-  final subscription = session.getResponseAsync().listen(
-    (_) {},
-    onError: (Object _) {}, // the failing-stream case
-  );
+  final handle = _handle(stub.conversation);
+  final subscription = handle
+      .chatRawMessage(_hi)
+      .listen(
+        (_) {},
+        onError: (Object _) {}, // the failing-stream case
+      );
   await _settle();
   expect(stub.waiting, 1, reason: 'the pump did not start');
   return (stub, subscription);
@@ -112,14 +118,14 @@ void main() {
     await subscription.cancel();
   });
 
-  test('a consumer that cancels early: the session drains the stream and '
+  test('a listener that cancels early: the handle drains the stream and '
       'holds the lock until it ends', () async {
     final (stub, subscription) = await _generate();
     await subscription.cancel();
     final other = _ask();
     stub.step(); // the chunk the pump was waiting for
     await _settle();
-    expect(stub.waiting, 1, reason: 'the session stopped reading the stream');
+    expect(stub.waiting, 1, reason: 'the handle stopped reading the stream');
     expect(other.granted(), isFalse, reason: 'released before the stream end');
     stub.step(done: true);
     await _settle();
@@ -135,5 +141,23 @@ void main() {
     expect(other.granted(), isTrue);
     (await other.lease).release();
     await subscription.cancel();
+  });
+
+  test('a send after close is an error on the stream, not a throw', () async {
+    final handle = _handle(_StubStream().conversation);
+    await handle.close();
+
+    final reply = handle.chatRawMessage(_hi);
+
+    await expectLater(
+      reply,
+      emitsError(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('closed'),
+        ),
+      ),
+    );
   });
 }

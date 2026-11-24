@@ -1,6 +1,6 @@
 ---
 title: LiteRT-LM
-description: The primary .litertlm engine — on-device inference over dart:ffi (LiteRT-LM C API) on all five native platforms plus a text-only web preview, with CPU / GPU / NPU acceleration and a LiteRT embedding backend.
+description: The primary .litertlm engine — on-device inference over dart:ffi (LiteRT-LM C API) on all five native platforms plus a web preview (text, images and audio with Gemma 4 E2B's GPU export), with CPU / GPU / NPU acceleration and a LiteRT embedding backend.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
@@ -35,14 +35,17 @@ EmbeddingGemma 1 / Gecko
 | iOS | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in via `qualcomm_npu`) |
 | Windows | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
-| Web | ⚠️ early preview via `@litert-lm/core` (text-only) |
+| Web | ⚠️ early preview via `@litert-lm/core` 0.19.0 (images and audio with Gemma 4 E2B's GPU export) |
 
-> **Web is a text-only preview.** It runs through `@litert-lm/core` (WebGPU/WASM)
-> and supports function calling and thinking, but **not** vision or audio; core
-> parses `<think>` tags from any model that emits them. Only the dedicated
-> `-web.litertlm` exports load (Gemma 4 and Gemma 3n today): a native `.litertlm`
-> installs on web and then fails at the first generation. Native platforms add
-> vision and audio. LoRA is not supported on any `.litertlm` path: a session
+> **Web is a preview.** It runs through `@litert-lm/core` 0.19.0 (WebGPU) and
+> supports function calling and thinking; core parses `<think>` tags from any
+> model that emits them. Gemma 4 E2B runs from its GPU export
+> (`LiteRtLmModels.gemma4E2bIt.webGpu`, 2.34 GB, installed with
+> `WebStorageMode.streaming`), with images and audio when the model loads with
+> `supportImage`/`supportAudio`; `maxNumImages` counts a whole conversation's
+> images there. Gemma 4's older `-web.litertlm` exports are withheld (the E2B
+> one answers a tool result with an empty reply on 0.19.0). A native
+> `.litertlm` installs on web and then fails at the first generation. LoRA is not supported on any `.litertlm` path: a session
 > `loraPath` throws `UnsupportedError`, and an adapter installed with
 > `withLora…` is not applied. Use a MediaPipe `.task` model, or natively a
 > `.gguf` through [llama.cpp](/docs/llama). On web you
@@ -55,8 +58,8 @@ engines your app uses:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.7.0
-  flutter_edge_ai_litertlm: ^1.21.0   # .litertlm inference engine
+  flutter_edge_ai: ^2.7.2
+  flutter_edge_ai_litertlm: ^1.21.1   # .litertlm inference engine
 ```
 
 ```dart
@@ -416,8 +419,8 @@ exception. Formats cannot be combined with tools or thinking.
 | iOS arm64 CPU / Metal | ✅ |
 | NPU, Web, and every unlisted row | ❌ refused |
 
-The Web `.litertlm` runtime remains on `@litert-lm/core` 0.18 and has no
-constraint API. NPU support is refused per vendor until that exact row passes a
+The Web `.litertlm` runtime (`@litert-lm/core` 0.19.0) has no constraint
+API. NPU support is refused per vendor until that exact row passes a
 discriminating device run; support never silently falls back to unconstrained
 decoding.
 
@@ -447,7 +450,8 @@ CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, Qualcomm or Google Tensor
 NPUs on Android, and Intel NPUs on Windows. Linux Vulkan, Windows D3D12, iOS,
 Android CPU/PowerVR/MediaTek, and unverified Linux arm64 accelerators use virtual
 sessions that replay full messages, including image and audio parts, into one
-shared conversation. The web runtime is also virtual but remains text-only.
+shared conversation. On the web each session has its own runtime
+conversation, rebuilt from its history after a stop mid-reply.
 Generation remains serialized on every backing.
 
 Hybrid models such as LFM2 rebuild from full messages when recovery is needed
@@ -458,14 +462,15 @@ third session onward (the first two reused freed memory). Set
 
 ## Web setup
 
-`.litertlm` web inference runs via `@litert-lm/core`. The ESM doesn't assign
+`.litertlm` web inference runs via `@litert-lm/core` 0.19.0 (0.18.0 refuses
+the GPU export: "Unsupported backend: 2"). The ESM doesn't assign
 window globals, so add this handshake to your `web/index.html` `<head>` — Dart
 awaits `window.litertLmReady` (which resolves to the `Engine` constructor):
 
 ```
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
   window.Engine = m.Engine;
   window.EmbeddingEngine = m.EmbeddingEngine;
   return m.Engine;
@@ -478,14 +483,14 @@ the browser, on WebGPU — text and images, and from 1.13.2 audio and combined
 inputs. A page without it fails the
 embedder's load with an `EmbeddingLoadException` naming the line, and so does a
 browser without WebGPU: there is no CPU fallback, because the CPU (WebAssembly)
-path of `@litert-lm/core` 0.18.0 cannot read these bundles' external weights.
+path of `@litert-lm/core` cannot read these bundles' external weights.
 An LLM and an embedder on the same page share one WebAssembly module and one
 WebGPU device, and take turns: an embedding waits while a reply is being
 generated, and a reply waits for an embedding in progress. The module has 4 GB
-of memory, and the 440m's vision encoder does not fit in it next to Gemma 4
-E2B (measured): whichever loads second fails. Close the LLM before loading the
-440m with images, or embed text only — the 270m, or the 440m without images,
-loads next to the LLM.
+of memory; on 0.19.0 the 440m with its vision encoder loads next to Gemma 4
+E2B's GPU export and embeds while a reply streams (measured 2026-11-23).
+Should a load not fit, the embedder's `EmbeddingLoadException` says to close
+the LLM first.
 
 Native platforms need no web setup.
 

@@ -43,6 +43,8 @@ import 'config.dart';
 import 'conversation.dart';
 import 'message.dart';
 
+export '../runtime/litert_lm_log_level.dart' show liteRtLmNativeLogLevel;
+
 /// The smallest context window a CPU or GPU `.litertlm` engine is created
 /// with: the `kv_cache_max_len` the published CPU/GPU bundles bake. Below it
 /// the native KV-cache resize underflows and generation fails to allocate
@@ -204,8 +206,7 @@ final class _DartNpuPlatform implements NpuPlatform {
   ) => throw NpuDispatchUnavailableException(
     'the ${vendor.label} NPU libraries need a dispatch directory on Android, '
     'which plain Dart cannot prepare: pass Backend.npu(dispatchDir:) with a '
-    "directory holding that vendor's libraries only (flutter_edge_ai_litertlm "
-    'prepares one through its platform channel)',
+    "directory holding that vendor's libraries only, copied out of the APK",
   );
 
   @override
@@ -308,11 +309,6 @@ EngineHost get debugEngineHost => _host;
 @visibleForTesting
 set debugEngineHost(EngineHost? host) => _host = host ?? const EngineHost();
 
-/// The native log level [Engine.create] sets before every engine; null
-/// leaves the process's (LiteRT-LM's default until one is set). The level is
-/// process-wide, as LiteRT-LM's is.
-LiteRtLmLogLevel? liteRtLmNativeLogLevel;
-
 /// One `.litertlm` model loaded on one backend.
 final class Engine {
   Engine._({
@@ -376,6 +372,9 @@ final class Engine {
   bool _channelWarned = false;
 
   /// Loads [config.modelPath] on [config.backend]: one attempt, no fallback.
+  /// On the web the same call loads a build the web runtime loads (Gemma 4's
+  /// GPU export) over the page's `@litert-lm/core`, on [Backend.gpu] (see
+  /// the README, "On the web").
   ///
   /// Throws [LiteRtLmBundleException] when the file is incomplete or cannot
   /// run as asked, [NpuDispatchUnavailableException] when the NPU cannot be
@@ -971,8 +970,8 @@ final class Engine {
   /// [UnsupportedError]: the NPU executor rolls back one token, not a
   /// target. Whether a rewind on this LiteRT-LM build scores a target as a
   /// fresh session would (LiteRT-LM #3561) is for the caller to check before
-  /// trusting the scores; flutter_edge_ai_litertlm runs that check once per
-  /// model.
+  /// trusting the scores, once per model: a fixed pair must score
+  /// differently, and repeats must be bit-identical.
   Future<ScoringRun> scoreTargets(
     String prompt,
     List<String> targets, {

@@ -146,7 +146,7 @@ class _Conversation implements ConversationHandle {
 
   /// Like the native handle: closing cancels a turn that still runs.
   @override
-  void close() {
+  Future<void> close() async {
     closed = true;
     cancels++;
   }
@@ -225,6 +225,38 @@ void main() {
     expect(textOf(seed[2] as Map<String, dynamic>), 'two');
     // The stopped turn's reply is what the model had written when stopped.
     expect(textOf(seed[3] as Map<String, dynamic>), 'Hello');
+  });
+
+  test('a tool-call reader that throws neither jams the stopped turn nor '
+      'the next one: the reply is replayed as its text', () async {
+    final throwing = RecoveringConversationHandle(
+      first,
+      toolCallsOf: (_) => throw StateError('bad reader'),
+      reopen: (messagesJson) async {
+        final c = _Conversation('rebuilt', seed: messagesJson);
+        reopened.add(c);
+        return c;
+      },
+    );
+    final gate = first.hold = Completer<void>();
+    await for (final _ in throwing.chat('two')) {
+      if (!gate.isCompleted) {
+        throwing.cancelGeneration();
+        gate.complete();
+      }
+    }
+
+    expect(
+      await throwing.chat('three').join().timeout(const Duration(seconds: 5)),
+      'Hello there.',
+    );
+    final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+    expect(seed.last, {
+      'role': 'assistant',
+      'content': [
+        {'type': 'text', 'text': 'Hello'},
+      ],
+    });
   });
 
   test(

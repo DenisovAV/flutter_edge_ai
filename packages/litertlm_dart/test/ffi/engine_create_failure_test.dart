@@ -189,7 +189,7 @@ void main() {
         expect(message, startsWith('Stream error: $s25'));
         expect(message, contains('float32 activations on the GPU'));
         expect(message, contains('Invalid work group size'));
-        expect(message, contains('PreferredBackend.cpu'));
+        expect(message, contains('on the CPU (Backend.cpu())'));
         expect(message, isNot(contains('the default')));
       }
       expect(stream(), contains('activationDataType asked for float32'));
@@ -219,7 +219,7 @@ void main() {
         expect(message, startsWith('Stream error: $s25 ('));
         expect(message, contains('Invalid work group size'));
         expect(message, contains('LiteRT #12075'));
-        expect(message, contains('PreferredBackend.cpu'));
+        expect(message, contains('on the CPU (Backend.cpu())'));
         expect(message, isNot(contains('float32')));
       }
       // float32 keeps its own wording on Android too.

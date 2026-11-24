@@ -4,7 +4,7 @@
 /// GPU device, so the LLM's and the embedder's GPU memory are held together
 /// (EmbeddingGemma 2 has no CPU path on the web). flutter_edge_ai_litertlm
 /// serialises them with
-/// one page lock (lib/src/web/litert_lm_page_lock.dart): a generation holds it
+/// one page lock (litertlm_dart's lib/src/web/page_lock.dart): a generation holds it
 /// from its first call until its stream ends; an embedding engine's create +
 /// load probe and each `computeEmbedding` take it too. This suite is the proof
 /// on the real runtime that the two take turns without corrupting each other:
@@ -16,10 +16,10 @@
 ///   with the same vectors;
 /// - the 440m next to the loaded LLM: its vision encoder does not fit — the
 ///   module has 4 GB of WebAssembly memory, the 440m's vision engine takes
-///   about 3.3 GB of it and Gemma 4 E2B the rest (measured, @litert-lm/core
-///   0.18.0) — so loading it with images is refused with the reason; loaded
-///   for text it embeds while a reply streams. The day this test fails on the
-///   refusal, the runtime fits both: test images during a reply again.
+///   about 3.3 GB of it and Gemma 4 E2B the rest on 0.18.0, where loading it
+///   with images was refused with the reason. On 0.19.0 it loads (2026-11-23)
+///   and embeds an image while a reply streams; loaded for text it does the
+///   same. The day it no longer fits, this test says so.
 /// Timings and the reply go to the response file; a hang fails at a 10-minute
 /// bound instead of the driver's.
 ///
@@ -29,10 +29,10 @@
 ///     --driver=test_driver/web_embeddings_driver.dart \
 ///     --target=integration_test/web_eg2_llm_test.dart \
 ///     -d web-server --browser-name=chrome --headless \
-///     --dart-define=LLM_MODEL_URL=http://<host>/gemma-4-E2B-it-web.litertlm
+///     --dart-define=LLM_MODEL_URL=http://<host>/gemma-4-E2B-it-gpu.litertlm
 /// then the same with `-d chrome`.
 /// - `LLM_MODEL_URL` (required): a `.litertlm` WEB export (e.g.
-///   `gemma-4-E2B-it-web.litertlm`), served so the page can fetch it (CORS).
+///   `gemma-4-E2B-it-gpu.litertlm`), served so the page can fetch it (CORS).
 /// - `LLM_MODEL_TYPE` (optional, default `gemma4`): the `ModelType` name it is
 ///   installed as.
 /// - `HUGGINGFACE_TOKEN` (optional): sent with the LLM download when set.
@@ -58,6 +58,7 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart' as catalog;
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
@@ -131,7 +132,7 @@ Future<InferenceModel> _ensureLlm() async {
   if (_llmUrl.isEmpty) {
     fail(
       'Pass --dart-define=LLM_MODEL_URL=<a .litertlm web export, e.g. '
-      'gemma-4-E2B-it-web.litertlm> (see the header of this file).',
+      'gemma-4-E2B-it-gpu.litertlm> (see the header of this file).',
     );
   }
   final existing = _llm;
@@ -384,40 +385,54 @@ void main() {
     }
   }, timeout: const Timeout(Duration(minutes: 45)));
 
-  testWidgets('the 440m next to the LLM: with images it does not fit in the '
-      'page\'s WebAssembly memory and the load says so; for text it embeds '
-      'while a reply streams, the same vectors as alone', (tester) async {
+  testWidgets('the 440m next to the LLM: with images it loads (0.19.0; on '
+      '0.18.0 it did not fit) and embeds an image while a reply streams; '
+      'text too, the same vectors as alone', (tester) async {
     _start('LLM + EG2 440m');
     await _ensureEmbedder(_eg2Vision, _eg2VisionUrl);
     final llm = await _ensureLlm();
 
+    // A measurement: on 0.18.0 (Tesla T4, Chrome 155) the vision encoder did
+    // not fit in the page's 4 GB WebAssembly memory next to Gemma 4 E2B; on
+    // 0.19.0 it does (Apple GPU, Chrome 157, 2026-11-23).
+    EmbeddingModel? withImages;
     EmbeddingLoadException? refusal;
     try {
-      await FlutterEdgeAi.getActiveEmbedder(supportImage: true).timeout(_bound);
+      withImages = await FlutterEdgeAi.getActiveEmbedder(
+        supportImage: true,
+      ).timeout(_bound);
     } on EmbeddingLoadException catch (e) {
       refusal = e;
     }
-    report('images_next_to_llm', refusal?.message);
-    _log('440m with images next to the LLM: ${refusal?.message}');
+    report('images_next_to_llm', refusal?.message ?? 'loaded');
+    _log('440m with images next to the LLM: ${refusal?.message ?? 'loaded'}');
     expect(
       refusal,
-      isNotNull,
+      isNull,
       reason:
-          'the 440m loaded its vision encoder next to the LLM: the runtime '
-          'now fits both on one page — embed an image during a reply here '
-          'again, and update the docs that say it does not fit',
+          'the 440m no longer loads its vision encoder next to the LLM on '
+          'this runtime (it did on 0.19.0): update the docs that say it does',
     );
-    expect(
-      refusal!.message,
-      allOf(
-        contains('with its vision encoder'),
-        contains('If a .litertlm LLM is loaded on this page, close it first'),
-      ),
+    final data = await rootBundle.load('assets/eg2_vision/circle.png');
+    final image = EmbeddingInput.image(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
     );
+    final imageAlone = await withImages!.embed(image, taskType: TaskType.none);
+    final imageWatch = Stopwatch()..start();
+    final imageReply = await _Reply.start(llm, imageWatch);
+    try {
+      await imageReply.firstChunk.future.timeout(_bound);
+      final during = await withImages.embed(image, taskType: TaskType.none);
+      _expectSaneText(await imageReply.done);
+      _expectSame([during], [imageAlone], '440m image');
+    } finally {
+      await imageReply.close();
+    }
+    await withImages.close();
 
     final embedder = await FlutterEdgeAi.getActiveEmbedder();
     expect(embedder.activeBackend, PreferredBackend.gpu);
-    expect(embedder.modalities, {EmbeddingModality.text});
+    expect(embedder.modalities, contains(EmbeddingModality.text));
     final inputs = [
       EmbeddingInput.text('a red stop sign'),
       EmbeddingInput.text('a bar chart of quarterly revenue'),

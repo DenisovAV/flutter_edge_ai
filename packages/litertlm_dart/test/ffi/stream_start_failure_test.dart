@@ -57,7 +57,11 @@ void main() {
         message,
         startsWith('Failed to start streaming (code: 13, INTERNAL).'),
       );
-      expect(message, contains('nativeLogLevel: LiteRtLmLogLevel.verbose'));
+      expect(
+        message,
+        contains('LiteRtLmLog.nativeLevel = LiteRtLmLogLevel.verbose'),
+      );
+      expect(message, isNot(contains('flutter_edge_ai')));
     }
   });
 

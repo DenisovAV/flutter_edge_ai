@@ -40,7 +40,7 @@ class _Handle implements ConversationHandle {
   }
 
   @override
-  void close() {
+  Future<void> close() async {
     closed = true;
     for (var i = 0; i < sends.length; i++) {
       turns.release('c$i');

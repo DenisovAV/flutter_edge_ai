@@ -55,7 +55,7 @@ Add the package and register whichever arm(s) you use at startup:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.7.0
+  flutter_edge_ai: ^2.7.2
   flutter_edge_ai_onnx: ^0.10.0         # ONNX Runtime engines
   flutter_edge_ai_embeddings: ^2.3.3   # tokenizers, for embeddings
 ```

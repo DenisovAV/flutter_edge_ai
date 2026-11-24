@@ -43,7 +43,7 @@ await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
 final InferenceModel model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 ```
 
-Gemma 4 E2B is 2.6 GB and needs no token. On web install `LiteRtLmModels.gemma4E2bIt.web` (2.0 GB). `installModelFromCatalog` needs `flutter_edge_ai` 2.5.5 and `flutter_edge_ai_litertlm` 1.19.1; `FlutterEdgeAi.catalog` lists every build the registered engines offer, and `CatalogModel.variantFor` picks one this runtime runs (by platform and processor; for an NPU build the app names the SoC). On web, a file over 2 GiB needs `initialize(webStorageMode: WebStorageMode.streaming)`; since core 2.7.0 a `--wasm` build installs files over 1 GiB (downloads stream into the Cache API). Every build and where it has been run: https://flutteredge.ai/docs/registry. For your own file, `FlutterEdgeAi.installModel(modelType:, fileType:)` with `fromNetwork`, `fromAsset` or `fromFile`.
+Gemma 4 E2B is 2.6 GB and needs no token. On web install `LiteRtLmModels.gemma4E2bIt.webGpu` (2.34 GB, so with `initialize(webStorageMode: WebStorageMode.streaming)`). `installModelFromCatalog` needs `flutter_edge_ai` 2.5.5 and `flutter_edge_ai_litertlm` 1.19.1; `FlutterEdgeAi.catalog` lists every build the registered engines offer, and `CatalogModel.variantFor` picks one this runtime runs (by platform and processor; for an NPU build the app names the SoC). On web, a file over 2 GiB needs `initialize(webStorageMode: WebStorageMode.streaming)`; since core 2.7.0 a `--wasm` build installs files over 1 GiB (downloads stream into the Cache API). Every build and where it has been run: https://flutteredge.ai/docs/registry. For your own file, `FlutterEdgeAi.installModel(modelType:, fileType:)` with `fromNetwork`, `fromAsset` or `fromFile`.
 
 Supported models, their file types and engines: https://flutteredge.ai/docs/models.
 
@@ -258,7 +258,8 @@ Linux and Windows CPU, Android Adreno/Mali, Qualcomm or Google Tensor NPUs on
 Android, and Intel NPUs on Windows. Linux Vulkan, Windows D3D12, iOS, Android
 CPU/PowerVR/MediaTek, and unverified Linux arm64 accelerators use virtual
 sessions that replay full messages, including media, into one shared
-conversation. The `.litertlm` web engine is also virtual but text-only and uses
+conversation. The `.litertlm` web engine has one runtime conversation per
+session, takes images and audio with Gemma 4 E2B's GPU export, and uses
 core's defaults, so pass `modelType:` for a non-Gemma model. Hybrid models such
 as LFM2 rebuild from full messages when recovery is needed and never rewind.
 Native sessions cost memory while idle: Gemma 4 E2B on an M5 Pro added 36.8 MiB
@@ -353,7 +354,7 @@ try {
 }
 ```
 
-On web, images need a MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` (same Hugging Face repo as the `.litertlm`, `ModelFileType.task`, the flutter-edge-ai-mediapipe skill). On that build Gemma 4 has no thinking, and its tools never reach the model. The `.litertlm` web engine is text-only: `supportImage: true` loads without error, but `addQueryChunk` with an image throws `UnsupportedError`.
+On web, the `.litertlm` engine takes images and audio with Gemma 4 E2B's GPU export (`LiteRtLmModels.gemma4E2bIt.webGpu`, `@litert-lm/core` 0.19.0, installed with `WebStorageMode.streaming`) when the model loads with `supportImage`/`supportAudio`; a conversation reserves one image unless `maxNumImages` says more. A MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` (the flutter-edge-ai-mediapipe skill) also takes images, but on it Gemma 4 has no thinking, and its tools never reach the model.
 
 ## Audio
 
@@ -370,7 +371,7 @@ try {
 }
 ```
 
-`audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop (VibeVoice-ASR also takes audio, for transcription only; measured on Android and macOS); on the `.litertlm` web engine an audio message throws `UnsupportedError`.
+`audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop (VibeVoice-ASR also takes audio, for transcription only; measured on Android and macOS), or on the web Gemma 4 E2B's GPU export loaded with `supportAudio: true`; without it an audio message throws `UnsupportedError`.
 
 The `.litertlm` engine sends a Gemma 4 message as images, text, then audio, as the Gemma 4 model card asks, and every other model type as images, audio, then text (`flutter_edge_ai` 2.4.0 with `flutter_edge_ai_litertlm` 1.14.0; litertlm 1.13.x ignores `multimodalOrder`). A model whose chat template expects another order takes `getActiveModel(multimodalOrder: MultimodalOrder.imagesAudioText)` or `MultimodalOrder.imagesTextAudio`.
 

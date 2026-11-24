@@ -6,6 +6,56 @@ meta:
     content: https://flutteredge.ai/images/og-image.png
 ---
 
+## flutter_edge_ai_litertlm 1.21.1: web on `@litert-lm/core` 0.19.0
+
+`.litertlm` models on the web now run on `@litert-lm/core` 0.19.0. Native
+apps change nothing.
+
+- **Import 0.19.0 in `web/index.html`.** 0.18.0 fails the engine create
+  with "Unsupported backend: 2", and the error names the page's version when
+  the page fetched `@litert-lm/core` by a versioned URL
+  (`@litert-lm/core@X.Y.Z`); a copy hosted under a URL without its version
+  is not recognised. Change the version in the handshake's import:
+
+  ```
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
+  ```
+- **Gemma 4 E2B on the web is `LiteRtLmModels.gemma4E2bIt.webGpu`.** The
+  catalog no longer offers `gemma4E2bIt.web` or `gemma4E4bIt.web` (the
+  `-web.litertlm` exports) on the web. An app that installed one of them
+  keeps loading it. On 0.19.0 the E2B one answers a tool result with an
+  empty reply; the E4B one is not measured there. The new E2B build is
+  2.34 GB, more than the 2 GiB a `WebStorageMode.cacheApi` install holds.
+  The storage mode is read once per page load (a second `initialize` with
+  another mode only logs a warning), so the move takes two runs:
+  1. In a run that still initializes with the storage mode the old file was
+     installed under (`cacheApi` unless the app chose another), uninstall it:
+
+     ```
+     await FlutterEdgeAi.uninstallModel('gemma-4-E2B-it-web.litertlm');
+     // or 'gemma-4-E4B-it-web.litertlm'
+     ```
+
+     What an uninstall under `streaming` removes of a file installed under
+     `cacheApi` is not measured: uninstall first.
+  2. In the next run (after a reload), initialize with
+     `webStorageMode: WebStorageMode.streaming`.
+  3. Install the new build:
+
+     ```
+     await FlutterEdgeAi.installModelFromCatalog(
+       LiteRtLmModels.gemma4E2bIt.webGpu,
+     ).install();
+     ```
+- **`maxTokens` reaches the web runtime.** The default context is 1024
+  tokens, as on native. Before, the web arm did not send it, and the runtime
+  used the model's own context. A prompt longer than 1024 tokens needs a
+  larger `maxTokens`.
+- **`maxNumImages` counts a whole conversation on the web** (natively, one
+  message), 1 when unset. An image past it is refused with an
+  `UnsupportedError` before it is sent. To send more images in one chat,
+  pass a larger `maxNumImages` to `getActiveModel`.
+
 ## flutter_edge_ai 2.7.0: Hugging Face resolvers per role
 
 - A `HuggingFaceResolver` implementation adds the role it serves:
@@ -798,8 +848,8 @@ dependencies:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.7.0                 # core — always required
-  flutter_edge_ai_litertlm: ^1.21.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai: ^2.7.2                 # core — always required
+  flutter_edge_ai_litertlm: ^1.21.1       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
   flutter_edge_ai_mediapipe: ^1.3.1       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.3.3      # add if you compute embeddings with a tokenizer file (needs a backend, see above)
   flutter_edge_ai_rag: ^1.2.0             # add for on-device RAG (RagIndex) + one store below

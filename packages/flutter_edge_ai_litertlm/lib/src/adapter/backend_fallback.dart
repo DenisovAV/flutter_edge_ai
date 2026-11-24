@@ -11,7 +11,6 @@ import 'package:flutter_edge_ai/engine.dart';
 
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import '../litert_lm_load_errors.dart';
-import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'runtime_mapping.dart';
 
 String _wire(PreferredBackend backend) => ffiBackendWireName(backend.toRuntime);

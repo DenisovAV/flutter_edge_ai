@@ -1,3 +1,9 @@
+## 1.21.1
+- Requires `litertlm_dart` 0.19.1+2.
+- Web: the message after a stopped reply no longer fails with "Task cancelled".
+- Web: maxTokens now reaches the runtime; the default context is 1024 tokens, as on native.
+- Web: needs `@litert-lm/core` 0.19.0 and Gemma 4 E2B `webGpu`; images and audio ([migration](https://flutteredge.ai/docs/migration)).
+
 ## 1.21.0
 - Android GPU keeps Gemma 4 at FP16 above 2,048 tokens; Adreno GPU failures name the CPU.
 - A stopped, paused turn that ends after the next one no longer reorders replayed history.

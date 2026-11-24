@@ -22,16 +22,14 @@
 ///
 /// Prerequisites:
 ///   * Chrome with WebGPU enabled (`chrome://flags/#enable-unsafe-webgpu`)
-///   * ~600 MB free disk + network bandwidth for `gemma-4-E2B-it-web.litertlm`
-///     (first run only — cached afterwards by `WebStorageMode.cacheApi`)
+///   * ~2.4 GB free disk + network bandwidth for `gemma-4-E2B-it-gpu.litertlm`
+///     (installed with `WebStorageMode.streaming`: it is over 2 GiB)
 ///   * Optional `HUGGINGFACE_TOKEN` if the upstream model becomes gated
 ///     (`--dart-define=HUGGINGFACE_TOKEN=hf_...`)
 ///
 /// Why these tests and not the full 18 from `litertlm_ffi_test.dart`:
-///   * The upstream `@litert-lm/core` is "early preview, text-in/text-out only".
-///   * Vision / audio throw UnsupportedError (no vision or audio executor in
-///     the engine) — `web_multimodal_test.dart`. Thinking has its own suite,
-///     `web_thinking_test.dart`.
+///   * Images and audio have their own suite, `web_multimodal_test.dart`, and
+///     thinking `web_thinking_test.dart`.
 ///   * CPU/GPU/NPU is a single WebGPU/WASM backend (no choice to assert).
 ///   * LoRA throws UnsupportedError, exercised in the unit smoke
 ///     (`test/web/litert_lm_web_test.dart`).
@@ -40,13 +38,19 @@
 @TestOn('chrome')
 library;
 
+import 'dart:async';
+
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'inference_test_helpers.dart' show registerTestEngines;
+import 'inference_test_helpers.dart' show kWebGemma4E2bUrl, registerTestEngines;
 
-const _webModelUrl =
-    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm';
+// A local copy keeps back-to-back runs off the network, e.g.
+// --dart-define=WEB_MODEL_URL=http://127.0.0.1:8765/gemma-4-E2B-it-gpu.litertlm
+const _webModelUrl = String.fromEnvironment(
+  'WEB_MODEL_URL',
+  defaultValue: kWebGemma4E2bUrl,
+);
 
 const _hfToken = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
@@ -103,6 +107,9 @@ Future<void> _disposeModel() async {
   _model = null;
 }
 
+/// The tests that started (Rule 6b).
+final _started = <int>{};
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -112,6 +119,7 @@ void main() {
     testWidgets('text generation produces a non-empty response', (
       tester,
     ) async {
+      _started.add(0);
       final model = await _ensureModel();
       final session = await model.openSession(topK: _topK);
       try {
@@ -126,6 +134,7 @@ void main() {
     });
 
     testWidgets('maxOutputTokens caps the generated response', (tester) async {
+      _started.add(1);
       // The web path accepted `maxOutputTokens` and logged that it ignored it
       // until this was wired; `SessionConfig` has carried the field since 0.14.0.
       //
@@ -167,6 +176,7 @@ void main() {
     });
 
     testWidgets('streaming yields at least one chunk', (tester) async {
+      _started.add(2);
       final model = await _ensureModel();
       final session = await model.openSession(topK: _topK);
       try {
@@ -189,6 +199,7 @@ void main() {
     testWidgets('chat: multi-turn conversation retains history', (
       tester,
     ) async {
+      _started.add(3);
       final model = await _ensureModel();
       final chat = await model.openChat(
         topK: _topK,
@@ -211,6 +222,7 @@ void main() {
     });
 
     testWidgets('chat: clearHistory wipes context', (tester) async {
+      _started.add(4);
       final model = await _ensureModel();
       final chat = await model.openChat(
         topK: _topK,
@@ -247,6 +259,7 @@ void main() {
     testWidgets('session: sizeInTokens returns a non-negative integer', (
       tester,
     ) async {
+      _started.add(5);
       final model = await _ensureModel();
       final session = await model.openSession(topK: _topK);
       try {
@@ -258,6 +271,7 @@ void main() {
     });
 
     testWidgets('multiple openSession calls on the same model', (tester) async {
+      _started.add(6);
       final model = await _ensureModel();
       final s1 = await model.openSession(topK: _topK);
       await s1.close();
@@ -277,6 +291,7 @@ void main() {
     testWidgets('PROBE: two openSession dialogues keep isolated history', (
       tester,
     ) async {
+      _started.add(7);
       final model = await _ensureModel();
       final a = await model.openSession(temperature: 0.0, topK: 1);
       final b = await model.openSession(temperature: 0.0, topK: 1);
@@ -320,5 +335,72 @@ void main() {
         await b.close();
       }
     });
+    // On 0.18.0 and 0.19.0 the runtime refuses every send on a conversation
+    // after cancel() ("Task cancelled", web_litertlm_runtime_probe_test.dart,
+    // 2026-11-23); litertlm_dart rebuilds it from its history. Here on the
+    // real runtime: a reply stopped after its first chunk keeps that chunk,
+    // the next one answers and still knows the turn before the stop; then the
+    // same for a consumer that just stops listening.
+    testWidgets('a stopped reply keeps what arrived; the next one answers and '
+        'remembers the earlier turn', (tester) async {
+      _started.add(8);
+      final model = await _ensureModel();
+      final session = await model.openSession(temperature: 0.0, topK: 1);
+      try {
+        await session.addQueryChunk(
+          const Message(text: 'My name is Carol. Remember it.', isUser: true),
+        );
+        await session.getResponse();
+        await session.addQueryChunk(
+          const Message(
+            text: 'Count from 1 to 300, one number per line.',
+            isUser: true,
+          ),
+        );
+        final chunks = <String>[];
+        final first = Completer<void>();
+        final done = session.getResponseAsync().forEach((chunk) {
+          chunks.add(chunk);
+          if (!first.isCompleted) first.complete();
+        });
+        await first.future;
+        await session.stopGeneration();
+        await done;
+        expect(chunks, isNotEmpty);
+
+        await session.addQueryChunk(
+          const Message(text: 'What is my name? One word.', isUser: true),
+        );
+        final answer = (await session.getResponse()).toLowerCase();
+        // ignore: avoid_print
+        print('[web-stop] after the stop: "$answer"');
+        expect(answer, contains('carol'));
+
+        await session.addQueryChunk(
+          const Message(
+            text: 'Count from 1 to 300, one number per line.',
+            isUser: true,
+          ),
+        );
+        final left = Completer<void>();
+        late final StreamSubscription<String> sub;
+        sub = session.getResponseAsync().listen((_) {
+          if (!left.isCompleted) left.complete();
+        });
+        await left.future;
+        await sub.cancel();
+        await session.addQueryChunk(
+          const Message(text: 'Say yes.', isUser: true),
+        );
+        expect(await session.getResponse(), isNotEmpty);
+      } finally {
+        await session.close();
+      }
+    });
+  });
+
+  // Rule 6b: under flutter drive a test that never ran reads as a pass.
+  testWidgets('every test above started', (tester) async {
+    expect(_started, hasLength(9));
   });
 }

@@ -27,14 +27,13 @@ library;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'inference_test_helpers.dart' show registerTestEngines;
+import 'inference_test_helpers.dart' show kWebGemma4E2bUrl, registerTestEngines;
 
 // A local copy keeps back-to-back runs off the network, e.g.
-// --dart-define=WEB_MODEL_URL=http://127.0.0.1:8765/gemma-4-E2B-it-web.litertlm
+// --dart-define=WEB_MODEL_URL=http://127.0.0.1:8765/gemma-4-E2B-it-gpu.litertlm
 const _webModelUrl = String.fromEnvironment(
   'WEB_MODEL_URL',
-  defaultValue:
-      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm',
+  defaultValue: kWebGemma4E2bUrl,
 );
 
 const _hfToken = String.fromEnvironment('HUGGINGFACE_TOKEN');
@@ -108,10 +107,13 @@ Future<InferenceChat> _openChat(
   modelType: ModelType.gemma4,
 );
 
+/// The tests that started (Rule 6b).
+final _started = <int>{};
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  group('web function calling (@litert-lm/core 0.18.0)', () {
+  group('web function calling (@litert-lm/core, litertlm_dart\'s pin)', () {
     tearDownAll(() async {
       await _model?.close();
       _model = null;
@@ -120,6 +122,7 @@ void main() {
     testWidgets('1. single tool call yields FunctionCallResponse', (
       tester,
     ) async {
+      _started.add(0);
       final chat = await _openChat(await _ensureModel());
       try {
         await chat.addQueryChunk(
@@ -148,6 +151,7 @@ void main() {
     testWidgets('2. multi-tool prompt invokes at least one declared tool', (
       tester,
     ) async {
+      _started.add(1);
       final chat = await _openChat(
         await _ensureModel(),
         tools: const [_changeColorTool, _setVolumeTool],
@@ -187,6 +191,7 @@ void main() {
     testWidgets('3. streaming surfaces the call and leaks no raw tokens', (
       tester,
     ) async {
+      _started.add(2);
       final chat = await _openChat(await _ensureModel());
       try {
         await chat.addQueryChunk(
@@ -227,6 +232,7 @@ void main() {
     testWidgets('4. negative control: a non-action prompt calls nothing', (
       tester,
     ) async {
+      _started.add(3);
       // The case that separates "function calling works" from "the model calls a
       // tool whatever you say". Without it, cases 1-3 are also satisfied by a
       // runtime that fires change_color unconditionally.
@@ -257,6 +263,7 @@ void main() {
     testWidgets('4b. DISCRIMINATOR: plain second turn in a tools chat', (
       tester,
     ) async {
+      _started.add(4);
       // Splits the case-5 failure in two. Case 5 dies with "Invalid token at
       // state 37" on the SECOND generation of a tools-enabled chat. That is
       // either (a) the tool-response message specifically, or (b) any second
@@ -289,6 +296,7 @@ void main() {
     testWidgets('4c. DISCRIMINATOR: second turn when turn 1 called nothing', (
       tester,
     ) async {
+      _started.add(5);
       // 4b showed any second turn dies in a tools chat. This narrows it further:
       // tools are declared (so constrained decoding is ON) but turn 1 is a
       // question that needs no tool, so no <|tool_call> is emitted.
@@ -325,6 +333,7 @@ void main() {
     testWidgets('5. tool result fed back produces a reply, not a crash', (
       tester,
     ) async {
+      _started.add(6);
       final chat = await _openChat(await _ensureModel());
       try {
         await chat.addQueryChunk(
@@ -361,5 +370,44 @@ void main() {
         await chat.close();
       }
     }, timeout: const Timeout(Duration(minutes: 10)));
+
+    testWidgets('6. a stop right after the tool call: the next message is '
+        'answered', (tester) async {
+      _started.add(7);
+      final chat = await _openChat(await _ensureModel());
+      try {
+        await chat.addQueryChunk(
+          const Message(text: 'Make the background orange.', isUser: true),
+        );
+        final events = <ModelResponse>[];
+        await tester.runAsync(() async {
+          await for (final e in chat.generateChatResponseAsync()) {
+            events.add(e);
+            if (e is FunctionCallResponse) await chat.stopGeneration();
+          }
+        });
+        expect(
+          events.whereType<FunctionCallResponse>(),
+          isNotEmpty,
+          reason:
+              'no call to stop after; got ${events.map((e) => e.runtimeType)}',
+        );
+
+        await chat.addQueryChunk(
+          const Message(text: 'Say hello in one word.', isUser: true),
+        );
+        final reply = await tester.runAsync(chat.generateChatResponse);
+
+        expect(reply, isA<TextResponse>(), reason: '$reply');
+        expect((reply! as TextResponse).token.trim(), isNotEmpty);
+      } finally {
+        await chat.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 10)));
+  });
+
+  // Rule 6b: under flutter drive a test that never ran reads as a pass.
+  testWidgets('every test above started', (tester) async {
+    expect(_started, hasLength(8));
   });
 }

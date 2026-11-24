@@ -282,9 +282,8 @@ DynamicLibrary _openLiteRt() {
     // litert_lm_client.dart's Android branch.
     if (Abi.current() != Abi.androidArm64) {
       throw UnsupportedError(
-        'flutter_edge_ai embeddings and speech require an arm64-v8a Android '
-        'device (got ${Abi.current()}). LiteRT-LM ships no other Android ABI. '
-        'MediaPipe `.task` text inference still works on this ABI.',
+        'LiteRT requires an arm64-v8a Android device (got ${Abi.current()}): '
+        'LiteRT-LM ships no other Android ABI.',
       );
     }
     const path = 'libLiteRtLm.so';

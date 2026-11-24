@@ -85,12 +85,11 @@ final class LiteRtLmVariant extends InferenceVariant {
     required this.supportsFunctionCalls,
     required this.supportsThinking,
     required this.isWebBundle,
-    required Set<PreferredBackend> textBackends,
+    required this._textBackends,
     this.npuTarget,
     this.requiredMaxTokens,
-    Set<PreferredBackend> withheld = const {},
-  }) : _textBackends = textBackends,
-       _withheld = withheld;
+    this._withheld = const {},
+  });
 
   /// Backends the registry withholds this variant from (all of them for a
   /// withheld variant, which stays in the catalog, deprecated, so code that
@@ -221,8 +220,10 @@ final class LiteRtEmbedderVariant extends EmbedderVariant {
     this.tokenizer,
     this.imageRagProfileId,
     this.npuTarget,
-    Set<PreferredBackend> withheld = const {},
-  }) : _withheld = withheld;
+    // The registry's generator sets it for a withheld embedder; none is yet.
+    // ignore: unused_element_parameter
+    this._withheld = const {},
+  });
 
   /// Backends the registry withholds this variant from (see
   /// [LiteRtLmVariant]).

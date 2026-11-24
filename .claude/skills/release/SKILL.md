@@ -408,10 +408,22 @@ done
 ```
 | `AGENTS.md` | `Current Version:` line | match plugin version |
 
+Every `litertlm_dart` release, whatever changed (`+N` is litertlm_dart's own
+release number within one upstream LiteRT-LM version, not the native build's):
+| File | Field |
+|------|-------|
+| `packages/litertlm_dart/pubspec.yaml` | the build number (`0.19.1+1` → `0.19.1+2`; a new upstream LiteRT-LM version resets it: `0.19.2+1`). |
+| `packages/flutter_edge_ai_litertlm/pubspec.yaml` | the exact `litertlm_dart` pin, to that version: the adapter imports litertlm_dart's internal libraries (`internal.dart`, `internal_web.dart`), which carry no compatibility promise, so an adapter never publishes against an older litertlm_dart (one built on `0.19.1+2` does not compile against `0.19.1+1`, which has no `internal_web.dart`). |
+| `packages/litertlm_dart/README.md` | the `>=` version in its install line. |
+
+Publish order: `litertlm_dart` → `flutter_edge_ai_litertlm` → `flutter_edge_ai`
+(its package skills name the adapter's catalog and web setup) →
+`genkit_flutter_edge_ai`.
+
 Only if (1b) bumps `NATIVE_VERSION`:
 | File | Field |
 |------|-------|
-| `packages/litertlm_dart/lib/src/runtime/native_release.dart` | `liteRtLmNativeVersion` — bump (e.g. `'0.19.1-b'` → `'0.19.1-c'`). The hook's `_litertlmBundle` takes `version:` from it; the host dev lookup and `package_macos_spm_companions.sh` read it too. Also bump `litertlm_dart`'s pubspec build number (`0.19.1+1` → `0.19.1+2`; a new upstream LiteRT-LM version resets it: `0.19.2+1`), the exact pin in `flutter_edge_ai_litertlm/pubspec.yaml`, and `nativeTag` in its `macos/flutter_edge_ai_litertlm/Package.swift`. The cache is per tag (`_cacheBaseDir()/<tag>/<platform>`). |
+| `packages/litertlm_dart/lib/src/runtime/native_release.dart` | `liteRtLmNativeVersion` — bump (e.g. `'0.19.1-b'` → `'0.19.1-c'`). The hook's `_litertlmBundle` takes `version:` from it; the host dev lookup and `package_macos_spm_companions.sh` read it too. Also `nativeTag` in `flutter_edge_ai_litertlm`'s `macos/flutter_edge_ai_litertlm/Package.swift`. The cache is per tag (`_cacheBaseDir()/<tag>/<platform>`). |
 | `packages/litertlm_dart/hook/build.dart` | the per-archive SHA256 `checksums` of `_litertlmBundle`. |
 
 For App Store / breaking platform fixes prefer **bumping NATIVE_VERSION** rather than overwriting `native-v0.10.2` assets — keeps consumers on `0.14.0` reproducible. Overwrite only for emergency hotfixes where downstream version pinning is acceptable.

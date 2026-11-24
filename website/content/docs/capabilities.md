@@ -20,8 +20,9 @@ add brings its own capabilities. This page shows what you can swap for what.
 
 All means Android, iOS, macOS, Windows, Linux and Web; Native means all of
 them except Web; Mobile means Android and iOS. On the Web, LiteRT-LM text
-generation runs only dedicated `-web.litertlm` exports (Gemma 4 and Gemma 3n
-today). MediaPipe's LLM Inference API is maintenance-only upstream, so new apps
+generation runs the builds made for it: Gemma 4 E2B's GPU export, measured on
+`@litert-lm/core` 0.19.0, and the Gemma 3n `-web.litertlm` exports, documented
+on 0.18.0 and not measured on 0.19.0. MediaPipe's LLM Inference API is maintenance-only upstream, so new apps
 should use LiteRT-LM (`.litertlm`). The packages are
 `flutter_edge_ai_litertlm` (plus `flutter_edge_ai_speech` for speech),
 `flutter_edge_ai_onnx`, `flutter_edge_ai_mediapipe` and
@@ -58,8 +59,8 @@ native platforms).
 
 | | LiteRT-LM | MediaPipe | ONNX | Built-in AI |
 |---|---|---|---|---|
-| **Vision** | ✅ Native | ✅ | — | ✅ Android |
-| **Audio** | ✅ Native | — | — | — |
+| **Vision** | ✅ Native, Web | ✅ | — | ✅ Android |
+| **Audio** | ✅ Native, Web | — | — | — |
 | **Function calling** | ✅ Native/Prompt | ✅ Prompt | ✅ Prompt | ✅ Prompt |
 | **Thinking** | ✅ Full | ✅ Tags | ✅ Tags | — |
 | **Structured output (`responseFormat`)** | ✅ qualified native CPU/GPU rows | ❌ refused | ✅ native macOS arm64, Linux x64 and Windows x64 | ❌ no qualified platform yet |
@@ -147,8 +148,10 @@ final canOpen = rag.canOpen(spec);
 `getActiveModel`, `supportsFunctionCalls` and `enableThinking` on `openChat`
 (a MediaPipe chat on Android or iOS also needs `supportImage: true` on
 `openChat`, or the image is dropped).
-ONNX and Built-in AI, and LiteRT-LM on web, throw `UnsupportedError` for image
-or audio input they cannot take.
+ONNX and Built-in AI throw `UnsupportedError` for image or audio input they
+cannot take, and so does LiteRT-LM on web for a model loaded without
+`supportImage`/`supportAudio`. LiteRT-LM on web takes images and audio with
+Gemma 4 E2B's GPU export.
 
 After a model loads, `InferenceModel.activeBackend` and
 `EmbeddingModel.activeBackend` report the accelerator it actually runs on, and

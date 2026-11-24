@@ -75,16 +75,19 @@ MacOSLoadCause diagnoseMacOSLoadError(String dyldText) {
 String macOSLoadErrorMessage(String dyldText) {
   final String fix = switch (diagnoseMacOSLoadError(dyldText)) {
     MacOSLoadCause.missingCompanion =>
-      "LiteRT-LM's companion libraries are not in the app. "
-          "With Swift Package Manager on (Flutter's default), "
-          "flutter_edge_ai_litertlm's Swift package embeds them, so an app "
-          'that depends on litertlm_dart alone adds flutter_edge_ai_litertlm; '
-          'with it, run `flutter clean` and build again. With '
-          '`enable-swift-package-manager: false`, the post_install block in '
-          'macos/Podfile copies them: replace the post_install block with the '
-          'one from https://flutteredge.ai/docs/desktop#macos, keeping any '
-          'lines of your own inside it, then run `flutter clean` and build '
-          'again.',
+      "LiteRT-LM's companion libraries are not in the app: "
+          'GemmaModelConstraintProvider.framework and '
+          'LiteRtLmMetalAccelerator.framework must be embedded in its '
+          'Frameworks (xcframework zips on the native-v* release this build '
+          'uses); the build hook does not embed them yet. Where a Swift '
+          "package embeds them (Swift Package Manager on, Flutter's "
+          'default), this is a stale build: run `flutter clean` and build '
+          'again. With `enable-swift-package-manager: false`, the '
+          'post_install block in macos/Podfile copies them: replace the '
+          'existing post_install block with the one from '
+          'https://flutteredge.ai/docs/desktop#macos (a second post_install '
+          'block fails `pod install`), keeping any lines of your own inside '
+          'it, then run `flutter clean` and build again.',
     MacOSLoadCause.wrongArchitecture =>
       'LiteRT-LM ships for Apple silicon (arm64) only; it does not run on an '
           'Intel Mac or in an x86_64 (Rosetta) process.',

@@ -56,8 +56,8 @@ final liteRtLmImageFormats = Set<EncodedMediaFormat>.unmodifiable({
 });
 
 /// The audio containers LiteRT-LM decodes, natively and on the web (the same
-/// C++ compiled to WebAssembly, whose `SUPPORTED_AUDIO_MIME_TYPES` in
-/// `@litert-lm/core` 0.18.0 are WAV, MP3 and FLAC too): miniaudio reads WAV,
+/// C++ compiled to WebAssembly, whose `SUPPORTED_AUDIO_MIME_TYPES` are WAV,
+/// MP3 and FLAC too, in 0.18.0 as in 0.19.0): miniaudio reads WAV,
 /// MP3 and FLAC, mixes down to mono and resamples to 16 kHz (upstream
 /// `audio_preprocessor_miniaudio.cc`; measured on the 740m through our
 /// macOS build: FLAC gives the WAV's vector, a 44.1 kHz stereo WAV of the same

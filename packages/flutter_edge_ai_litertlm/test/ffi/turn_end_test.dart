@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/reported_engine_turn.dart'
+    show liteRtLmCompletedTurnEnd;
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
@@ -31,7 +33,7 @@ class _Handle implements ConversationHandle {
   void cancelGeneration() => turns.cancel('c');
 
   @override
-  void close() => turns.release('c');
+  Future<void> close() async => turns.release('c');
 
   @override
   Future<int?> tokenCount(String text) async => text.length;
@@ -249,6 +251,119 @@ void main() {
             (e) => '$e',
             'message',
             contains('Failed to create conversation (INTERNAL)'),
+          ),
+        ),
+      ),
+    );
+  });
+
+  test('a failed GPU turn that names Backend.cpu() reaches core with the '
+      'line in core\'s terms', () async {
+    final handle = _Handle()..turnEnd = NativeLastTurnEnd.failed;
+    final turn = startEngineTurnForTest(_session(handle));
+    final text = turn.text.toList();
+    await handle.sent.future;
+
+    handle.send.failed(
+      const lm.LiteRtLmNativeException(
+        'Stream error: INTERNAL. Load it on the CPU (Backend.cpu()).',
+      ),
+    );
+
+    await expectLater(
+      text,
+      throwsA(
+        isA<Exception>().having(
+          (e) => '$e',
+          'message',
+          allOf(
+            contains('(Backend.cpu())'),
+            contains(
+              'In flutter_edge_ai: preferredBackend: '
+              'PreferredBackend.cpu, or none.',
+            ),
+          ),
+        ),
+      ),
+    );
+  });
+
+  test('a failed turn whose cause is a library that failed to load keeps '
+      'that type and gets the line in core\'s terms', () async {
+    final handle = _Handle()..turnEnd = NativeLastTurnEnd.failed;
+    final turn = startEngineTurnForTest(_session(handle));
+    final text = turn.text.toList();
+    await handle.sent.future;
+
+    handle.send.failed(
+      const LibraryLoadFailedException(
+        "LiteRT-LM's companion libraries are not in the app: …",
+      ),
+    );
+
+    await expectLater(
+      text,
+      throwsA(
+        isA<LibraryLoadFailedException>().having(
+          (e) => e.loadMessage,
+          'message',
+          contains("flutter_edge_ai_litertlm's Swift package embeds them"),
+        ),
+      ),
+    );
+  });
+
+  test('a runtime exception that fails the turn keeps its '
+      'type and gets the line in core\'s terms', () async {
+    final handle = _Handle()..turnEnd = NativeLastTurnEnd.failed;
+    final turn = startEngineTurnForTest(_session(handle));
+    final text = turn.text.toList();
+    await handle.sent.future;
+
+    handle.send.failed(
+      const lm.LiteRtLmEngineCreateException(
+        'The encoder failed. Load it on the CPU (Backend.cpu()).',
+      ),
+    );
+
+    await expectLater(
+      text,
+      throwsA(
+        isA<lm.LiteRtLmEngineCreateException>().having(
+          (e) => e.message,
+          'message',
+          contains(
+            'In flutter_edge_ai: preferredBackend: PreferredBackend.cpu',
+          ),
+        ),
+      ),
+    );
+  });
+
+  test('an Error that is not native keeps its type and gets the line in '
+      'core\'s terms', () async {
+    final handle = _Handle()..turnEnd = NativeLastTurnEnd.failed;
+    final turn = startEngineTurnForTest(_session(handle));
+    final text = turn.text.toList();
+    await handle.sent.future;
+
+    handle.send.failed(
+      UnsupportedError(
+        'No GPU sampler here. Load it on the CPU (Backend.cpu()).',
+      ),
+    );
+
+    await expectLater(
+      text,
+      throwsA(
+        isA<UnsupportedError>().having(
+          (e) => e.message,
+          'message',
+          allOf(
+            contains('No GPU sampler here.'),
+            contains(
+              'In flutter_edge_ai: preferredBackend: PreferredBackend.cpu',
+            ),
           ),
         ),
       ),

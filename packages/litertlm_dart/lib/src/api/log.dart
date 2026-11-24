@@ -3,7 +3,6 @@
 
 import '../runtime/litert_lm_log_level.dart';
 import '../runtime/runtime_log.dart';
-import 'engine.dart' show liteRtLmNativeLogLevel;
 
 /// litertlm_dart's log: its own lines (load decisions, timings, recoveries)
 /// and the level of LiteRT-LM's native log.
@@ -15,9 +14,8 @@ abstract final class LiteRtLmLog {
   /// [LiteRtLmLogLevel.verbose] adds prompts, model output and the native
   /// log's contents. Reads back what was set; unset, the level in force.
   /// Applies to this isolate and to the isolates litertlm_dart spawns from
-  /// then on, and flutter_edge_ai_litertlm does not replace it there; an
-  /// isolate another package spawns (core's embedding worker) logs at that
-  /// package's level.
+  /// then on, and a package built on this one does not replace it there; an
+  /// isolate another package spawns logs at that package's level.
   static LiteRtLmLogLevel get level =>
       _level ??
       switch (currentRuntimeLogLevel()) {
@@ -43,7 +41,7 @@ abstract final class LiteRtLmLog {
   static LiteRtLmLogLevel? _level;
 
   /// Where litertlm_dart's lines go on this isolate; `print` by default. Not
-  /// replaced by flutter_edge_ai_litertlm once set.
+  /// replaced by a package built on this one once set.
   static RuntimeLogSink get sink => runtimeLogSink;
   static set sink(RuntimeLogSink sink) {
     runtimeLogSinkSetByApp = true;
@@ -52,7 +50,9 @@ abstract final class LiteRtLmLog {
 
   /// The minimum severity of LiteRT-LM's native log, set before every engine
   /// from then on (Kotlin's `Engine.setNativeMinLogSeverity`). Process-wide;
-  /// null leaves the process's level as it is.
+  /// null leaves the process's level as it is. Native only: the web runtime
+  /// (`@litert-lm/core`) has no such setting, so there it is kept and read
+  /// back, and changes nothing.
   static LiteRtLmLogLevel? get nativeLevel => liteRtLmNativeLogLevel;
   static set nativeLevel(LiteRtLmLogLevel? level) =>
       liteRtLmNativeLogLevel = level;

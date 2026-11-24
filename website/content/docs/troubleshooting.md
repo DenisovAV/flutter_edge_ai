@@ -103,7 +103,7 @@ final chat = await model.openChat(maxOutputTokens: 100);        // reply cap
 ## Web
 
 - **MediaPipe is GPU-only on web.** The web engine ignores `preferredBackend` and always runs on the browser's GPU (WebGPU). ONNX on web is the exception: `PreferredBackend.cpu` pins WASM there.
-- **Mobile `.task` models often don't work on web** — use the `-web.task` (MediaPipe) or `-web.litertlm` (LiteRT-LM) export; only Gemma 4 and Gemma 3n publish the latter today. A native `.litertlm` installs on web and then fails at the first generation.
+- **Mobile `.task` models often don't work on web** — use the `-web.task` (MediaPipe) export, or for LiteRT-LM a build made for the web: Gemma 4 E2B's GPU export (`LiteRtLmModels.gemma4E2bIt.webGpu`) or Gemma 3n's `-web.litertlm` exports (documented on `@litert-lm/core` 0.18.0, not measured on 0.19.0). A native `.litertlm` installs on web and then fails at the first generation.
 - **Memory / cache limits:**
 
 | Browser | Max Model Size | Notes |
@@ -125,24 +125,24 @@ LLM Inference is maintenance-only — see [MediaPipe](/docs/mediapipe).
 **Works on web `.litertlm`:** text generation (sync + streaming), multi-turn chat
 with history, system instruction, **function calling / tool calls** (Gemma 4),
 **thinking mode** (Gemma 4 measured in Chrome; core parses `<think>` tags from
-any model that emits them), concurrent sessions (serialized), large models via
-OPFS streaming.
+any model that emits them), **images and audio** with Gemma 4 E2B's GPU export
+loaded with `supportImage`/`supportAudio` (`maxNumImages` counts a whole
+conversation's images on the web), concurrent sessions (serialized), large
+models via OPFS streaming.
 
 **Not supported on web `.litertlm` yet:**
 
-- ❌ **Vision / image input** (native only) — an image message throws
-  `UnsupportedError`; the JS API creates the LLM engine with no vision executor.
-- ❌ **Audio input** (native only) — an audio message throws `UnsupportedError`;
-  no audio executor either.
+- ❌ **Images or audio without `supportImage`/`supportAudio`** — such a
+  message throws `UnsupportedError` instead of being dropped.
 - ❌ **LoRA weights** — `loraPath` throws `UnsupportedError`, as it does on
   native `.litertlm`; LoRA works only with MediaPipe `.task` models.
 
 <Info>
 
-For vision on Web today, use a compatible MediaPipe `.task` build. Neither Web
-engine supports audio. These Web `.litertlm` limits track the upstream
-`@litert-lm/core` early-preview API and will lift as Google extends the JS
-executor surface.
+On Web, `.litertlm` images and audio need Gemma 4 E2B's GPU export on
+`@litert-lm/core` 0.19.0, loaded with `supportImage`/`supportAudio`; a
+compatible MediaPipe `.task` build also takes images. A page on 0.18.0 fails
+the GPU export at load ("Unsupported backend: 2"): import 0.19.0.
 
 </Info>
 
@@ -453,7 +453,7 @@ hooks:
 
 - **`EmbeddingLoadException` naming `web/litert_embeddings.js`** on web, at the first `getActiveEmbedder()` after upgrading to `flutter_edge_ai_litertlm` 1.13.0. The LiteRT.js bundle changed its API, and your app's `web/` still holds the copy of an earlier version. Copy all four files again from the package's `web/` (`litert_embeddings.js`, `sentencepiece.js`, `litert.js`, `tensorflow.js`). See [Installation → Web](/docs/installation#web).
 - **`EmbeddingLoadException: window.EmbeddingEngine is not set`** on web, when an EmbeddingGemma 2 (`.litertlm`) embedder loads. Since `flutter_edge_ai_litertlm` 1.13.1 it runs on `@litert-lm/core`'s `EmbeddingEngine`, which your `web/index.html` does not expose yet. Add `window.EmbeddingEngine = m.EmbeddingEngine;` next to `window.Engine = m.Engine;` in the `@litert-lm/core` module script. See [Installation → Web](/docs/installation#web).
-- **`EmbeddingLoadException: EmbeddingGemma 2 on the web needs WebGPU`** on web, when an EmbeddingGemma 2 (`.litertlm`) embedder loads in a browser without WebGPU — no `navigator.gpu`, or no GPU adapter (WebGPU switched off, a blocklisted driver, a headless browser without a GPU). On the web EmbeddingGemma 2 runs on WebGPU only: the CPU (WebAssembly) path of `@litert-lm/core` 0.18.0 fails on these bundles with "Failed to get external weight", so there is nothing to fall back to. Use a browser with WebGPU enabled; check `navigator.gpu` and `await navigator.gpu.requestAdapter()` in its console. See [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
+- **`EmbeddingLoadException: EmbeddingGemma 2 on the web needs WebGPU`** on web, when an EmbeddingGemma 2 (`.litertlm`) embedder loads in a browser without WebGPU — no `navigator.gpu`, or no GPU adapter (WebGPU switched off, a blocklisted driver, a headless browser without a GPU). On the web EmbeddingGemma 2 runs on WebGPU only: the CPU (WebAssembly) path of `@litert-lm/core` 0.19.0 fails on these bundles with "Failed to get external weight" (as 0.18.0 did), so there is nothing to fall back to. Use a browser with WebGPU enabled; check `navigator.gpu` and `await navigator.gpu.requestAdapter()` in its console. See [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
 - **`EmbeddingInputTooLongException`** from `embed`, `embedAll` or `RagIndex.add`/`search`. The input is longer than the model's `maxInputTokens`, task prefix, BOS and EOS included; since 2.3.0 it is refused instead of silently truncated. Split the text into smaller chunks — at most 512 tokens for EmbeddingGemma 2, whose limit is 1024. See [Embeddings & RAG](/docs/embeddings-and-rag#embedding-api).
 - **`EmbeddingLoadException` … `No embedding tokenizer is configured`** from `getActiveEmbedder()`, for a `.tflite` or ONNX embedder (an EmbeddingGemma 2 `.litertlm` carries its own and needs none). Since `flutter_gemma` 1.9.0 an embedding backend no longer carries a tokenizer: which family a model needs (Gemma SentencePiece, BERT WordPiece) is a property of the model, not of the engine that runs it, so the app registers it once. Add `flutter_edge_ai_embeddings` to `pubspec.yaml`, import it, and pass `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` to `FlutterEdgeAi.initialize()` beside `embeddingBackends:`. The error text names the package and the parameter. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **On the old `flutter_gemma_*` packages: `Target of URI doesn't exist: package:flutter_gemma_embeddings/web_embedding_model.dart`** at `flutter build web`. `flutter_gemma_embeddings` 2.2.0 moved that file into `flutter_gemma_litertlm` 1.8.0, alongside the rest of the LiteRT.js bundle it belongs to. A lockfile holding `flutter_gemma_litertlm` at 1.7.x while `flutter_gemma_embeddings` moves to 2.2.0 resolves cleanly and only then fails to compile. Upgrade `flutter_gemma_litertlm` to 1.8.0. Native builds are unaffected — that import sits behind a web-only conditional export.

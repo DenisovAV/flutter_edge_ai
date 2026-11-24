@@ -24,10 +24,10 @@ notes below).
 ```
 dependencies:
   genkit: ^1.0.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_edge_ai: ^0.12.1
-  flutter_edge_ai: ^2.7.0
+  genkit_flutter_edge_ai: ^0.12.2
+  flutter_edge_ai: ^2.7.2
   # Add the inference engine(s) you need:
-  flutter_edge_ai_litertlm: ^1.21.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_litertlm: ^1.21.1   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.3.1  # .task / .bin models (mobile + web)
   # Optional — tokenizers for .tflite / .onnx embedding models (an EmbeddingGemma 2
   # .litertlm needs none; the backend is flutter_edge_ai_litertlm above):
@@ -59,7 +59,8 @@ await FlutterEdgeAi.installModel(
   modelType: ModelType.gemma4,
   fileType: ModelFileType.litertlm, // the default, .task, routes to MediaPipe
 ).fromNetwork(
-  // On web, install gemma-4-E2B-it-web.litertlm from the same repository.
+  // On web, install gemma-4-E2B-it-gpu.litertlm from the same repository
+  // (LiteRtLmModels.gemma4E2bIt.webGpu), with WebStorageMode.streaming.
   'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
 ).install();
 

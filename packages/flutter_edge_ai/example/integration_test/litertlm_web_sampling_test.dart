@@ -29,22 +29,25 @@ library;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'inference_test_helpers.dart' show registerTestEngines;
+import 'inference_test_helpers.dart' show kWebGemma4E2bUrl, registerTestEngines;
 
 // A local copy keeps back-to-back runs off the network, e.g.
-// --dart-define=WEB_MODEL_URL=http://127.0.0.1:8765/gemma-4-E2B-it-web.litertlm
+// --dart-define=WEB_MODEL_URL=http://127.0.0.1:8765/gemma-4-E2B-it-gpu.litertlm
 const _webModelUrl = String.fromEnvironment(
   'WEB_MODEL_URL',
-  defaultValue:
-      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm',
+  defaultValue: kWebGemma4E2bUrl,
 );
 
 const _hfToken = String.fromEnvironment('HUGGINGFACE_TOKEN');
+
+/// The tests that started (Rule 6b).
+final _started = <int>{};
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('explicit sampling values reach the web engine', (tester) async {
+    _started.add(0);
     await registerTestEngines();
     final installer = FlutterEdgeAi.installModel(
       modelType: ModelType.gemma4,
@@ -102,4 +105,9 @@ void main() {
       reason: 'the hot reply is the greedy one: the values never arrived',
     );
   }, timeout: const Timeout(Duration(minutes: 20)));
+
+  // Rule 6b: under flutter drive a test that never ran reads as a pass.
+  testWidgets('every test above started', (tester) async {
+    expect(_started, hasLength(1));
+  });
 }

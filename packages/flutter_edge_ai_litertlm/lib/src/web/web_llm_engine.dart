@@ -1,0 +1,126 @@
+// The web model's engine: the active model's source, as core resolves it on
+// the page, handed to litertlm_dart's web `Engine`. dart:js_interop (the
+// OPFS stream), so web only.
+
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter_edge_ai/engine_web.dart';
+// The web Engine by name: through the public library the analyzer would see
+// the native one.
+import 'package:litertlm_dart/internal_web.dart'
+    show Engine, createConversationWithDefault, createWebEngine, runtimeLog;
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
+
+import '../adapter/tool_calls.dart';
+import '../adapter/web_inference_model.dart';
+
+/// Loads the model [resolver] resolves on WebGPU, as `@litert-lm/core` does
+/// by default: a `blob:` URL, or under `WebStorageMode.streaming` the OPFS
+/// file as a stream. A model over 2 GiB is installed only under `streaming`:
+/// a `cacheApi` install reads the file whole into one `ArrayBuffer`, which
+/// browsers cap near 2 GiB.
+///
+/// [maxTokens] is the context window, passed through as natively: the web
+/// runtime takes it as given (no 1024-token floor there).
+///
+/// [supportImage] loads the vision encoder on the GPU, [supportAudio] the
+/// audio encoder on the CPU, as the native Gemma 4 bundles declare it; both
+/// ran on 0.19.0 with Gemma 4 E2B's GPU export (2026-11-23). [maxNumImages]
+/// is the images a conversation reserves there (unset: 1).
+/// Where `LiteRtLmEngine.createModel` reads core's active web model from;
+/// a test hands it a resolver of its own.
+WebModelSourceResolver Function() activeWebModelSource =
+    WebModelSourceResolver.forActiveModel;
+
+Future<WebLlmEngine> createLiteRtLmWebEngine(
+  WebModelSourceResolver resolver, {
+  required int maxTokens,
+  bool supportImage = false,
+  bool supportAudio = false,
+  int? maxNumImages,
+}) async {
+  final resolved = await resolver.resolveActiveInferenceModel();
+  lm.EngineConfig config(String modelPath) => lm.EngineConfig(
+    modelPath: modelPath,
+    backend: const lm.Backend.gpu(),
+    maxNumTokens: maxTokens,
+    visionBackend: supportImage ? const lm.Backend.gpu() : null,
+    audioBackend: supportAudio ? const lm.Backend.cpu() : null,
+    maxNumImages: supportImage ? maxNumImages : null,
+  );
+  final Engine engine;
+  switch (resolved.model) {
+    case BlobUrlModelSource(:final url):
+      engine = await createWebEngine(
+        config(url),
+        toolCallsOf: liteRtLmToolCallsOf,
+      );
+    case final OpfsStreamModelSource source:
+      engine = await createWebEngineFromStream(
+        config(source.filename),
+        await source.openStream(),
+      );
+  }
+  return _LmWebLlmEngine(engine);
+}
+
+/// The engine for [config] read from [stream], a `ReadableStream` of an OPFS
+/// file (WebStorageMode.streaming). A refusal or a failed create may leave
+/// the stream unread: it is cancelled then, which releases the file.
+@visibleForTesting
+Future<Engine> createWebEngineFromStream(
+  lm.EngineConfig config,
+  JSAny stream,
+) async {
+  try {
+    return await createWebEngine(
+      config,
+      model: stream,
+      toolCallsOf: liteRtLmToolCallsOf,
+    );
+  } catch (_) {
+    _cancelStream(stream);
+    rethrow;
+  }
+}
+
+/// Cancels [stream], which releases its OPFS file. A stream the runtime
+/// already holds a reader on (`locked`) is the runtime's to end: cancelling it
+/// would only reject.
+void _cancelStream(JSAny stream) {
+  if (!stream.isA<JSObject>()) return;
+  final readable = stream as JSObject;
+  if (readable['locked'].dartify() == true) return;
+  if (!(readable['cancel']?.typeofEquals('function') ?? false)) return;
+  final JSAny? cancelled;
+  try {
+    cancelled = readable.callMethod<JSAny?>('cancel'.toJS);
+  } catch (e) {
+    runtimeLog('[LiteRtLmWeb] could not cancel the model stream: $e');
+    return;
+  }
+  if (cancelled.isA<JSPromise<JSAny?>>()) {
+    (cancelled as JSPromise<JSAny?>).toDart.then(
+      (_) {},
+      onError: (Object e) =>
+          runtimeLog('[LiteRtLmWeb] cancelling the model stream failed: $e'),
+    );
+  }
+}
+
+final class _LmWebLlmEngine implements WebLlmEngine {
+  _LmWebLlmEngine(this._engine);
+
+  final Engine _engine;
+
+  @override
+  Future<lm.Conversation> openConversation(
+    lm.ConversationConfig config,
+    lm.SamplerConfig? defaultSamplerConfig,
+  ) => createConversationWithDefault(_engine, config, defaultSamplerConfig);
+
+  @override
+  Future<void> close() => _engine.close();
+}

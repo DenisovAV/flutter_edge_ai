@@ -9,7 +9,7 @@
 // either failure has nothing to dispose. The stubs are defined with `eval`,
 // so they are plain JS functions, not Dart closures.
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Run:
+// tool/test_all.sh runs it in Chrome (dart2js and dart2wasm). By hand:
 //   flutter test --platform chrome test/web/litert_js_embedding_js_errors_test.dart
 @TestOn('browser')
 library;

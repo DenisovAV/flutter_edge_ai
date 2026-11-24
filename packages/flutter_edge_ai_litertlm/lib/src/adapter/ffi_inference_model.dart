@@ -12,7 +12,6 @@ import 'package:flutter/foundation.dart';
 
 import 'package:litertlm_dart/internal_io.dart'
     show
-        NativeLastTurnEnd,
         ScoringStoppedError,
         conversationHandle,
         conversationTokenCount,
@@ -20,7 +19,6 @@ import 'package:litertlm_dart/internal_io.dart'
         createOwnConversation,
         engineBundleSampler,
         engineRenderUserMessage,
-        turnFailureCause,
         engineFiltersChannelContent,
         engineNoRewindReason,
         isReleaseBuild,
@@ -32,6 +30,12 @@ import '../litertlm_decision_section.dart';
 import '../option_scoring_self_check.dart';
 import '../reported_engine_turn.dart';
 import 'runtime_log_binding.dart';
+import 'turn_errors.dart';
+
+export 'turn_errors.dart' show LiteRtLmSessionClosedError;
+import 'user_message.dart';
+
+export 'user_message.dart' show liteRtLmUserMessage;
 import 'runtime_mapping.dart';
 
 /// Whether the scoring self-check is skipped as in a release build:
@@ -79,28 +83,6 @@ String _rebuiltChunkJson(lm.Message chunk) => jsonEncode({
     ],
   if (chunk.channels.isNotEmpty) 'channels': chunk.channels,
 });
-
-/// A user message of [text] with its media placed by [order]: images, then
-/// audio, before the text or after it, as each [MediaPosition] says.
-lm.Message liteRtLmUserMessage(
-  String text, {
-  List<Uint8List> images = const [],
-  Uint8List? audio,
-  required MultimodalOrder order,
-}) {
-  final before = <lm.Content>[];
-  final after = <lm.Content>[];
-  List<lm.Content> side(MediaPosition position) =>
-      position == MediaPosition.beforeText ? before : after;
-  for (final image in images) {
-    side(order.images).add(lm.Content.imageBytes(image));
-  }
-  if (audio != null) side(order.audio).add(lm.Content.audioBytes(audio));
-  return lm.Message(
-    role: lm.Role.user,
-    contents: [...before, lm.Content.text(text), ...after],
-  );
-}
 
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
@@ -810,31 +792,7 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// waiting, since a paused turn might never end on its own.
   final _closedSignal = Completer<void>();
 
-  /// The runtime's turn errors as core's: a message that did not fit is
-  /// [ContextLimitException], which says what happened and keeps native's
-  /// token counts; the rest as [mapRuntimeError] maps them.
-  Object _coreTurnError(Object error) {
-    if (error is lm.ConversationClosedException) {
-      return LiteRtLmSessionClosedError(error.message);
-    }
-    // What core's apps always got: the failure itself, not litertlm_dart's
-    // wrapper of it.
-    if (error is lm.TurnFailedException) {
-      final cause = turnFailureCause(error);
-      // A native failure mid-turn as at session open: a plain Exception.
-      if (cause is lm.LiteRtLmNativeException) return Exception(cause.message);
-      if (cause != null) return mapRuntimeError(cause);
-    }
-    if (error is lm.ContextFullException) {
-      return ContextLimitException(
-        'The input token count does not fit the context window space '
-        'left; the session was restored to before this turn. Send a '
-        'shorter message, or close the session and open a new one. '
-        'Native token counts: ${error.message}',
-      );
-    }
-    return mapRuntimeError(error);
-  }
+  Object _coreTurnError(Object error) => coreTurnError(error);
 
   void _closeAfterFormatRefusal() {
     if (_isClosed || _rejectFurtherSends) return;
@@ -1244,31 +1202,6 @@ class FfiInferenceModelSession extends InferenceModelSession
   }
 }
 
-/// How a native turn whose text ran to its end ended, from native's turn-end
-/// record ([NativeLastTurnEnd], §23; litertlm_dart keeps it internal, as
-/// LiteRT-LM's Kotlin and Swift APIs report no end reason): the end of the
-/// reply is [TurnEnd.endOfSequence], `max_output_tokens`
-/// [TurnEnd.outputLimit], a decode that filled the context window (and an
-/// input that did not fit, should one ever end without an error)
-/// [TurnEnd.contextLimit]. Without a record, or with one no completed send
-/// leaves, it is [liteRtLmPlaceholderCompletedEnd]'s guess.
-@visibleForTesting
-TurnEnd liteRtLmCompletedTurnEnd(
-  NativeLastTurnEnd? end,
-  int? maxOutputTokens,
-) => switch (end) {
-  NativeLastTurnEnd.completed => TurnEnd.endOfSequence,
-  NativeLastTurnEnd.outputLimit => TurnEnd.outputLimit,
-  NativeLastTurnEnd.contextLimit ||
-  NativeLastTurnEnd.contextFull => TurnEnd.contextLimit,
-  NativeLastTurnEnd.none ||
-  NativeLastTurnEnd.cancelled ||
-  NativeLastTurnEnd.failed ||
-  NativeLastTurnEnd.running ||
-  NativeLastTurnEnd.refused ||
-  null => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
-};
-
 /// [call], with a failed native call thrown as the [StateError] core's
 /// option scoring has always got.
 @visibleForTesting
@@ -1402,13 +1335,6 @@ final class _AnyCancelSignal implements lm.CancelSignal {
   @override
   Future<void> get whenCancelled =>
       Future.any([for (final s in signals) s.whenCancelled]);
-}
-
-/// The session, or its model, was closed while a reply streamed: a
-/// [StateError], as a use of a closed session is.
-@visibleForTesting
-final class LiteRtLmSessionClosedError extends StateError {
-  LiteRtLmSessionClosedError(super.message);
 }
 
 /// One turn's stop: asked by [FfiInferenceModelSession.stopGeneration] while

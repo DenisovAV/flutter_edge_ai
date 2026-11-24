@@ -8,8 +8,6 @@
 import 'package:flutter/services.dart';
 
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
-import 'litert_lm_load_errors.dart' show NpuDispatchUnavailableException;
-import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 
 /// [NpuPlatform] for a Flutter app.
 final class FlutterNpuPlatform implements NpuPlatform {

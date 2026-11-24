@@ -557,8 +557,9 @@ each on macOS CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, Qualcomm or
 Google Tensor NPUs on Android, and Intel NPUs on Windows. Linux Vulkan, Windows
 D3D12, iOS, Android CPU/PowerVR/MediaTek, and unverified Linux arm64
 accelerators instead use virtual sessions that replay full messages, including
-media, into one shared conversation. The web runtime is also virtual but
-remains text-only.
+media, into one shared conversation. On the web each session has its own
+`@litert-lm/core` conversation, rebuilt from its history after a stop
+mid-reply.
 Hybrid models such as LFM2 rebuild from full messages when recovery is needed
 and never rewind.
 

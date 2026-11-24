@@ -426,19 +426,13 @@ String _wrongTextBackend(
 }
 
 /// Where to load a model that runs on [backends] (the NPU, or the GPU and/or
-/// the CPU), said for both callers of the load: litertlm_dart's
-/// `EngineConfig.backend` and flutter_edge_ai's `preferredBackend`, which
-/// left unset loads where the file runs.
+/// the CPU), in `EngineConfig.backend`'s terms. A package built on this one
+/// adds its own words.
 String _loadOn(List<BackendKind> backends) {
   String upper(BackendKind b) => b.name.toUpperCase();
   final where = backends.map((b) => 'the ${upper(b)}').join(' or ');
   final runtime = backends.map((b) => 'Backend.${b.name}()').join(' or ');
-  final adapter = backends.length == 1
-      ? 'PreferredBackend.${backends.single.name}'
-      : 'PreferredBackend.${backends.first.name} or '
-            '.${backends.skip(1).map((b) => b.name).join(' or .')}';
-  return 'on $where ($runtime; in flutter_edge_ai, preferredBackend: '
-      '$adapter, or none)';
+  return 'on $where ($runtime)';
 }
 
 /// Whether [backend] is ruled out for [bundle]'s text model because it is
@@ -579,16 +573,12 @@ void _checkNpuVendor(
   );
 }
 
-/// "without" the [encoders] (`vision`, `audio`), said for both callers of the
-/// load: litertlm_dart's `EngineConfig.visionBackend`/`audioBackend` null,
-/// flutter_edge_ai's `supportImage`/`supportAudio` false.
+/// "without" the [encoders] (`vision`, `audio`): `EngineConfig.visionBackend`
+/// and `audioBackend` null. A package built on this one adds its own words.
 String _withoutEncoders(List<String> encoders) {
   final runtime = [for (final e in encoders) '${e}Backend: null'].join(', ');
-  final adapter = [
-    for (final e in encoders) e == 'vision' ? 'supportImage' : 'supportAudio',
-  ].join(' or ');
   final what = encoders.length == 1
       ? 'its ${encoders.single} encoder'
       : 'its encoders';
-  return 'without $what ($runtime; in flutter_edge_ai, without $adapter)';
+  return 'without $what ($runtime)';
 }

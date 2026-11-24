@@ -45,7 +45,7 @@ engines your app uses:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.7.0
+  flutter_edge_ai: ^2.7.2
   flutter_edge_ai_mediapipe: ^1.3.1   # MediaPipe .task engine
 ```
 

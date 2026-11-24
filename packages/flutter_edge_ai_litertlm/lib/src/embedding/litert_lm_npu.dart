@@ -28,7 +28,6 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
 import '../flutter_npu_platform.dart';
-import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'litert_lm_embedding_common.dart';
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 

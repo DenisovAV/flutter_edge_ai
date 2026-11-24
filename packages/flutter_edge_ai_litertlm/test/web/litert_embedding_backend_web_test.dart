@@ -7,7 +7,7 @@
 // (this suite used to feed `blob:` paths and stayed green while every
 // streaming-mode LiteRT.js embedder failed to load).
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Run:
+// tool/test_all.sh runs it in Chrome (dart2js and dart2wasm). By hand:
 //   flutter test --platform chrome test/web/litert_embedding_backend_web_test.dart
 @TestOn('browser')
 library;
@@ -22,7 +22,12 @@ import 'package:flutter/foundation.dart' show DebugPrintCallback, debugPrint;
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_backend_web.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_js_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_runtime.dart';
+import 'package:litertlm_dart/internal_web.dart'
+    show
+        EmbedderModality,
+        LiteRtLmWebBackend,
+        LiteRtLmWebEmbedderConfig,
+        WindowLiteRtLmWebRuntime;
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_web_embeddings.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -75,7 +80,7 @@ void main() {
       'bundle: the raw path, the file name, the real runtime, resolver and '
       'revoker, GPU', () async {
     final descriptor = await backend.describe(_eg2, _bundleConfig());
-    final config = descriptor.config as LiteRtLmWebEmbeddingConfig;
+    final config = descriptor.config as LiteRtLmWebEmbedderConfig;
 
     expect(descriptor.engineTag, 'LiteRT-LM');
     expect(descriptor.activeBackend, PreferredBackend.gpu);
@@ -94,14 +99,14 @@ void main() {
       'vision budget other than 140/70 is refused', () async {
     final images =
         (await backend.describe(_eg2, _bundleConfig(supportImage: true))).config
-            as LiteRtLmWebEmbeddingConfig;
-    expect(images.declaredMedia, {EmbeddingModality.image});
+            as LiteRtLmWebEmbedderConfig;
+    expect(images.declaredMedia, {EmbedderModality.image});
 
     final seventy =
         (await const LiteRtEmbeddingBackend(
               visionTokensPerImage: 70,
             ).describe(_eg2, _bundleConfig(supportImage: true))).config
-            as LiteRtLmWebEmbeddingConfig;
+            as LiteRtLmWebEmbedderConfig;
     expect(seventy.visionTokensPerImage, 70);
     await expectLater(
       const LiteRtEmbeddingBackend(
@@ -137,9 +142,9 @@ void main() {
       _bundleConfig(supportImage: true),
     );
     await strict.describe(_eg2, _bundleConfig());
-    final config = descriptor.config as LiteRtLmWebEmbeddingConfig;
+    final config = descriptor.config as LiteRtLmWebEmbedderConfig;
     expect(descriptor.activeBackend, PreferredBackend.gpu);
-    expect(config.declaredMedia, {EmbeddingModality.image});
+    expect(config.declaredMedia, {EmbedderModality.image});
     expect(config.visionTokensPerImage, 140);
     expect(descriptor.build(), isA<LiteRtLmWebEmbeddingPass>());
     expect(logged.where((l) => l.contains('requireWeightCache')), [
@@ -264,10 +269,10 @@ void main() {
                 modelPath: blobUrl(eg2Header740m),
               ),
             )).config
-            as LiteRtLmWebEmbeddingConfig;
+            as LiteRtLmWebEmbedderConfig;
     expect(audio.declaredMedia, {
-      EmbeddingModality.image,
-      EmbeddingModality.audio,
+      EmbedderModality.image,
+      EmbedderModality.audio,
     });
     expect(audio.audioBackend, LiteRtLmWebBackend.gpu);
 

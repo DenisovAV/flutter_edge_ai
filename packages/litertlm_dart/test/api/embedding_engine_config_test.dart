@@ -69,6 +69,20 @@ void main() {
     audioBackend: audio,
   );
 
+  test('natively a config without a cacheDir is an ArgumentError naming '
+      'cacheDir', () async {
+    final path = write('g.litertlm', eg2Container());
+
+    await expectLater(
+      embedderConfigFor(EmbeddingEngineConfig(modelPath: path)),
+      throwsA(
+        isA<ArgumentError>()
+            .having((e) => e.name, 'name', 'cacheDir')
+            .having((e) => e.message, 'message', contains('required natively')),
+      ),
+    );
+  });
+
   test(
     'the generic bundle runs on the CPU; on the NPU it is refused',
     () async {

@@ -173,9 +173,8 @@ _Scope _loadAndVerify(String soname, {required String proxyFailureContext}) {
       '`sem_clockwait`, which do not exist on API 29 and below — see '
       'https://github.com/DenisovAV/flutter_edge_ai/issues/265), or a non-arm64 '
       'ABI (current: ${Abi.current()}; only arm64-v8a ships this library — see '
-      'https://github.com/DenisovAV/flutter_edge_ai/issues/250). `.task` '
-      'MediaPipe models still run text inference on API < 30 and on other '
-      'ABIs; embeddings and speech require arm64 on API 30+.',
+      'https://github.com/DenisovAV/flutter_edge_ai/issues/250). LiteRT-LM, '
+      'its embeddings and speech need arm64 on API 30+.',
     );
   }
 
@@ -221,7 +220,7 @@ String _poisonedBy(String soname) =>
     'call, and bionic does not promote an already-loaded library, so the '
     'condition is permanent for this process — a Flutter hot restart will '
     'NOT clear it, since linker state outlives the isolate; a full app '
-    'restart is required. Load it before flutter_edge_ai does and with '
+    'restart is required. Load it before litertlm_dart does and with '
     'RTLD_GLOBAL. Note that a Java `System.loadLibrary` cannot request '
     'RTLD_GLOBAL at all, so from Java the only remedy is not to preload it.';
 

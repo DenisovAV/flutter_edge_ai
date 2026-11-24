@@ -2,7 +2,7 @@
 // TurnEnd.stopped and a close the consumer did not ask for TurnEnd.closed,
 // each with the text generated so far and no error.
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Run:
+// tool/test_all.sh runs it in Chrome (dart2js and dart2wasm). By hand:
 //   flutter test --platform chrome test/web/litert_lm_web_turn_end_test.dart
 @TestOn('browser')
 library;
@@ -12,14 +12,16 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web_inference.dart';
+import 'package:flutter_edge_ai_litertlm/src/adapter/web_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mutex/mutex.dart';
+import 'package:litertlm_dart/internal_web.dart' show WebConversationHandle;
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
+
+import 'web_session_fixture.dart';
 
 /// A conversation that streams one chunk, then waits until it is cancelled
 /// and ends.
-LiteRtLmConversation _conversation() {
+JSObject _conversation() {
   final cancelled = Completer<void>();
   var step = 0;
   final iterator = JSObject()
@@ -42,20 +44,14 @@ LiteRtLmConversation _conversation() {
           .toJS;
     }).toJS;
   return (JSObject()
-        ..['sendMessageStreaming'] = ((JSAny? message) => iterator).toJS
-        ..['cancel'] = (() {
-          if (!cancelled.isCompleted) cancelled.complete();
-        }).toJS)
-      as LiteRtLmConversation;
+    ..['sendMessageStreaming'] = ((JSAny? message) => iterator).toJS
+    ..['cancel'] = (() {
+      if (!cancelled.isCompleted) cancelled.complete();
+    }).toJS
+    ..['delete'] = (() => Future<void>.value().toJS).toJS);
 }
 
-LiteRtLmWebSession _session() => LiteRtLmWebSession(
-  conversation: _conversation(),
-  modelType: ModelType.gemmaIt,
-  fileType: ModelFileType.litertlm,
-  generationMutex: Mutex(),
-  onClose: () {},
-);
+LiteRtLmWebSession _session() => webSessionOver(_conversation());
 
 // ignore: invalid_use_of_protected_member
 EngineTurn _turn(InferenceModelSession session) => session.startTurn();
@@ -86,4 +82,99 @@ void main() {
       expect(await turn.end, expected);
     });
   }
+
+  test('a model closed mid-turn, its session left open, is TurnEnd.closed '
+      'with the partial text', () async {
+    late WebConversationHandle handle;
+    final session = webSessionOver(
+      _conversation(),
+      onHandle: (h) => handle = h,
+    );
+    await session.addQueryChunk(const Message(text: 'Hi', isUser: true));
+    final turn = _turn(session);
+    final first = Completer<void>();
+    final text = <String>[];
+    final done = turn.text.forEach((chunk) {
+      text.add(chunk);
+      if (!first.isCompleted) first.complete();
+    });
+    await first.future;
+
+    // What the model's close does to each conversation it opened.
+    await handle.close();
+    await done;
+
+    expect(text, ['Par']);
+    expect(await turn.end, TurnEnd.closed);
+  });
+
+  test('a turn the runtime fails reaches core as a plain Exception with the '
+      'runtime\'s text, as natively', () async {
+    final iterator = JSObject()
+      ..['next'] = (() => Future<JSObject>.error(
+        StateError('Task failed with state: 7'),
+      ).toJS).toJS;
+    final conversation = JSObject()
+      ..['sendMessageStreaming'] = ((JSAny? message) => iterator).toJS
+      ..['cancel'] = (() {}).toJS
+      ..['getTokenCount'] = (() => Future<JSNumber>.value(1.toJS).toJS).toJS
+      ..['delete'] = (() => Future<void>.value().toJS).toJS;
+    final session = webSessionOver(conversation);
+    await session.addQueryChunk(const Message(text: 'Hi', isUser: true));
+
+    await expectLater(
+      _turn(session).text.toList(),
+      throwsA(
+        allOf(
+          isNot(isA<lm.LiteRtLmException>()),
+          isA<Exception>().having(
+            (e) => '$e',
+            'message',
+            contains('Task failed with state: 7'),
+          ),
+        ),
+      ),
+    );
+  });
+
+  test('a message refused while the history fills the context window is '
+      'ContextLimitException and TurnEnd.contextLimit, and so is the next '
+      'one, never sent', () async {
+    var sent = 0;
+    final iterator = JSObject()
+      ..['next'] = (() => Future<JSObject>.error(
+        StateError('Max number of tokens reached, the context window is full.'),
+      ).toJS).toJS;
+    final conversation = JSObject()
+      ..['sendMessageStreaming'] = ((JSAny? message) {
+        sent++;
+        return iterator;
+      }).toJS
+      ..['cancel'] = (() {}).toJS
+      // The history holds the whole window.
+      ..['getTokenCount'] = (() => Future<JSNumber>.value(4096.toJS).toJS).toJS
+      ..['delete'] = (() => Future<void>.value().toJS).toJS;
+    final session = webSessionOver(conversation, maxTokens: 4096);
+
+    for (final text in ['A long message.', 'Short.']) {
+      await session.addQueryChunk(Message(text: text, isUser: true));
+      final turn = _turn(session);
+      // As core's chat reads a turn: its error does not cancel the text.
+      final errors = <Object>[];
+      final done = Completer<void>();
+      turn.text.listen((_) {}, onError: errors.add, onDone: done.complete);
+      await done.future;
+
+      expect(
+        errors.single,
+        isA<ContextLimitException>().having(
+          (e) => '$e',
+          'message',
+          contains('The context window of this conversation is full'),
+        ),
+      );
+      expect(await turn.end, TurnEnd.contextLimit, reason: text);
+    }
+    expect(sent, 1);
+  });
 }

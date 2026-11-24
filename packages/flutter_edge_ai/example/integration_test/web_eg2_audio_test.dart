@@ -2,7 +2,7 @@
 /// 1.13.2): the pinned litert-community 740m bundle through
 /// `installEmbedder()` → `getActiveEmbedder(supportAudio: true)` → core's
 /// inline host → flutter_edge_ai_litertlm's web `.litertlm` pass →
-/// `@litert-lm/core` 0.18.0's `EmbeddingEngine` on WebGPU (text, vision and
+/// `@litert-lm/core`'s `EmbeddingEngine` on WebGPU (text, vision and
 /// audio towers), with `WebStorageMode.cacheApi`. The web twin of
 /// embeddinggemma2_audio_test.dart, held to the same golden.
 ///
@@ -10,10 +10,10 @@
 /// (integration_test/tools/generate_eg2_audio_clips.py):
 /// - {text, audio}, GPU, 768 dimensions, 1024 tokens; the text tower against
 ///   the native text golden (WebGPU bound, as web_eg2_test.dart);
-/// - each clip against goldens/eg2_audio_golden_web.dart (the 0.18 audio
-///   golden, frozen for the web, which runs @litert-lm/core 0.18.0): cos >=
-///   [_minAudio] against `vector_native` (our native-v0.18.0-e build, CPU)
-///   and against Google's litert-lm 0.18.0 wheel (`vector`). The audio encoder quantizes
+/// - each clip against goldens/eg2_audio_golden.dart (the native golden,
+///   LiteRT-LM 0.19, as the page's 0.19.0): cos >= [_minAudio] against
+///   `vector_native` (our native build, CPU) and against Google's litert-lm
+///   0.19.0 wheel (`vector`). The audio encoder quantizes
 ///   its activations to int8, so the last bits of another kernel move a clip
 ///   by up to cos 0.05 natively already (see the native suite); WebGPU adds
 ///   its own rounding. Retrieval is the real bar;
@@ -66,9 +66,18 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart' as catalog;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:litertlm_dart/internal_web.dart'
+    show
+        LiteRtLmWebAudio,
+        LiteRtLmWebBackend,
+        LiteRtLmWebEmbeddingOptions,
+        LiteRtLmWebEngineSettings,
+        LiteRtLmWebOverflowStrategy,
+        WindowLiteRtLmWebRuntime,
+        liteRtLmWebRuntime;
 
-import 'goldens/eg2_audio_golden_web.dart';
-import 'goldens/eg2_text_golden_web.dart';
+import 'goldens/eg2_audio_golden.dart';
+import 'goldens/eg2_text_golden.dart';
 import 'web_embeddings_support.dart';
 
 /// Every test in this file, in order; the last one checks they all started.
@@ -81,6 +90,7 @@ const _tests = [
   'combined',
   'combined overflow',
   'audio refused',
+  'runtime audio on 270m/440m',
 ];
 
 const _eg2Audio = catalog.EmbeddingModel.embeddingGemma2TextVisionAudio740m;
@@ -184,7 +194,7 @@ void _log(String line) {
 // ── Goldens ────────────────────────────────────────────────────────────────
 
 final Map<String, dynamic> _golden =
-    jsonDecode(eg2AudioGoldenWebJson) as Map<String, dynamic>;
+    jsonDecode(eg2AudioGoldenJson) as Map<String, dynamic>;
 
 Map<String, dynamic> _group(String name) =>
     (_golden[name] as Map).cast<String, dynamic>();
@@ -199,8 +209,12 @@ List<double> _f32(String encoded) {
 
 /// The bound for a vector with audio in it, against our native build and
 /// against the wheel. Measured on a Tesla T4 (Chrome 155, WebGPU audio
-/// tower): clips 0.974-0.991 against our native build and 0.975-0.995
-/// against the wheel; combined inputs with audio 0.983-0.997. Natively the
+/// tower, 0.18.0 against the 0.18 golden): clips 0.974-0.991 against our
+/// native build and 0.975-0.995 against the wheel; combined inputs with audio
+/// 0.983-0.997. On an Apple GPU (Chrome 157, 2026-11-23): 0.19.0 against the
+/// 0.19 golden 0.954-0.991 (native) and 0.960-0.991 (wheel), combined
+/// 0.992-0.993; 0.19.0 against the 0.18 golden fell to 0.930, so each
+/// runtime is held to its own golden. Natively the
 /// same int8 activations already move a clip by up to cos 0.05 between CPU
 /// kernels, so this catches a broken tower, not drift; retrieval below is the
 /// real check.
@@ -327,8 +341,7 @@ void main() {
     expect(model.activeBackend, PreferredBackend.gpu);
 
     final textGolden =
-        ((jsonDecode(eg2TextGoldenWebJson) as Map)['items'] as List).first
-            as Map;
+        ((jsonDecode(eg2TextGoldenJson) as Map)['items'] as List).first as Map;
     final text = await model.embed(
       EmbeddingInput.text(textGolden['text'] as String),
       taskType: textGolden['role'] == 'query'
@@ -700,6 +713,66 @@ void main() {
       );
       expect(identical(await FlutterEdgeAi.getActiveEmbedder(), held), isTrue);
     }
+  }, timeout: const Timeout(Duration(minutes: 30)));
+
+  // Why the header decides audio: the runtime itself, asked directly, past
+  // the header check, never embeds a clip with the 270m or the 440m, but
+  // `EmbeddingEngine.create` accepts `audioBackend` on both (0.18.0 and
+  // 0.19.0, 2026-11-23) and only the first clip fails ("Audio executor is not
+  // available for audio input."). Where it fails is recorded.
+  testWidgets('the runtime itself: $liteRtLmWebRuntime never embeds a clip '
+      'with the 270m or the 440m', (tester) async {
+    _start('runtime audio on 270m/440m');
+    final record = <String, Object?>{};
+    for (final (model, url) in [
+      (_eg2, _urlOverride),
+      (_eg2Vision, _visionUrlOverride),
+    ]) {
+      await _ensure(model, url);
+      await _releaseActive(); // one engine at a time on the page
+      const runtime = WindowLiteRtLmWebRuntime();
+      Object? createError;
+      Object? clipError;
+      try {
+        final engine = await runtime.create(
+          LiteRtLmWebEngineSettings(
+            modelUrl: await _installedUrl(),
+            backend: LiteRtLmWebBackend.gpu,
+            maxInputLength: 1024,
+            audioBackend: LiteRtLmWebBackend.gpu,
+          ),
+        );
+        try {
+          await engine.computeEmbedding(
+            LiteRtLmWebAudio(await _clip('kitchen_lights.wav')),
+            const LiteRtLmWebEmbeddingOptions(
+              normalize: true,
+              insertSpecialTokens: true,
+              inputOverflowStrategy: LiteRtLmWebOverflowStrategy.truncate,
+            ),
+          );
+        } catch (e) {
+          clipError = e;
+        } finally {
+          await engine.delete();
+        }
+      } catch (e) {
+        createError = e;
+      }
+      record[model.name] = {
+        'create': '${createError ?? 'ok'}',
+        'clip': '$clipError',
+      };
+      _log(
+        '${model.name} raw audio: create ${createError ?? 'ok'}, clip $clipError',
+      );
+      expect(
+        createError ?? clipError,
+        isNotNull,
+        reason: '${model.name} embedded a clip',
+      );
+    }
+    report('runtime_audio_without_encoder', record);
   }, timeout: const Timeout(Duration(minutes: 30)));
 
   testWidgets('every test above started (an absent test reads as a pass '

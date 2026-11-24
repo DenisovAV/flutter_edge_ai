@@ -855,8 +855,7 @@ final class LiteRtLmEmbedder {
         throw EmbedderLoadException(
           target == null
               ? 'LiteRT-LM could not run $_file on the GPU: $message. Load it '
-                    'on the CPU to embed there (Backend.cpu(); in '
-                    'flutter_edge_ai, preferredBackend: PreferredBackend.cpu).'
+                    'on the CPU to embed there (Backend.cpu()).'
               : 'LiteRT-LM could not run $_file on the NPU of this device: '
                     '$message. The bundle is compiled for $target; '
                     '${liteRtLmNpuProbeFailureCauses(target)}, it fails this '
@@ -1038,9 +1037,8 @@ final class LiteRtLmEmbedder {
         break;
       case LiteRtLmModelType.kLiteRtLmModelTypeLlm:
         _refuse(
-          '$_file is an LLM bundle, not an embedder. Install it with '
-          '`installModel(fileType: ModelFileType.litertlm)` for inference, '
-          'and an EmbeddingGemma 2 bundle with `installEmbedder()`.',
+          '$_file is an LLM bundle, not an embedder: load it with Engine for '
+          'inference, and an EmbeddingGemma 2 bundle with EmbeddingEngine.',
         );
       case LiteRtLmModelType.kLiteRtLmModelTypeUnknown || null:
         _refuse('$_file is not a LiteRT-LM embedding bundle.');
@@ -1061,10 +1059,7 @@ final class LiteRtLmEmbedder {
     if (media.contains(EmbedderModality.image)) {
       // D23: from the vision signatures, never supports_input_modality.
       if (!_hasVision(info)) {
-        _refuse(
-          '$_file has no vision encoder; install '
-          'embeddinggemma-2-text-vision-440m',
-        );
+        _refuse(liteRtLmNoVisionEncoderMessage(_file));
       }
       final budgets = info.visionSignatures!;
       final budget = _config.visionTokensPerImage;
@@ -1617,8 +1612,7 @@ final class LiteRtLmEmbedder {
               : _config.gpu
               ? 'LiteRT-LM could not create the embedding engine for $_file '
                     'on the GPU: $message. Load it on the CPU to embed there '
-                    '(Backend.cpu(); in flutter_edge_ai, preferredBackend: '
-                    'PreferredBackend.cpu).'
+                    '(Backend.cpu()).'
               // Measured: a missing or read-only cache dir is code 3 at create.
               : code == _statusInvalidArgument
               ? 'LiteRT-LM refused the embedding cache directory $cacheDir '

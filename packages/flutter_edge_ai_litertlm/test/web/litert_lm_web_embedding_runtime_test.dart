@@ -1,6 +1,6 @@
 // The EmbeddingGemma 2 web pass over the REAL interop — `WindowLiteRtLmWebRuntime`
 // and the page's `window.litertLmReady` / `window.EmbeddingEngine` — with a
-// stub engine of `@litert-lm/core` 0.18.0's shape defined in plain JS (`eval`),
+// stub engine of `@litert-lm/core`'s shape defined in plain JS (`eval`),
 // through the path an app takes: the web backend's describe(), the pass, and
 // core's inline host. What the VM suite cannot see: the JS objects themselves.
 // - the loader states: no loader, a loader without `EmbeddingEngine` (an
@@ -25,7 +25,7 @@
 //   declared; an audio part is `{type: 'audio', data: ArrayBuffer}` of exactly
 //   the clip, and a combined input one JS array of its parts in order.
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Run on the GCE VM:
+// tool/test_all.sh runs it in Chrome (dart2js and dart2wasm). By hand:
 //   flutter test --platform chrome test/web/litert_lm_web_embedding_runtime_test.dart
 @TestOn('browser')
 library;
@@ -41,8 +41,11 @@ import 'package:flutter_edge_ai/src/embedding/common_embedding_model.dart';
 import 'package:flutter_edge_ai/src/embedding/embedding_host_web.dart'
     as inline;
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_backend_web.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_runtime.dart';
+import 'package:litertlm_dart/internal_web.dart'
+    show
+        LiteRtLmWebGpuSupport,
+        LiteRtLmWebRuntimeState,
+        WindowLiteRtLmWebRuntime;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'eg2_header_fixtures.dart';
@@ -80,7 +83,7 @@ void _stubGpu({bool present = true, bool adapter = true}) => _js('''
 
 int get _gpuRequests => (globalContext['__gpuRequests']! as JSArray).length;
 
-/// A stub `EmbeddingEngine` of 0.18.0's shape that records what it is given.
+/// A stub `EmbeddingEngine` of the runtime's shape that records what it is given.
 /// A text "token" is a space-separated word, plus BOS and EOS; an image is
 /// 140 tokens, an audio clip one per byte; an array of parts is the sum.
 /// Inputs over `__eg2.maxSeq` under TRUNCATE come back with
@@ -89,6 +92,9 @@ void _installEngine() => _js('''
   window.__eg2 = { settings: [], inputs: [], options: [], deletes: 0,
                    maxSeq: 1024, createError: null, computeError: null };
   window.EmbeddingEngine = function () {};
+  // The members the release calls, which the runtime check looks for.
+  window.EmbeddingEngine.prototype.computeEmbedding = function () {};
+  window.EmbeddingEngine.prototype.delete = function () {};
   window.EmbeddingEngine.create = async function (settings) {
     const s = window.__eg2;
     s.settings.push(settings);
@@ -143,12 +149,17 @@ String _blobUrl(Uint8List bytes) {
 }
 
 /// The model an app gets: describe() → the pass → core's inline host. With
-/// [audio], [modelPath] must be a URL the page can read (a bundle header).
+/// [images] or [audio] the embedder reads the bundle's container header, so
+/// [modelPath] must be a URL the page can read: by default then the 740m's
+/// header (vision and audio towers).
 Future<EmbeddingModel> _start({
   bool images = false,
   bool audio = false,
-  String modelPath = 'blob:https://example.com/eg2',
+  String? modelPath,
 }) async {
+  modelPath ??= images || audio
+      ? _blobUrl(eg2Header740m)
+      : 'blob:https://example.com/eg2';
   final descriptor = await const LiteRtEmbeddingBackend().describe(
     _bundle440m,
     _config(supportImage: images, supportAudio: audio, modelPath: modelPath),
@@ -245,12 +256,30 @@ void main() {
         _js('''
         window.litertLmReady = new Promise((resolve) => setTimeout(() => {
           window.EmbeddingEngine = function () {};
+          window.EmbeddingEngine.create = async function () {};
+          window.EmbeddingEngine.prototype.computeEmbedding = function () {};
+          window.EmbeddingEngine.prototype.delete = function () {};
           resolve(null);
         }, 50));
       ''');
         expect(await runtime.ensureReady(), LiteRtLmWebRuntimeState.ready);
       },
     );
+
+    test('an EmbeddingEngine without computeEmbedding is incomplete, and '
+        'names what it lacks', () async {
+      _js('''
+        window.litertLmReady = Promise.resolve(null);
+        window.EmbeddingEngine = function () {};
+        window.EmbeddingEngine.create = async function () {};
+        window.EmbeddingEngine.prototype.delete = function () {};
+      ''');
+      expect(
+        await runtime.ensureReady(),
+        LiteRtLmWebRuntimeState.runtimeIncomplete,
+      );
+      expect(runtime.missingMembers, ['computeEmbedding']);
+    });
 
     test('a loader that failed: the rejection propagates', () async {
       _js('''
@@ -423,41 +452,46 @@ void main() {
     }
   });
 
-  test('JS rejections: create → EmbeddingLoadException naming the 440m when '
-      'images were declared; computeEmbedding → EmbeddingEngineException with '
-      'the JS message', () async {
-    _installEngine();
-    _stubGpu();
-    _js("window.__eg2.createError = 'NOT_FOUND: no vision encoder';");
-    await expectLater(
-      _start(images: true),
-      throwsA(
-        isA<EmbeddingLoadException>()
-            .having((e) => e.message, 'message', contains('NOT_FOUND'))
-            .having(
-              (e) => e.message,
-              'message',
-              contains('install embeddinggemma-2-text-vision-440m'),
-            ),
-      ),
-    );
-
-    _installEngine();
-    final model = await _start();
-    try {
-      _js("window.__eg2.computeError = 'wasm trap';");
+  test(
+    'JS rejections: create → EmbeddingLoadException with the runtime\'s reason when '
+    'images were declared; computeEmbedding → EmbeddingEngineException with '
+    'the JS message',
+    () async {
+      _installEngine();
+      _stubGpu();
+      _js("window.__eg2.createError = 'NOT_FOUND: no vision encoder';");
       await expectLater(
-        model.embed(EmbeddingInput.text('x'), taskType: TaskType.none),
+        _start(images: true),
         throwsA(
-          isA<EmbeddingEngineException>()
-              .having((e) => e.engine, 'engine', 'LiteRT-LM')
-              .having((e) => e.message, 'message', contains('wasm trap')),
+          isA<EmbeddingLoadException>()
+              .having((e) => e.message, 'message', contains('NOT_FOUND'))
+              .having(
+                (e) => e.message,
+                'message',
+                // A bundle without a vision encoder is refused from its
+                // header before create; a create failure says what else it is.
+                contains('close it first'),
+              ),
         ),
       );
-    } finally {
-      await model.close();
-    }
-  });
+
+      _installEngine();
+      final model = await _start();
+      try {
+        _js("window.__eg2.computeError = 'wasm trap';");
+        await expectLater(
+          model.embed(EmbeddingInput.text('x'), taskType: TaskType.none),
+          throwsA(
+            isA<EmbeddingEngineException>()
+                .having((e) => e.engine, 'engine', 'LiteRT-LM')
+                .having((e) => e.message, 'message', contains('wasm trap')),
+          ),
+        );
+      } finally {
+        await model.close();
+      }
+    },
+  );
 
   group('readPrefix (the page\'s fetch)', () {
     const runtime = WindowLiteRtLmWebRuntime();

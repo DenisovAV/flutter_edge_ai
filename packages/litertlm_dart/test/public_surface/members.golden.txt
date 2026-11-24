@@ -160,10 +160,10 @@ final class EmbeddingEngine
   method static Future<EmbeddingEngine> create(EmbeddingEngineConfig config)
 
 final class EmbeddingEngineConfig
-  constructor EmbeddingEngineConfig({required String modelPath, required String cacheDir, Backend? backend, Backend? visionBackend, Backend? audioBackend, int? visionTokensPerImage, bool requireWeightCache = false})
+  constructor EmbeddingEngineConfig({required String modelPath, String? cacheDir, Backend? backend, Backend? visionBackend, Backend? audioBackend, int? visionTokensPerImage, bool requireWeightCache = false})
   field final Backend? audioBackend
   field final Backend backend
-  field final String cacheDir
+  field final String? cacheDir
   field final String modelPath
   field final bool requireWeightCache
   field final Backend? visionBackend

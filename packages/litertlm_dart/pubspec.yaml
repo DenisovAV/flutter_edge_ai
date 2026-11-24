@@ -1,21 +1,25 @@
 name: litertlm_dart
-description: "LiteRT-LM in pure Dart, no Flutter dependency: dart:ffi bindings, patched native builds fetched by a build hook, open sessions with rewind, NPU stacks and EmbeddingGemma 2."
-# The upstream LiteRT-LM version this is built from, plus a build number for
-# each of our native rebuilds of it: 0.19.1+1 is LiteRT-LM 0.19.1 on
-# native-v0.19.1-c. Breaking Dart API changes ride an upstream version change.
-version: 0.19.1+1
+description: "LiteRT-LM in pure Dart, no Flutter dependency: dart:ffi bindings, a native build hook, open sessions with rewind, NPU stacks, EmbeddingGemma 2, and web via @litert-lm/core."
+# The upstream LiteRT-LM version this is built from, plus the number of our
+# release on it: 0.19.1+1 is the first release on LiteRT-LM 0.19.1. The native
+# build (native-v0.19.1-c) and the web runtime (@litert-lm/core 0.19.0) each
+# release carries are in the README. Breaking Dart API changes ride an
+# upstream version change, except EmbeddingEngineConfig.cacheDir (String? in
+# 0.19.1+2).
+version: 0.19.1+2
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/litertlm_dart
 topics: [litert, llm, ffi, on-device, gemma]
 
-# Native only: the runtime is dart:ffi over libLiteRtLm. The web engine lives
-# in flutter_edge_ai_litertlm.
+# Natively the runtime is dart:ffi over libLiteRtLm; on the web the same API
+# runs over the page's @litert-lm/core (dart:js_interop).
 platforms:
   android:
   ios:
   macos:
   windows:
   linux:
+  web:
 
 resolution: workspace
 
@@ -33,7 +37,7 @@ dependencies:
 
 dev_dependencies:
   # The member golden (test/public_surface/) resolves the public library
-  # with the analyzer; the range is flutter_edge_ai's.
+  # with the analyzer; the range is the workspace's.
   analyzer: '>=13.0.0 <15.0.0'
   lints: ^6.0.0
   test: ^1.25.0

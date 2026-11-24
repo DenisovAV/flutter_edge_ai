@@ -85,8 +85,13 @@ void main() {
     });
 
     test('a web bundle runs on the web only, on the GPU', () {
-      expect(_here(gemma.web, null), _gpu);
-      expect(_here(gemma.web, 'android_arm64'), _none);
+      expect(_here(gemma.webGpu, null), _gpu);
+      expect(_here(gemma.webGpu, 'android_arm64'), _none);
+    });
+
+    test('a withheld web bundle runs nowhere, not even on the web', () {
+      // ignore: deprecated_member_use_from_same_package
+      expect(_here(gemma.web, null), _none);
     });
 
     test('an NPU build runs where its vendor\'s dispatch ships', () {
@@ -233,9 +238,13 @@ void main() {
   group('variantFor on the generated catalog', () {
     final gemma = LiteRtLmModels.gemma4E2bIt;
 
+    test('on the web a model whose web build is withheld has no variant', () {
+      expect(_on(null, LiteRtLmModels.gemma4E4bIt.variantFor), isNull);
+    });
+
     test('natively the generic file, on the web the web bundle', () {
       expect(_on('macos_arm64', gemma.variantFor), same(gemma.generic));
-      expect(_on(null, gemma.variantFor), same(gemma.web));
+      expect(_on(null, gemma.variantFor), same(gemma.webGpu));
     });
 
     test('the NPU build for the device SoC', () {

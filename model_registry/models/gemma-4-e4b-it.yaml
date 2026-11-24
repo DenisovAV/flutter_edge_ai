@@ -60,5 +60,9 @@ variants:
     audio: false
     function_calls: true
     thinking: true
-  example:
-  - gemma4_E4B_litertlm
+  withhold:
+    reason: Untested on @litert-lm/core 0.19.0, not known to be broken. The Gemma 4 E2B web
+      export uploaded the same day (2026-05-19) answers a tool result with an empty reply on
+      0.19.0 (measured 2026-11-23), so this one is withheld until a newer E4B web export is
+      measured.
+    issue: https://github.com/DenisovAV/flutter_edge_ai/pull/872

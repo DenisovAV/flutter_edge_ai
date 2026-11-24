@@ -1,18 +1,16 @@
-// The page lock (lib/src/web/litert_lm_page_lock.dart) on the VM: mutual
-// exclusion, call-order fairness, release on every path — and that the
-// EmbeddingGemma 2 web pass really takes it: while another holder (the LLM
-// web session, in the browser) has the lock, the pass's create + probe and
-// its computeEmbedding do not reach the runtime. The LLM session's side —
-// held from sendMessageStreaming until the JS stream ends, drained after a
-// consumer cancel — is the browser suite test/web/litert_lm_page_lock_web_test.dart.
+// The page lock (lib/src/web/page_lock.dart) on the VM: mutual exclusion,
+// call-order fairness, release on every path — and that the EmbeddingGemma 2
+// web embedder really takes it: while another holder (an LLM generation, in
+// the browser) has the lock, the embedder's create + probe and its
+// computeEmbedding do not reach the runtime. The conversation's side — held
+// from sendMessageStreaming until the JS stream ends, drained after a listener
+// that left — is the browser suite test/web/page_lock_browser_test.dart.
 
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
-import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_page_lock.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/internal.dart';
+import 'package:test/test.dart';
 
 /// Lets every pending microtask and zero timer run.
 Future<void> _settle() async {
@@ -55,6 +53,9 @@ final class _Runtime implements LiteRtLmWebRuntime {
       LiteRtLmWebRuntimeState.ready;
 
   @override
+  List<String> get missingMembers => const [];
+
+  @override
   Future<LiteRtLmWebGpuSupport> webGpuSupport() async =>
       LiteRtLmWebGpuSupport.available;
 
@@ -69,8 +70,8 @@ final class _Runtime implements LiteRtLmWebRuntime {
       throw UnimplementedError('no audio is declared here');
 }
 
-LiteRtLmWebEmbeddingPass _pass(_Runtime runtime) => LiteRtLmWebEmbeddingPass(
-  LiteRtLmWebEmbeddingConfig(
+LiteRtLmWebEmbedder _pass(_Runtime runtime) => LiteRtLmWebEmbedder(
+  LiteRtLmWebEmbedderConfig(
     modelPath: 'blob:eg2',
     fileName: 'embeddinggemma-2-text-270m.litertlm',
     runtime: runtime,
@@ -155,7 +156,7 @@ void main() {
     );
   });
 
-  group('the EmbeddingGemma 2 web pass takes the page lock', () {
+  group('the EmbeddingGemma 2 web embedder takes the page lock', () {
     test('its create + load probe wait while another holder (an LLM '
         'generation) has the lock', () async {
       final runtime = _Runtime();
@@ -185,7 +186,7 @@ void main() {
         await pass.load();
         final lease = await liteRtLmPageLock.acquire();
         try {
-          final embedding = pass.embed(EmbeddingInput.text('x'), TaskType.none);
+          final embedding = pass.embed(EmbedderInput(text: 'x'));
           await _settle();
           expect(runtime.engine.computes, 1, reason: 'only the probe so far');
           lease.release();
@@ -205,8 +206,8 @@ void main() {
       final pass = _pass(runtime);
       await pass.load();
       await expectLater(
-        pass.embed(EmbeddingInput.text('w' * 2000), TaskType.none),
-        throwsA(isA<EmbeddingInputTooLongException>()),
+        pass.embed(EmbedderInput(text: 'w' * 2000)),
+        throwsA(isA<EmbedderInputTooLongException>()),
       );
       await liteRtLmPageLock
           .run(() async {})

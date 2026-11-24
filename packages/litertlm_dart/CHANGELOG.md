@@ -1,4 +1,4 @@
-## Unreleased
+## 0.19.1+3
 - Automatic tool calling: `Tool.execute` and `ConversationConfig.automaticToolCalling`, as in Kotlin.
 
 ## 0.19.1+2

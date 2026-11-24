@@ -34,7 +34,7 @@ await engine.close();
 
 ```yaml
 dependencies:
-  litertlm_dart: '>=0.19.1+3 <0.19.2'
+  litertlm_dart: '>=0.19.1+4 <0.19.2'
 ```
 
 The version is the upstream LiteRT-LM version this package is built from,
@@ -49,7 +49,7 @@ This release runs:
 | Native | LiteRT-LM 0.19.1, our build `native-v0.19.1-c` |
 | Web | `@litert-lm/core` 0.19.0 |
 
-`dart pub add litertlm_dart` writes `^0.19.1+3`, which for a 0.x
+`dart pub add litertlm_dart` writes `^0.19.1+4`, which for a 0.x
 version also takes later 0.19.x releases; those follow newer LiteRT-LM
 releases and may change the Dart API, so bound it at the next upstream patch,
 as above, to stay on one.

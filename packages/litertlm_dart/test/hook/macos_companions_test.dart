@@ -131,13 +131,15 @@ void main() {
     });
 
     test('the root package is the one owning the hooks runner', () {
+      // The platform's own spelling of /w/app (\w\app on Windows).
+      final app = Uri.directory('/w/app/').toFilePath();
       expect(
         dartToolOwnerOf(
           Uri.directory(
             '/w/app/.dart_tool/hooks_runner/shared/litertlm_dart/build/',
           ),
         ),
-        '/w/app',
+        app.substring(0, app.length - 1),
       );
       expect(dartToolOwnerOf(Uri.directory('/w/app/out/')), isNull);
       // A .dart_tool the hooks runner does not own (build_runner's).

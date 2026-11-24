@@ -105,7 +105,8 @@ String? dartToolOwnerOf(Uri outputDirectoryShared) {
       final path = outputDirectoryShared
           .replace(pathSegments: [...segments.take(i), ''])
           .toFilePath();
-      return path.length > 1 && path.endsWith('/')
+      // toFilePath ends a directory with the platform's separator.
+      return path.length > 1 && (path.endsWith('/') || path.endsWith(r'\'))
           ? path.substring(0, path.length - 1)
           : path;
     }

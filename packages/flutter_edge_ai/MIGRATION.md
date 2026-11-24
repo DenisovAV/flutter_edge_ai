@@ -1,6 +1,6 @@
 # Migration guide
 
-## Unreleased: flutter_edge_ai_litertlm web on `@litert-lm/core` 0.19.0
+## flutter_edge_ai_litertlm 1.21.1: web on `@litert-lm/core` 0.19.0
 
 `.litertlm` models on the web now run on `@litert-lm/core` 0.19.0. Native
 apps change nothing.

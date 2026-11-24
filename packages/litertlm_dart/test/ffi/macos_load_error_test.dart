@@ -7,6 +7,7 @@
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:litertlm_dart/src/runtime/host_native_library.dart';
 import 'package:litertlm_dart/src/ffi/macos_load_error.dart';
@@ -541,15 +542,90 @@ void main() {
   group('in a plain Dart program', () {
     final process = DynamicLibrary.process();
 
-    test('the code assets are used when the companion is among them', () {
-      final present = <String>{};
-      String? dirFor(String? assetDir) =>
-          macOSCodeAssetDir(assetDir: () => assetDir, exists: present.contains);
+    test('the code assets are used when LiteRtLm links the companion as a '
+        'code asset, whatever files lie beside it', () {
+      List<String>? linked;
+      String? dirFor(String? assetDir) => macOSCodeAssetDir(
+        assetDir: () => assetDir,
+        linkedBy: (path) {
+          expect(path, '$assetDir/libLiteRtLm.dylib');
+          return linked;
+        },
+      );
       expect(dirFor(null), isNull, reason: 'no asset directory');
-      expect(dirFor('/t/lib'), isNull, reason: 'built for a Flutter app');
-      present.add('/t/lib/libLtGmcp.dylib');
+      linked = null;
+      expect(dirFor('/t/lib'), isNull, reason: 'not a readable Mach-O');
+      // Built for a Flutter app: a stale libLtGmcp.dylib beside it (Dart
+      // 3.12/3.13 never empty .dart_tool/lib) changes nothing.
+      linked = [
+        '/usr/lib/libc++.1.dylib',
+        '@rpath/GemmaModelConstraintProvider.framework/Versions/A/'
+            'GemmaModelConstraintProvider',
+      ];
+      expect(dirFor('/t/lib'), isNull);
+      // As the Dart SDK rewrote it: dart run, then dart build cli.
+      linked = ['/t/lib/libLtGmcp.dylib'];
+      expect(dirFor('/t/lib'), '/t/lib');
+      linked = ['@rpath/lib/libLtGmcp.dylib'];
       expect(dirFor('/t/lib'), '/t/lib');
     });
+
+    test('machOLinkedDylibs reads the load commands', () {
+      // 32-byte header + one LC_ID_DYLIB + one LC_LOAD_DYLIB + one weak.
+      Uint8List command(int cmd, String name) {
+        final size = (24 + name.length + 1 + 7) & ~7;
+        final b = ByteData(size)
+          ..setUint32(0, cmd, Endian.little)
+          ..setUint32(4, size, Endian.little)
+          ..setUint32(8, 24, Endian.little);
+        final bytes = b.buffer.asUint8List();
+        bytes.setAll(24, name.codeUnits);
+        return bytes;
+      }
+
+      final cmds = [
+        command(0xd, '@rpath/libLiteRtLm.dylib'),
+        command(0xc, '/usr/lib/libc++.1.dylib'),
+        command(0x80000018, '@rpath/lib/libLtGmcp.dylib'),
+      ];
+      final sizeofcmds = cmds.fold<int>(0, (n, c) => n + c.length);
+      final header = ByteData(32)
+        ..setUint32(0, 0xfeedfacf, Endian.little)
+        ..setUint32(16, cmds.length, Endian.little)
+        ..setUint32(20, sizeofcmds, Endian.little);
+      final file = Uint8List.fromList([
+        ...header.buffer.asUint8List(),
+        for (final c in cmds) ...c,
+      ]);
+      expect(machOLinkedDylibs(file), [
+        '/usr/lib/libc++.1.dylib',
+        '@rpath/lib/libLtGmcp.dylib',
+      ]);
+      expect(
+        machOLinkedDylibs(Uint8List.fromList([0x7f, 0x45, 0x4c, 0x46])),
+        isNull,
+      );
+    });
+
+    final cached = firstExistingPath(
+      hostNativeLibraryCandidates(
+        libFileName: hostNativeLibraryFileName('LiteRtLm'),
+      ),
+    );
+    test(
+      "the shipped libLiteRtLm links the provider by Google's install name",
+      () {
+        final linked = machOLinkedDylibsOf(cached!);
+        expect(
+          linked,
+          contains('@rpath/libGemmaModelConstraintProvider.dylib'),
+        );
+        expect(linksConstraintProviderCodeAsset(linked!), isFalse);
+      },
+      skip: cached == null || !Platform.isMacOS
+          ? 'macOS with a libLiteRtLm in the hook cache only'
+          : false,
+    );
 
     test('opens libLiteRtLm among the code assets, and nothing else', () {
       final asked = <String>[];

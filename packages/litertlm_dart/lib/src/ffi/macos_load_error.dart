@@ -21,6 +21,7 @@
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../runtime/macos_companions.dart';
 import 'native_asset_dir.dart';
@@ -35,16 +36,94 @@ const macOSStreamProxyAssetFile = 'libStreamProxy.dylib';
 
 /// In a plain Dart program on macOS, the directory of its code assets when
 /// the build hook bundled LiteRT-LM's companion there (`macos_companions:
-/// code_assets`); null otherwise. [assetDir] and [exists] are for tests.
+/// code_assets`); null otherwise.
+///
+/// Told by what LiteRtLm itself links, not by which files are there: Dart
+/// 3.12 and 3.13 copy `dart run`'s assets into `.dart_tool/lib/` and never
+/// empty it, so a companion from an earlier build with the define stays
+/// beside a LiteRtLm built without it, which links the companion's
+/// framework. [assetDir] and [linkedBy] (the dylibs a library links, null
+/// when it cannot be read) are for tests; by default the answer is read once
+/// per isolate.
 String? macOSCodeAssetDir({
   String? Function()? assetDir,
-  bool Function(String path)? exists,
+  List<String>? Function(String path)? linkedBy,
 }) {
+  if (assetDir == null && linkedBy == null) return _macOSCodeAssetDirOnce;
   final dir = assetDir != null ? assetDir() : nativeAssetDir;
   if (dir == null) return null;
-  final bool Function(String path) fileExists =
-      exists ?? (path) => File(path).existsSync();
-  return fileExists('$dir/$macOSConstraintProviderAssetFile') ? dir : null;
+  final linked = (linkedBy ?? machOLinkedDylibsOf)(
+    '$dir/$macOSLiteRtLmAssetFile',
+  );
+  return linked != null && linksConstraintProviderCodeAsset(linked)
+      ? dir
+      : null;
+}
+
+final String? _macOSCodeAssetDirOnce = macOSCodeAssetDir(
+  assetDir: () => nativeAssetDir,
+);
+
+/// Whether a LiteRtLm that links [dylibs] links the constraint provider as
+/// a code asset: by its asset file name, as the Dart SDK rewrote it
+/// (`<dir>/libLtGmcp.dylib` for `dart run`, `@rpath/lib/libLtGmcp.dylib` for
+/// `dart build cli`), not as a Flutter app's framework.
+bool linksConstraintProviderCodeAsset(List<String> dylibs) =>
+    dylibs.any((d) => d.endsWith('/$macOSConstraintProviderAssetFile'));
+
+/// The install names of the dylibs the 64-bit Mach-O file at [path] links
+/// (`LC_LOAD_DYLIB`, weak and re-exported ones); null when it cannot be read
+/// as one. Reads the header only.
+List<String>? machOLinkedDylibsOf(String path) {
+  final RandomAccessFile file;
+  try {
+    file = File(path).openSync();
+  } on FileSystemException {
+    return null;
+  }
+  try {
+    final head = file.readSync(32);
+    if (head.length < 32) return null;
+    final sizeofcmds = ByteData.sublistView(head).getUint32(20, Endian.little);
+    file.setPositionSync(0);
+    return machOLinkedDylibs(file.readSync(32 + sizeofcmds));
+  } on FileSystemException {
+    return null;
+  } finally {
+    file.closeSync();
+  }
+}
+
+/// The install names [bytes] (the start of a 64-bit little-endian Mach-O
+/// file, its load commands included) links; null when it is not one.
+List<String>? machOLinkedDylibs(Uint8List bytes) {
+  if (bytes.length < 32) return null;
+  final data = ByteData.sublistView(bytes);
+  if (data.getUint32(0, Endian.little) != 0xfeedfacf) return null;
+  final ncmds = data.getUint32(16, Endian.little);
+  const lcLoadDylib = 0xc;
+  const lcLoadWeakDylib = 0x80000018;
+  const lcReexportDylib = 0x8000001f;
+  final names = <String>[];
+  var at = 32;
+  for (var i = 0; i < ncmds; i++) {
+    if (at + 8 > bytes.length) return null;
+    final cmd = data.getUint32(at, Endian.little);
+    final size = data.getUint32(at + 4, Endian.little);
+    if (size < 8 || at + size > bytes.length) return null;
+    if (cmd == lcLoadDylib ||
+        cmd == lcLoadWeakDylib ||
+        cmd == lcReexportDylib) {
+      final offset = data.getUint32(at + 8, Endian.little);
+      var end = at + offset;
+      while (end < at + size && bytes[end] != 0) {
+        end++;
+      }
+      names.add(String.fromCharCodes(bytes.sublist(at + offset, end)));
+    }
+    at += size;
+  }
+  return names;
 }
 
 /// The message for a plain Dart program on macOS whose build did not bundle

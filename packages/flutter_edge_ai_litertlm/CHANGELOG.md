@@ -1,3 +1,6 @@
+## 1.21.3
+- Requires `litertlm_dart` 0.19.1+4.
+
 ## 1.21.2
 - Requires `litertlm_dart` 0.19.1+3; tool calls still reach core unexecuted.
 

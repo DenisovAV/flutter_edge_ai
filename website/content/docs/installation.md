@@ -18,7 +18,7 @@ dependencies:
   flutter_edge_ai: ^2.7.2                      # Core — always required (no engine on its own)
 
   # Inference engines — add at least one:
-  flutter_edge_ai_litertlm: ^1.21.2            # .litertlm models (FFI; mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_litertlm: ^1.21.3            # .litertlm models (FFI; mobile + desktop + web) + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.3.1            # .task / .bin models (MediaPipe; mobile + web)
   flutter_edge_ai_builtin_ai: ^0.4.3           # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS 26+) / Windows AI Foundry / Chrome Prompt API (Web)
   flutter_edge_ai_onnx: ^0.10.1                 # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend

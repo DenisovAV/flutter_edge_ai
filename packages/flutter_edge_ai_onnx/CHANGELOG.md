@@ -1,4 +1,4 @@
-## Unreleased
+## 0.10.1
 - Response formats on Linux x64 (#858).
 
 ## 0.10.0

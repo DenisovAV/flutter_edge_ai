@@ -21,7 +21,7 @@ dependencies:
   flutter_edge_ai_litertlm: ^1.21.1            # .litertlm models (FFI; mobile + desktop + web) + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.3.1            # .task / .bin models (MediaPipe; mobile + web)
   flutter_edge_ai_builtin_ai: ^0.4.3           # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS 26+) / Windows AI Foundry / Chrome Prompt API (Web)
-  flutter_edge_ai_onnx: ^0.10.0                 # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
+  flutter_edge_ai_onnx: ^0.10.1                 # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
   flutter_edge_ai_llama: ^0.2.0                # .gguf models — llama.cpp through llamadart, + LlamaEmbeddingBackend (EmbeddingGemma 2 text, native) (see /docs/llama)
 
   # Optional — text-embedding tokenizer implementations (.tflite / .onnx models; an EmbeddingGemma 2 .litertlm needs none):

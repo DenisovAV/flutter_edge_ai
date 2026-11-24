@@ -68,7 +68,7 @@ only the engines, stores and features your app uses — see
   (see [Troubleshooting](/docs/troubleshooting#android)). See
   [Migration](/docs/migration).
 - **ONNX response formats on Windows x64** (`flutter_edge_ai_onnx` 0.10.0, on
-  ORT-GenAI 0.20.0). See [ONNX](/docs/onnx).
+  ORT-GenAI 0.20.0) and on Linux x64 (0.10.1). See [ONNX](/docs/onnx).
 - **llama.cpp** (`flutter_edge_ai_llama` 0.2.0): llamadart `^0.20.1` with
   Apple companion 0.20.1. See [llama.cpp](/docs/llama).
 

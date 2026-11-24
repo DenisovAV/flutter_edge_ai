@@ -1,5 +1,5 @@
 ## Unreleased
-- Plain Dart programs (`dart run`, `dart test`, `dart build cli`) on the CPU; see the README.
+- Plain Dart programs (`dart run`, `dart test`, `dart build cli`) on every backend; see the README.
 
 ## 0.19.1+3
 - Automatic tool calling: `Tool.execute` and `ConversationConfig.automaticToolCalling`, as in Kotlin.

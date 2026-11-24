@@ -15,9 +15,9 @@ Add this package and at least one storage provider:
 ```yaml
 dependencies:
   flutter_edge_ai: ^2.7.0
-  flutter_edge_ai_rag: ^1.2.0
-  flutter_edge_ai_sqlite: ^2.2.0   # all six platforms; needs Flutter 3.47
-  # or flutter_edge_ai_qdrant: ^2.2.0 (native only)
+  flutter_edge_ai_rag: ^1.3.0
+  flutter_edge_ai_sqlite: ^2.3.0   # all six platforms; needs Flutter 3.47
+  # or flutter_edge_ai_qdrant: ^2.3.0 (native only)
 ```
 
 > **1.1.0 needs `flutter_edge_ai` 2.3.0 and the 2.1.0 stores.** Upgrade every

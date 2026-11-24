@@ -1,6 +1,6 @@
 name: flutter_edge_ai_sqlite
 description: "SQLite vector search (sqlite-vec) provider for flutter_edge_ai_rag across native platforms and web."
-version: 2.2.0
+version: 2.3.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_sqlite
 topics: [rag, sqlite, vector-search, embeddings, web]
@@ -34,10 +34,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # 1.2.0 brought the text-search contract this store implements
+  # 1.3.0 brought `supportsRemoveWhere`/`removeDocumentsWhere`, which this
+  # store overrides; 1.2.0 the text-search contract it implements
   # (`searchText`, `supportsTextSearch`, `VectorStoreSpec.enableTextSearch`,
-  # `TextSearchResult`); 1.1.0 brought `readBinding`/`bind(VectorStoreBinding)`.
-  flutter_edge_ai_rag: ^1.2.0
+  # `TextSearchResult`); 1.1.0 `readBinding`/`bind(VectorStoreBinding)`.
+  flutter_edge_ai_rag: ^1.3.0
   sqlite3: ^3.6.0
   # Web Locks provide one exclusive lifetime lease per persistent database
   # location across tabs and workers. Web initialization fails closed when the

@@ -56,7 +56,7 @@ Add the package and register whichever arm(s) you use at startup:
 ```
 dependencies:
   flutter_edge_ai: ^2.7.2
-  flutter_edge_ai_onnx: ^0.10.0         # ONNX Runtime engines
+  flutter_edge_ai_onnx: ^0.10.1         # ONNX Runtime engines
   flutter_edge_ai_embeddings: ^2.3.3   # tokenizers, for embeddings
 ```
 
@@ -164,12 +164,12 @@ falls back to WASM.
 ## Structured JSON output
 
 This section requires core 2.6.0 and `flutter_edge_ai_onnx` 0.9.0 (Windows
-x64: 0.10.0).
+x64: 0.10.0, Linux x64: 0.10.1).
 
 Native ORT-GenAI can apply llguidance to each independent generator opened by
 `openSession(responseFormat: ...)` or `openChat(responseFormat: ...)`. It is
 enabled on macOS arm64 (0.9.0), Windows x64 (0.10.0) and Linux x64
-(unreleased), after each host's run passed, and only when the model directory
+(0.10.1), after each host's run passed, and only when the model directory
 contains `tokenizer.json`. Windows ARM64, Android, iOS and ONNX Web return a
 reason from `structuredOutputSupport` and throw
 `ResponseFormatUnsupportedException` if a format is requested; the Windows

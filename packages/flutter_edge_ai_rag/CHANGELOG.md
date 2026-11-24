@@ -1,4 +1,4 @@
-## Unreleased
+## 1.3.0
 - `RagIndex.removeWhere(filter)`: remove documents by metadata filter, returns the count (#860).
 
 ## 1.2.0

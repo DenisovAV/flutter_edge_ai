@@ -57,6 +57,14 @@ only the engines, stores and features your app uses — see
   `flutter_edge_ai_sqlite` 2.2.0): `searchText`, `searchHybrid` (RRF) and
   `VectorStoreSpec.enableTextSearch`, with SQLite FTS5 on every platform. See
   [Text and hybrid search](/docs/embeddings-and-rag#text-and-hybrid-search).
+- **Remove documents by filter** (`flutter_edge_ai_rag` 1.3.0,
+  `flutter_edge_ai_sqlite` 2.3.0, `flutter_edge_ai_qdrant` 2.3.0):
+  `RagIndex.removeWhere(filter)` removes every matching document and returns
+  the count. See [Embeddings & RAG](/docs/embeddings-and-rag).
+- **A synced RAG store** (`flutter_edge_ai_any` 0.1.0, experimental, native
+  only): a `flutter_edge_ai_rag` location that syncs end-to-end encrypted
+  between one user's devices over any-sync, LAN only for now. See
+  [Synced store](/docs/embeddings-and-rag#synced-store-any-sync-experimental).
 - **`litertlm_dart`** (`flutter_edge_ai_litertlm` 1.21.0): the LiteRT-LM
   runtime and its native build hook moved to this package, so NPU flags go
   under `hooks: user_defines: litertlm_dart:`. On Android, Gemma 4 on the GPU
@@ -64,7 +72,7 @@ only the engines, stores and features your app uses — see
   (see [Troubleshooting](/docs/troubleshooting#android)). See
   [Migration](/docs/migration).
 - **ONNX response formats on Windows x64** (`flutter_edge_ai_onnx` 0.10.0, on
-  ORT-GenAI 0.20.0). See [ONNX](/docs/onnx).
+  ORT-GenAI 0.20.0) and on Linux x64 (0.10.1). See [ONNX](/docs/onnx).
 - **llama.cpp** (`flutter_edge_ai_llama` 0.2.0): llamadart `^0.20.1` with
   Apple companion 0.20.1. See [llama.cpp](/docs/llama).
 

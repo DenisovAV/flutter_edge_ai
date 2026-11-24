@@ -56,16 +56,17 @@ dependencies:
   flutter_edge_ai: ^2.7.2
   flutter_edge_ai_litertlm: ^1.21.1
   flutter_edge_ai_embeddings: ^2.3.3 # tokenizers for .tflite / .onnx models
-  flutter_edge_ai_rag: ^1.2.0
-  flutter_edge_ai_sqlite: ^2.2.0 # all six platforms, including Web
-  # flutter_edge_ai_qdrant: ^2.2.0 # native alternative
+  flutter_edge_ai_rag: ^1.3.0
+  flutter_edge_ai_sqlite: ^2.3.0 # all six platforms, including Web
+  # flutter_edge_ai_qdrant: ^2.3.0 # native alternative
 ```
 
 <Warning>
 
 Upgrade every flutter_edge_ai package together: flutter_edge_ai_litertlm 1.21.0
-and flutter_edge_ai_onnx 0.10.0 need core 2.7.0, and text search needs rag
-1.2.0 with sqlite 2.2.0. The full list is in [Migration](/docs/migration).
+and flutter_edge_ai_onnx 0.10.0 need core 2.7.0, text search needs rag
+1.2.0 with sqlite 2.2.0, and `removeWhere` needs rag 1.3.0 with sqlite or
+qdrant 2.3.0. The full list is in [Migration](/docs/migration).
 
 </Warning>
 
@@ -974,7 +975,7 @@ operations; **clear()** preserves the binding.
 |---|---|---|
 | Platforms | Android, iOS, macOS, Linux, Windows | Android, iOS, Web, macOS, Linux, Windows |
 | Search | HNSW approximate | Exact KNN inside SQLite |
-| Text search | — | FTS5 (BM25), hybrid with RRF |
+| Text search | BM25 (2.2.0), hybrid with RRF | FTS5 (BM25), hybrid with RRF |
 | Best fit | Native throughput at larger scale | Web, portability, deterministic exact results |
 | Provider ID | qdrant | sqlite |
 
@@ -983,6 +984,51 @@ registered provider and **VectorStoreSpec.providerId**, not the retrieval
 pipeline. Current measurements show qdrant-edge roughly 5–11× faster at
 1k–10k documents; see the
 [benchmark report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/docs/benchmarks/rag_sqlite_vec_vs_qdrant.md).
+
+### Synced store: any-sync (experimental)
+
+`flutter_edge_ai_any` 0.1.0 is a third provider, `AnyVectorStoreProvider`
+(provider ID `any`), over [any-sync](https://github.com/anyproto/any-sync): a
+location's documents live in an end-to-end encrypted space that syncs between
+one user's devices, and each device keeps its own vector + BM25 index of them,
+so search never touches the network. Every public type is experimental.
+
+- **Native only:** Android arm64, iOS arm64 (device and Apple-silicon
+  simulator), macOS arm64, Linux x64 and arm64, Windows x64. On the web
+  `canHandle` is false and `AnySyncAccount.open` throws.
+- **No default network yet.** The app passes a nodeconf; the production
+  any-sync network is refused until its terms for third-party apps are known,
+  and relays are never enabled. What works is LAN sync between devices of one
+  account.
+- **Last writer wins** by a hybrid clock, and a document synced from a device
+  with another embedding profile is found by text search until a vector is
+  written for it.
+- **No `removeWhere`:** it throws `UnsupportedError` on this store; remove
+  documents by id.
+
+```dart
+final account = await AnySyncAccount.open(
+  dataDirectory: '$support/any/sdk',
+  indexDirectory: '$support/any/index',
+  mnemonic: mnemonic,
+  deviceKey: deviceKey,
+  nodeConfYaml: nodeConf,
+);
+final space = await account.createSpace('notes');
+final location = AnySyncLocation(spaceId: space.id, indexName: 'notes');
+final rag = FlutterEdgeAiRag(providers: [AnyVectorStoreProvider(account)]);
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: AnyVectorStoreProvider.providerId,
+    location: location.value,
+    enableTextSearch: true,
+  ),
+  embedder: embedder,
+);
+```
+
+Its [README](https://pub.dev/packages/flutter_edge_ai_any) lists the sync,
+lifecycle and encryption rules to read before relying on it.
 
 **Writing this with a coding assistant?** **dart run skills@ get --all** installs
 the **flutter-edge-ai-rag** skill with these profile, ownership, and filter rules.

@@ -1,4 +1,2 @@
-## Unreleased
-
-- Native layer: Go shim over any-sync-sdk and any-store, Native Assets hook, FFI bindings.
-- RAG vector-store provider (`AnyVectorStoreProvider`) over synced any-sync spaces.
+## 0.1.0
+- First release, experimental: a RAG vector-store provider over any-sync spaces, native only (#851).

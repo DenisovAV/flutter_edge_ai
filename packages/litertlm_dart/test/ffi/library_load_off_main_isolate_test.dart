@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:litertlm_dart/src/ffi/litert_lm_client.dart';
 import 'package:litertlm_dart/src/ffi/macos_load_error.dart'
     show macOSLiteRtLmFramework;
+import 'package:litertlm_dart/src/ffi/native_asset_dir.dart';
 import 'package:litertlm_dart/src/runtime/load_errors.dart'
     show LibraryLoadFailure;
 import 'package:test/test.dart';
@@ -91,11 +92,20 @@ void main() {
           'the test host has no LiteRT-LM, so a DynamicLibrary.open before '
           "the system loader would have failed with the Dart loader's error",
     );
-    final libDir = '${File(Platform.resolvedExecutable).parent.path}/lib';
+    // `dart test` is a plain Dart program: on Linux and Windows the libraries
+    // are opened from its code assets' directory. On macOS that takes the
+    // `macos_companions: code_assets` define, which this package's own test
+    // run does not set, so the app's lookup runs (and fails).
+    final assetDir = nativeAssetDir;
+    final libDir =
+        assetDir ?? '${File(Platform.resolvedExecutable).parent.path}/lib';
     final expected = switch (Platform.operatingSystem) {
       'macos' => macOSLiteRtLmFramework,
       'linux' => '$libDir/libStreamProxy.so',
-      'windows' => 'StreamProxy.dll',
+      'windows' =>
+        assetDir == null
+            ? 'StreamProxy.dll'
+            : nativeAssetPath(assetDir, 'StreamProxy.dll'),
       _ => null,
     };
     if (expected != null) {

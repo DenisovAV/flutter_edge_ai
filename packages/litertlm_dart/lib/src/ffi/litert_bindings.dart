@@ -26,6 +26,7 @@ import 'package:ffi/ffi.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_runtime_check.dart';
 import 'macos_load_error.dart';
+import 'native_asset_dir.dart';
 import 'windows_std_handles.dart';
 
 // ----- Opaque handle typedefs ------------------------------------------------
@@ -237,6 +238,8 @@ DynamicLibrary _openLiteRt() {
     // which would load on a developer's Mac and hide the problem until the
     // app reached a user. A dev prebuilt that is not ours is skipped and
     // named, so whatever comes back from the dev copies passes the check.
+    // A plain Dart program built with `macos_companions: code_assets` opens
+    // its code asset and nothing else (macos_load_error.dart).
     return requireOwnLiteRtLmBuild(
       openMacOSLiteRtLmForTflite(
         devCandidates: _devLiteRtLmCandidates,
@@ -300,10 +303,25 @@ DynamicLibrary _openLiteRt() {
   // Nor the own-build check: these open Google's prebuilt libLiteRt, which
   // carries no symbol of ours. Their libLiteRtLm is checked where the LLM
   // client and the EmbeddingGemma 2 pass open it.
-  if (Platform.isLinux) return DynamicLibrary.open('libLiteRt.so');
+  //
+  // A plain Dart program has no bundle: there the code assets' directory
+  // (native_asset_dir.dart), by absolute path.
+  final assetDir = liteRtLmOutsideFlutter ? nativeAssetDir : null;
+  if (Platform.isLinux) {
+    return DynamicLibrary.open(
+      assetDir == null
+          ? 'libLiteRt.so'
+          : nativeAssetPath(assetDir, 'libLiteRt.so'),
+    );
+  }
   // Windows does need the std-handle realignment: embeddings or speech can be
   // the first to load this static-CRT DLL (windows_std_handles.dart).
-  if (Platform.isWindows) return openBundledWindowsLibrary('LiteRt.dll');
+  if (Platform.isWindows) {
+    if (assetDir == null) return openBundledWindowsLibrary('LiteRt.dll');
+    final liteRtPath = nativeAssetPath(assetDir, 'LiteRt.dll');
+    loadWindowsAssetWithItsDirectory(liteRtPath);
+    return openBundledWindowsLibrary(liteRtPath);
+  }
   throw UnsupportedError(
     'LiteRT is not available on ${Platform.operatingSystem}',
   );

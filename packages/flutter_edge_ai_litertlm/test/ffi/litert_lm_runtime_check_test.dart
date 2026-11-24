@@ -384,8 +384,8 @@ void main() {
         .join('\n');
 
     for (final (file, count) in const [
-      ('../litertlm_dart/lib/src/ffi/litert_lm_library.dart', 5),
-      ('../litertlm_dart/lib/src/ffi/litert_lm_client.dart', 5),
+      ('../litertlm_dart/lib/src/ffi/litert_lm_library.dart', 6),
+      ('../litertlm_dart/lib/src/ffi/litert_lm_client.dart', 6),
       ('../litertlm_dart/lib/src/ffi/litert_bindings.dart', 3),
     ]) {
       test(file, () {

@@ -22,6 +22,7 @@ import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
 import 'litert_lm_runtime_check.dart';
 import 'litert_lm_status.dart';
+import 'native_asset_dir.dart';
 import 'macos_load_error.dart';
 import 'native_turns.dart';
 import 'stream_start_failure.dart';
@@ -873,6 +874,13 @@ Pointer<Void>? _preloadWithSystemLoader(String path) {
     return null;
   }
 }
+
+/// In a plain Dart program on macOS built with `macos_companions:
+/// code_assets`, the directory of its code assets; null otherwise, and always
+/// in Flutter. Per isolate.
+final String? _macOSCodeAssetDir = Platform.isMacOS && liteRtLmOutsideFlutter
+    ? macOSCodeAssetDir()
+    : null;
 
 /// `RTLD_LAZY`, the flag `DynamicLibrary.open` passes, on every platform that
 /// has `dlopen`.
@@ -1999,6 +2007,23 @@ class LiteRtLmFfiClient {
           '@executable_path/Frameworks/StreamProxy.framework/StreamProxy';
       preload(proxyPath);
       proxyLib = DynamicLibrary.open(proxyPath);
+    } else if (Platform.isMacOS && _macOSCodeAssetDir != null) {
+      // A plain Dart program whose build bundled the companion among its code
+      // assets (macos_load_error.dart). Absolute paths, so the preload and the
+      // open are one image; checked all the same. Without that build, the
+      // branch below runs and its failure names the define.
+      final dir = _macOSCodeAssetDir;
+      final libPath = '$dir/$macOSLiteRtLmAssetFile';
+      final preloadedAssetLib = preload(libPath);
+      lib = requireOwnLiteRtLmBuild(
+        openMacOSLiteRtLm(codeAssetDir: () => dir),
+        libPath,
+      );
+      requireSameLoadedLibrary(preloadedAssetLib, lib, libPath);
+      final assetProxyPath = '$dir/$macOSStreamProxyAssetFile';
+      final preloadedAssetProxy = preload(assetProxyPath);
+      proxyLib = DynamicLibrary.open(assetProxyPath);
+      requireSameLoadedLibrary(preloadedAssetProxy, proxyLib, assetProxyPath);
     } else if (Platform.isMacOS) {
       // Relative paths: dyld resolves the preload's through its caller's and
       // the main executable's rpaths, the open's through FlutterMacOS's, so
@@ -2026,11 +2051,18 @@ class LiteRtLmFfiClient {
       // but a raw C dlopen via stream_proxy_load_global doesn't see that
       // path — pass an absolute path so it resolves regardless of
       // LD_LIBRARY_PATH / RPATH inheritance.
-      final libDir = '${File(Platform.resolvedExecutable).parent.path}/lib';
+      //
+      // A plain Dart program has no bundle: there the code assets' directory
+      // (native_asset_dir.dart), and every open takes an absolute path.
+      final assetDir = liteRtLmOutsideFlutter ? nativeAssetDir : null;
+      final libDir =
+          assetDir ?? '${File(Platform.resolvedExecutable).parent.path}/lib';
       // The preload takes the same absolute path, for the same reason: a
       // plain dlopen called from Dart code may not search Flutter's RPATH.
       preload('$libDir/libStreamProxy.so');
-      proxyLib = DynamicLibrary.open('libStreamProxy.so');
+      proxyLib = DynamicLibrary.open(
+        assetDir == null ? 'libStreamProxy.so' : '$libDir/libStreamProxy.so',
+      );
       final loadGlobal = proxyLib
           .lookupFunction<
             Pointer Function(Pointer<Utf8>),
@@ -2069,9 +2101,11 @@ class LiteRtLmFfiClient {
           throw Exception('Failed to load $fullPath with RTLD_GLOBAL');
         }
       }
-      const libPath = 'libLiteRtLm.so';
       // Already loaded by the RTLD_GLOBAL chain above: a reference count.
-      preload('$libDir/$libPath');
+      preload('$libDir/libLiteRtLm.so');
+      final libPath = assetDir == null
+          ? 'libLiteRtLm.so'
+          : '$libDir/libLiteRtLm.so';
       lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
     } else if (Platform.isWindows) {
       // Preload LiteRt.dll first so the WebGPU accelerator can resolve the
@@ -2082,13 +2116,33 @@ class LiteRtLmFfiClient {
       // files of the Windows archive (test/windows_preload_test.dart). StreamProxy.dll goes
       // through the std-handle realignment, before any static-CRT DLL loads
       // (windows_std_handles.dart).
-      proxyLib = openBundledWindowsLibrary('StreamProxy.dll', preload: preload);
+      //
+      // A plain Dart program has no bundle: there every library is opened by
+      // its absolute path in the code assets' directory
+      // (native_asset_dir.dart), and the preloads go through LoadLibraryExW
+      // with the flag stream_proxy_load_global passes, which takes a path
+      // outside the ANSI code page (the user's profile, for `dart run`).
+      final assetDir = liteRtLmOutsideFlutter ? nativeAssetDir : null;
+      String bundled(String name) =>
+          assetDir == null ? name : nativeAssetPath(assetDir, name);
+      proxyLib = openBundledWindowsLibrary(
+        bundled('StreamProxy.dll'),
+        preload: preload,
+      );
       final loadGlobal = proxyLib
           .lookupFunction<
             Pointer Function(Pointer<Utf8>),
             Pointer Function(Pointer<Utf8>)
           >('stream_proxy_load_global');
       for (final name in windowsPreloadLibraries) {
+        if (assetDir != null) {
+          try {
+            loadWindowsAssetWithItsDirectory(bundled(name));
+          } on ArgumentError catch (e) {
+            throw Exception('Failed to preload ${bundled(name)}: ${e.message}');
+          }
+          continue;
+        }
         final pathPtr = name.toNativeUtf8();
         final handle = loadGlobal(pathPtr);
         calloc.free(pathPtr);
@@ -2096,8 +2150,8 @@ class LiteRtLmFfiClient {
           throw Exception('Failed to preload $name (LoadLibraryEx)');
         }
       }
-      const libPath = 'LiteRtLm.dll';
-      // Already loaded by stream_proxy_load_global above: a reference count.
+      final libPath = bundled('LiteRtLm.dll');
+      // Already loaded by the preloads above: a reference count.
       preload(libPath);
       lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
     } else if (Platform.isAndroid) {

@@ -17,6 +17,7 @@ import 'dart:io';
 import 'litert_default_scope.dart';
 import 'litert_lm_runtime_check.dart';
 import 'macos_load_error.dart';
+import 'native_asset_dir.dart';
 import 'windows_std_handles.dart';
 
 /// Opens the LiteRT-LM shared library for the current platform.
@@ -41,7 +42,11 @@ DynamicLibrary openLiteRtLmLibrary() {
     return requireOwnLiteRtLmBuild(DynamicLibrary.open(path), path);
   }
   if (Platform.isMacOS) {
-    return requireOwnLiteRtLmBuild(openMacOSLiteRtLm(), macOSLiteRtLmFramework);
+    // In a plain Dart program, the code asset (macos_load_error.dart).
+    return requireOwnLiteRtLmBuild(
+      openMacOSLiteRtLm(),
+      liteRtLmOutsideFlutter ? macOSLiteRtLmAssetFile : macOSLiteRtLmFramework,
+    );
   }
   if (Platform.isAndroid) {
     // LiteRT-LM ships android_arm64 only. Without this guard an x86_64
@@ -59,16 +64,30 @@ DynamicLibrary openLiteRtLmLibrary() {
       path,
     );
   }
+  // A plain Dart program has no bundle to look the library up in: there it
+  // is opened by its absolute path in the code assets' directory
+  // (native_asset_dir.dart).
+  final assetDir = liteRtLmOutsideFlutter ? nativeAssetDir : null;
   if (Platform.isLinux) {
     // RUNPATH $ORIGIN: its NEEDED libLiteRt.so and
-    // libGemmaModelConstraintProvider.so resolve from the bundle's lib/.
-    const path = 'libLiteRtLm.so';
+    // libGemmaModelConstraintProvider.so resolve from the bundle's lib/ (in
+    // a plain Dart program, from the code assets' directory).
+    final path = assetDir == null
+        ? 'libLiteRtLm.so'
+        : nativeAssetPath(assetDir, 'libLiteRtLm.so');
     return requireOwnLiteRtLmBuild(DynamicLibrary.open(path), path);
   }
   if (Platform.isWindows) {
     // Through the std-handle realignment: the embedding pass can be the first
-    // to load this static-CRT DLL (windows_std_handles.dart).
-    const path = 'LiteRtLm.dll';
+    // to load this static-CRT DLL (windows_std_handles.dart). In a plain Dart
+    // program its imports resolve from its own directory only when it is
+    // loaded with LOAD_WITH_ALTERED_SEARCH_PATH first.
+    if (assetDir == null) {
+      const path = 'LiteRtLm.dll';
+      return requireOwnLiteRtLmBuild(openBundledWindowsLibrary(path), path);
+    }
+    final path = nativeAssetPath(assetDir, 'LiteRtLm.dll');
+    loadWindowsAssetWithItsDirectory(path);
     return requireOwnLiteRtLmBuild(openBundledWindowsLibrary(path), path);
   }
   throw UnsupportedError(

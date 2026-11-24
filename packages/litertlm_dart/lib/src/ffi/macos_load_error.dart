@@ -10,13 +10,77 @@
 // with [openMacOSLiteRtLmForTflite]. Both build their message here, so every
 // path says the same thing, and dyld's text is kept.
 //
+// A plain Dart program (`dart run`, `dart test`, `dart build cli`) has no
+// app: there LiteRtLm and its companion are code assets, in the directory
+// [nativeAssetDir] finds, when the program's pubspec sets
+// `hooks: user_defines: litertlm_dart: macos_companions: code_assets`. Without
+// it the hook bundles them for a Flutter app, and the failure names the
+// define.
+//
 // Package-private.
 
 import 'dart:ffi';
 import 'dart:io';
 
+import '../runtime/macos_companions.dart';
+import 'native_asset_dir.dart';
+
 /// The macOS LiteRT-LM framework, as Native Assets bundles it in an app.
 const macOSLiteRtLmFramework = 'LiteRtLm.framework/LiteRtLm';
+
+/// The file names of LiteRtLm and StreamProxy among a plain Dart program's
+/// code assets on macOS.
+const macOSLiteRtLmAssetFile = 'libLiteRtLm.dylib';
+const macOSStreamProxyAssetFile = 'libStreamProxy.dylib';
+
+/// In a plain Dart program on macOS, the directory of its code assets when
+/// the build hook bundled LiteRT-LM's companion there (`macos_companions:
+/// code_assets`); null otherwise. [assetDir] and [exists] are for tests.
+String? macOSCodeAssetDir({
+  String? Function()? assetDir,
+  bool Function(String path)? exists,
+}) {
+  final dir = assetDir != null ? assetDir() : nativeAssetDir;
+  if (dir == null) return null;
+  final bool Function(String path) fileExists =
+      exists ?? (path) => File(path).existsSync();
+  return fileExists('$dir/$macOSConstraintProviderAssetFile') ? dir : null;
+}
+
+/// The message for a plain Dart program on macOS whose build did not bundle
+/// LiteRT-LM's companion as a code asset: it names the define that does.
+String macOSPlainDartLoadErrorMessage() =>
+    'litertlm_dart: LiteRT-LM did not load in this Dart program on macOS: '
+    'its build bundled the companion library for a Flutter app. Outside '
+    'Flutter (dart run, dart test, dart build cli) set, in the pubspec.yaml '
+    'of the package you run (of the workspace root in a pub workspace):\n'
+    '\n'
+    'hooks:\n'
+    '  user_defines:\n'
+    '    litertlm_dart:\n'
+    '      $macOSCompanionsDefine: $macOSCompanionsCodeAssets\n'
+    '\n'
+    'and run it again. `dart compile exe` runs no build hooks and cannot '
+    'bundle LiteRT-LM; use `dart build cli`.';
+
+/// The message for a code asset that is there and did not load.
+String macOSCodeAssetLoadErrorMessage(String path, String dyldText) {
+  final String fix = switch (diagnoseMacOSLoadError(dyldText)) {
+    MacOSLoadCause.wrongArchitecture =>
+      'LiteRT-LM ships for Apple silicon (arm64) only; it does not run on an '
+          'Intel Mac or in an x86_64 (Rosetta) process.',
+    MacOSLoadCause.blockedByPolicy =>
+      'macOS refused the library by system policy (quarantine or '
+          'notarization).',
+    _ =>
+      'Build the program again; if it still fails, please open an issue at '
+          'https://github.com/DenisovAV/flutter_edge_ai/issues with the text '
+          'below.',
+  };
+  return 'litertlm_dart: LiteRT-LM did not load from $path, where this Dart '
+      "program's build put it. $fix\n"
+      'dyld: $dyldText';
+}
 
 /// Why LiteRT-LM did not load on macOS, read from dyld's error text.
 enum MacOSLoadCause {
@@ -117,15 +181,38 @@ String macOSLoadErrorMessage(String dyldText) {
 String dyldErrorText(Object error) =>
     error is ArgumentError ? '${error.message ?? error}' : '$error';
 
-/// Opens LiteRtLm.framework in a macOS app, for the LLM and EmbeddingGemma 2.
+/// Opens LiteRtLm.framework in a macOS app, for the LLM and EmbeddingGemma 2;
+/// in a plain Dart program ([outsideFlutter]) the code asset in
+/// [codeAssetDir] ([macOSCodeAssetDir]).
 ///
 /// A failure is an [ArgumentError], as from `DynamicLibrary.open`, so the
 /// backend fallback (which retries on an [Exception] only) does not turn it
-/// into a CPU attempt. Its message is [macOSLoadErrorMessage]. [open] is for
-/// tests.
-DynamicLibrary openMacOSLiteRtLm({DynamicLibrary Function(String path)? open}) {
+/// into a CPU attempt. Its message is [macOSLoadErrorMessage] in an app; in a
+/// plain Dart program [macOSPlainDartLoadErrorMessage] when there is no code
+/// asset to open, [macOSCodeAssetLoadErrorMessage] when it did not load.
+/// [open], [outsideFlutter] and [codeAssetDir] are for tests.
+DynamicLibrary openMacOSLiteRtLm({
+  DynamicLibrary Function(String path)? open,
+  bool outsideFlutter = liteRtLmOutsideFlutter,
+  String? Function()? codeAssetDir,
+}) {
   final DynamicLibrary Function(String path) opener =
       open ?? DynamicLibrary.open;
+  if (outsideFlutter) {
+    final dir = (codeAssetDir ?? macOSCodeAssetDir)();
+    if (dir == null) throw ArgumentError(macOSPlainDartLoadErrorMessage());
+    final path = '$dir/$macOSLiteRtLmAssetFile';
+    try {
+      return opener(path);
+    } on ArgumentError catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        ArgumentError(
+          macOSCodeAssetLoadErrorMessage(path, dyldErrorText(error)),
+        ),
+        stackTrace,
+      );
+    }
+  }
   try {
     return opener(macOSLiteRtLmFramework);
   } on ArgumentError catch (error, stackTrace) {
@@ -152,17 +239,38 @@ DynamicLibrary openMacOSLiteRtLm({DynamicLibrary Function(String path)? open}) {
 /// A failure is an [UnsupportedError]: inside an app its message is
 /// [macOSLoadErrorMessage]; outside one it names each copy that exists with
 /// dyld's reason, because there the framework is never present and its error
-/// says nothing. Any other error goes through unchanged. [executable],
-/// [open] and [exists] are for tests.
+/// says nothing. Any other error goes through unchanged.
+///
+/// In a plain Dart program ([outsideFlutter]) whose build bundled the
+/// companion as a code asset, the code asset is opened, and nothing else is
+/// tried ([openMacOSLiteRtLm]); without one the order above runs, and its
+/// failure also names the define that bundles it. [executable], [open],
+/// [exists], [outsideFlutter] and [codeAssetDir] are for tests.
 DynamicLibrary openMacOSLiteRtLmForTflite({
   required List<String> Function() devCandidates,
   bool Function(DynamicLibrary library)? isOwnBuild,
   String? executable,
   DynamicLibrary Function(String path)? open,
   bool Function(String path)? exists,
+  bool outsideFlutter = liteRtLmOutsideFlutter,
+  String? Function()? codeAssetDir,
 }) {
   final DynamicLibrary Function(String path) opener =
       open ?? DynamicLibrary.open;
+  if (outsideFlutter) {
+    final dir = (codeAssetDir ?? macOSCodeAssetDir)();
+    if (dir != null) {
+      try {
+        return openMacOSLiteRtLm(
+          open: opener,
+          outsideFlutter: true,
+          codeAssetDir: () => dir,
+        );
+      } on ArgumentError catch (error) {
+        throw UnsupportedError('${error.message}');
+      }
+    }
+  }
   final String bundledError;
   try {
     return opener(macOSLiteRtLmFramework);
@@ -209,6 +317,7 @@ DynamicLibrary openMacOSLiteRtLmForTflite({
     'or a test run of a package that depends on it fills. '
     '${failed.isEmpty ? 'No copy exists.' : 'These copies did not load:\n${failed.join('\n')}'}'
     '${missing.isEmpty ? '' : '\nNot found: ${missing.join(', ')}'}'
-    '\n$macOSLiteRtLmFramework: $bundledError',
+    '\n$macOSLiteRtLmFramework: $bundledError'
+    '${outsideFlutter ? '\n\n${macOSPlainDartLoadErrorMessage()}' : ''}',
   );
 }

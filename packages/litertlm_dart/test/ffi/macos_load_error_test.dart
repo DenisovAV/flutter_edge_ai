@@ -238,6 +238,7 @@ void main() {
     test('rethrows a failed open as an ArgumentError naming the cause', () {
       final thrown = _thrownBy(
         () => openMacOSLiteRtLm(
+          outsideFlutter: false,
           open: (path) => throw ArgumentError(
             "Failed to load dynamic library '$path': $_missingCompanion",
           ),
@@ -257,6 +258,7 @@ void main() {
       final process = DynamicLibrary.process();
       expect(
         openMacOSLiteRtLm(
+          outsideFlutter: false,
           open: (path) {
             asked = path;
             return process;
@@ -270,7 +272,8 @@ void main() {
     test('lets any other error through unchanged', () {
       final error = StateError('not a load failure');
       expect(
-        () => openMacOSLiteRtLm(open: (_) => throw error),
+        () =>
+            openMacOSLiteRtLm(outsideFlutter: false, open: (_) => throw error),
         throwsA(same(error)),
       );
     });
@@ -285,6 +288,7 @@ void main() {
     test('returns the framework when it loads', () {
       expect(
         openMacOSLiteRtLmForTflite(
+          outsideFlutter: false,
           devCandidates: () => fail('not consulted'),
           executable: inApp,
           open: (path) => process,
@@ -297,6 +301,7 @@ void main() {
       var asked = false;
       final thrown = _thrownBy(
         () => openMacOSLiteRtLmForTflite(
+          outsideFlutter: false,
           devCandidates: () {
             asked = true;
             return ['/cache/libLiteRtLm.dylib'];
@@ -319,6 +324,7 @@ void main() {
         final opened = <String>[];
         expect(
           openMacOSLiteRtLmForTflite(
+            outsideFlutter: false,
             devCandidates: () => [
               '/dev/libLiteRtLm.dylib',
               '/cache/libLiteRtLm.dylib',
@@ -345,6 +351,7 @@ void main() {
         'foreign one itself, so it is never skipped for a dev copy', () {
       expect(
         openMacOSLiteRtLmForTflite(
+          outsideFlutter: false,
           devCandidates: () => fail('not consulted'),
           isOwnBuild: (_) => fail('not asked for the framework'),
           executable: tester,
@@ -360,6 +367,7 @@ void main() {
       final opened = <String>[];
       expect(
         openMacOSLiteRtLmForTflite(
+          outsideFlutter: false,
           devCandidates: () => [
             '/dev/libLiteRtLm.dylib',
             '/cache/libLiteRtLm.dylib',
@@ -386,6 +394,7 @@ void main() {
     test('outside an app, names a copy that is not our build', () {
       final thrown = _thrownBy(
         () => openMacOSLiteRtLmForTflite(
+          outsideFlutter: false,
           devCandidates: () => ['/dev/libLiteRtLm.dylib'],
           isOwnBuild: (_) => false,
           executable: tester,
@@ -408,6 +417,7 @@ void main() {
     test('outside an app, names each copy that failed and why', () {
       final thrown = _thrownBy(
         () => openMacOSLiteRtLmForTflite(
+          outsideFlutter: false,
           devCandidates: () => [
             '/gone/libLiteRtLm.dylib',
             '/cache/libLiteRtLm.dylib',
@@ -437,6 +447,7 @@ void main() {
     test('outside an app with no copy, says so', () {
       final thrown = _thrownBy(
         () => openMacOSLiteRtLmForTflite(
+          outsideFlutter: false,
           devCandidates: () => ['/cache/libLiteRtLm.dylib'],
           executable: tester,
           open: (path) => throw _loadFailure(_notBundled),
@@ -463,6 +474,7 @@ void main() {
       final copy = File('${dir.path}/libLiteRtLm.dylib')..writeAsStringSync('');
       expect(
         openMacOSLiteRtLmForTflite(
+          outsideFlutter: false,
           devCandidates: () => ['${dir.path}/missing.dylib', copy.path],
           open: (path) =>
               path == copy.path ? process : throw _loadFailure(_notBundled),
@@ -475,6 +487,7 @@ void main() {
       final error = StateError('not a load failure');
       expect(
         () => openMacOSLiteRtLmForTflite(
+          outsideFlutter: false,
           devCandidates: () => fail('not reached'),
           executable: tester,
           open: (_) => throw error,
@@ -506,7 +519,10 @@ void main() {
       final binary = File(dylib!).copySync('${framework.path}/LiteRtLm');
 
       final thrown = _thrownBy(
-        () => openMacOSLiteRtLm(open: (_) => DynamicLibrary.open(binary.path)),
+        () => openMacOSLiteRtLm(
+          outsideFlutter: false,
+          open: (_) => DynamicLibrary.open(binary.path),
+        ),
       );
       expect(thrown, isA<ArgumentError>());
       final message = '${(thrown! as ArgumentError).message}';
@@ -521,4 +537,111 @@ void main() {
               'only'
         : false,
   );
+
+  group('in a plain Dart program', () {
+    final process = DynamicLibrary.process();
+
+    test('the code assets are used when the companion is among them', () {
+      final present = <String>{};
+      String? dirFor(String? assetDir) =>
+          macOSCodeAssetDir(assetDir: () => assetDir, exists: present.contains);
+      expect(dirFor(null), isNull, reason: 'no asset directory');
+      expect(dirFor('/t/lib'), isNull, reason: 'built for a Flutter app');
+      present.add('/t/lib/libLtGmcp.dylib');
+      expect(dirFor('/t/lib'), '/t/lib');
+    });
+
+    test('opens libLiteRtLm among the code assets, and nothing else', () {
+      final asked = <String>[];
+      expect(
+        openMacOSLiteRtLm(
+          outsideFlutter: true,
+          codeAssetDir: () => '/t/lib',
+          open: (path) {
+            asked.add(path);
+            return process;
+          },
+        ),
+        same(process),
+      );
+      expect(asked, ['/t/lib/libLiteRtLm.dylib']);
+    });
+
+    test('without the companion among the code assets, the failure names the '
+        'define, and nothing is opened', () {
+      final thrown = _thrownBy(
+        () => openMacOSLiteRtLm(
+          outsideFlutter: true,
+          codeAssetDir: () => null,
+          open: (path) => fail('opened $path'),
+        ),
+      );
+      expect(thrown, isA<ArgumentError>());
+      final message = '${(thrown! as ArgumentError).message}';
+      expect(message, contains('    litertlm_dart:\n'));
+      expect(message, contains('macos_companions: code_assets'));
+      expect(message, contains('dart build cli'));
+    });
+
+    test('a code asset that does not load is named, with dyld\'s text', () {
+      final thrown = _thrownBy(
+        () => openMacOSLiteRtLm(
+          outsideFlutter: true,
+          codeAssetDir: () => '/t/lib',
+          open: (path) => throw _loadFailure(_wrongArchitecture),
+        ),
+      );
+      expect(thrown, isA<ArgumentError>());
+      final message = '${(thrown! as ArgumentError).message}';
+      expect(message, contains('/t/lib/libLiteRtLm.dylib'));
+      expect(message, contains('Apple silicon'));
+      expect(message, contains('dyld: '));
+    });
+
+    test('the .tflite path opens the code asset and tries no other copy', () {
+      final asked = <String>[];
+      expect(
+        openMacOSLiteRtLmForTflite(
+          outsideFlutter: true,
+          codeAssetDir: () => '/t/lib',
+          devCandidates: () => fail('not consulted'),
+          open: (path) {
+            asked.add(path);
+            return process;
+          },
+        ),
+        same(process),
+      );
+      expect(asked, ['/t/lib/libLiteRtLm.dylib']);
+    });
+
+    test('the .tflite path without the code asset keeps its order, and its '
+        'failure names the define', () {
+      final thrown = _thrownBy(
+        () => openMacOSLiteRtLmForTflite(
+          outsideFlutter: true,
+          codeAssetDir: () => null,
+          devCandidates: () => ['/cache/libLiteRtLm.dylib'],
+          executable: '/usr/local/bin/dart',
+          open: (path) => throw _loadFailure('no'),
+          exists: (_) => true,
+        ),
+      );
+      expect(thrown, isA<UnsupportedError>());
+      final message = '${(thrown! as UnsupportedError).message}';
+      expect(message, contains('/cache/libLiteRtLm.dylib: Failed to load'));
+      expect(message, contains('macos_companions: code_assets'));
+    });
+
+    test('inside Flutter the code assets are never looked at', () {
+      expect(
+        openMacOSLiteRtLm(
+          outsideFlutter: false,
+          codeAssetDir: () => fail('looked up'),
+          open: (path) => process,
+        ),
+        same(process),
+      );
+    });
+  });
 }

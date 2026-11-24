@@ -70,41 +70,47 @@ List<int> alignStdHandles(StdHandleCalls calls) {
 
 bool _alignedInThisIsolate = false;
 
+/// Runs [alignStdHandles] once in this isolate, before the first bundled
+/// static-CRT DLL loads: a library that loads first keeps the handles it
+/// copied. The alignment only moves where the native log goes, so a failure
+/// in it is printed and the caller loads its library anyway. A no-op after
+/// the first call, and off Windows.
+void alignWindowsStdHandlesOnce() {
+  if (_alignedInThisIsolate) return;
+  _alignedInThisIsolate = true;
+  try {
+    final calls = win32StdHandleCalls();
+    if (calls != null) {
+      for (final which in alignStdHandles(calls)) {
+        runtimeLog(
+          '[litertlm_dart] Windows: '
+          '${which == stdErrorHandle ? 'STD_ERROR_HANDLE' : 'STD_OUTPUT_HANDLE'} '
+          "was the parent's console while the app's "
+          "${which == stdErrorHandle ? 'stderr' : 'stdout'} is redirected; "
+          'pointed it at the redirect so the native log follows it.',
+        );
+      }
+    }
+  } on Object catch (e) {
+    // ignore: avoid_print
+    print(
+      '[litertlm_dart] Windows: could not align the standard '
+      "handles with the app's redirected output ($e); the native log may go "
+      "to the parent's console.",
+    );
+  }
+}
+
 /// Opens one of the bundled DLLs on Windows, after [alignStdHandles] has run
-/// once in this isolate. Every first open of a bundled library goes through
-/// here (a later plain open of one already loaded changes nothing): a library
-/// that loads first keeps the handles it copied. The alignment only moves
-/// where the native log goes, so a failure in it is printed and the library
-/// opens anyway. [preload] gets [name] after the alignment and before the
-/// open.
+/// once in this isolate ([alignWindowsStdHandlesOnce]). Every first open of a
+/// bundled library goes through here (a later plain open of one already
+/// loaded changes nothing). [preload] gets [name] after the alignment and
+/// before the open.
 DynamicLibrary openBundledWindowsLibrary(
   String name, {
   void Function(String name)? preload,
 }) {
-  if (!_alignedInThisIsolate) {
-    _alignedInThisIsolate = true;
-    try {
-      final calls = win32StdHandleCalls();
-      if (calls != null) {
-        for (final which in alignStdHandles(calls)) {
-          runtimeLog(
-            '[litertlm_dart] Windows: '
-            '${which == stdErrorHandle ? 'STD_ERROR_HANDLE' : 'STD_OUTPUT_HANDLE'} '
-            "was the parent's console while the app's "
-            "${which == stdErrorHandle ? 'stderr' : 'stdout'} is redirected; "
-            'pointed it at the redirect so the native log follows it.',
-          );
-        }
-      }
-    } on Object catch (e) {
-      // ignore: avoid_print
-      print(
-        '[litertlm_dart] Windows: could not align the standard '
-        "handles with the app's redirected output ($e); the native log may go "
-        "to the parent's console.",
-      );
-    }
-  }
+  alignWindowsStdHandlesOnce();
   preload?.call(name);
   return DynamicLibrary.open(name);
 }

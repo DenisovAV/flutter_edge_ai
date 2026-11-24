@@ -445,6 +445,48 @@ void main() {
     expect(chat.currentTokens, 2 + 7);
   });
 
+  for (final streamed in [true, false]) {
+    final path = streamed ? 'streamed' : 'blocking';
+    test('$path: a tool call is counted as the session holds it', () async {
+      const tool = Tool(name: 'get_time', description: 'Tells the time');
+      const call = '{"name": "get_time", "parameters": {}}';
+      final (chat, sessions) = await _chat(
+        maxTokens: 100000,
+        reply: call,
+        tools: [tool],
+      );
+      await chat.addQuery(const Message(text: 'time?', isUser: true));
+      final reply = streamed
+          ? await chat.generateChatResponseAsync().last
+          : await chat.generateChatResponse();
+      expect(reply, isA<FunctionCallResponse>());
+      expect(chat.fullHistory.last.type, MessageType.toolCall);
+      // The tools prompt and the question, as sent, and the call it holds.
+      final held = [
+        for (final m in sessions.single.staged) m.text.length,
+      ].fold<int>(0, (a, b) => a + b);
+      expect(chat.currentTokens, held + call.length);
+    });
+  }
+
+  test('a blocking tool call whose count fails is not committed', () async {
+    const tool = Tool(name: 'get_time', description: 'Tells the time');
+    const call = '{"name": "get_time", "parameters": {}}';
+    final (chat, sessions) = await _chat(
+      maxTokens: 100000,
+      reply: call,
+      tools: [tool],
+    );
+    await chat.addQuery(const Message(text: 'time?', isUser: true));
+    sessions.single.sizeFails = (text) => text == call;
+    await expectLater(chat.generateChatResponse(), throwsStateError);
+    expect(
+      [for (final m in chat.fullHistory) m.type],
+      isNot(contains(MessageType.toolCall)),
+      reason: 'no call left waiting for an answer',
+    );
+  });
+
   test('a rebuild that fails in the trim is thrown by every later call, '
       'until clearHistory', () async {
     final (chat, _) = await _chat(maxTokens: 10);
@@ -461,6 +503,11 @@ void main() {
       chat.addQuery(const Message(text: 'y', isUser: true)),
       throwsA(same(failure)),
       reason: 'not the closed session\'s error',
+    );
+    await expectLater(chat.generateChatResponse(), throwsA(same(failure)));
+    await expectLater(
+      chat.generateChatResponseAsync().drain<void>(),
+      throwsA(same(failure)),
     );
     await chat.clearHistory();
     await chat.addQuery(const Message(text: 'y', isUser: true));

@@ -201,9 +201,10 @@ class InferenceChat {
   /// `maxTokens - tokenBuffer`, the chat drops the oldest exchanges the model
   /// holds and rebuilds its session from the rest before the message is sent;
   /// when even dropping all of them would not make room, nothing is dropped
-  /// and the engine refuses the turn. A streamed reply that reaches it trims
-  /// after the reply; [generateChatResponse] counts its reply and leaves the
-  /// trim to the next message. [fullHistory] keeps every message.
+  /// and the engine refuses the turn. A streamed or structured reply that
+  /// reaches it trims after the reply; a plain (non-structured)
+  /// [generateChatResponse] counts its reply and leaves the trim to the next
+  /// message. [fullHistory] keeps every message.
   int get currentTokens {
     final current = _sessionIfAny;
     return (current == null ? null : _hooks.tokenCount(_engine(current))) ??
@@ -388,6 +389,7 @@ class InferenceChat {
   /// changes a chat's turns through [ChatTurnHooks].
   @nonVirtual
   Future<ModelResponse> generateChatResponse() async {
+    _throwIfRebuildFailed();
     if (responseFormat != null) {
       return _collectResponses(_streamStructuredResponse());
     }
@@ -536,11 +538,12 @@ class InferenceChat {
 
   /// Records the model's text reply in the history; an empty one is not a
   /// turn worth recording (#325).
-  void _commitText(String text) {
-    if (text.isEmpty) return;
+  Message? _commitText(String text) {
+    if (text.isEmpty) return null;
     final chatMessage = Message(text: text, isUser: false);
     _fullHistory.add(chatMessage);
     _modelHistory.add(chatMessage);
+    return chatMessage;
   }
 
   /// Decision H (B90): a plain turn that the session's or model's close ended
@@ -599,9 +602,12 @@ class InferenceChat {
             text: cleanRaw,
             calls: allCalls,
           );
+          // Counted before it is committed: a failed count leaves no call
+          // in the history waiting for an answer.
+          final callTokens = await _tokensOf(toolCallMessage);
           _fullHistory.add(toolCallMessage);
           _modelHistory.add(toolCallMessage);
-          _currentTokens += await _tokensOf(toolCallMessage);
+          _currentTokens += callTokens;
           if (allCalls.length == 1) return allCalls.first;
           return ParallelFunctionCallResponse(calls: allCalls);
         }
@@ -636,9 +642,10 @@ class InferenceChat {
           text: cleanedResponse,
           calls: allCalls,
         );
+        final callTokens = await _tokensOf(toolCallMessage);
         _fullHistory.add(toolCallMessage);
         _modelHistory.add(toolCallMessage);
-        _currentTokens += await _tokensOf(toolCallMessage);
+        _currentTokens += callTokens;
         edgeAiLog(
           'InferenceChat: Added tool call to history: ${toolCallMessage.text}',
           level: EdgeAiLogLevel.verbose,
@@ -719,6 +726,11 @@ class InferenceChat {
   /// changes a chat's turns through [ChatTurnHooks].
   @nonVirtual
   Stream<ModelResponse> generateChatResponseAsync() {
+    // A rebuild that failed earlier is this turn's error, not the closed
+    // session's.
+    if (_failedRebuild case (:final error, :final stack)) {
+      return Stream.error(error, stack);
+    }
     _lastTurnTakenBack = false;
     // Without a session yet, core's stream fails when it is listened to, as
     // it always has.
@@ -787,9 +799,9 @@ class InferenceChat {
     if (failure != null && _lastTurnTakenBack) {
       Error.throwWithStackTrace(failure, failureStack!);
     }
-    _commitText(response);
+    final committed = [?_commitText(response)];
     if (failure == null) {
-      await _accountReply(response, emittedFunctionCall: false);
+      await _accountReply(committed, emittedFunctionCall: false);
       return;
     }
     if (failure case IncompleteStructuredOutputException(end: TurnEnd.closed)) {
@@ -797,7 +809,7 @@ class InferenceChat {
     }
     try {
       await _accountReply(
-        response,
+        committed,
         emittedFunctionCall: false,
         onRebuildFailed: (error, stack) =>
             _failedRebuild = (error: error, stack: stack),
@@ -830,6 +842,9 @@ class InferenceChat {
   Stream<ModelResponse> _streamCoreResponse() async* {
     edgeAiLog('InferenceChat: Starting async stream generation');
     final buffer = StringBuffer();
+
+    // What this turn commits to the model's history, counted at its end.
+    final committed = <Message>[];
 
     // Smart function handling mode - continuous scanning for JSON patterns
     String funcBuffer = '';
@@ -1004,6 +1019,7 @@ class InferenceChat {
                 );
                 _fullHistory.add(toolCallMessage);
                 _modelHistory.add(toolCallMessage);
+                committed.add(toolCallMessage);
                 edgeAiLog(
                   'InferenceChat: Added function call to history before yielding',
                 );
@@ -1136,6 +1152,7 @@ class InferenceChat {
           );
           _fullHistory.add(toolCallMessage);
           _modelHistory.add(toolCallMessage);
+          committed.add(toolCallMessage);
           if (allCalls.length == 1) {
             yield allCalls.first;
           } else {
@@ -1192,7 +1209,7 @@ class InferenceChat {
             level: EdgeAiLogLevel.verbose,
           );
           yield TextResponse(message);
-          _commitText(message);
+          committed.addAll([?_commitText(message)]);
           _throwIfClosed(end);
           return;
         }
@@ -1214,6 +1231,7 @@ class InferenceChat {
             );
             _fullHistory.add(toolCallMessage);
             _modelHistory.add(toolCallMessage);
+            committed.add(toolCallMessage);
             edgeAiLog(
               'InferenceChat: Added function call to history at end of stream',
             );
@@ -1243,24 +1261,25 @@ class InferenceChat {
     // stream stopped before any text token ends with response == '', and
     // that empty assistant turn would make later short replies come back
     // empty (#325).
-    if (!emittedFunctionCall) _commitText(response);
+    if (!emittedFunctionCall) committed.addAll([?_commitText(response)]);
     _throwIfClosed(end);
 
-    await _accountReply(response, emittedFunctionCall: emittedFunctionCall);
+    await _accountReply(committed, emittedFunctionCall: emittedFunctionCall);
 
     edgeAiLog(
       'InferenceChat: generateChatResponseAsync completed successfully',
     );
   }
 
-  /// After a committed reply: counts its tokens, rebuilds the session when
-  /// the context is nearly full, and starts a single-turn model's next turn
-  /// on a fresh session.
+  /// After a committed reply: counts what it [committed] to the model's
+  /// history (its text, or its tool call(s) without the prose streamed
+  /// before them), rebuilds the session when the context is nearly full, and
+  /// starts a single-turn model's next turn on a fresh session.
   ///
   /// With [onRebuildFailed], a failed rebuild goes to it instead of being
   /// thrown; a failed count is thrown either way.
   Future<void> _accountReply(
-    String response, {
+    Iterable<Message> committed, {
     required bool emittedFunctionCall,
     void Function(Object error, StackTrace stack)? onRebuildFailed,
   }) async {
@@ -1274,8 +1293,9 @@ class InferenceChat {
     }
 
     edgeAiLog('InferenceChat: Calculating response tokens...');
-    final responseTokens = await session.sizeInTokens(response);
-    _currentTokens += responseTokens;
+    for (final message in committed) {
+      _currentTokens += await _tokensOf(message);
+    }
     edgeAiLog('InferenceChat: Current total tokens: $_currentTokens');
     final used = _hooks.tokenCount(_engine(session)) ?? _currentTokens;
     if (used >= (maxTokens - tokenBuffer)) {

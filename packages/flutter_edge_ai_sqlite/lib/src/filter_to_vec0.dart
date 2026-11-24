@@ -831,3 +831,32 @@ class FilterToVec0 {
     return out;
   }
 }
+
+/// `removeDocumentsWhere`'s refusals, shared by both store arms; package
+/// private (the library is not exported).
+abstract final class RemoveWhereFilter {
+  /// An empty [filter] would match every document: that is `clear()`.
+  static void refuseEmpty(Filter filter) {
+    if (filter.isEmpty) {
+      throw ArgumentError.value(
+        filter,
+        'filter',
+        'is empty, so it would match every document; use clear()',
+      );
+    }
+  }
+
+  /// A non-empty [filter] whose conditions constrain nothing (a range with no
+  /// bound, a range on a string field, excluding an empty set, or only
+  /// undeclared fields) translates to an empty [whereSql]: refused like an
+  /// empty one.
+  static void refuseUnconstrained(Filter filter, String whereSql) {
+    if (whereSql.isEmpty) {
+      throw ArgumentError.value(
+        filter,
+        'filter',
+        'constrains nothing, so it would match every document; use clear()',
+      );
+    }
+  }
+}

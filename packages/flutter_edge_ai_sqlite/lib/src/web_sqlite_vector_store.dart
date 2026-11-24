@@ -524,31 +524,25 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
 
   @override
   Future<int> removeDocumentsWhere(Filter filter) async {
-    _refuseEmptyFilter(filter);
+    RemoveWhereFilter.refuseEmpty(filter);
     if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
     final translated = FilterToVec0.translate(filter, _filterSchema);
     if (translated.matchesNothing) return 0;
-    _refuseUnconstrained(filter, translated.whereSql);
+    RemoveWhereFilter.refuseUnconstrained(filter, translated.whereSql);
     if (_detectedDimension == null) return 0; // table not created yet
     try {
       // As on the native arm: the searchSimilar WHERE fragment over a plain
-      // scan, ids first so the text index loses the same set.
-      return SqliteTextIndex.runInTransaction<int>(_db!, () {
-        final ids = [
-          for (final row in _db!.select(
-            'SELECT id FROM $_tableName WHERE ${translated.whereSql}',
-            translated.binds,
-          ))
-            row['id'] as String,
-        ];
-        for (final id in ids) {
-          _db!.execute('DELETE FROM $_tableName WHERE id = ?', [id]);
-          _text?.delete(id);
-        }
-        return ids.length;
-      });
+      // scan.
+      return SqliteTextIndex.deleteWhere(
+        _db!,
+        whereSql: translated.whereSql,
+        binds: translated.binds,
+        text: _text,
+      );
+    } on VectorStoreException {
+      rethrow;
     } catch (e) {
       throw VectorStoreException('Failed to remove documents', e);
     }
@@ -900,28 +894,6 @@ final class WebSqliteVectorStore extends VectorStoreRepository {
       buffer.setFloat32(i * 4, embedding[i].toDouble(), Endian.little);
     }
     return buffer.buffer.asUint8List();
-  }
-
-  static void _refuseEmptyFilter(Filter filter) {
-    if (filter.isEmpty) {
-      throw ArgumentError.value(
-        filter,
-        'filter',
-        'is empty, so it would match every document; use clear()',
-      );
-    }
-  }
-
-  /// As on the native arm: a non-empty filter that translates to no WHERE
-  /// constrains nothing, so it is refused like an empty one.
-  static void _refuseUnconstrained(Filter filter, String whereSql) {
-    if (whereSql.isEmpty) {
-      throw ArgumentError.value(
-        filter,
-        'filter',
-        'constrains nothing, so it would match every document; use clear()',
-      );
-    }
   }
 }
 

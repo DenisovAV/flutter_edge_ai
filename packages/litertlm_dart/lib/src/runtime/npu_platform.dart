@@ -25,6 +25,8 @@ abstract interface class NpuPlatform {
   );
 
   /// The directory of the running executable: where Native Assets puts a
-  /// Linux app's `lib/` and a Windows app's DLLs (`executableDirOf`).
+  /// Linux app's `lib/` and a Windows app's DLLs (`executableDirOf`). Read
+  /// only in a Flutter app: a plain Dart program's libraries are its code
+  /// assets.
   String get executableDir;
 }

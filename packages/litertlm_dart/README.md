@@ -10,8 +10,8 @@ the page's [`@litert-lm/core`](https://www.npmjs.com/package/@litert-lm/core)
 loads a `.litertlm` model, a `Conversation` sends it messages, an
 `EmbeddingEngine` embeds with EmbeddingGemma 2.
 
-It runs inside Flutter apps, in plain Dart programs on the CPU (`dart run`,
-`dart test`, `dart build cli`), and in a browser (see
+It runs inside Flutter apps, in plain Dart programs (`dart run`, `dart
+test`, `dart build cli`), and in a browser (see
 [Where it runs today](#where-it-runs-today)).
 
 ```dart
@@ -94,8 +94,8 @@ await engine.close();
   The NPU vendor (Qualcomm, Google Tensor, MediaTek, Intel) is read from the
   bundle, which must be compiled for that NPU; `Backend.npu(dispatchDir:)`
   names a directory holding that vendor's dispatch libraries, and only that
-  vendor's (unset: beside the executable, where the build puts them on Linux
-  and Windows). On Android see [Where it runs today](#where-it-runs-today).
+  vendor's (unset: where the build puts them on Linux and Windows, beside
+  an app's executable or among a plain Dart program's code assets). On Android see [Where it runs today](#where-it-runs-today).
 - **`activationDataType`** sets the GPU executor's activation type. Unset, the
   engine keeps the bundle's, except that Gemma 4 above a 2,048-token context
   and a FunctionGemma bundle that declares no type get float32 on the GPU
@@ -568,14 +568,13 @@ the web arm in a browser page. What an app does itself:
 
 `dart run`, `dart test` and `dart build cli` bundle the native libraries
 through the build hook, as a Flutter build does; the library lookup follows
-the program's code assets. Measured with Gemma 4 E2B on the CPU on macOS
-arm64, Linux x64 and Windows x64 (Linux arm64 not yet run): `dart run`,
-`dart test`, and a `dart build cli` bundle moved elsewhere.
-[`example/cli`](example/cli) is a command-line chat:
+the program's code assets. [`example/cli`](example/cli) is a command-line
+chat:
 
 ```sh
 cd example/cli
 dart run bin/litertlm_chat.dart gemma-4-E2B-it.litertlm
+dart run bin/litertlm_chat.dart --backend gpu gemma-4-E2B-it.litertlm
 dart build cli    # build/cli/<os>_<arch>/bundle/: bin/ + lib/, movable
 ```
 
@@ -583,19 +582,22 @@ The bundle's `lib/` holds the native libraries beside the program (on
 Linux the program itself is `lib/libdartaot*.so`, run by the executable in
 `bin/`); move the whole `bundle/` directory, not `bin/` alone.
 
-- **CPU only** in this release: `Backend.gpu()` and `Backend.npu()`, for
-  the engine, an encoder or EmbeddingGemma 2, are refused by name, never
-  moved to the CPU: `Engine.create` throws an `UnsupportedError`,
-  `EmbeddingEngine.create` an `EmbedderLoadException`. So is a file the CPU
-  cannot run (one compiled for an NPU, or whose model or enabled encoder
-  declares other backends). GPU delegates a program sets up itself through
-  the raw LiteRT bindings are not checked.
+- **The backends of an app, under its rules:** the CPU, the GPU and the NPU,
+  for the engine, its encoders and EmbeddingGemma 2. A backend that cannot
+  run is refused by name, never moved to the CPU. `Backend.npu()` without a
+  `dispatchDir` loads the dispatch from the program's code assets: Intel's
+  on Windows x64, Qualcomm's on Linux arm64 with `qualcomm_npu: true` in the
+  program's pubspec.yaml (Build options below). The raw LiteRT bindings
+  (`litert_bindings.dart`) open the same libraries and reach the GPU
+  accelerator the same way as in an app.
 - **macOS:** the define below bundles the companion library as a code asset
   instead of a Flutter app's framework. It goes in the pubspec.yaml of the
   package you run, the root of its pub resolution, and never in a
   resolution that also holds a Flutter app (a pub workspace with an app in
   it): give the command-line program its own pubspec. A Flutter app built
-  with it refuses to load LiteRT-LM, naming the define.
+  with it refuses to load LiteRT-LM, naming the define. The Metal
+  accelerator framework is not bundled and not needed: libLiteRtLm carries
+  its own.
 
   ```yaml
   hooks:
@@ -618,8 +620,9 @@ Linux the program itself is `lib/libdartaot*.so`, run by the executable in
   Linux and 243 MB on Windows, whose libraries include the Intel NPU stack
   (OpenVINO and TBB, 120 MB) and the DirectX shader compiler. A `dart build
   cli` bundle carries the same.
-- **Linux:** on the CPU LiteRT still loads its GPU accelerator and Dawn from
-  the bundle (they need no Vulkan to load); nothing runs on them.
+- **Linux and Windows:** the GPU accelerator and Dawn (on Windows also the
+  DirectX shader compiler) load with LiteRT-LM whatever the backend; they
+  need no GPU to load, and nothing runs on them until a GPU engine does.
 - `dart compile exe` runs no build hooks, so it cannot bundle LiteRT-LM; use
   `dart build cli`.
 

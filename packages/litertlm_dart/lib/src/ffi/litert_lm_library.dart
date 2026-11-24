@@ -81,11 +81,13 @@ DynamicLibrary openLiteRtLmLibrary() {
     // Through the std-handle realignment: the embedding pass can be the first
     // to load this static-CRT DLL (windows_std_handles.dart). In a plain Dart
     // program its imports resolve from its own directory only when it is
-    // loaded with LOAD_WITH_ALTERED_SEARCH_PATH first.
+    // loaded with LOAD_WITH_ALTERED_SEARCH_PATH first, after what the GPU
+    // needs (preloadWindowsGpuAssets).
     if (assetDir == null) {
       const path = 'LiteRtLm.dll';
       return requireOwnLiteRtLmBuild(openBundledWindowsLibrary(path), path);
     }
+    preloadWindowsGpuAssets(assetDir);
     final path = nativeAssetPath(assetDir, 'LiteRtLm.dll');
     loadWindowsAssetWithItsDirectory(path);
     return requireOwnLiteRtLmBuild(openBundledWindowsLibrary(path), path);

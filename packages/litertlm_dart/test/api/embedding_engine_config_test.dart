@@ -6,6 +6,8 @@ import 'dart:typed_data';
 
 import 'package:litertlm_dart/internal_io.dart';
 import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/src/ffi/native_asset_dir.dart'
+    show liteRtLmOutsideFlutter;
 import 'package:test/test.dart';
 
 import '../litertlm_container_fixture.dart';
@@ -18,14 +20,9 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     this.abiName, {
     this.stackMissing = false,
     this.unreachableBecause,
-    this.outsideFlutter = false,
   });
   final String abiName;
 
-  /// False by default: the placements below are those of a Flutter app. A
-  /// plain Dart program runs on the CPU only (the test of that).
-  @override
-  final bool outsideFlutter;
   final bool stackMissing;
   final String? unreachableBecause;
 
@@ -51,21 +48,11 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
       '/prepared/${vendor.name}';
 }
 
-/// The real host with a Flutter app's backend rules: the placements below are
-/// those of an app; a plain Dart program runs on the CPU only (the test of
-/// that).
-class _InFlutter extends EngineHost {
-  const _InFlutter();
-
-  @override
-  bool get outsideFlutter => false;
-}
-
 void main() {
   late Directory dir;
   setUp(() {
     dir = Directory.systemTemp.createTempSync('eg2_config');
-    debugEngineHost = const _InFlutter();
+    debugEngineHost = const EngineHost();
   });
   tearDown(() {
     debugEngineHost = null;
@@ -379,63 +366,24 @@ void main() {
     },
   );
 
-  test('a plain Dart program runs EmbeddingGemma 2 on the CPU only: a GPU or '
-      'NPU tower is refused by name, never moved', () async {
-    debugEngineHost = const _Host('macos_arm64', outsideFlutter: true);
-    final path = write('g.litertlm', eg2Container(vision: true, audio: true));
-    for (final (backend, vision, audio, named) in [
-      (const Backend.gpu(), null, null, 'EmbeddingGemma 2 on Backend.gpu()'),
-      (Backend.npu(), null, null, 'EmbeddingGemma 2 on Backend.npu()'),
-      (
-        null,
-        const Backend.gpu(),
-        null,
-        "EmbeddingGemma 2's vision tower on Backend.gpu()",
-      ),
-      (
-        null,
-        null,
-        Backend.npu(),
-        "EmbeddingGemma 2's audio tower on Backend.npu()",
-      ),
-    ]) {
-      await expectLater(
-        embedderConfigFor(
-          config(path, backend: backend, vision: vision, audio: audio),
-        ),
-        throwsA(
-          isA<EmbedderLoadException>().having(
-            (e) => e.message,
-            'message',
-            allOf(contains(named), contains('not supported outside Flutter')),
-          ),
-        ),
-        reason: named,
-      );
-    }
-    final placed = await embedderConfigFor(
-      config(path, vision: const Backend.cpu(), audio: const Backend.cpu()),
-    );
-    expect(placed.gpu, isFalse);
-    expect(placed.npuTarget, isNull);
-  });
-
-  test('a plain Dart program is pointed at the generic bundle, not at the '
-      'NPU, for a per-SoC bundle', () async {
-    debugEngineHost = const _Host('android_arm64', outsideFlutter: true);
-    final path = write(
+  test('dart test is a plain Dart program, and there EmbeddingGemma 2 is '
+      'placed on the GPU and on the NPU of a per-SoC bundle: a re-added '
+      'plain-Dart refusal fails here', () async {
+    expect(liteRtLmOutsideFlutter, isTrue);
+    final generic = write('g.litertlm', eg2Container());
+    final npu = write(
       'n.litertlm',
       eg2Container(textStamp: ('Qualcomm', 'SM8650')),
     );
-    await expectLater(
-      embedderConfigFor(config(path)),
-      throwsA(
-        isA<EmbedderLoadException>().having(
-          (e) => e.message,
-          'message',
-          allOf(contains('generic EmbeddingGemma 2'), contains('CPU only')),
-        ),
-      ),
-    );
+    for (final abi in ['macos_arm64', 'linux_x64', 'windows_x64']) {
+      debugEngineHost = _Host(abi);
+      final c = await embedderConfigFor(
+        config(generic, backend: const Backend.gpu()),
+      );
+      expect(c.gpu, isTrue, reason: abi);
+    }
+    debugEngineHost = const _Host('linux_arm64');
+    final c = await embedderConfigFor(config(npu, backend: Backend.npu()));
+    expect(c.npuDispatchDir, '/prepared/qualcomm');
   });
 }

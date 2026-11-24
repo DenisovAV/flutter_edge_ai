@@ -240,10 +240,10 @@ final class LiteRtLmEmbeddingConfig {
   final NpuStamp? npuTarget;
 
   /// Where LiteRT loads the vendor's dispatch from — the Qualcomm dispatch and
-  /// QNN libraries, or on Windows the Intel stack beside the executable —
-  /// resolved by `describe()` on the caller's isolate (Android extracts the
-  /// Qualcomm libraries through a platform channel, which this worker has
-  /// none of). Set with [npuTarget].
+  /// QNN libraries, or on Windows the Intel stack where the build put the
+  /// native libraries — resolved by `describe()` on the caller's isolate
+  /// (Android extracts the Qualcomm libraries through a platform channel,
+  /// which this worker has none of). Set with [npuTarget].
   final String? npuDispatchDir;
 
   /// A generic bundle's text tower on the GPU (LiteRT-LM's GPU executor, which

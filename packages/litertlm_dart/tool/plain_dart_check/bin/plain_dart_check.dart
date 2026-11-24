@@ -3,11 +3,18 @@
 // elsewhere. Prints the code assets' directory it resolved and the native
 // release, and exits 0 only when LiteRtLm, LiteRt and StreamProxy loaded and
 // a client got as far as the (missing) model, which LiteRT-LM refuses by its
-// path.
+// path, and, on Linux and Windows, when the GPU accelerator is loaded under
+// the bare name LiteRT's GPU registry opens it by (and on Windows Dawn and
+// the shader compiler with it), and on macOS when libLiteRtLm carries the
+// statically linked Metal accelerator LiteRT registers first: the GPU's own
+// load is not run, as CI has no GPU.
 //
 // Internal to the repository's CI: it reads the runtime's private library
 // lookup, which the published API does not expose.
+import 'dart:ffi';
 import 'dart:io';
+
+import 'package:ffi/ffi.dart';
 
 import 'package:litertlm_dart/litert_bindings.dart' show LiteRtBindings;
 // ignore: implementation_imports — the client, to check a load gets as far as the model, and its engine-create failure.
@@ -32,7 +39,7 @@ Future<void> main() async {
     stderr.writeln('FAIL: ${plainDartAssetsMessage(lookup)}');
     exit(1);
   }
-  openLiteRtLmLibrary();
+  final liteRtLm = openLiteRtLmLibrary();
   stdout.writeln('opened ${nativeAssetPath(dir, liteRtLmAssetFile)}');
   LiteRtBindings.open();
   stdout.writeln('opened the LiteRT C API');
@@ -54,5 +61,90 @@ Future<void> main() async {
     );
     exit(1);
   }
+  if (Platform.isMacOS) {
+    // LiteRT's gpu_registry registers this definition before it looks for any
+    // accelerator library; it is set by the accelerator linked into
+    // libLiteRtLm when the library loads.
+    const symbol = 'LiteRtStaticLinkedAcceleratorGpuDef';
+    if (!liteRtLm.providesSymbol(symbol) ||
+        liteRtLm.lookup<Pointer<Void>>(symbol).value == nullptr) {
+      stderr.writeln(
+        'FAIL: libLiteRtLm has no statically linked GPU accelerator ($symbol '
+        'missing or null)',
+      );
+      exit(1);
+    }
+    stdout.writeln(
+      'GPU: Metal accelerator statically linked ($symbol set in libLiteRtLm)',
+    );
+  }
+  final notLoaded = [
+    for (final name in _gpuLibraries())
+      if (!_loadedByBareName(name)) name,
+  ];
+  if (notLoaded.isNotEmpty) {
+    stderr.writeln(
+      'FAIL: not loaded under the bare names the GPU looks for: '
+      '${notLoaded.join(', ')}',
+    );
+    exit(1);
+  }
+  if (_gpuLibraries().isNotEmpty) {
+    stdout.writeln('GPU libraries loaded: ${_gpuLibraries().join(', ')}');
+  }
   stdout.writeln('OK');
+}
+
+/// What LiteRT and Dawn open by bare name for the GPU on this OS.
+List<String> _gpuLibraries() => Platform.isWindows
+    ? const [
+        'libLiteRtWebGpuAccelerator.dll',
+        'webgpu_dawn.dll',
+        'dxcompiler.dll',
+        'dxil.dll',
+      ]
+    : Platform.isLinux
+    ? const ['libLiteRtWebGpuAccelerator.so']
+    : const [];
+
+/// Whether [name] resolves to a module already in the process, as a bare-name
+/// load by LiteRT would: `GetModuleHandleW` on Windows, `dlopen` with
+/// `RTLD_NOLOAD` on Linux.
+bool _loadedByBareName(String name) {
+  if (Platform.isWindows) {
+    final getModuleHandle = DynamicLibrary.open('kernel32.dll')
+        .lookupFunction<
+          IntPtr Function(Pointer<Utf16>),
+          int Function(Pointer<Utf16>)
+        >('GetModuleHandleW');
+    final wide = name.toNativeUtf16();
+    try {
+      return getModuleHandle(wide) != 0;
+    } finally {
+      malloc.free(wide);
+    }
+  }
+  const rtldLazy = 0x1;
+  const rtldNoload = 0x4;
+  final process = DynamicLibrary.process();
+  final dlopen = process
+      .lookupFunction<
+        Pointer<Void> Function(Pointer<Utf8>, Int32),
+        Pointer<Void> Function(Pointer<Utf8>, int)
+      >('dlopen');
+  final dlclose = process
+      .lookupFunction<
+        Int32 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('dlclose');
+  final path = name.toNativeUtf8();
+  try {
+    final handle = dlopen(path, rtldLazy | rtldNoload);
+    if (handle == nullptr) return false;
+    // RTLD_NOLOAD still takes a reference: give it back.
+    dlclose(handle);
+    return true;
+  } finally {
+    malloc.free(path);
+  }
 }

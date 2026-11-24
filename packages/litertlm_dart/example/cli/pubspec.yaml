@@ -1,5 +1,5 @@
 name: litertlm_chat
-description: One prompt to a .litertlm model on the CPU, from a plain Dart program.
+description: One prompt to a .litertlm model, on the CPU, GPU or NPU, from a plain Dart program.
 publish_to: none
 
 # Not a member of the repository's pub workspace: the define below is read

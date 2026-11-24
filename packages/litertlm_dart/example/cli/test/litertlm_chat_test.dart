@@ -1,12 +1,10 @@
 // The engine loads and answers in a plain Dart test run (`dart test`), which
 // bundles libLiteRtLm through the build hook as `dart run` does.
 //
-// Opt-in, with a real model:
+// Run by hand: tool/test_all.sh does not discover this package (CI runs
+// tool/plain_dart_check instead). The reply test needs a real model:
 //
 //   LITERTLM_MODEL=/path/to/gemma-4-E2B-it.litertlm dart test
-@Tags(['model'])
-library;
-
 import 'dart:io';
 
 import 'package:litertlm_dart/litertlm_dart.dart';
@@ -32,14 +30,19 @@ void main() {
       }
       expect('$reply', contains('Paris'));
     },
+    tags: ['model'],
     timeout: const Timeout(Duration(minutes: 5)),
     skip: model == null ? 'set LITERTLM_MODEL to a .litertlm file' : false,
   );
 
   test('the GPU is refused by name, not moved to the CPU', () async {
+    // Refused before the file is read: no model needed.
     await expectLater(
       Engine.create(
-        EngineConfig(modelPath: model!, backend: const Backend.gpu()),
+        EngineConfig(
+          modelPath: '/no/such/model.litertlm',
+          backend: const Backend.gpu(),
+        ),
       ),
       throwsA(
         isA<UnsupportedError>().having(
@@ -49,5 +52,5 @@ void main() {
         ),
       ),
     );
-  }, skip: model == null ? 'set LITERTLM_MODEL to a .litertlm file' : false);
+  });
 }

@@ -569,8 +569,8 @@ the web arm in a browser page. What an app does itself:
 `dart run`, `dart test` and `dart build cli` bundle the native libraries
 through the build hook, as a Flutter build does; the library lookup follows
 the program's code assets. Measured with Gemma 4 E2B on the CPU on macOS
-arm64, Linux x64 and Windows x64 (`dart run`, `dart test`, and a `dart
-build cli` bundle moved elsewhere); not yet on Linux arm64.
+arm64, Linux x64 and Windows x64 (Linux arm64 not yet run): `dart run`,
+`dart test`, and a `dart build cli` bundle moved elsewhere.
 [`example/cli`](example/cli) is a command-line chat:
 
 ```sh
@@ -584,15 +584,18 @@ Linux the program itself is `lib/libdartaot*.so`, run by the executable in
 `bin/`); move the whole `bundle/` directory, not `bin/` alone.
 
 - **CPU only** in this release: `Backend.gpu()` and `Backend.npu()`, for
-  the engine, an encoder or EmbeddingGemma 2, are refused by name
-  (`UnsupportedError` from `Engine.create`, `EmbedderLoadException` from
-  `EmbeddingEngine.create`), never moved to the CPU. GPU delegates a program
-  sets up itself through the raw LiteRT bindings are not checked.
+  the engine, an encoder or EmbeddingGemma 2, are refused by name, never
+  moved to the CPU: `Engine.create` throws an `UnsupportedError`,
+  `EmbeddingEngine.create` an `EmbedderLoadException`. So is a file the CPU
+  cannot run (one compiled for an NPU, or whose model or enabled encoder
+  declares other backends). GPU delegates a program sets up itself through
+  the raw LiteRT bindings are not checked.
 - **macOS:** the define below bundles the companion library as a code asset
   instead of a Flutter app's framework. It goes in the pubspec.yaml of the
-  package you run (the workspace root's in a pub workspace), and never in a
-  Flutter app's: one pub resolution serves either a Flutter app or a plain
-  Dart program on macOS, not both.
+  package you run, the root of its pub resolution, and never in a
+  resolution that also holds a Flutter app (a pub workspace with an app in
+  it): give the command-line program its own pubspec. A Flutter app built
+  with it refuses to load LiteRT-LM, naming the define.
 
   ```yaml
   hooks:

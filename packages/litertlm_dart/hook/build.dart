@@ -24,9 +24,17 @@ const _packageName = 'litertlm_dart';
 /// apps set before the hook moved here (legacy_user_defines.dart).
 late HookDefines _defines;
 
-/// Where this build ships the macOS companions (macos_companions.dart):
-/// `hooks.user_defines.litertlm_dart.macos_companions`.
-var _macOSCompanions = MacOSCompanions.frameworks;
+/// The macOS companions a plain Dart program (`macos_companions:
+/// code_assets`) does not bundle: the Metal accelerator, as such a program
+/// runs on the CPU only, and the Linux/Windows libraries the macOS archive
+/// does not carry. Any other companion there would need a decision, so the
+/// build fails rather than drop it silently.
+const _companionsLeftOutOfMacOSCodeAssets = {
+  'LiteRtLmMetalAccelerator',
+  'LiteRtWebGpuAccelerator',
+  'LiteRt',
+  'webgpu_dawn',
+};
 
 // ============================================================================
 // Native bundles
@@ -663,6 +671,7 @@ Future<void> _processBundle({
   required BuildOutputBuilder output,
   required OS os,
   required String dirName,
+  required MacOSCompanions macOSCompanions,
 }) async {
   // Skip the bundle entirely if it has no checksum for this platform.
   // Both bundles use this as the "is this target supported" gate. The skip is
@@ -796,7 +805,7 @@ Future<void> _processBundle({
   // `@rpath/libGemmaModelConstraintProvider.dylib`, which the Dart SDK
   // rewrites to wherever it puts the provider.
   final companionsAsCodeAssets =
-      os == OS.macOS && _macOSCompanions == MacOSCompanions.codeAssets;
+      os == OS.macOS && macOSCompanions == MacOSCompanions.codeAssets;
   final skipCompanions =
       !companionsAsCodeAssets && bundle.skipCompanionsOn.contains(os);
   final Uri mainStaged;
@@ -852,7 +861,17 @@ Future<void> _processBundle({
       // A plain Dart program on macOS: the provider only, under a short file
       // name. The Metal accelerator is not bundled: such a program runs on
       // the CPU only in this release.
-      if (name != 'GemmaModelConstraintProvider') continue;
+      if (name != 'GemmaModelConstraintProvider') {
+        if (File.fromUri(fileUri).existsSync() &&
+            !_companionsLeftOutOfMacOSCodeAssets.contains(name)) {
+          throw StateError(
+            'litertlm_dart: the macOS native bundle carries $fileName, which '
+            'macos_companions: code_assets neither bundles nor leaves out on '
+            'purpose; this hook needs updating for it.',
+          );
+        }
+        continue;
+      }
       consumed.add(fileUri);
       output.assets.code.add(
         CodeAsset(
@@ -1448,8 +1467,9 @@ void main(List<String> args) async {
 
     final codeConfig = input.config.code;
     final os = codeConfig.targetOS;
-    // Read on every target, so a value that means nothing fails everywhere.
-    _macOSCompanions = readMacOSCompanionsDefine(
+    // Read on every native target, so a value that means nothing fails
+    // everywhere.
+    final macOSCompanions = readMacOSCompanionsDefine(
       input.userDefines[macOSCompanionsDefine],
     );
 
@@ -1475,6 +1495,7 @@ void main(List<String> args) async {
         output: output,
         os: os,
         dirName: dirName,
+        macOSCompanions: macOSCompanions,
       );
     }
   });
@@ -1636,7 +1657,18 @@ Uri _stageConstraintProviderForDart(Uri src, BuildInput input) {
         : projectRoot == null
         ? null
         : DartJitProjectDir(projectRoot);
-    if (dir != null) {
+    if (dir == null) {
+      stderr.writeln(
+        '[litertlm_dart] macos_companions: code_assets: the header-room check '
+        'for dart run / dart test is skipped: Dart ${Platform.version} copies '
+        "the assets into the root package's .dart_tool/lib/, and this hook "
+        'could not tell which package that is.',
+      );
+    } else {
+      stderr.writeln(
+        '[litertlm_dart] macos_companions: code_assets: checking the header '
+        'room against ${dir.path} (Dart ${Platform.version.split(' ').first}).',
+      );
       final refusal = dartJitInstallNameRefusal(
         dir: dir,
         slack: machOHeaderSlack(source.readAsBytesSync()),

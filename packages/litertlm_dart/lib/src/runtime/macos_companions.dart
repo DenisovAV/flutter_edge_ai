@@ -7,7 +7,11 @@
 /// The `user_defines` key.
 const macOSCompanionsDefine = 'macos_companions';
 
-/// Its one value: bundle the companion as a code asset, for a plain Dart
+/// The default, which may also be written out: the companions are a Flutter
+/// app's frameworks.
+const macOSCompanionsFrameworks = 'frameworks';
+
+/// Bundle the companion as a code asset, for a plain Dart
 /// program (`dart run`, `dart test`, `dart build cli`). Unset, the companions
 /// reach a Flutter app as frameworks, as they always have.
 const macOSCompanionsCodeAssets = 'code_assets';

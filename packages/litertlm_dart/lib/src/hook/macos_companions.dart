@@ -17,9 +17,10 @@
 // Dart SDK's install_name_tool step; [dartJitInstallNameRefusal] says so first.
 
 import 'dart:convert';
-import 'dart:typed_data';
 
 import '../runtime/macos_companions.dart';
+
+export '../runtime/macho.dart' show machOHeaderSlack;
 
 /// Where the macOS companions go.
 enum MacOSCompanions {
@@ -30,52 +31,19 @@ enum MacOSCompanions {
   codeAssets,
 }
 
-/// The mode [value], the define's value, chooses. Anything but unset and
-/// [macOSCompanionsCodeAssets] is a [FormatException] naming the define.
+/// The mode [value], the define's value, chooses. Anything but unset,
+/// [macOSCompanionsFrameworks] and [macOSCompanionsCodeAssets] is a
+/// [FormatException] naming the define.
 MacOSCompanions readMacOSCompanionsDefine(Object? value) => switch (value) {
-  null => MacOSCompanions.frameworks,
+  null || macOSCompanionsFrameworks => MacOSCompanions.frameworks,
   macOSCompanionsCodeAssets => MacOSCompanions.codeAssets,
   _ => throw FormatException(
     'hooks.user_defines.litertlm_dart.$macOSCompanionsDefine must be '
     '$macOSCompanionsCodeAssets (for a plain Dart program: dart run, dart '
-    'test, dart build cli) or unset (for a Flutter app), got '
-    '${value.runtimeType} "$value"',
+    'test, dart build cli), or $macOSCompanionsFrameworks or unset (for a '
+    'Flutter app), got ${value.runtimeType} "$value"',
   ),
 };
-
-/// The free bytes between a 64-bit Mach-O file's load commands and its first
-/// section: how much install_name_tool can grow them. Throws a
-/// [FormatException] for anything else (a fat or 32-bit file).
-int machOHeaderSlack(Uint8List bytes) {
-  final data = ByteData.sublistView(bytes);
-  if (bytes.length < 32 || data.getUint32(0, Endian.little) != 0xfeedfacf) {
-    throw const FormatException('not a 64-bit little-endian Mach-O file');
-  }
-  final ncmds = data.getUint32(16, Endian.little);
-  final sizeofcmds = data.getUint32(20, Endian.little);
-  const headerSize = 32;
-  const lcSegment64 = 0x19;
-  var firstSection = bytes.length;
-  var at = headerSize;
-  for (var i = 0; i < ncmds; i++) {
-    if (at + 8 > bytes.length) {
-      throw const FormatException('load commands run past the file');
-    }
-    final cmd = data.getUint32(at, Endian.little);
-    final cmdsize = data.getUint32(at + 4, Endian.little);
-    if (cmdsize < 8) throw const FormatException('a load command of size 0');
-    if (cmd == lcSegment64) {
-      final nsects = data.getUint32(at + 64, Endian.little);
-      for (var s = 0; s < nsects; s++) {
-        // section_64: offset at byte 48 of its 80.
-        final offset = data.getUint32(at + 72 + s * 80 + 48, Endian.little);
-        if (offset != 0 && offset < firstSection) firstSection = offset;
-      }
-    }
-    at += cmdsize;
-  }
-  return firstSection - headerSize - sizeofcmds;
-}
 
 /// The size of an `LC_ID_DYLIB` naming [installName]: 24 bytes, the name and
 /// its NUL, rounded up to 8.
@@ -208,5 +176,7 @@ String? dartJitInstallNameRefusal({
       'for dart run and dart test on macOS: they write each code asset\'s '
       'path under it into the library, and Google\'s prebuilt '
       'libGemmaModelConstraintProvider has room for $longest characters at '
-      'most there. ${dir.advice} (dart build cli is not affected.)';
+      'most there. ${dir.advice} (This check is for dart run and dart test; '
+      'dart build cli is not affected, and a Flutter app must not set '
+      'macos_companions at all.)';
 }

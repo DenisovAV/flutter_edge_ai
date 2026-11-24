@@ -35,6 +35,11 @@ void main() {
   group('readMacOSCompanionsDefine', () {
     test('unset is a Flutter app; code_assets a plain Dart program', () {
       expect(readMacOSCompanionsDefine(null), MacOSCompanions.frameworks);
+      // The default may be written out.
+      expect(
+        readMacOSCompanionsDefine('frameworks'),
+        MacOSCompanions.frameworks,
+      );
       expect(
         readMacOSCompanionsDefine('code_assets'),
         MacOSCompanions.codeAssets,
@@ -42,14 +47,7 @@ void main() {
     });
 
     test('anything else fails the build, naming the define and its values', () {
-      for (final value in <Object>[
-        'frameworks',
-        'auto',
-        'Code_Assets',
-        '',
-        true,
-        1,
-      ]) {
+      for (final value in <Object>['auto', 'Code_Assets', '', true, 1]) {
         expect(
           () => readMacOSCompanionsDefine(value),
           throwsA(

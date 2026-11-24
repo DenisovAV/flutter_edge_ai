@@ -1,3 +1,6 @@
+## 1.21.2
+- Requires `litertlm_dart` 0.19.1+3; tool calls still reach core unexecuted.
+
 ## 1.21.1
 - Requires `litertlm_dart` 0.19.1+2.
 - Web: the message after a stopped reply no longer fails with "Task cancelled".

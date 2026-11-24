@@ -5,7 +5,12 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
-import 'package:litertlm_dart/bindings.dart' show LiteRtLmConversation;
+import 'package:ffi/ffi.dart';
+import 'package:litertlm_dart/bindings.dart'
+    show
+        LiteRtLmBindings,
+        LiteRtLmConversation,
+        LiteRtLmConversationOptionalArgs;
 import 'package:litertlm_dart/internal_io.dart';
 import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:test/test.dart';
@@ -32,6 +37,69 @@ void main() {
     );
     await handle.chatRawMessage('{"role":"user"}', options: options).toList();
     expect(client.lastSendOptionsForTest, same(options));
+  });
+
+  test('an unconstrained send goes without the conversation\'s response '
+      'format; any other send carries it', () async {
+    // What native's set_constraint is handed; the seam stands in for the
+    // send, the bindings for the optional args' setter.
+    final installed = <String>[];
+    final setConstraint =
+        NativeCallable<
+          UnsignedInt Function(
+            Pointer<LiteRtLmConversationOptionalArgs>,
+            UnsignedInt,
+            Pointer<Char>,
+          )
+        >.isolateLocal((
+          Pointer<LiteRtLmConversationOptionalArgs> _,
+          int _,
+          Pointer<Char> schema,
+        ) {
+          installed.add(schema.cast<Utf8>().toDartString());
+          return 0;
+        }, exceptionalReturn: 1);
+    final lastError = NativeCallable<Pointer<Char> Function()>.isolateLocal(
+      () => nullptr,
+    );
+    addTearDown(() {
+      setConstraint.close();
+      lastError.close();
+    });
+    final symbols = <String, Pointer<Void>>{
+      'litert_lm_conversation_optional_args_set_constraint': setConstraint
+          .nativeFunction
+          .cast(),
+      'litert_lm_get_last_error_message': lastError.nativeFunction.cast(),
+    };
+    final client = LiteRtLmFfiClient()
+      ..bindingsForTest = LiteRtLmBindings.fromLookup(
+        <T extends NativeType>(String name) => symbols[name]!.cast<T>(),
+      );
+    final conv = Pointer<LiteRtLmConversation>.fromAddress(0x7200);
+    final schemas = <String?>[];
+    client
+      ..registerLiveForTest(conv)
+      ..structuredSendForTest = (c, schema) {
+        schemas.add(schema);
+        final send = client.newTurnForTest(c);
+        Future.microtask(send.finished);
+        return send;
+      };
+    final handle = LiteRtLmConversationHandle.forTest(
+      client,
+      conversation: conv,
+      jsonSchema: '{"type":"object"}',
+    );
+    await handle
+        .chatRawMessage(
+          '{"role":"user"}',
+          options: const SendOptions(unconstrained: true),
+        )
+        .toList();
+    await handle.chatRawMessage('{"role":"tool"}').toList();
+    expect(schemas, [null, '{"type":"object"}']);
+    expect(installed, ['{"type":"object"}']);
   });
 
   test('the per-send extra_context keeps the thinking switch on top', () {

@@ -387,6 +387,8 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     return _engine!.openConversation(
       lm.ConversationConfig(
         systemInstruction: systemInstruction,
+        // Core runs the calls: every reply with calls reaches its parser.
+        automaticToolCalling: false,
         tools: [
           if (nativeTools)
             for (final tool in tools)

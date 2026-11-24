@@ -54,7 +54,7 @@ larger chunk just because the model file declares a larger context.
 ```
 dependencies:
   flutter_edge_ai: ^2.7.2
-  flutter_edge_ai_litertlm: ^1.21.1
+  flutter_edge_ai_litertlm: ^1.21.2
   flutter_edge_ai_embeddings: ^2.3.3 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.3.0
   flutter_edge_ai_sqlite: ^2.3.0 # all six platforms, including Web

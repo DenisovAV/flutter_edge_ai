@@ -3826,6 +3826,7 @@ class LiteRtLmFfiClient {
     Constraint? constraint,
     SendOptions options = SendOptions.none,
   }) {
+    if (options.unconstrained) constraint = null;
     final testSend = structuredSendForTest;
     if (testSend != null) {
       final optionalArgs = _createOptionalArgs(

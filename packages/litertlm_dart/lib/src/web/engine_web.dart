@@ -313,6 +313,7 @@ final class Engine {
       config: c,
       thinkingTokenBudgetCapsNothing: () {},
       engineClosed: () => _closed,
+      engineCloseListeners: _closeListeners,
     );
   }
 
@@ -365,8 +366,15 @@ final class Engine {
   /// would wait on that generation for good).
   Future<void> close() => _closing ??= _close();
 
+  /// What a conversation must hear of [close] beyond [_closed]: a reply whose
+  /// tools are running, with no generation to end it.
+  final _closeListeners = <void Function()>{};
+
   Future<void> _close() async {
     _closed = true;
+    for (final listener in _closeListeners.toList()) {
+      listener();
+    }
     // The conversations stop first: a create queued on the page lock may be
     // waiting behind one of their generations. Started before the creates
     // are awaited, so they cannot wait on each other.

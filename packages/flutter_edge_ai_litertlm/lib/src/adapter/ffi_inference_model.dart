@@ -357,6 +357,8 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     return lm.ConversationConfig(
       systemInstruction: systemInstruction,
       tools: _nativeTools(tools),
+      // Core runs the calls: every reply with calls reaches its parser.
+      automaticToolCalling: false,
       samplerConfig: explicit.isEmpty ? null : _samplerConfig(sampling),
       maxOutputTokens: maxOutputTokens,
       responseFormat: jsonSchema == null

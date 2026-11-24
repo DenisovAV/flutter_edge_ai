@@ -103,7 +103,8 @@ final class ConversationClosedException extends LiteRtLmException
   constructor const ConversationClosedException(String message)
 
 final class ConversationConfig
-  constructor ConversationConfig({String? systemInstruction, List<Message> initialMessages = const [], List<Tool> tools = const [], SamplerConfig? samplerConfig, int? maxOutputTokens, ThinkingConfig? thinkingConfig, ResponseFormat? responseFormat, SpeculativeDecodingMode? speculativeDecoding, Map<String, Object?> extraContext = const {}})
+  constructor ConversationConfig({String? systemInstruction, List<Message> initialMessages = const [], List<Tool> tools = const [], SamplerConfig? samplerConfig, int? maxOutputTokens, ThinkingConfig? thinkingConfig, ResponseFormat? responseFormat, SpeculativeDecodingMode? speculativeDecoding, Map<String, Object?> extraContext = const {}, bool automaticToolCalling = true})
+  field final bool automaticToolCalling
   field final Map<String, Object?> extraContext
   field final List<Message> initialMessages
   field final int? maxOutputTokens
@@ -385,8 +386,9 @@ final class ThinkingConfig
   method String toString()
 
 final class Tool
-  constructor Tool({required String name, String description = '', Map<String, Object?> parameters = const {}})
+  constructor Tool({required String name, String description = '', Map<String, Object?> parameters = const {}, FutureOr<Object?> Function(Map<String, Object?>)? execute})
   field final String description
+  field final FutureOr<Object?> Function(Map<String, Object?>)? execute
   field final String name
   field final Map<String, Object?> parameters
 

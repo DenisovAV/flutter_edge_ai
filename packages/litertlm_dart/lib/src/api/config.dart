@@ -279,6 +279,7 @@ final class ConversationConfig {
     this.responseFormat,
     this.speculativeDecoding,
     Map<String, Object?> extraContext = const {},
+    this.automaticToolCalling = true,
   }) : initialMessages = List.unmodifiable(initialMessages),
        tools = List.unmodifiable(tools),
        extraContext = Map.unmodifiable(extraContext) {
@@ -295,8 +296,10 @@ final class ConversationConfig {
   final List<Message> initialMessages;
 
   /// The functions the model may call. LiteRT-LM renders them into the
-  /// prompt and returns calls as `Message.toolCalls`; the caller runs them
-  /// and answers with `Message.tool`.
+  /// prompt and returns calls as `Message.toolCalls`. A tool with
+  /// `Tool.execute` is run by the conversation itself while
+  /// [automaticToolCalling] is on; the calls of a tool without it reach the
+  /// caller, who runs them and answers with `Message.tool`.
   final List<Tool> tools;
 
   /// The caller's sampler; null takes the model file's sampler, field by
@@ -320,4 +323,30 @@ final class ConversationConfig {
 
   /// Variables for the model's prompt template.
   final Map<String, Object?> extraContext;
+
+  /// Whether the conversation runs the model's tool calls itself, as
+  /// Kotlin's and Swift's `automaticToolCalling` (default true).
+  ///
+  /// When a reply calls tools and no call names a declared tool without
+  /// `Tool.execute`, the conversation runs the calls in order, sends their
+  /// results back as one `Message.tool`, and streams the model's next reply
+  /// as part of the same message: the reply ends with the first answer that
+  /// calls no tool. A call to a name no tool declares does not stop this: it
+  /// is answered with `Error: Tool not found: <name>`. After 25 rounds of
+  /// calls in one message (Kotlin's and Swift's limit) the send fails with a
+  /// `TurnFailedException`.
+  ///
+  /// A reply that calls a declared tool without `Tool.execute` is returned to
+  /// the caller with nothing run, as when this is false; so is every call
+  /// while no tool has `execute`.
+  ///
+  /// A stop while the tools run (`Conversation.cancel`) ends the reply with
+  /// their calls: those calls have run, only their results were not sent to
+  /// the model, so do not run them again blindly.
+  ///
+  /// With a [responseFormat] (native only: the web refuses one), as in
+  /// Kotlin and Swift, a message that is not a tool response is sent without
+  /// the format while some tool has `execute` (the model must be free to call
+  /// it); the replies to tool responses keep it.
+  final bool automaticToolCalling;
 }

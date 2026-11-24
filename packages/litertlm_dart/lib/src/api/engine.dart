@@ -923,6 +923,7 @@ final class Engine {
       config: c,
       thinkingTokenBudgetCapsNothing: _budgetCapsNothing,
       engineClosed: () => _closed,
+      engineCloseListeners: _closeListeners,
     );
   }
 
@@ -993,8 +994,15 @@ final class Engine {
   /// and every other call on the engine, is a [StateError].
   Future<void> close() async {
     _closed = true;
+    for (final listener in _closeListeners.toList()) {
+      listener();
+    }
     await _client.shutdown();
   }
+
+  /// What a conversation must hear of [close] beyond [_closed]: a reply whose
+  /// tools are running, with no native send to end it.
+  final _closeListeners = <void Function()>{};
 }
 
 /// What [Engine.create] reads of [path] before any engine exists: its bundle

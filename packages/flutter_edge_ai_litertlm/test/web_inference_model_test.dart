@@ -171,6 +171,28 @@ void main() {
     await gemmaIt.close();
   });
 
+  test('automatic tool calling is off: a tool call reaches the session as '
+      'the runtime wrote it, and nothing is sent for it', () async {
+    final engine = _Engine();
+    final model = _model(engine, ModelType.gemma4);
+    final session =
+        await model.openSession(tools: [_tool]) as LiteRtLmWebSession;
+    expect(engine.configs.single.automaticToolCalling, isFalse);
+    final handle = engine.handles.single;
+    await session.addQueryChunk(const Message(text: 'Paris?', isUser: true));
+    final reply = session.getResponseAsync().toList();
+    await pumpEventQueue();
+    const call =
+        '{"role":"assistant","tool_calls":[{"type":"function",'
+        '"function":{"name":"get_weather","arguments":{"city":"Paris"}}}]}';
+    handle.reply!.add(call);
+    unawaited(handle.reply!.close());
+    await reply;
+    expect(handle.sent, hasLength(1));
+    expect(session.lastRawResponse, call);
+    await model.close();
+  });
+
   test('a stop asks the conversation to stop; a consumer that leaves does '
       'too, and frees the generation lock for the next turn', () async {
     final engine = _Engine();

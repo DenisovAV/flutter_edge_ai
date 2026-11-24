@@ -1,7 +1,7 @@
-// One prompt to a `.litertlm` model on the CPU, the reply streamed to stdout,
-// from a plain Dart program:
+// One prompt to a `.litertlm` model, the reply streamed to stdout, from a
+// plain Dart program:
 //
-//   dart run bin/litertlm_chat.dart <model.litertlm> [prompt]
+//   dart run bin/litertlm_chat.dart [--backend cpu|gpu|npu] <model.litertlm> [prompt]
 //
 // or as a bundle that runs on a machine without the Dart SDK:
 //
@@ -14,13 +14,32 @@ import 'dart:io';
 
 import 'package:litertlm_dart/litertlm_dart.dart';
 
-Future<void> main(List<String> args) async {
+const _usage =
+    'usage: litertlm_chat [--backend cpu|gpu|npu] <model.litertlm> [prompt]\n'
+    'e.g. gemma-4-E2B-it.litertlm from '
+    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm';
+
+Future<void> main(List<String> arguments) async {
+  final args = [...arguments];
+  var backend = const Backend.cpu();
+  final flag = args.indexOf('--backend');
+  if (flag >= 0) {
+    final chosen = switch (flag + 1 < args.length ? args[flag + 1] : null) {
+      'cpu' => const Backend.cpu(),
+      'gpu' => const Backend.gpu(),
+      'npu' => Backend.npu(),
+      _ => null,
+    };
+    if (chosen == null) {
+      stderr.writeln(_usage);
+      exitCode = 64;
+      return;
+    }
+    backend = chosen;
+    args.removeRange(flag, flag + 2);
+  }
   if (args.isEmpty) {
-    stderr.writeln(
-      'usage: litertlm_chat <model.litertlm> [prompt]\n'
-      'e.g. gemma-4-E2B-it.litertlm from '
-      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm',
-    );
+    stderr.writeln(_usage);
     exitCode = 64;
     return;
   }
@@ -28,9 +47,10 @@ Future<void> main(List<String> args) async {
       ? args.skip(1).join(' ')
       : 'What is the capital of France? Answer in one sentence.';
 
-  // A plain Dart program runs LiteRT-LM on the CPU only in this release.
+  // A backend that cannot run here fails by name; it is never moved to
+  // another one.
   final engine = await Engine.create(
-    EngineConfig(modelPath: args.first, backend: const Backend.cpu()),
+    EngineConfig(modelPath: args.first, backend: backend),
   );
   try {
     final conversation = await engine.createConversation();

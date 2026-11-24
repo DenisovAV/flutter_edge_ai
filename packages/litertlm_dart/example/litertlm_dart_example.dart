@@ -2,8 +2,8 @@
 // on the web.
 //
 // Natively inside a Flutter app (see the README's "Where it runs today"); the
-// build hook bundles libLiteRtLm. A plain Dart program runs on the CPU only:
-// see example/cli.
+// build hook bundles libLiteRtLm. In a plain Dart program as well: see
+// example/cli.
 //
 // On the web: compile it into a page whose index.html loads @litert-lm/core
 // 0.19.0 (the README's "On the web"), with a URL the page can fetch, e.g.

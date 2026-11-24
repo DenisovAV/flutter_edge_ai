@@ -2,9 +2,11 @@
 // bundles libLiteRtLm through the build hook as `dart run` does.
 //
 // Run by hand: tool/test_all.sh does not discover this package (CI runs
-// tool/plain_dart_check instead). The reply test needs a real model:
+// tool/plain_dart_check instead). The reply test needs a real model, and runs
+// on the backend LITERTLM_BACKEND names (cpu, gpu or npu; cpu when unset):
 //
 //   LITERTLM_MODEL=/path/to/gemma-4-E2B-it.litertlm dart test
+//   LITERTLM_MODEL=... LITERTLM_BACKEND=gpu dart test
 import 'dart:io';
 
 import 'package:litertlm_dart/litertlm_dart.dart';
@@ -12,12 +14,19 @@ import 'package:test/test.dart';
 
 void main() {
   final model = Platform.environment['LITERTLM_MODEL'];
+  final backendName = Platform.environment['LITERTLM_BACKEND'] ?? 'cpu';
+  final backend = switch (backendName) {
+    'cpu' => const Backend.cpu(),
+    'gpu' => const Backend.gpu(),
+    'npu' => Backend.npu(),
+    _ => throw ArgumentError.value(backendName, 'LITERTLM_BACKEND'),
+  };
 
   test(
-    'a CPU engine streams a reply',
+    'an engine on $backend streams a reply',
     () async {
       final engine = await Engine.create(
-        EngineConfig(modelPath: model!, backend: const Backend.cpu()),
+        EngineConfig(modelPath: model!, backend: backend),
       );
       addTearDown(engine.close);
       final conversation = await engine.createConversation();
@@ -34,23 +43,4 @@ void main() {
     timeout: const Timeout(Duration(minutes: 5)),
     skip: model == null ? 'set LITERTLM_MODEL to a .litertlm file' : false,
   );
-
-  test('the GPU is refused by name, not moved to the CPU', () async {
-    // Refused before the file is read: no model needed.
-    await expectLater(
-      Engine.create(
-        EngineConfig(
-          modelPath: '/no/such/model.litertlm',
-          backend: const Backend.gpu(),
-        ),
-      ),
-      throwsA(
-        isA<UnsupportedError>().having(
-          (e) => e.message,
-          'message',
-          contains('not supported outside Flutter'),
-        ),
-      ),
-    );
-  });
 }

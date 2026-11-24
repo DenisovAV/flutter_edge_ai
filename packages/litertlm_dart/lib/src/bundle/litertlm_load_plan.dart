@@ -383,7 +383,12 @@ NpuStamp? _textNpuTarget(BundleInfo? bundle) =>
     bundle?.textModel?.npuTarget ?? bundle?.sectionOf('tf_lite_aux')?.npuTarget;
 
 /// The backends a `backend_constraint` names that this package knows.
-Set<BackendKind> _backends(List<String>? constraint) => {
+Set<BackendKind> _backends(List<String>? constraint) =>
+    declaredBackendKinds(constraint);
+
+/// The backends a `backend_constraint` names that this runtime knows; names
+/// it does not know are dropped, as the load plan drops them.
+Set<BackendKind> declaredBackendKinds(List<String>? constraint) => {
   for (final name in constraint ?? const <String>[])
     for (final backend in BackendKind.values)
       if (backend.name == name) backend,

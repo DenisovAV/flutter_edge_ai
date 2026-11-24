@@ -7,6 +7,8 @@
 // Package-private.
 
 import '../bundle/litertlm_bundle_info.dart';
+import '../bundle/litertlm_load_plan.dart' show declaredBackendKinds;
+import '../runtime/types.dart' show BackendKind;
 import 'backend.dart';
 
 /// Why [backend], asked for [what] (`'The engine'`, `'The vision encoder'`,
@@ -42,10 +44,11 @@ String? plainDartFileRefusal({
     if (section == null) return null;
     final target = section.npuTarget;
     if (target != null) return '$what is compiled for the $target NPU';
-    final declared = section.backendConstraint;
-    if (declared != null && declared.isNotEmpty && !declared.contains('cpu')) {
-      return '$what declares that it runs on ${declared.join(', ')} '
-          '(backend_constraint)';
+    // As the load plan reads it: only the backends it knows count.
+    final declared = declaredBackendKinds(section.backendConstraint);
+    if (declared.isNotEmpty && !declared.contains(BackendKind.cpu)) {
+      return '$what declares that it runs on '
+          '${section.backendConstraint!.join(', ')} (backend_constraint)';
     }
     return null;
   }

@@ -24,17 +24,13 @@ const _packageName = 'litertlm_dart';
 /// apps set before the hook moved here (legacy_user_defines.dart).
 late HookDefines _defines;
 
-/// The macOS companions a plain Dart program (`macos_companions:
+/// The macOS companion a plain Dart program (`macos_companions:
 /// code_assets`) does not bundle: the Metal accelerator, as such a program
-/// runs on the CPU only, and the Linux/Windows libraries the macOS archive
-/// does not carry. Any other companion there would need a decision, so the
-/// build fails rather than drop it silently.
-const _companionsLeftOutOfMacOSCodeAssets = {
-  'LiteRtLmMetalAccelerator',
-  'LiteRtWebGpuAccelerator',
-  'LiteRt',
-  'webgpu_dawn',
-};
+/// runs on the CPU only. Companions of other OSes are not in the macOS
+/// archive and are skipped by their absence; a new macOS one that is
+/// neither this nor the constraint provider fails the build, so that it is
+/// not dropped without a decision.
+const _companionsLeftOutOfMacOSCodeAssets = {'LiteRtLmMetalAccelerator'};
 
 // ============================================================================
 // Native bundles

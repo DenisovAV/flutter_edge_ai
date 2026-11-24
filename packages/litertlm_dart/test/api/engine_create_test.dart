@@ -913,6 +913,9 @@ void main() {
       );
     }
     expect(host.creates, isEmpty);
+    // Names the load plan does not know are not a refusal, as there.
+    final unknown = await create(write('u.litertlm', _bundle(text: 'tpu')));
+    await unknown.close();
     // A GPU-only vision encoder is not in the way when images are off.
     final engine = await create(gpuVision);
     await engine.close();

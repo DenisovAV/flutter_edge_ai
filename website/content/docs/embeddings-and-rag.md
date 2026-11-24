@@ -1003,6 +1003,8 @@ so search never touches the network. Every public type is experimental.
 - **Last writer wins** by a hybrid clock, and a document synced from a device
   with another embedding profile is found by text search until a vector is
   written for it.
+- **No `removeWhere`:** it throws `UnsupportedError` on this store; remove
+  documents by id.
 
 ```dart
 final account = await AnySyncAccount.open(

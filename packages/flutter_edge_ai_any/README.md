@@ -175,6 +175,8 @@ The native suites skip, with the reason, when no ABI-2 library is loadable.
 
 ## Known limits
 
+- `RagIndex.removeWhere` is not implemented: on this store it throws
+  `UnsupportedError`; remove documents by id.
 - Objects written with a seed (the location manifests) can never be deleted.
 - ~33-37 MB per ABI (12-13 MB compressed).
 - The body format is `any`'s editor module, copied from `any` v0.4.1

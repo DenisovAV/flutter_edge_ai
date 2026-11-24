@@ -41,6 +41,21 @@ const streamProxyAnchorSymbol = 'stream_proxy_load_global';
 )
 external Pointer<Void> _streamProxyAnchor(Pointer<Utf8> path);
 
+/// Never called: a call of [_streamProxyAnchor] that an AOT build keeps.
+///
+/// `Native.addressOf(_streamProxyAnchor)` compiles to the VM's
+/// `Native._addressOf(const Native(symbol: ..., assetId: ...))`, which reads
+/// the constant's fields in native code. The AOT tree shaker sees no Dart
+/// read of `Native.symbol` and `Native.assetId` and drops their values from
+/// the constant unless some reachable call of an `@Native` function keeps
+/// them; a Windows `dart build cli` of a program with no such call then
+/// fails with "Couldn't resolve native function 'String: null' in 'String:
+/// null'" (Dart 3.13.3 and 3.14.1; the same program built on macOS and Linux
+/// loaded). An entry point is a root of the tree shaker, so this call, and
+/// the fields with it, stay in every build.
+@pragma('vm:entry-point')
+Pointer<Void> keepStreamProxyAnchorCall() => _streamProxyAnchor(nullptr);
+
 /// The directory this package's code assets are in, in a plain Dart program;
 /// null when it cannot be told: the program was not built with this
 /// package's build hook (as with `dart compile exe`), the loader does not

@@ -83,6 +83,25 @@ void main() {
     );
   });
 
+  test('an AOT build keeps a call of the anchor: an entry point calls it', () {
+    // Without a reachable @Native call, a Windows `dart build cli` dropped the
+    // anchor's symbol and asset id (Dart 3.13.3 and 3.14.1, measured on an
+    // Intel PC), and the lookup found no code assets. The keeper is never
+    // run; only the tree shaker has to see it.
+    final source = File(
+      'lib/src/ffi/native_asset_dir.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    expect(
+      source,
+      contains(
+        "@pragma('vm:entry-point')\n"
+        'Pointer<Void> keepStreamProxyAnchorCall() => '
+        '_streamProxyAnchor(nullptr);',
+      ),
+    );
+    expect(keepStreamProxyAnchorCall, isA<Function>());
+  });
+
   test('the anchor is a StreamProxy export on every platform', () {
     final source = File('native/litert_lm/stream_proxy.c').readAsStringSync();
     // Both arms (Windows and POSIX) export it.

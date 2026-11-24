@@ -876,17 +876,34 @@ Pointer<Void>? _preloadWithSystemLoader(String path) {
 }
 
 /// `dlerror`, looked up before the load it reports on: a lookup is itself a
-/// `dlsym`, which clears the reason a failed `dlopen` leaves.
-Pointer<Utf8> Function() _dlerrorFunction() => DynamicLibrary.process()
-    .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
-      'dlerror',
-    );
+/// `dlsym`, which clears the reason a failed `dlopen` leaves. Null when it
+/// cannot be found (glibc before 2.34 keeps it in libdl): the reason is
+/// extra, and never in the way of a load.
+Pointer<Utf8> Function()? _dlerrorFunction() {
+  try {
+    final process = DynamicLibrary.process();
+    final lib = process.providesSymbol('dlerror')
+        ? process
+        : DynamicLibrary.open('libdl.so.2');
+    return lib
+        .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+          'dlerror',
+        );
+  } on Object {
+    return null;
+  }
+}
 
 /// `: <reason>` from [dlerror] after a failed `stream_proxy_load_global`,
-/// best effort: the reason is per thread.
-String _dlerrorSuffix(Pointer<Utf8> Function() dlerror) {
-  final reason = dlerror();
-  return reason == nullptr ? '' : ': ${reason.toDartString()}';
+/// best effort: the reason is per thread, and '' without [dlerror].
+String _dlerrorSuffix(Pointer<Utf8> Function()? dlerror) {
+  if (dlerror == null) return '';
+  try {
+    final reason = dlerror();
+    return reason == nullptr ? '' : ': ${reason.toDartString()}';
+  } on Object {
+    return '';
+  }
 }
 
 /// `RTLD_LAZY`, the flag `DynamicLibrary.open` passes, on every platform that
@@ -2037,6 +2054,10 @@ class LiteRtLmFfiClient {
       proxyLib = DynamicLibrary.open(assetProxyPath);
       requireSameLoadedLibrary(preloadedAssetProxy, proxyLib, assetProxyPath);
     } else if (Platform.isMacOS) {
+      // An app built with the plain-Dart define is refused before anything
+      // loads (macos_load_error.dart).
+      final misuse = macOSFlutterCodeAssetsMisuse();
+      if (misuse != null) throw ArgumentError(misuse);
       // Relative paths: dyld resolves the preload's through its caller's and
       // the main executable's rpaths, the open's through FlutterMacOS's, so
       // the two are checked to be one image.
@@ -2099,7 +2120,9 @@ class LiteRtLmFfiClient {
       // sampler chain — inference itself still runs on the GPU
       // accelerator, only the per-token argmax happens on CPU
       // (negligible perf hit, ~1-5ms/token).
-      final dlerror = _dlerrorFunction();
+      // A plain Dart program says why a preload failed; a Flutter app's
+      // loads stay as they were.
+      final dlerror = assetDir == null ? null : _dlerrorFunction();
       for (final name in const [
         'libLiteRt.so',
         'libGemmaModelConstraintProvider.so',

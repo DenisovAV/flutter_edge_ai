@@ -130,6 +130,15 @@ void main() {
       expect(message, contains('No available native assets'));
     });
 
+    test('the process lookup the VM fell back to is a program without them', () {
+      const text =
+          "Couldn't resolve native function 'x' in 'y' : Attempted to "
+          'fallback to process lookup. dlsym(RTLD_DEFAULT, x): symbol not found';
+      final lookup = anchorFailure(text);
+      expect(lookup, isA<NativeAssetsAbsent>());
+      expect(plainDartAssetsMessage(lookup), contains('symbol not found'));
+    });
+
     test('anything else is an asset that is there and did not load, with '
         "the VM's words", () {
       final lookup = anchorFailure(

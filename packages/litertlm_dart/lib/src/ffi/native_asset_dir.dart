@@ -148,10 +148,12 @@ NativeAssetLookup _lookUpNativeAssets() {
 }
 
 /// What the VM's [text] says about a failed anchor lookup: no asset under
-/// the id ("No asset with id"), or an asset that did not load.
+/// the id ("No asset with id", or the process lookup it fell back to), or an
+/// asset that did not load. The text is kept for the message either way.
 @visibleForTesting
 NativeAssetLookup anchorFailure(String text) =>
-    text.contains('No asset with id')
+    text.contains('No asset with id') ||
+        text.contains('Attempted to fallback to process lookup')
     ? NativeAssetsAbsent(text)
     : NativeAssetLoadFailed(text);
 
@@ -353,16 +355,27 @@ void loadWindowsAssetWithItsDirectory(String path) {
   }
   if (handle != 0) return;
   // The VM may reset GetLastError before Dart reads it, so the reason comes
-  // from DynamicLibrary.open, which formats the Windows error itself (its
-  // search differs from ours only for the DLLs this one imports).
+  // from DynamicLibrary.open, which formats the Windows error itself. Its
+  // search resolves the DLL's imports from the executable's directory, the
+  // current one and PATH instead of [path]'s, so a success is no success: it
+  // found an import elsewhere, and that copy is let go again.
+  final DynamicLibrary loaded;
   try {
-    DynamicLibrary.open(path);
+    loaded = DynamicLibrary.open(path);
   } on ArgumentError catch (e, stack) {
     Error.throwWithStackTrace(
-      ArgumentError('LoadLibraryExW could not load $path: ${e.message ?? e}'),
+      ArgumentError(
+        'LoadLibraryExW could not load $path; with the default DLL search: '
+        '${e.message ?? e}',
+      ),
       stack,
     );
   }
-  // Loaded by the plain search after all: its imports resolved elsewhere,
-  // which only the DLLs it imports can tell; the open that follows uses it.
+  kernel32.lookupFunction<Int32 Function(IntPtr), int Function(int)>(
+    'FreeLibrary',
+  )(loaded.handle.address);
+  throw ArgumentError(
+    '$path loads only with the default DLL search: one of the DLLs it '
+    'imports is not loadable from ${File(path).parent.path}.',
+  );
 }

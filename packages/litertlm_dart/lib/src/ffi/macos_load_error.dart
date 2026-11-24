@@ -96,9 +96,20 @@ MacOSCodeAssets macOSCodeAssets({
   } on FileSystemException catch (e) {
     return MacOSUnreadableAssets(dir, '${e.message}: ${e.osError ?? e.path}');
   }
-  return linksConstraintProviderCodeAsset(linked)
-      ? MacOSPlainDartAssets(dir)
-      : MacOSFlutterBuildAssets(dir);
+  if (linksConstraintProviderCodeAsset(linked)) {
+    return MacOSPlainDartAssets(dir);
+  }
+  // The framework form the hook writes for a Flutter app.
+  if (linked.any(
+    (d) => d.contains('/GemmaModelConstraintProvider.framework/'),
+  )) {
+    return MacOSFlutterBuildAssets(dir);
+  }
+  return MacOSUnreadableAssets(
+    dir,
+    'it links the constraint provider neither as a code asset nor as a '
+    "Flutter app's framework: ${linked.join(', ')}",
+  );
 }
 
 /// What a plain Dart program is told when [assets] has nothing to load
@@ -109,8 +120,8 @@ String? macOSCodeAssetsRefusal(MacOSCodeAssets assets) => switch (assets) {
   MacOSFlutterBuildAssets() => macOSPlainDartLoadErrorMessage(),
   MacOSUnreadableAssets(:final dir, :final reason) =>
     'litertlm_dart: $dir/$macOSLiteRtLmAssetFile, where this Dart '
-        "program's build put LiteRT-LM, could not be read to tell how it was "
-        'built ($reason). Build the program again.',
+        "program's build put LiteRT-LM, is not one this release can tell "
+        'the build of ($reason). Build the program again.',
 };
 
 /// Whether a LiteRtLm that links [dylibs] links the constraint provider as
@@ -168,9 +179,13 @@ String? macOSFlutterCodeAssetsMisuse({
     return _macOSFlutterMisuseOnce;
   }
   final exe = executable ?? Platform.resolvedExecutable;
-  if (!exe.contains('.app/Contents/MacOS/')) return null;
-  final contents = exe.substring(0, exe.indexOf('.app/Contents/') + 13);
+  // The innermost bundle: a helper app can sit inside another.
+  final at = exe.lastIndexOf('.app/Contents/MacOS/');
+  if (at < 0) return null;
+  final contents = exe.substring(0, at + '.app/Contents'.length);
   final framework = '$contents/Frameworks/$macOSLiteRtLmFramework';
+  // A framework that is missing or cannot be read stays silent here: the
+  // open that follows is the backstop, and says what is wrong in dyld's words.
   if (!(exists ?? (path) => File(path).existsSync())(framework)) return null;
   final List<String> linked;
   try {

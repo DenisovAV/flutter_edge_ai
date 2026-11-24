@@ -583,6 +583,18 @@ void main() {
           isA<MacOSPlainDartAssets>().having((a) => a.dir, 'dir', '/t/lib'),
         );
       }
+      // Neither form: not told to set a define, told what it links.
+      expect(
+        assetsOf(
+          found,
+          (_) => ['@rpath/libGemmaModelConstraintProvider.dylib'],
+        ),
+        isA<MacOSUnreadableAssets>().having(
+          (a) => a.reason,
+          'reason',
+          contains('neither as a code asset nor'),
+        ),
+      );
       expect(
         assetsOf(found, (_) => throw const FormatException('truncated')),
         isA<MacOSUnreadableAssets>().having(
@@ -761,6 +773,24 @@ void main() {
       expect(message, contains('macos_companions: code_assets'));
       expect(message, contains('reached this Flutter app'));
       expect(message, contains('flutter clean'));
+    });
+
+    test('the innermost bundle of a nested app is the one read', () {
+      const helper =
+          '/Applications/a.app/Contents/Helpers/b.app/Contents/MacOS/b';
+      final read = <String>[];
+      macOSFlutterCodeAssetsMisuse(
+        executable: helper,
+        exists: (_) => true,
+        linkedBy: (path) {
+          read.add(path);
+          return const [];
+        },
+      );
+      expect(read, [
+        '/Applications/a.app/Contents/Helpers/b.app/Contents/Frameworks/'
+            'LiteRtLm.framework/LiteRtLm',
+      ]);
     });
 
     test('an app built for Flutter, a test outside an app and an unreadable '

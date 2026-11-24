@@ -46,6 +46,15 @@ void main() {
               ],
             )
             as FfiInferenceModelSession;
+    // Core runs the calls: the conversation the adapter built does not.
+    expect(
+      conversationConfig(session.conversation).automaticToolCalling,
+      isFalse,
+    );
+    expect(
+      conversationConfig(session.conversation).tools.single.name,
+      'get_weather',
+    );
     await session.addQueryChunk(
       const Message(text: 'Weather in Paris?', isUser: true),
     );

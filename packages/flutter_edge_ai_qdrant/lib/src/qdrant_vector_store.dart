@@ -1320,6 +1320,9 @@ final class QdrantVectorStore extends VectorStoreRepository {
 
   @override
   Future<int> removeDocumentsWhere(Filter filter) async {
+    // First: a closed or latched store reports its own reason, whatever the
+    // filter.
+    _assertUsable('removeDocumentsWhere');
     if (filter.isEmpty) {
       throw ArgumentError.value(
         filter,
@@ -1338,7 +1341,6 @@ final class QdrantVectorStore extends VectorStoreRepository {
         'constrains nothing, so it would match every document; use clear()',
       );
     }
-    _assertUsable('removeDocumentsWhere');
     final lease = await _requireEmbeddingProfile('removeDocumentsWhere');
     final checkpoint = qdrantProfileOperationCheckpointForTesting;
     if (checkpoint != null) await checkpoint('removeDocumentsWhere');

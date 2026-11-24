@@ -13,7 +13,6 @@ import '../runtime/conversation_handle.dart'
     show ConversationHandle, NativeBenchmark, NativeLastTurnEnd;
 import '../runtime/send_options.dart';
 import '../runtime/errors.dart';
-import '../runtime/runtime_log.dart';
 import '../runtime/types.dart' show BenchmarkInfo;
 import 'config.dart';
 import 'message.dart';
@@ -69,8 +68,11 @@ Object? turnFailureCause(TurnFailedException e) => e._cause;
 /// ([ConversationConfig.automaticToolCalling]): each round of calls and its
 /// results is one more native send of the same message, and the reply
 /// streams on with the model's next answer. A stop during a round stops that
-/// round's reply and is recovered as any stopped reply; a stop while the tools
-/// run ends the reply with their calls, whose results are not sent.
+/// round's reply and is recovered as any stopped reply. A stop while the tools
+/// run ends the reply with their calls: the calls have run, only their
+/// results were not sent to the model, so a caller must not run them again
+/// blindly. A close while the tools run ends the reply at once with
+/// [ConversationClosedException]; their late results are dropped.
 ///
 /// On the web the runtime refuses every send after a stop, so the next message
 /// goes to a new runtime conversation built from the history, the stopped
@@ -85,6 +87,7 @@ final class Conversation {
     required this._config,
     required void Function() thinkingTokenBudgetCapsNothing,
     required this._engineClosed,
+    required this._engineCloseListeners,
   }) : _budgetCapsNothing = thinkingTokenBudgetCapsNothing,
        _automaticTools =
            _config.automaticToolCalling &&
@@ -102,6 +105,15 @@ final class Conversation {
   final Map<String, Tool>? _automaticTools;
   final void Function() _budgetCapsNothing;
   final bool Function() _engineClosed;
+
+  /// Called by the engine's close, which sends nothing a turn whose tools are
+  /// running could hear: each such turn is registered here while its tools
+  /// run.
+  final Set<void Function()> _engineCloseListeners;
+
+  /// The turns whose tools are running: [close] and the engine's close end
+  /// them at once, as they end a reply that is streaming.
+  final _toolPhases = <void Function()>{};
   // The turn whose reply is being listened to; a turn that ended, or was
   // let go by a cancel, clears it only while it is still the current one.
   Object? _sending;
@@ -284,6 +296,18 @@ final class Conversation {
             }
             return finish();
           }
+          ConversationClosedException? closedNow(String when) =>
+              _closed || _engineClosed()
+              ? ConversationClosedException(
+                  _closed
+                      ? 'The conversation was closed $when.'
+                      : 'The engine was closed $when.',
+                )
+              : null;
+          // Closed as native ended the round: no tool runs.
+          if (closedNow('before its tools ran') case final closed?) {
+            return fail(closed, StackTrace.current);
+          }
           if (rounds == recurringToolCallLimit) {
             return fail(
               TurnFailedException(
@@ -295,46 +319,59 @@ final class Conversation {
             );
           }
           rounds++;
-          // The text and thought of the pieces that carried the calls.
-          for (final piece in pieces) {
-            if (piece.contents.isEmpty && piece.channels.isEmpty) continue;
-            controller.add(
-              Message(
-                role: piece.role,
-                contents: piece.contents,
-                channels: piece.channels,
-              ),
-            );
+          // While the tools run no native send is active, so nothing else
+          // would end the reply at a close: the close ends it here, and the
+          // tools' late results are dropped.
+          var over = false;
+          late final void Function() closedWhileRunning;
+          // An execute that never completes must not keep the turn
+          // registered: the phase ends at the close too.
+          void endPhase() {
+            _toolPhases.remove(closedWhileRunning);
+            _engineCloseListeners.remove(closedWhileRunning);
           }
-          _runTools(calls, tools).then(
-            (responses) {
+
+          closedWhileRunning = () {
+            endPhase();
+            if (over || cancelled) return;
+            over = true;
+            fail(
+              closedNow('while its tools ran') ??
+                  const ConversationClosedException(
+                    'The conversation was closed while its tools ran.',
+                  ),
+              StackTrace.current,
+            );
+          };
+
+          _toolPhases.add(closedWhileRunning);
+          _engineCloseListeners.add(closedWhileRunning);
+          unawaited(() async {
+            try {
+              final responses = await _runTools(calls, tools);
+              if (over) return;
+              over = true;
               // The subscription was cancelled while the tools ran: the
               // turn is over, and nothing is listening.
               if (cancelled) return;
-              // Stopped while the tools ran: their results are not sent, and
-              // the calls are returned as a stop before them would.
+              // Stopped while the tools ran: the calls ran, but their
+              // results are not sent; the reply ends with the calls.
               if (!identical(_sending, turn)) {
                 controller.add(Message(role: Role.model, toolCalls: calls));
                 return finish();
               }
-              if (_closed || _engineClosed()) {
-                return fail(
-                  ConversationClosedException(
-                    _closed
-                        ? 'The conversation was closed while its tools ran.'
-                        : 'The engine was closed while the tools ran.',
-                  ),
-                  StackTrace.current,
-                );
+              if (closedNow('while its tools ran') case final closed?) {
+                return fail(closed, StackTrace.current);
               }
               onNextRound?.call();
               round(
                 jsonEncode(messageJson(Message.tool(responses))),
                 optionsFor(unconstrained: false),
               );
-            },
-            onError: (Object e, StackTrace st) {
-              if (cancelled) return;
+            } on Object catch (e, st) {
+              // Never left holding the conversation: a send that throws
+              // (a handle that refuses it) ends the turn.
+              if (cancelled || controller.isClosed) return;
               fail(
                 TurnFailedException(
                   'Could not send the results of the automatic tool calls: '
@@ -343,8 +380,10 @@ final class Conversation {
                 ),
                 st,
               );
-            },
-          );
+            } finally {
+              endPhase();
+            }
+          }());
         }
 
         round = (String json, SendOptions options) {
@@ -368,7 +407,22 @@ final class Conversation {
                     return;
                   }
                   if (automaticTools != null && piece.toolCalls.isNotEmpty) {
-                    held.add(piece);
+                    // Only the calls wait for the round's end; the text and
+                    // thought go out now, in native's order.
+                    if (piece.contents.isEmpty && piece.channels.isEmpty) {
+                      held.add(piece);
+                    } else {
+                      controller.add(
+                        Message(
+                          role: piece.role,
+                          contents: piece.contents,
+                          channels: piece.channels,
+                        ),
+                      );
+                      held.add(
+                        Message(role: piece.role, toolCalls: piece.toolCalls),
+                      );
+                    }
                     return;
                   }
                   controller.add(piece);
@@ -379,6 +433,12 @@ final class Conversation {
                   ended = true;
                   release();
                   if (cancelled) return;
+                  // The calls this round made before it failed reach the
+                  // caller unrun, as they would without automatic calling.
+                  for (final piece in held) {
+                    controller.add(piece);
+                  }
+                  held = [];
                   controller.addError(_mapError(error), stack);
                 },
                 onDone: () {
@@ -435,9 +495,11 @@ final class Conversation {
   }
 
   /// Runs [calls] in order with [tools] and returns one tool response per
-  /// call. Never fails: a call to a name no tool declares, an `execute` that
-  /// throws and a result that is not JSON are each answered with the error
-  /// as text, as Kotlin's `ToolManager` answers them.
+  /// call. A call to a name no tool declares, an `execute` that throws and a
+  /// result that is not JSON are each answered with the error as text
+  /// (`Error: …`), as Kotlin's `ToolManager` answers them with its own text
+  /// (`Error occured. …`), and printed as a warning, release builds included:
+  /// the model gets the text, the developer needs the cause.
   static Future<List<Content>> _runTools(
     List<ToolCall> calls,
     Map<String, Tool> tools,
@@ -448,27 +510,45 @@ final class Conversation {
 
   static Future<Object?> _runTool(ToolCall call, Tool? tool) async {
     final execute = tool?.execute;
-    if (execute == null) return 'Error: Tool not found: ${call.name}';
+    if (execute == null) {
+      final answer = 'Error: Tool not found: ${call.name}';
+      _warnTool(
+        'the model called ${call.name}, which no tool declares; it was '
+        'answered "$answer".',
+      );
+      return answer;
+    }
     final Object? result;
     try {
       result = await execute(call.arguments);
-    } on Object catch (e) {
-      runtimeLog(
-        '[Conversation] tool ${call.name} threw; the model gets the error: $e',
+    } on Object catch (e, st) {
+      final answer = 'Error: $e';
+      _warnTool(
+        'tool ${call.name} threw; the model was answered "$answer".\n$st',
       );
-      return 'Error: $e';
+      return answer;
     }
     try {
       jsonEncode(result);
     } on JsonUnsupportedObjectError catch (e) {
-      runtimeLog(
-        '[Conversation] tool ${call.name} returned a value that is not JSON; '
-        'the model gets the error: ${e.unsupportedObject.runtimeType}',
-      );
-      return 'Error: the result of ${call.name} is not JSON '
+      final answer =
+          'Error: the result of ${call.name} is not JSON '
           '(${e.unsupportedObject.runtimeType}).';
+      _warnTool(
+        'tool ${call.name} returned a value that is not JSON '
+        '(${e.unsupportedObject.runtimeType}); the model was answered '
+        '"$answer".',
+      );
+      return answer;
     }
     return result;
+  }
+
+  /// A failed automatic tool call, printed in every build: runtimeLog is
+  /// silent in a release build, where a failing tool gets reported.
+  static void _warnTool(String message) {
+    // ignore: avoid_print
+    print('[litertlm_dart] WARNING: automatic tool calling: $message');
   }
 
   static const _stillSending =
@@ -569,33 +649,42 @@ final class Conversation {
   /// call completes when the first does.
   Future<void> close() {
     _closed = true;
+    for (final end in _toolPhases.toList()) {
+      end();
+    }
     return _handle.close();
   }
 }
 
-/// A conversation over [handle], as `Engine` makes one.
+/// A conversation over [handle], as `Engine` makes one. The engine calls
+/// each of [engineCloseListeners] when it closes.
 Conversation newConversation(
   ConversationHandle handle, {
   required ConversationConfig config,
   required void Function() thinkingTokenBudgetCapsNothing,
   required bool Function() engineClosed,
+  required Set<void Function()> engineCloseListeners,
 }) => Conversation._(
   handle,
   config: config,
   thinkingTokenBudgetCapsNothing: thinkingTokenBudgetCapsNothing,
   engineClosed: engineClosed,
+  engineCloseListeners: engineCloseListeners,
 );
 
-/// A conversation over [handle], for tests that drive it with a fake.
+/// A conversation over [handle], for tests that drive it with a fake; a test
+/// calls [engineCloseListeners] as an engine's close would.
 Conversation conversationForTest(
   ConversationHandle handle, {
   ConversationConfig? config,
   bool Function()? engineClosed,
+  Set<void Function()>? engineCloseListeners,
 }) => Conversation._(
   handle,
   config: config ?? ConversationConfig(),
   thinkingTokenBudgetCapsNothing: () {},
   engineClosed: engineClosed ?? () => false,
+  engineCloseListeners: engineCloseListeners ?? {},
 );
 
 /// How many tokens [text] is, by [conversation]'s model's own tokenizer;
@@ -606,6 +695,10 @@ Future<int?> conversationTokenCount(Conversation conversation, String text) =>
 /// The handle under [conversation].
 ConversationHandle conversationHandle(Conversation conversation) =>
     conversation._handle;
+
+/// The config [conversation] was created with, for the adapter's tests.
+ConversationConfig conversationConfig(Conversation conversation) =>
+    conversation._config;
 
 /// LiteRT-LM's benchmark record of [conversation], turn by turn; null when
 /// native gives none. For `benchmark`.

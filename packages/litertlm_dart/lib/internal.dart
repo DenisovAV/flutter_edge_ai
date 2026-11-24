@@ -79,7 +79,11 @@ export 'src/runtime/native_hosts.dart'
         liteRtLmEmbeddingGpuRefusedAbis,
         liteRtLmNativeAbis;
 export 'src/api/conversation.dart'
-    show conversationForTest, conversationHandle, turnFailureCause;
+    show
+        conversationConfig,
+        conversationForTest,
+        conversationHandle,
+        turnFailureCause;
 export 'src/api/embedding_engine_config.dart'
     show checkEmbeddingRequest, embedderInputOfContents;
 export 'src/api/message.dart' show messageJson, messageRawJson, toolsJson;

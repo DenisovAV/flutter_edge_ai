@@ -116,6 +116,57 @@ void main() {
     expect(list('sent'), ['hi']);
   });
 
+  test(
+    'an execute that throws answers the model with the error as text',
+    () async {
+      final conversation = await engine.createConversation(
+        ConversationConfig(
+          tools: [
+            Tool(name: 'weather', execute: (_) => throw StateError('offline')),
+          ],
+        ),
+      );
+      final reply = conversation.sendMessage(Message.user('hi'));
+      await settle();
+      js('__chunk', _weatherCall);
+      js('__end');
+      await settle();
+      expect(list('sent').last, {
+        'role': 'tool',
+        'content': [
+          {
+            'type': 'tool_response',
+            'name': 'weather',
+            'response': 'Error: Bad state: offline',
+          },
+        ],
+      });
+      js('__step', 'Sorry');
+      js('__end');
+      expect((await reply).text, 'Sorry');
+    },
+  );
+
+  test(
+    'after 25 rounds a reply that still calls tools fails the send',
+    () async {
+      final seen = <Map<String, Object?>>[];
+      final conversation = await engine.createConversation(
+        ConversationConfig(tools: [_weather(seen)]),
+      );
+      final reply = conversation.sendMessage(Message.user('hi'));
+      final failed = expectLater(reply, throwsWith<TurnFailedException>('25'));
+      for (var i = 0; i < 26; i++) {
+        await settle();
+        js('__chunk', _weatherCall);
+        js('__end');
+      }
+      await failed;
+      expect(seen, hasLength(25));
+      expect(list('sent'), hasLength(26));
+    },
+  );
+
   test('a stop during round 2 keeps the call, its result and the partial '
       'answer in the rebuilt conversation', () async {
     final conversation = await engine.createConversation(

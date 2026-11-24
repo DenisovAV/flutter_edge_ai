@@ -20,17 +20,35 @@ class _Handle implements ConversationHandle {
   final options = <SendOptions>[];
   int cancels = 0;
 
+  /// The index of the send that throws instead of starting.
+  int? throwOnSend;
+
+  /// Whether each send's stream was paused when it was listened to.
+  final pausedAtListen = <bool>[];
+
   @override
   Stream<String> chatRawMessage(
     String messageJson, {
     bool enableThinking = false,
     SendOptions options = SendOptions.none,
   }) {
+    if (messages.length == throwOnSend) {
+      messages.add(jsonDecode(messageJson) as Map<String, Object?>);
+      throw StateError('the handle refused the send');
+    }
     messages.add(jsonDecode(messageJson) as Map<String, Object?>);
     this.options.add(options);
     final send = NativeTurnStream(turns, 'c${sends.length}');
     sends.add(send);
-    return send.stream;
+    final index = pausedAtListen.length;
+    pausedAtListen.add(false);
+    late final StreamController<String> out;
+    out = StreamController<String>(
+      onListen: () =>
+          send.stream.listen(out.add, onError: out.addError, onDone: out.close),
+      onPause: () => pausedAtListen[index] = true,
+    );
+    return out.stream;
   }
 
   @override
@@ -590,9 +608,13 @@ void main() {
       ..chunk(_call('slow'))
       ..finished();
     await pumpEventQueue();
+    final failed = expectLater(
+      reply,
+      throwsA(isA<ConversationClosedException>()),
+    );
     await conversation.close();
     gate.complete(1);
-    await expectLater(reply, throwsA(isA<ConversationClosedException>()));
+    await failed;
     expect(handle.sends, hasLength(1));
   });
 
@@ -652,6 +674,296 @@ void main() {
       expect(handle.sends, hasLength(1));
     },
   );
+
+  test('an execute that never completes: closing the conversation ends the '
+      'reply at once', () async {
+    final handle = _Handle();
+    final never = Completer<Object?>();
+    final conversation = _conversation(handle, [
+      Tool(name: 'hang', execute: (_) => never.future),
+    ]);
+    final reply = conversation.sendMessage(Message.user('x'));
+    await pumpEventQueue();
+    handle.sends.single
+      ..chunk(_call('hang'))
+      ..finished();
+    await pumpEventQueue();
+    final failed = expectLater(
+      reply.timeout(const Duration(seconds: 2)),
+      throwsA(isA<ConversationClosedException>()),
+    );
+    unawaited(conversation.close());
+    await failed;
+    expect(handle.sends, hasLength(1));
+  });
+
+  test('an execute that never completes: closing the engine ends the reply '
+      'at once', () async {
+    final handle = _Handle();
+    final never = Completer<Object?>();
+    final engineListeners = <void Function()>{};
+    var engineClosed = false;
+    final conversation = conversationForTest(
+      handle,
+      config: ConversationConfig(
+        tools: [Tool(name: 'hang', execute: (_) => never.future)],
+      ),
+      engineClosed: () => engineClosed,
+      engineCloseListeners: engineListeners,
+    );
+    final reply = conversation.sendMessage(Message.user('x'));
+    await pumpEventQueue();
+    handle.sends.single
+      ..chunk(_call('hang'))
+      ..finished();
+    await pumpEventQueue();
+    expect(engineListeners, hasLength(1), reason: 'the running tools listen');
+    final failed = expectLater(
+      reply.timeout(const Duration(seconds: 2)),
+      throwsA(
+        isA<ConversationClosedException>().having(
+          (e) => e.message,
+          'message',
+          contains('engine'),
+        ),
+      ),
+    );
+    // As Engine.close does.
+    engineClosed = true;
+    for (final listener in engineListeners.toList()) {
+      listener();
+    }
+    await failed;
+    expect(engineListeners, isEmpty);
+  });
+
+  test(
+    'a late result after a close is dropped: no send, no second end',
+    () async {
+      final handle = _Handle();
+      final gate = Completer<Object?>();
+      final conversation = _conversation(handle, [
+        Tool(name: 'slow', execute: (_) => gate.future),
+      ]);
+      final events = <Object>[];
+      final done = Completer<void>();
+      conversation
+          .sendMessageStream(Message.user('x'))
+          .listen(events.add, onError: events.add, onDone: done.complete);
+      await pumpEventQueue();
+      handle.sends.single
+        ..chunk(_call('slow'))
+        ..finished();
+      await pumpEventQueue();
+      await conversation.close();
+      await done.future;
+      gate.complete(1);
+      await pumpEventQueue();
+      expect(events.single, isA<ConversationClosedException>());
+      expect(handle.sends, hasLength(1));
+    },
+  );
+
+  test('a close as native ends the round runs no tool', () async {
+    final handle = _Handle();
+    final seen = <Map<String, Object?>>[];
+    final conversation = _conversation(handle, [_tool('t', seen)]);
+    final reply = conversation.sendMessage(Message.user('x'));
+    await pumpEventQueue();
+    final failed = expectLater(
+      reply,
+      throwsA(isA<ConversationClosedException>()),
+    );
+    handle.sends.single
+      ..chunk(_call('t'))
+      ..finished();
+    // Before the round's end reaches the conversation.
+    unawaited(conversation.close());
+    await failed;
+    expect(seen, isEmpty);
+    expect(handle.sends, hasLength(1));
+  });
+
+  test('a send of the results that throws fails the reply and frees the '
+      'conversation', () async {
+    final handle = _Handle()..throwOnSend = 1;
+    final conversation = _conversation(handle, [_tool('t', [])]);
+    final reply = conversation.sendMessage(Message.user('x'));
+    await pumpEventQueue();
+    final failed = expectLater(
+      reply,
+      throwsA(
+        isA<TurnFailedException>().having(
+          (e) => e.message,
+          'message',
+          contains('the handle refused the send'),
+        ),
+      ),
+    );
+    handle.sends.single
+      ..chunk(_call('t'))
+      ..finished();
+    await failed;
+    conversation.sendMessageStream(Message.user('again')).listen((_) {});
+    await pumpEventQueue();
+    expect(handle.messages.last['role'], 'user');
+  });
+
+  test('calls of a round native then fails reach the caller before the '
+      'error, with the text in order', () async {
+    final handle = _Handle();
+    final seen = <Map<String, Object?>>[];
+    final conversation = _conversation(handle, [_tool('t', seen)]);
+    final events = <Object>[];
+    final done = Completer<void>();
+    conversation
+        .sendMessageStream(Message.user('x'))
+        .listen(events.add, onError: events.add, onDone: done.complete);
+    await pumpEventQueue();
+    handle.sends.single
+      ..chunk(_text('Calling. '))
+      ..chunk(_call('t', {'a': 1}))
+      ..failed(Exception('native failed'));
+    await done.future;
+    expect(seen, isEmpty);
+    expect(events, hasLength(3));
+    expect((events[0] as Message).text, 'Calling. ');
+    expect((events[1] as Message).toolCalls.single.arguments, {'a': 1});
+    expect(events[2], isA<TurnFailedException>());
+  });
+
+  test("text native sends after a call chunk keeps native's order", () async {
+    final handle = _Handle();
+    final conversation = _conversation(handle, [_tool('t', [])]);
+    final texts = <String>[];
+    final reply = conversation
+        .sendMessageStream(Message.user('x'))
+        .map((m) => m.text)
+        .forEach(texts.add);
+    await pumpEventQueue();
+    handle.sends.single
+      ..chunk(
+        jsonEncode({
+          'role': 'assistant',
+          'content': [
+            {'type': 'text', 'text': 'A'},
+          ],
+          'tool_calls': [
+            {
+              'function': {'name': 't', 'arguments': <String, Object?>{}},
+            },
+          ],
+        }),
+      )
+      ..chunk(_text('B'))
+      ..finished();
+    await pumpEventQueue();
+    expect(texts, ['A', 'B'], reason: 'A arrived first');
+    handle.sends.last
+      ..chunk(_text('C'))
+      ..finished();
+    await reply;
+    expect(texts, ['A', 'B', 'C']);
+  });
+
+  test('a returned reply with text and a call keeps the text once and the '
+      'call', () async {
+    final handle = _Handle();
+    final conversation = _conversation(handle, [
+      _tool('auto', []),
+      Tool(name: 'manual'),
+    ]);
+    final reply = conversation.sendMessage(Message.user('x'));
+    await pumpEventQueue();
+    handle.sends.single
+      ..chunk(
+        jsonEncode({
+          'role': 'assistant',
+          'content': [
+            {'type': 'text', 'text': 'Let me.'},
+          ],
+          'tool_calls': [
+            {
+              'function': {'name': 'manual', 'arguments': <String, Object?>{}},
+            },
+          ],
+        }),
+      )
+      ..finished();
+    final message = await reply;
+    expect(message.text, 'Let me.');
+    expect(message.toolCalls.single.name, 'manual');
+  });
+
+  test(
+    'a pause held while the tools run carries into the next round',
+    () async {
+      final handle = _Handle();
+      final gate = Completer<Object?>();
+      final conversation = _conversation(handle, [
+        Tool(name: 'slow', execute: (_) => gate.future),
+      ]);
+      final seen = <String>[];
+      final subscription = conversation
+          .sendMessageStream(Message.user('x'))
+          .listen((m) => seen.add(m.text));
+      await pumpEventQueue();
+      handle.sends.single
+        ..chunk(_call('slow'))
+        ..finished();
+      await pumpEventQueue();
+      subscription.pause();
+      gate.complete(1);
+      await pumpEventQueue();
+      expect(handle.sends, hasLength(2));
+      expect(handle.pausedAtListen, [false, true]);
+      handle.sends.last
+        ..chunk(_text('late'))
+        ..finished();
+      await pumpEventQueue();
+      expect(seen, isEmpty);
+      subscription.resume();
+      await pumpEventQueue();
+      expect(seen, ['late']);
+    },
+  );
+
+  test("Engine.close ends a reply whose execute never completes", () async {
+    final client = LiteRtLmFfiClient();
+    final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
+    client
+      ..virtualCreateForTest = (_) async {
+        final c = Pointer<LiteRtLmConversation>.fromAddress(0x7800);
+        client.registerLiveForTest(c);
+        return c;
+      }
+      ..virtualSendForTest = (c) {
+        final send = client.newTurnForTest(c);
+        sends.add(send);
+        return send;
+      };
+    final engine = engineForTest(client);
+    final never = Completer<Object?>();
+    final conversation = await engine.createConversation(
+      ConversationConfig(
+        tools: [Tool(name: 'hang', execute: (_) => never.future)],
+      ),
+    );
+    final reply = conversation.sendMessage(Message.user('x'));
+    for (var i = 0; sends.isEmpty && i < 200; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    sends.single
+      ..chunk(_call('hang'))
+      ..finished();
+    await pumpEventQueue();
+    final failed = expectLater(
+      reply.timeout(const Duration(seconds: 2)),
+      throwsA(isA<ConversationClosedException>()),
+    );
+    unawaited(engine.close());
+    await failed;
+  });
 
   group('over a virtual handle', () {
     test(

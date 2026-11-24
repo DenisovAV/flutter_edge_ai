@@ -327,22 +327,26 @@ final class ConversationConfig {
   /// Whether the conversation runs the model's tool calls itself, as
   /// Kotlin's and Swift's `automaticToolCalling` (default true).
   ///
-  /// When a reply calls tools and every call names a tool with
-  /// `Tool.execute`, the conversation runs them in order, sends their results
-  /// back as one `Message.tool`, and streams the model's next reply as part
-  /// of the same message: the reply ends with the first answer that calls no
-  /// tool. A call to a name no tool declares is answered with
-  /// `Error: Tool not found: <name>`. After 25 rounds of calls in one
-  /// message (Kotlin's and Swift's limit) the send fails with a
+  /// When a reply calls tools and no call names a declared tool without
+  /// `Tool.execute`, the conversation runs the calls in order, sends their
+  /// results back as one `Message.tool`, and streams the model's next reply
+  /// as part of the same message: the reply ends with the first answer that
+  /// calls no tool. A call to a name no tool declares does not stop this: it
+  /// is answered with `Error: Tool not found: <name>`. After 25 rounds of
+  /// calls in one message (Kotlin's and Swift's limit) the send fails with a
   /// `TurnFailedException`.
   ///
-  /// A reply that calls a tool without `Tool.execute` is returned to the
-  /// caller with nothing run, as when this is false; so is every call while
-  /// no tool has `execute`.
+  /// A reply that calls a declared tool without `Tool.execute` is returned to
+  /// the caller with nothing run, as when this is false; so is every call
+  /// while no tool has `execute`.
   ///
-  /// With a [responseFormat], as in Kotlin and Swift, a message that is not a
-  /// tool response is sent without the format while some tool has
-  /// `execute` (the model must be free to call it); the replies to tool
-  /// responses keep it.
+  /// A stop while the tools run (`Conversation.cancel`) ends the reply with
+  /// their calls: those calls have run, only their results were not sent to
+  /// the model, so do not run them again blindly.
+  ///
+  /// With a [responseFormat] (native only: the web refuses one), as in
+  /// Kotlin and Swift, a message that is not a tool response is sent without
+  /// the format while some tool has `execute` (the model must be free to call
+  /// it); the replies to tool responses keep it.
   final bool automaticToolCalling;
 }

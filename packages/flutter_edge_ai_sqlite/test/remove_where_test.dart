@@ -217,7 +217,7 @@ void main() {
     final path = _tempDb('rw_busy');
     final store = await _parityStore('rw_busy', path: path);
     final other = sqlite3.open(path);
-    addTearDown(other.dispose);
+    addTearDown(other.close);
     other.execute('BEGIN EXCLUSIVE');
     addTearDown(() => other.execute('ROLLBACK'));
     await expectLater(

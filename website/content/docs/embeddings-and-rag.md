@@ -907,7 +907,7 @@ final removed = await index.removeWhere(
 
 An empty filter throws **ArgumentError** (use **clear()** to remove
 everything), and so does one that constrains nothing: a range with no bound,
-a range on a string field, excluding an empty set. A removed document also
+a range on a non-number field, excluding an empty set. A removed document also
 leaves the text index, and a store that does not implement it throws
 **UnsupportedError**.
 

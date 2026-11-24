@@ -847,7 +847,7 @@ abstract final class RemoveWhereFilter {
   }
 
   /// A non-empty [filter] whose conditions constrain nothing (a range with no
-  /// bound, a range on a string field, excluding an empty set, or only
+  /// bound, a range on a non-number field, excluding an empty set, or only
   /// undeclared fields) translates to an empty [whereSql]: refused like an
   /// empty one.
   static void refuseUnconstrained(Filter filter, String whereSql) {

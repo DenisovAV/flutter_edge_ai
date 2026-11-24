@@ -332,9 +332,9 @@ final class RagIndex {
   /// needs a declared field such as `source`, set on every document added
   /// from it. An empty [filter] is an [ArgumentError]: [clear] removes every
   /// document. So is a filter that constrains nothing, which the store
-  /// refuses: a range with no bound, a range on a string field, excluding an
-  /// empty set. Runs with no other operation on this index, so the count is
-  /// exactly what was removed.
+  /// refuses: a range with no bound, a range on a non-number field,
+  /// excluding an empty set. Runs with no other operation on this index, so
+  /// the count is exactly what was removed.
   ///
   /// Fails with [UnsupportedError] when the index's store does not implement
   /// it (`VectorStoreRepository.supportsRemoveWhere`).

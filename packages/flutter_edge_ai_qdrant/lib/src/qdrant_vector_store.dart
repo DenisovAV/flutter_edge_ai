@@ -1331,8 +1331,9 @@ final class QdrantVectorStore extends VectorStoreRepository {
       );
     }
     // Null: every condition constrains nothing (a range with no bound, a
-    // range on a string field, excluding an empty set, or only undeclared
-    // fields), so every document would match: refused like an empty filter.
+    // range on a non-number field, excluding an empty set, or only
+    // undeclared fields), so every document would match: refused like an
+    // empty filter.
     final filterJson = FilterCodec.encode(filter, _filterSchema);
     if (filterJson == null) {
       throw ArgumentError.value(

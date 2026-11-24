@@ -7,11 +7,13 @@ import 'package:crypto/crypto.dart';
 // only hook/build.dart under hook/ ("Hook files are experimental").
 import 'package:litertlm_dart/src/hook/download.dart';
 import 'package:litertlm_dart/src/hook/legacy_user_defines.dart';
+import 'package:litertlm_dart/src/hook/macos_companions.dart';
 import 'package:litertlm_dart/src/hook/mediatek_runtime.dart';
 import 'package:litertlm_dart/src/hook/podfile_mirror.dart';
 import 'package:litertlm_dart/src/hook/qairt_linux.dart';
 import 'package:litertlm_dart/src/hook/qnn_runtime.dart';
 import 'package:litertlm_dart/src/hook/unsupported_target.dart';
+import 'package:litertlm_dart/src/runtime/macos_companions.dart';
 import 'package:litertlm_dart/src/runtime/native_release.dart';
 import 'package:litertlm_dart/src/runtime/npu_stacks.dart';
 import 'package:hooks/hooks.dart';
@@ -21,6 +23,10 @@ const _packageName = 'litertlm_dart';
 /// This build's defines: `hooks.user_defines.litertlm_dart`, then the key
 /// apps set before the hook moved here (legacy_user_defines.dart).
 late HookDefines _defines;
+
+/// Where this build ships the macOS companions (macos_companions.dart):
+/// `hooks.user_defines.litertlm_dart.macos_companions`.
+var _macOSCompanions = MacOSCompanions.frameworks;
 
 // ============================================================================
 // Native bundles
@@ -784,8 +790,25 @@ Future<void> _processBundle({
   // macOS: the companions reach the app as frameworks (#689), from the
   // plugin's Swift package or from the Podfile block, so LiteRtLm is pointed at
   // them here, before Flutter copies it into the app and Xcode signs it.
+  //
+  // Unless the program is plain Dart (`macos_companions: code_assets`): then
+  // the constraint provider is a code asset below and LiteRtLm keeps its
+  // `@rpath/libGemmaModelConstraintProvider.dylib`, which the Dart SDK
+  // rewrites to wherever it puts the provider.
+  final companionsAsCodeAssets =
+      os == OS.macOS && _macOSCompanions == MacOSCompanions.codeAssets;
+  final skipCompanions =
+      !companionsAsCodeAssets && bundle.skipCompanionsOn.contains(os);
   final Uri mainStaged;
-  if (os == OS.macOS && bundle.skipCompanionsOn.contains(os)) {
+  if (companionsAsCodeAssets) {
+    mainStaged = stage(mainFileUri);
+    // The framework-pointed copy's marker: a later build for a Flutter app
+    // must patch the copy again, not trust a marker this copy outlived.
+    final marker = File.fromUri(
+      input.outputDirectory.resolve('$mainFileName.source-sha256'),
+    );
+    if (marker.existsSync()) marker.deleteSync();
+  } else if (os == OS.macOS && skipCompanions) {
     consumed.add(mainFileUri);
     mainStaged = _stagePointedAtCompanionFrameworks(
       mainFileUri,
@@ -821,11 +844,26 @@ Future<void> _processBundle({
   }
 
   // Companion libraries (accelerators, samplers, etc.).
-  final skipCompanions = bundle.skipCompanionsOn.contains(os);
   for (final name in bundle.companions) {
     if (skipCompanions) continue;
     final fileName = _dylibFileName(os, name);
     final fileUri = prebuiltDir.resolve(fileName);
+    if (companionsAsCodeAssets) {
+      // A plain Dart program on macOS: the provider only, under a short file
+      // name. The Metal accelerator is not bundled: such a program runs on
+      // the CPU only in this release.
+      if (name != 'GemmaModelConstraintProvider') continue;
+      consumed.add(fileUri);
+      output.assets.code.add(
+        CodeAsset(
+          package: _packageName,
+          name: 'src/native/$name',
+          linkMode: DynamicLoadingBundled(),
+          file: _stageConstraintProviderForDart(fileUri, input),
+        ),
+      );
+      continue;
+    }
     if (File.fromUri(fileUri).existsSync()) {
       output.assets.code.add(
         CodeAsset(
@@ -937,7 +975,7 @@ Future<void> _processBundle({
   // A bundle that skips its companions on this OS (see [skipCompanionsOn])
   // leaves them for the app's own build phase to stage. Ship that phase its
   // script through the one path it can already find.
-  if (bundle.skipCompanionsOn.contains(os) && bundle.companions.isNotEmpty) {
+  if (skipCompanions && bundle.companions.isNotEmpty) {
     // The Podfile block apps pasted (every codelab has it) reads the stager
     // and the companions from the flat cache directory of the package this
     // hook used to live in, so they are put there too.
@@ -1410,6 +1448,10 @@ void main(List<String> args) async {
 
     final codeConfig = input.config.code;
     final os = codeConfig.targetOS;
+    // Read on every target, so a value that means nothing fails everywhere.
+    _macOSCompanions = readMacOSCompanionsDefine(
+      input.userDefines[macOSCompanionsDefine],
+    );
 
     // Supported platforms: desktop + iOS + Android.
     // Web uses MediaPipe JS + wa-sqlite (dart:ffi blocked in WASM).
@@ -1561,6 +1603,45 @@ Uri _stagePointedAtCompanionFrameworks(
     _run('codesign', ['--force', '--sign', '-', dest.path]);
   }
   marker.writeAsStringSync(sourceSum);
+  return dest.uri;
+}
+
+/// Stages [src], Google's `libGemmaModelConstraintProvider.dylib`, as
+/// [macOSConstraintProviderAssetFile] for a plain Dart program; its install
+/// name stays `@rpath/libGemmaModelConstraintProvider.dylib`, which is what
+/// the Dart SDK finds LiteRtLm's reference to it by.
+///
+/// `dart run` and `dart test` (no linking: the JIT) write the file's absolute
+/// path in a temporary directory into its header, where Google's build left
+/// little room: a directory too long for it fails the build here, naming a
+/// fix, instead of in the SDK's install_name_tool step.
+Uri _stageConstraintProviderForDart(Uri src, BuildInput input) {
+  final source = File.fromUri(src);
+  if (!source.existsSync()) {
+    throw StateError(
+      'litertlm_dart: ${src.toFilePath()} is missing from the native bundle; '
+      'it is needed for macos_companions: code_assets.',
+    );
+  }
+  if (!input.config.linkingEnabled) {
+    final currentId = _run('otool', [
+      '-D',
+      src.toFilePath(),
+    ]).trim().split('\n').last.trim();
+    final refusal = dartRunTempDirRefusal(
+      resolvedTempDir: Directory.systemTemp.resolveSymbolicLinksSync(),
+      slack: machOHeaderSlack(source.readAsBytesSync()),
+      currentId: currentId,
+    );
+    if (refusal != null) throw StateError(refusal);
+  }
+  final dest = File.fromUri(
+    input.outputDirectory.resolve(macOSConstraintProviderAssetFile),
+  );
+  if (!dest.existsSync() || !_sameBytes(source, dest)) {
+    dest.parent.createSync(recursive: true);
+    source.copySync(dest.path);
+  }
   return dest.uri;
 }
 

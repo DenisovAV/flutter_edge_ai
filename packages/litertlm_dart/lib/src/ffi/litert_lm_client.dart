@@ -875,12 +875,19 @@ Pointer<Void>? _preloadWithSystemLoader(String path) {
   }
 }
 
-/// In a plain Dart program on macOS built with `macos_companions:
-/// code_assets`, the directory of its code assets; null otherwise, and always
-/// in Flutter. Per isolate.
-final String? _macOSCodeAssetDir = Platform.isMacOS && liteRtLmOutsideFlutter
-    ? macOSCodeAssetDir()
-    : null;
+/// `dlerror`, looked up before the load it reports on: a lookup is itself a
+/// `dlsym`, which clears the reason a failed `dlopen` leaves.
+Pointer<Utf8> Function() _dlerrorFunction() => DynamicLibrary.process()
+    .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+      'dlerror',
+    );
+
+/// `: <reason>` from [dlerror] after a failed `stream_proxy_load_global`,
+/// best effort: the reason is per thread.
+String _dlerrorSuffix(Pointer<Utf8> Function() dlerror) {
+  final reason = dlerror();
+  return reason == nullptr ? '' : ': ${reason.toDartString()}';
+}
 
 /// `RTLD_LAZY`, the flag `DynamicLibrary.open` passes, on every platform that
 /// has `dlopen`.
@@ -2007,16 +2014,21 @@ class LiteRtLmFfiClient {
           '@executable_path/Frameworks/StreamProxy.framework/StreamProxy';
       preload(proxyPath);
       proxyLib = DynamicLibrary.open(proxyPath);
-    } else if (Platform.isMacOS && _macOSCodeAssetDir != null) {
-      // A plain Dart program whose build bundled the companion among its code
-      // assets (macos_load_error.dart). Absolute paths, so the preload and the
-      // open are one image; checked all the same. Without that build, the
-      // branch below runs and its failure names the define.
-      final dir = _macOSCodeAssetDir;
+    } else if (Platform.isMacOS && liteRtLmOutsideFlutter) {
+      // A plain Dart program: its code assets, when its build bundled the
+      // companion there (macos_load_error.dart); refused, naming why, before
+      // anything is loaded otherwise (a preload of the framework's name could
+      // load a stray copy). Absolute paths, so the preload and the open are
+      // one image; checked all the same.
+      final assets = macOSCodeAssetsHere;
+      final dir = switch (assets) {
+        MacOSPlainDartAssets(:final dir) => dir,
+        _ => throw ArgumentError(macOSCodeAssetsRefusal(assets)),
+      };
       final libPath = '$dir/$macOSLiteRtLmAssetFile';
       final preloadedAssetLib = preload(libPath);
       lib = requireOwnLiteRtLmBuild(
-        openMacOSLiteRtLm(codeAssetDir: () => dir),
+        openMacOSLiteRtLm(codeAssets: () => assets),
         libPath,
       );
       requireSameLoadedLibrary(preloadedAssetLib, lib, libPath);
@@ -2087,6 +2099,7 @@ class LiteRtLmFfiClient {
       // sampler chain — inference itself still runs on the GPU
       // accelerator, only the per-token argmax happens on CPU
       // (negligible perf hit, ~1-5ms/token).
+      final dlerror = _dlerrorFunction();
       for (final name in const [
         'libLiteRt.so',
         'libGemmaModelConstraintProvider.so',
@@ -2106,7 +2119,9 @@ class LiteRtLmFfiClient {
         final handle = loadGlobal(pathPtr);
         calloc.free(pathPtr);
         if (handle == nullptr) {
-          throw Exception('Failed to load $fullPath with RTLD_GLOBAL');
+          throw Exception(
+            'Failed to load $fullPath with RTLD_GLOBAL${_dlerrorSuffix(dlerror)}',
+          );
         }
       }
       // Already loaded by the RTLD_GLOBAL chain above: a reference count.
@@ -2153,8 +2168,11 @@ class LiteRtLmFfiClient {
         if (assetDir != null) {
           try {
             loadWindowsAssetWithItsDirectory(bundled(name));
-          } on ArgumentError catch (e) {
-            throw Exception('Failed to preload ${bundled(name)}: ${e.message}');
+          } on ArgumentError catch (e, stack) {
+            Error.throwWithStackTrace(
+              Exception('Failed to preload ${bundled(name)}: ${e.message}'),
+              stack,
+            );
           }
           continue;
         }

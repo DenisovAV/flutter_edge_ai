@@ -25,7 +25,8 @@ import 'windows_std_handles.dart';
 
 /// Whether this isolate runs outside Flutter: a plain Dart program, which has
 /// no `dart:ui`. Constant, so a Flutter build compiles the plain-Dart paths
-/// out.
+/// out. Read by the native files only: `dart test -p chrome` has no `dart:ui`
+/// either, and nothing native runs there.
 const bool liteRtLmOutsideFlutter = !bool.fromEnvironment('dart.library.ui');
 
 /// The asset id of the library whose symbol locates the asset directory.
@@ -56,27 +57,73 @@ external Pointer<Void> _streamProxyAnchor(Pointer<Utf8> path);
 @pragma('vm:entry-point')
 Pointer<Void> keepStreamProxyAnchorCall() => _streamProxyAnchor(nullptr);
 
-/// The directory this package's code assets are in, in a plain Dart program;
-/// null when it cannot be told: the program was not built with this
-/// package's build hook (as with `dart compile exe`), the loader does not
-/// say, or the directory is not ours ([checkedAssetDir]). Resolved once per
-/// isolate (a top-level is per isolate).
+/// What the anchor's lookup found in a plain Dart program.
+sealed class NativeAssetLookup {
+  const NativeAssetLookup();
+}
+
+/// This package's code assets are in [dir].
+final class NativeAssetsFound extends NativeAssetLookup {
+  const NativeAssetsFound(this.dir);
+  final String dir;
+}
+
+/// No code asset has the anchor's id: the program was not built with this
+/// package's build hook (`dart compile exe`, a snapshot). [vmText] is the
+/// VM's own words.
+final class NativeAssetsAbsent extends NativeAssetLookup {
+  const NativeAssetsAbsent(this.vmText);
+  final String vmText;
+}
+
+/// The asset is there and did not load, or its symbol was not found in it:
+/// quarantine, Defender or Smart App Control, a missing dependency, another
+/// architecture, a damaged copy. [vmText] is the VM's own words.
+final class NativeAssetLoadFailed extends NativeAssetLookup {
+  const NativeAssetLoadFailed(this.vmText);
+  final String vmText;
+}
+
+/// The anchor resolved, but not to this package's code assets: [module] is
+/// the file the loader named (null when it named none, or not by an absolute
+/// path), and no libLiteRtLm is beside it. When no asset has the anchor's id
+/// the VM looks the symbol up in the process, and a StreamProxy some other
+/// code loaded by name answers.
+final class NativeAssetsNotOurs extends NativeAssetLookup {
+  const NativeAssetsNotOurs(this.module);
+  final String? module;
+}
+
+/// What the anchor lookup found, once per isolate (a top-level is per
+/// isolate).
 ///
 /// On Windows the standard handles are aligned first
 /// ([alignWindowsStdHandlesOnce]): resolving the symbol loads StreamProxy.dll,
 /// a static-CRT DLL.
-String? get nativeAssetDir => _nativeAssetDir;
+NativeAssetLookup get nativeAssetLookup => _nativeAssetLookup;
 
-final String? _nativeAssetDir = _resolveNativeAssetDir();
+final NativeAssetLookup _nativeAssetLookup = _lookUpNativeAssets();
+
+/// The directory this package's code assets are in, in a plain Dart program;
+/// null when [nativeAssetLookup] found none.
+String? get nativeAssetDir => switch (nativeAssetLookup) {
+  NativeAssetsFound(:final dir) => dir,
+  _ => null,
+};
+
+/// The file name of the code asset [name] (`LiteRtLm`, `StreamProxy`, ...)
+/// on [os] (`Platform.operatingSystem` by default): the one table of them.
+String codeAssetFileName(String name, {String? os}) =>
+    switch (os ?? Platform.operatingSystem) {
+      'windows' => '$name.dll',
+      'macos' => 'lib$name.dylib',
+      _ => 'lib$name.so',
+    };
 
 /// The file name of libLiteRtLm among the code assets on this OS.
-String get liteRtLmAssetFile => Platform.isWindows
-    ? 'LiteRtLm.dll'
-    : Platform.isMacOS
-    ? 'libLiteRtLm.dylib'
-    : 'libLiteRtLm.so';
+String get liteRtLmAssetFile => codeAssetFileName('LiteRtLm');
 
-String? _resolveNativeAssetDir() {
+NativeAssetLookup _lookUpNativeAssets() {
   if (Platform.isWindows) alignWindowsStdHandlesOnce();
   final Pointer<Void> address;
   try {
@@ -84,28 +131,33 @@ String? _resolveNativeAssetDir() {
         Native.addressOf<NativeFunction<Pointer<Void> Function(Pointer<Utf8>)>>(
           _streamProxyAnchor,
         ).cast();
-  } on ArgumentError {
-    // The symbol resolved nowhere: neither an asset under that id nor the
-    // process has it.
-    return null;
+  } on ArgumentError catch (e) {
+    return anchorFailure('${e.message ?? e}');
   }
   final module = Platform.isWindows
       ? _windowsModulePath(address)
       : _dladdrModulePath(address);
-  return checkedAssetDir(
+  final dir = checkedAssetDir(
     module == null
         ? null
         : directoryOfModule(module, windows: Platform.isWindows),
     mainLibraryFile: liteRtLmAssetFile,
     exists: (path) => File(path).existsSync(),
   );
+  return dir == null ? NativeAssetsNotOurs(module) : NativeAssetsFound(dir);
 }
+
+/// What the VM's [text] says about a failed anchor lookup: no asset under
+/// the id ("No asset with id"), or an asset that did not load.
+@visibleForTesting
+NativeAssetLookup anchorFailure(String text) =>
+    text.contains('No asset with id')
+    ? NativeAssetsAbsent(text)
+    : NativeAssetLoadFailed(text);
 
 /// [dir], the directory of the file the anchor symbol resolved to, when it
 /// is this package's code assets: it holds libLiteRtLm under its asset file
-/// name ([mainLibraryFile]). When no asset has the anchor's id, the VM looks
-/// the symbol up in the process instead, and a StreamProxy some other code
-/// loaded by name would answer; its directory is not ours. Null otherwise.
+/// name ([mainLibraryFile]). Null otherwise ([NativeAssetsNotOurs]).
 @visibleForTesting
 String? checkedAssetDir(
   String? dir, {
@@ -128,15 +180,40 @@ const plainDartNoAssetsMessage =
     'test, or build it with dart build cli, which run its build hook; dart '
     'compile exe runs no build hooks and cannot bundle LiteRT-LM.';
 
-/// [nativeAssetDir] in a plain Dart program; an [ArgumentError] with
-/// [plainDartNoAssetsMessage] when there is none, never a fall back to the
-/// lookup of a Flutter app.
-String requireNativeAssetDir() => requireAssetDir(nativeAssetDir);
+/// What a plain Dart program is told when [lookup] found no code assets of
+/// this package; null when it found them.
+String? plainDartAssetsMessage(NativeAssetLookup lookup) => switch (lookup) {
+  NativeAssetsFound() => null,
+  NativeAssetsAbsent(:final vmText) =>
+    '$plainDartNoAssetsMessage\nThe Dart VM: '
+        '$vmText',
+  NativeAssetLoadFailed(:final vmText) =>
+    "litertlm_dart: LiteRT-LM's native libraries are among this Dart "
+        "program's code assets, but StreamProxy, the first of them, did not "
+        'load. A quarantined, blocked (Defender, Smart App Control) or damaged '
+        'copy, a missing system library or a build for another architecture '
+        'fails this way.\nThe Dart VM: $vmText',
+  NativeAssetsNotOurs(:final module) =>
+    "litertlm_dart: LiteRT-LM's native libraries are not among this Dart "
+        "program's code assets: its StreamProxy symbol resolved to "
+        '${module ?? 'a library the loader did not name'}, with no '
+        '$liteRtLmAssetFile beside it (another copy, loaded by name). Run it '
+        'with dart run or dart test, or build it with dart build cli; dart '
+        'compile exe runs no build hooks and cannot bundle LiteRT-LM.',
+};
 
-/// [dir], or the [ArgumentError] of [requireNativeAssetDir] when it is null.
+/// [nativeAssetDir] in a plain Dart program; an [ArgumentError] saying why
+/// there is none ([plainDartAssetsMessage]), never a fall back to the lookup
+/// of a Flutter app.
+String requireNativeAssetDir() => requireAssetDir(nativeAssetLookup);
+
+/// The directory [lookup] found, or the [ArgumentError] of
+/// [requireNativeAssetDir].
 @visibleForTesting
-String requireAssetDir(String? dir) =>
-    dir ?? (throw ArgumentError(plainDartNoAssetsMessage));
+String requireAssetDir(NativeAssetLookup lookup) => switch (lookup) {
+  NativeAssetsFound(:final dir) => dir,
+  _ => throw ArgumentError(plainDartAssetsMessage(lookup)),
+};
 
 /// The directory of [modulePath], the file a loader reported: everything
 /// before its last separator (`/`, and on Windows also `\`). Null when
@@ -162,8 +239,7 @@ String pathInAssetDir(String dir, String name, {required bool windows}) {
       : '$dir$sep$name';
 }
 
-/// [name] in [nativeAssetDir] on this platform. [nativeAssetDir] must not be
-/// null.
+/// [name] in [dir], a code-asset directory, with this platform's separator.
 String nativeAssetPath(String dir, String name) =>
     pathInAssetDir(dir, name, windows: Platform.isWindows);
 
@@ -196,7 +272,10 @@ String? _dladdrModulePath(Pointer<Void> address) {
   try {
     if (_dladdr()(address, info) == 0) return null;
     final name = info.ref.fileName;
-    return name == nullptr ? null : name.toDartString();
+    if (name == nullptr) return null;
+    final path = name.toDartString();
+    // Only an absolute path says where the file is.
+    return path.startsWith('/') ? path : null;
   } finally {
     calloc.free(info);
   }
@@ -266,12 +345,24 @@ void loadWindowsAssetWithItsDirectory(String path) {
         int Function(Pointer<Utf16>, int, int)
       >('LoadLibraryExW');
   final name = path.toNativeUtf16();
+  final int handle;
   try {
-    if (loadLibraryEx(name, 0, _loadWithAlteredSearchPath) == 0) {
-      // No error code: the VM may reset GetLastError before Dart reads it.
-      throw ArgumentError('LoadLibraryExW could not load $path');
-    }
+    handle = loadLibraryEx(name, 0, _loadWithAlteredSearchPath);
   } finally {
-    calloc.free(name);
+    malloc.free(name);
   }
+  if (handle != 0) return;
+  // The VM may reset GetLastError before Dart reads it, so the reason comes
+  // from DynamicLibrary.open, which formats the Windows error itself (its
+  // search differs from ours only for the DLLs this one imports).
+  try {
+    DynamicLibrary.open(path);
+  } on ArgumentError catch (e, stack) {
+    Error.throwWithStackTrace(
+      ArgumentError('LoadLibraryExW could not load $path: ${e.message ?? e}'),
+      stack,
+    );
+  }
+  // Loaded by the plain search after all: its imports resolved elsewhere,
+  // which only the DLLs it imports can tell; the open that follows uses it.
 }

@@ -43,10 +43,9 @@ DynamicLibrary openLiteRtLmLibrary() {
   }
   if (Platform.isMacOS) {
     // In a plain Dart program, the code asset (macos_load_error.dart).
-    final dir = liteRtLmOutsideFlutter ? macOSCodeAssetDir() : null;
     return requireOwnLiteRtLmBuild(
-      openMacOSLiteRtLm(codeAssetDir: () => dir),
-      dir == null ? macOSLiteRtLmFramework : '$dir/$macOSLiteRtLmAssetFile',
+      openMacOSLiteRtLm(),
+      macOSLiteRtLmOpenedPath(),
     );
   }
   if (Platform.isAndroid) {

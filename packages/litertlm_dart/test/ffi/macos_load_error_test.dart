@@ -7,10 +7,10 @@
 
 import 'dart:ffi';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:litertlm_dart/src/runtime/host_native_library.dart';
 import 'package:litertlm_dart/src/ffi/macos_load_error.dart';
+import 'package:litertlm_dart/src/ffi/native_asset_dir.dart';
 import 'package:test/test.dart';
 
 const _app = '/Applications/app.app/Contents';
@@ -541,98 +541,87 @@ void main() {
 
   group('in a plain Dart program', () {
     final process = DynamicLibrary.process();
+    const found = NativeAssetsFound('/t/lib');
+    const plainDart = MacOSPlainDartAssets('/t/lib');
 
-    test('the code assets are used when LiteRtLm links the companion as a '
-        'code asset, whatever files lie beside it', () {
-      List<String>? linked;
-      String? dirFor(String? assetDir) => macOSCodeAssetDir(
-        assetDir: () => assetDir,
-        linkedBy: (path) {
-          expect(path, '$assetDir/libLiteRtLm.dylib');
-          return linked;
-        },
+    test('what the program has is told by what LiteRtLm links, whatever '
+        'files lie beside it', () {
+      MacOSCodeAssets assetsOf(
+        NativeAssetLookup lookup,
+        List<String> Function(String path) linkedBy,
+      ) => macOSCodeAssets(lookup: () => lookup, linkedBy: linkedBy);
+      List<String> never(String path) => fail('read $path');
+
+      expect(
+        assetsOf(const NativeAssetsAbsent('No asset with id'), never),
+        isA<MacOSNoCodeAssets>(),
       );
-      expect(dirFor(null), isNull, reason: 'no asset directory');
-      linked = null;
-      expect(dirFor('/t/lib'), isNull, reason: 'not a readable Mach-O');
+      expect(
+        assetsOf(const NativeAssetsNotOurs('/usr/lib/x.dylib'), never),
+        isA<MacOSNoCodeAssets>(),
+      );
       // Built for a Flutter app: a stale libLtGmcp.dylib beside it (Dart
       // 3.12/3.13 never empty .dart_tool/lib) changes nothing.
-      linked = [
-        '/usr/lib/libc++.1.dylib',
-        '@rpath/GemmaModelConstraintProvider.framework/Versions/A/'
-            'GemmaModelConstraintProvider',
-      ];
-      expect(dirFor('/t/lib'), isNull);
-      // As the Dart SDK rewrote it: dart run, then dart build cli.
-      linked = ['/t/lib/libLtGmcp.dylib'];
-      expect(dirFor('/t/lib'), '/t/lib');
-      linked = ['@rpath/lib/libLtGmcp.dylib'];
-      expect(dirFor('/t/lib'), '/t/lib');
-    });
-
-    test('machOLinkedDylibs reads the load commands', () {
-      // 32-byte header + one LC_ID_DYLIB + one LC_LOAD_DYLIB + one weak.
-      Uint8List command(int cmd, String name) {
-        final size = (24 + name.length + 1 + 7) & ~7;
-        final b = ByteData(size)
-          ..setUint32(0, cmd, Endian.little)
-          ..setUint32(4, size, Endian.little)
-          ..setUint32(8, 24, Endian.little);
-        final bytes = b.buffer.asUint8List();
-        bytes.setAll(24, name.codeUnits);
-        return bytes;
-      }
-
-      final cmds = [
-        command(0xd, '@rpath/libLiteRtLm.dylib'),
-        command(0xc, '/usr/lib/libc++.1.dylib'),
-        command(0x80000018, '@rpath/lib/libLtGmcp.dylib'),
-      ];
-      final sizeofcmds = cmds.fold<int>(0, (n, c) => n + c.length);
-      final header = ByteData(32)
-        ..setUint32(0, 0xfeedfacf, Endian.little)
-        ..setUint32(16, cmds.length, Endian.little)
-        ..setUint32(20, sizeofcmds, Endian.little);
-      final file = Uint8List.fromList([
-        ...header.buffer.asUint8List(),
-        for (final c in cmds) ...c,
-      ]);
-      expect(machOLinkedDylibs(file), [
-        '/usr/lib/libc++.1.dylib',
-        '@rpath/lib/libLtGmcp.dylib',
-      ]);
       expect(
-        machOLinkedDylibs(Uint8List.fromList([0x7f, 0x45, 0x4c, 0x46])),
-        isNull,
+        assetsOf(found, (path) {
+          expect(path, '/t/lib/libLiteRtLm.dylib');
+          return [
+            '/usr/lib/libc++.1.dylib',
+            '@rpath/GemmaModelConstraintProvider.framework/Versions/A/'
+                'GemmaModelConstraintProvider',
+          ];
+        }),
+        isA<MacOSFlutterBuildAssets>(),
+      );
+      // As the Dart SDK rewrote it: dart run, then dart build cli.
+      for (final name in [
+        '/t/lib/libLtGmcp.dylib',
+        '@rpath/lib/libLtGmcp.dylib',
+      ]) {
+        expect(
+          assetsOf(found, (_) => [name]),
+          isA<MacOSPlainDartAssets>().having((a) => a.dir, 'dir', '/t/lib'),
+        );
+      }
+      expect(
+        assetsOf(found, (_) => throw const FormatException('truncated')),
+        isA<MacOSUnreadableAssets>().having(
+          (a) => a.reason,
+          'reason',
+          'truncated',
+        ),
       );
     });
 
-    final cached = firstExistingPath(
-      hostNativeLibraryCandidates(
-        libFileName: hostNativeLibraryFileName('LiteRtLm'),
-      ),
-    );
-    test(
-      "the shipped libLiteRtLm links the provider by Google's install name",
-      () {
-        final linked = machOLinkedDylibsOf(cached!);
-        expect(
-          linked,
-          contains('@rpath/libGemmaModelConstraintProvider.dylib'),
-        );
-        expect(linksConstraintProviderCodeAsset(linked!), isFalse);
-      },
-      skip: cached == null || !Platform.isMacOS
-          ? 'macOS with a libLiteRtLm in the hook cache only'
-          : false,
-    );
+    test('each case is refused in its own words', () {
+      expect(macOSCodeAssetsRefusal(plainDart), isNull);
+      final flutterBuild = macOSCodeAssetsRefusal(
+        const MacOSFlutterBuildAssets('/t/lib'),
+      )!;
+      expect(flutterBuild, contains('macos_companions: code_assets'));
+      expect(flutterBuild, contains('Never in a resolution that also holds'));
+      // A dart compile exe binary is not told to set the define.
+      final absent = macOSCodeAssetsRefusal(
+        const MacOSNoCodeAssets(NativeAssetsAbsent('No asset with id x')),
+      )!;
+      expect(absent, contains('dart compile exe'));
+      expect(absent, isNot(contains('macos_companions')));
+      expect(absent, contains('No asset with id x'));
+      // An unreadable LiteRtLm is not told to set a define that is set.
+      final unreadable = macOSCodeAssetsRefusal(
+        const MacOSUnreadableAssets('/t/lib', 'truncated'),
+      )!;
+      expect(unreadable, contains('/t/lib/libLiteRtLm.dylib'));
+      expect(unreadable, contains('truncated'));
+      expect(unreadable, isNot(contains('macos_companions')));
+    });
 
     test('opens libLiteRtLm among the code assets, and nothing else', () {
       final asked = <String>[];
       expect(
         openMacOSLiteRtLm(
           outsideFlutter: true,
-          codeAssetDir: () => '/t/lib',
+          codeAssets: () => plainDart,
           open: (path) {
             asked.add(path);
             return process;
@@ -643,12 +632,12 @@ void main() {
       expect(asked, ['/t/lib/libLiteRtLm.dylib']);
     });
 
-    test('without the companion among the code assets, the failure names the '
-        'define, and nothing is opened', () {
+    test('without a plain-Dart build, the failure says why and nothing is '
+        'opened', () {
       final thrown = _thrownBy(
         () => openMacOSLiteRtLm(
           outsideFlutter: true,
-          codeAssetDir: () => null,
+          codeAssets: () => const MacOSFlutterBuildAssets('/t/lib'),
           open: (path) => fail('opened $path'),
         ),
       );
@@ -663,7 +652,7 @@ void main() {
       final thrown = _thrownBy(
         () => openMacOSLiteRtLm(
           outsideFlutter: true,
-          codeAssetDir: () => '/t/lib',
+          codeAssets: () => plainDart,
           open: (path) => throw _loadFailure(_wrongArchitecture),
         ),
       );
@@ -679,7 +668,7 @@ void main() {
       expect(
         openMacOSLiteRtLmForTflite(
           outsideFlutter: true,
-          codeAssetDir: () => '/t/lib',
+          codeAssets: () => plainDart,
           devCandidates: () => fail('not consulted'),
           open: (path) {
             asked.add(path);
@@ -691,12 +680,31 @@ void main() {
       expect(asked, ['/t/lib/libLiteRtLm.dylib']);
     });
 
-    test('the .tflite path without the code asset keeps its order, and its '
+    test('the .tflite path without a plain-Dart build refuses, never trying a '
+        'copy from the cache: it would work on the developer\'s Mac only', () {
+      final thrown = _thrownBy(
+        () => openMacOSLiteRtLmForTflite(
+          outsideFlutter: true,
+          codeAssets: () => const MacOSFlutterBuildAssets('/t/lib'),
+          allowHostCopies: false,
+          devCandidates: () => fail('not consulted'),
+          open: (path) => fail('opened $path'),
+        ),
+      );
+      expect(thrown, isA<UnsupportedError>());
+      expect(
+        '${(thrown! as UnsupportedError).message}',
+        contains('macos_companions: code_assets'),
+      );
+    });
+
+    test('this package\'s own host tests may still try the copies, and the '
         'failure names the define', () {
       final thrown = _thrownBy(
         () => openMacOSLiteRtLmForTflite(
           outsideFlutter: true,
-          codeAssetDir: () => null,
+          codeAssets: () => const MacOSFlutterBuildAssets('/t/lib'),
+          allowHostCopies: true,
           devCandidates: () => ['/cache/libLiteRtLm.dylib'],
           executable: '/usr/local/bin/dart',
           open: (path) => throw _loadFailure('no'),
@@ -713,11 +721,110 @@ void main() {
       expect(
         openMacOSLiteRtLm(
           outsideFlutter: false,
-          codeAssetDir: () => fail('looked up'),
+          codeAssets: () => fail('looked up'),
+          flutterMisuse: () => null,
           open: (path) => process,
         ),
         same(process),
       );
     });
+
+    test('the opened path names the code asset in a plain Dart program and '
+        'the framework in an app', () {
+      expect(
+        macOSLiteRtLmOpenedPath(outsideFlutter: false),
+        'LiteRtLm.framework/LiteRtLm',
+      );
+    });
   });
+
+  group('a Flutter app built with the plain-Dart define', () {
+    const app = '/Applications/a.app/Contents/MacOS/a';
+    const framework =
+        '/Applications/a.app/Contents/Frameworks/LiteRtLm.framework/LiteRtLm';
+
+    String? misuse(List<String> linked) => macOSFlutterCodeAssetsMisuse(
+      executable: app,
+      exists: (path) => path == framework,
+      linkedBy: (path) {
+        expect(path, framework);
+        return linked;
+      },
+    );
+
+    test('is refused by name when its LiteRtLm links the code-asset '
+        'provider', () {
+      final message = misuse([
+        '@rpath/LtGmcp.framework/LtGmcp',
+        '/usr/lib/libc++.1.dylib',
+      ]);
+      expect(message, contains('macos_companions: code_assets'));
+      expect(message, contains('reached this Flutter app'));
+      expect(message, contains('flutter clean'));
+    });
+
+    test('an app built for Flutter, a test outside an app and an unreadable '
+        'framework pass', () {
+      expect(
+        misuse([
+          '@rpath/GemmaModelConstraintProvider.framework/Versions/A/'
+              'GemmaModelConstraintProvider',
+        ]),
+        isNull,
+      );
+      expect(
+        macOSFlutterCodeAssetsMisuse(
+          executable: '/flutter/bin/cache/artifacts/engine/flutter_tester',
+          exists: (_) => fail('looked'),
+          linkedBy: (_) => fail('read'),
+        ),
+        isNull,
+      );
+      expect(
+        macOSFlutterCodeAssetsMisuse(
+          executable: app,
+          exists: (_) => true,
+          linkedBy: (_) => throw const FormatException('fat'),
+        ),
+        isNull,
+      );
+    });
+
+    test('opening the framework refuses before it loads anything', () {
+      final thrown = _thrownBy(
+        () => openMacOSLiteRtLm(
+          outsideFlutter: false,
+          flutterMisuse: () => 'reached this Flutter app',
+          open: (path) => fail('opened $path'),
+        ),
+      );
+      expect(thrown, isA<ArgumentError>());
+      final tflite = _thrownBy(
+        () => openMacOSLiteRtLmForTflite(
+          outsideFlutter: false,
+          flutterMisuse: () => 'reached this Flutter app',
+          devCandidates: () => fail('not consulted'),
+          open: (path) => fail('opened $path'),
+        ),
+      );
+      expect(tflite, isA<UnsupportedError>());
+    });
+  });
+
+  final cached = firstExistingPath(
+    hostNativeLibraryCandidates(
+      libFileName: hostNativeLibraryFileName('LiteRtLm'),
+    ),
+  );
+  test(
+    "the shipped libLiteRtLm links the provider by Google's install name",
+    () {
+      final linked = machOLinkedDylibsOf(cached!);
+      expect(linked, contains('@rpath/libGemmaModelConstraintProvider.dylib'));
+      expect(linksConstraintProviderCodeAsset(linked), isFalse);
+    },
+    skip: cached == null || !Platform.isMacOS
+        ? 'macOS with a libLiteRtLm in the hook cache only'
+        : false,
+  );
 }

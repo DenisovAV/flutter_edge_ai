@@ -12,7 +12,7 @@ import 'package:litertlm_dart/src/ffi/litert_lm_client.dart';
 import 'package:litertlm_dart/src/ffi/litert_lm_library.dart';
 import 'package:litertlm_dart/src/ffi/native_asset_dir.dart';
 import 'package:litertlm_dart/src/runtime/load_errors.dart'
-    show LibraryLoadFailure;
+    show LibraryLoadFailure, LiteRtLmEngineCreateException;
 import 'package:test/test.dart';
 
 void main() {
@@ -116,6 +116,51 @@ void main() {
     expect(hook, contains("name: 'src/native/StreamProxy'"));
   });
 
+  group('why there are no code assets', () {
+    test('the VM saying no asset has the id is a program without them', () {
+      final lookup = anchorFailure(
+        "Couldn't resolve native function 'stream_proxy_load_global' in "
+        "'package:litertlm_dart/src/native/StreamProxy' : No asset with id "
+        "'package:litertlm_dart/src/native/StreamProxy' found. No available "
+        'native assets. Attempted to fallback to process lookup.',
+      );
+      expect(lookup, isA<NativeAssetsAbsent>());
+      final message = plainDartAssetsMessage(lookup)!;
+      expect(message, contains('dart compile exe'));
+      expect(message, contains('No available native assets'));
+    });
+
+    test('anything else is an asset that is there and did not load, with '
+        "the VM's words", () {
+      final lookup = anchorFailure(
+        "Couldn't resolve native function 'stream_proxy_load_global' in "
+        "'package:litertlm_dart/src/native/StreamProxy' : Failed to load "
+        "dynamic library '/t/lib/libStreamProxy.so': libc.so.6: version "
+        "'GLIBC_2.34' not found",
+      );
+      expect(lookup, isA<NativeAssetLoadFailed>());
+      final message = plainDartAssetsMessage(lookup)!;
+      expect(message, contains('are among this Dart program'));
+      expect(message, contains("GLIBC_2.34' not found"));
+      expect(message, isNot(contains('dart compile exe')));
+    });
+
+    test('a stray copy is named', () {
+      final message = plainDartAssetsMessage(
+        const NativeAssetsNotOurs('/usr/local/lib/libStreamProxy.so'),
+      )!;
+      expect(message, contains('/usr/local/lib/libStreamProxy.so'));
+      expect(plainDartAssetsMessage(const NativeAssetsFound('/t')), isNull);
+    });
+
+    test('one file-name table', () {
+      expect(codeAssetFileName('LiteRtLm', os: 'windows'), 'LiteRtLm.dll');
+      expect(codeAssetFileName('LiteRtLm', os: 'macos'), 'libLiteRtLm.dylib');
+      expect(codeAssetFileName('LiteRtLm', os: 'linux'), 'libLiteRtLm.so');
+      expect(liteRtLmAssetFile, codeAssetFileName('LiteRtLm'));
+    });
+  });
+
   group('checkedAssetDir', () {
     test('a directory holding libLiteRtLm under its asset name is ours', () {
       final there = {
@@ -165,16 +210,19 @@ void main() {
   test('without code assets the failure names dart build cli and that dart '
       'compile exe runs no hooks', () {
     expect(
-      () => requireAssetDir(null),
+      () => requireAssetDir(const NativeAssetsAbsent('No asset with id x')),
       throwsA(
         isA<ArgumentError>().having(
-          (e) => e.message,
+          (e) => '${e.message}',
           'message',
-          plainDartNoAssetsMessage,
+          allOf(
+            contains(plainDartNoAssetsMessage),
+            contains('No asset with id x'),
+          ),
         ),
       ),
     );
-    expect(requireAssetDir('/t/lib'), '/t/lib');
+    expect(requireAssetDir(const NativeAssetsFound('/t/lib')), '/t/lib');
     expect(plainDartNoAssetsMessage, contains('dart build cli'));
     expect(
       plainDartNoAssetsMessage,
@@ -241,18 +289,26 @@ void main() {
   );
 
   test('a client loads the libraries, and only the model is missing', () async {
+    const missing = '/no/such/model.litertlm';
     Object? thrown;
     try {
-      await LiteRtLmFfiClient().initialize(modelPath: '/no/such/model');
+      await LiteRtLmFfiClient().initialize(modelPath: missing, backend: 'cpu');
     } catch (e) {
       thrown = e;
     }
-    expect(thrown, isNotNull);
     if (Platform.isMacOS) {
       expect(thrown, isA<LibraryLoadFailure>());
       expect('$thrown', contains('macos_companions: code_assets'));
     } else {
-      expect(thrown, isNot(isA<LibraryLoadFailure>()), reason: '$thrown');
+      // Only the model is missing: LiteRT-LM looked for it by its path.
+      expect(
+        thrown,
+        isA<LiteRtLmEngineCreateException>().having(
+          (e) => '$e',
+          'message',
+          contains(missing),
+        ),
+      );
     }
   }, skip: hostHasArchive ? false : 'no native archive for this host');
 }

@@ -419,4 +419,23 @@ void main() {
     expect(placed.gpu, isFalse);
     expect(placed.npuTarget, isNull);
   });
+
+  test('a plain Dart program is pointed at the generic bundle, not at the '
+      'NPU, for a per-SoC bundle', () async {
+    debugEngineHost = const _Host('android_arm64', outsideFlutter: true);
+    final path = write(
+      'n.litertlm',
+      eg2Container(textStamp: ('Qualcomm', 'SM8650')),
+    );
+    await expectLater(
+      embedderConfigFor(config(path)),
+      throwsA(
+        isA<EmbedderLoadException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('generic EmbeddingGemma 2'), contains('CPU only')),
+        ),
+      ),
+    );
+  });
 }

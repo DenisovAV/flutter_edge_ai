@@ -142,7 +142,13 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
   switch (backend) {
     case CpuBackend():
       if (target != null) {
-        refuse('$file is compiled for the $target NPU and runs only there.');
+        refuse(
+          currentEngineHost.outsideFlutter
+              ? 'litertlm_dart: $file is compiled for the $target NPU, and '
+                    '$plainDartCpuOnly: load the generic EmbeddingGemma 2 '
+                    'bundle.'
+              : '$file is compiled for the $target NPU and runs only there.',
+        );
       }
     case GpuBackend():
       if (target != null) {

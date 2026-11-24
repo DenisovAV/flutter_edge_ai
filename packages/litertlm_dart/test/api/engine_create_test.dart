@@ -884,6 +884,40 @@ void main() {
     await cpu.close();
   });
 
+  test('a plain Dart program refuses a file the CPU cannot run before the '
+      'load plan, whose advice (another backend) does not apply', () async {
+    host = _Host(outsideFlutter: true);
+    debugEngineHost = host;
+    final npu = write('n.litertlm', _bundle(npu: ('Qualcomm', 'SM8750')));
+    final gpuVision = write('v.litertlm', _bundle(vision: 'gpu'));
+    final gpuText = write('t.litertlm', _bundle(text: 'gpu'));
+    for (final (path, vision, named) in [
+      (npu, null, 'compiled for an NPU'),
+      (gpuVision, const Backend.cpu(), 'vision encoder declares'),
+      (gpuText, null, 'declares that it runs on gpu'),
+    ]) {
+      await expectLater(
+        create(path, visionBackend: vision),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains(named),
+              contains('CPU only'),
+              isNot(contains('Omit')),
+            ),
+          ),
+        ),
+        reason: named,
+      );
+    }
+    expect(host.creates, isEmpty);
+    // A GPU-only vision encoder is not in the way when images are off.
+    final engine = await create(gpuVision);
+    await engine.close();
+  });
+
   test('the real host is a plain Dart program under dart test', () {
     expect(const EngineHost().outsideFlutter, isTrue);
   });

@@ -224,7 +224,9 @@ class EngineHost {
   String get abi => '${Abi.current()}';
 
   /// Whether this is a plain Dart program, where this release runs LiteRT-LM
-  /// on the CPU only (plain_dart_backends.dart).
+  /// on the CPU only (plain_dart_backends.dart). It governs those refusals
+  /// only; where the libraries are looked up follows `liteRtLmOutsideFlutter`
+  /// itself (native_asset_dir.dart).
   bool get outsideFlutter => liteRtLmOutsideFlutter;
 
   /// The NPU answers for [platform].
@@ -473,6 +475,15 @@ final class Engine {
     final supportImage = config.visionBackend != null;
     final supportAudio = config.audioBackend != null;
     final bundle = (read ?? await readEngineBundle(path)).info;
+    if (host.outsideFlutter) {
+      final refusal = plainDartFileRefusal(
+        path: path,
+        bundle: bundle,
+        supportImage: supportImage,
+        supportAudio: supportAudio,
+      );
+      if (refusal != null) throw UnsupportedError(refusal);
+    }
     // An encoder asked for where its file wants it is the file's choice: the
     // plan checks a request against the file, and the file's own default
     // passes by definition (its declared constraint, even without a stamp).

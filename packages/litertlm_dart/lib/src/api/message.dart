@@ -2,6 +2,7 @@
 // Swift `Message`, `Content`, `ToolCall`, with the Conversation API JSON they
 // are sent and read as (`messageJson`, `messageFromJson`), internal.
 
+import 'dart:async' show FutureOr;
 import 'dart:convert' show base64Encode, jsonDecode, jsonEncode;
 import 'dart:typed_data' show Uint8List;
 
@@ -161,14 +162,15 @@ final class ToolCall {
   String toString() => 'ToolCall($name, $arguments)';
 }
 
-/// A function the model may call: its [name], what it does, and its
-/// parameters as a JSON Schema object.
+/// A function the model may call: its [name], what it does, its parameters
+/// as a JSON Schema object, and optionally the code that runs it.
 @immutable
 final class Tool {
   Tool({
     required this.name,
     this.description = '',
     Map<String, Object?> parameters = const {},
+    this.execute,
   }) : parameters = Map.unmodifiable(parameters) {
     if (name.isEmpty) throw ArgumentError.value(name, 'name', 'is empty');
   }
@@ -176,6 +178,19 @@ final class Tool {
   final String name;
   final String description;
   final Map<String, Object?> parameters;
+
+  /// Runs a call of this tool with the call's arguments and returns its
+  /// result: any JSON value (a map, a list, a string, a number, a bool or
+  /// null), sent back to the model as the call's response. A map is
+  /// formatted as the response's fields.
+  ///
+  /// With `ConversationConfig.automaticToolCalling` on (the default), the
+  /// conversation calls it itself and continues the reply, as Kotlin's and
+  /// Swift's do. If it throws, or returns a value that is not JSON, the
+  /// model gets the error as text (`Error: …`) instead of a result and the
+  /// reply continues. Null: the call reaches the caller, who answers it
+  /// with `Message.tool`.
+  final FutureOr<Object?> Function(Map<String, Object?> arguments)? execute;
 }
 
 /// [message] as the Conversation API JSON object native reads.

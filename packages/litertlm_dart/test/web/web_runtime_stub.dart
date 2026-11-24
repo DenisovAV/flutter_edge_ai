@@ -138,9 +138,9 @@ const _stub = r'''
     const s = open();
     s.generated = true;
     s.conversation.prefilled = true;
-    s.conversation.history.push(
-      asHistory(s.message),
-      {role: 'assistant', content: [{type: 'text', text: s.text}]});
+    const reply = {role: 'assistant', content: [{type: 'text', text: s.text}]};
+    if (s.toolCalls) reply.tool_calls = s.toolCalls;
+    s.conversation.history.push(asHistory(s.message), reply);
   };
   window.__step = (text) => {
     const s = open();
@@ -151,7 +151,10 @@ const _stub = r'''
   window.__chunk = (json) => {
     const s = open();
     s.conversation.prefilled = true;
-    s.controller.enqueue(JSON.parse(json));
+    const chunk = JSON.parse(json);
+    // A reply's calls stay in the history with it, as the runtime keeps them.
+    if (chunk.tool_calls) s.toolCalls = chunk.tool_calls;
+    s.controller.enqueue(chunk);
   };
   // A chunk JSON.stringify cannot write.
   window.__unwritable = () => open().controller.enqueue({n: 1n});

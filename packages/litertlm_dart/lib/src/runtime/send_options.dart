@@ -41,6 +41,7 @@ final class SendOptions {
     this.noRepeatNgram,
     this.suppressTokens,
     this.thinkingTokenBudget,
+    this.unconstrained = false,
   });
 
   /// Template variables for this message, merged under the thinking switch.
@@ -51,6 +52,11 @@ final class SendOptions {
 
   /// The thinking budget of this send; null leaves the engine's.
   final int? thinkingTokenBudget;
+
+  /// This send goes without the conversation's response format: a message
+  /// that is not a tool response while automatic tools are pending, as in
+  /// Kotlin's and Swift's `resolveResponseFormat`.
+  final bool unconstrained;
 
   static const none = SendOptions();
 }

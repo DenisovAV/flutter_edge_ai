@@ -113,6 +113,32 @@ void main() {
       ]);
     });
 
+    test('a store failure reaches the caller and frees the index', () async {
+      final failure = const VectorStoreException('disk gone');
+      final store = _Store(removed: 2)..removeError = failure;
+      final index = await _open(store);
+      await expectLater(index.removeWhere(_source), throwsA(same(failure)));
+
+      // The exclusive gate was released: later operations run, a second
+      // removeWhere included.
+      store.removeError = null;
+      store.events.clear();
+      await index.stats().timeout(const Duration(seconds: 5));
+      await index
+          .searchVector(embedding: const [1, 0])
+          .timeout(const Duration(seconds: 5));
+      expect(
+        await index.removeWhere(_source).timeout(const Duration(seconds: 5)),
+        2,
+      );
+      expect(store.events, [
+        'stats',
+        'search:start',
+        'search:end',
+        'removeWhere',
+      ]);
+    });
+
     test('a disposed index refuses it', () async {
       final store = _Store();
       final index = await _open(store, tearDown: false);
@@ -165,6 +191,7 @@ final class _Store extends VectorStoreRepository {
   final removeCalls = <Filter>[];
   final events = <String>[];
   Completer<void>? blockSearch;
+  Object? removeError;
   VectorStoreBinding? _binding;
 
   @override
@@ -179,6 +206,8 @@ final class _Store extends VectorStoreRepository {
   Future<int> removeDocumentsWhere(Filter filter) async {
     events.add('removeWhere');
     removeCalls.add(filter);
+    final error = removeError;
+    if (error != null) throw error;
     return removed;
   }
 

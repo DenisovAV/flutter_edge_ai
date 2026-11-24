@@ -147,6 +147,43 @@ final class SqliteTextIndex {
     }
   }
 
+  /// Deletes every [vecTable] row matching [whereSql] (a [FilterToVec0]
+  /// fragment, never empty) with its [binds], and each one's row in [text],
+  /// in one transaction ([runInTransaction]); returns how many it deleted.
+  /// The ids are selected first, so the text index loses the same set, and a
+  /// failure part-way rolls every delete back.
+  ///
+  /// Both store arms' `removeDocumentsWhere`. A database error, and the
+  /// [StateError] of a connection already inside a transaction, are thrown
+  /// as a [VectorStoreException].
+  static int deleteWhere(
+    CommonDatabase db, {
+    required String whereSql,
+    required List<Object?> binds,
+    required SqliteTextIndex? text,
+  }) {
+    try {
+      return runInTransaction<int>(db, () {
+        final ids = [
+          for (final row in db.select(
+            'SELECT id FROM $vecTable WHERE $whereSql',
+            binds,
+          ))
+            row['id'] as String,
+        ];
+        for (final id in ids) {
+          db.execute('DELETE FROM $vecTable WHERE id = ?', [id]);
+          text?.delete(id);
+        }
+        return ids.length;
+      });
+    } on SqliteException catch (e) {
+      throw VectorStoreException('Failed to remove documents', e);
+    } on StateError catch (e) {
+      throw VectorStoreException('Failed to remove documents', e);
+    }
+  }
+
   /// Writes [id] into the index, replacing any previous row for it.
   void upsert({required String id, required String content, String? metadata}) {
     delete(id);

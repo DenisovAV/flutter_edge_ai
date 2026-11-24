@@ -110,10 +110,60 @@ void main() {
     store.configure(_schema);
     await store.initialize(_tempLocation('qrw_store_empty'));
     expect(store.supportsRemoveWhere, isTrue);
+    // By its own message: without the empty-filter check, the unconstrained
+    // check would refuse it too, with another one.
     await expectLater(
       store.removeDocumentsWhere(Filter()),
-      throwsArgumentError,
+      throwsA(
+        isA<ArgumentError>().having(
+          (e) => e.message,
+          'message',
+          contains('is empty'),
+        ),
+      ),
     );
+  });
+
+  test('a closed or latched store reports its own reason first', () async {
+    // Whatever the filter: the store's state, not the filter, is the answer.
+    final unconstrained = Filter(must: [FieldRange(key: 'source', gte: 1)]);
+    final closed = QdrantVectorStore();
+    closed.configure(_schema);
+    await closed.initialize(_tempLocation('qrw_closed'));
+    await closed.close();
+    for (final filter in [Filter(), unconstrained]) {
+      await expectLater(
+        closed.removeDocumentsWhere(filter),
+        throwsStateError,
+        reason: '$filter',
+      );
+    }
+
+    // A second store on a shard the first holds open is latched.
+    final path = _tempLocation('qrw_latched');
+    final owner = await _open(path);
+    await _addChunks(owner);
+    final latched = QdrantVectorStore();
+    addTearDown(latched.close);
+    latched.configure(_schema);
+    await expectLater(
+      latched.initialize(path),
+      throwsA(isA<VectorStoreException>()),
+    );
+    for (final filter in [Filter(), unconstrained]) {
+      await expectLater(
+        latched.removeDocumentsWhere(filter),
+        throwsA(
+          isA<VectorStoreException>().having(
+            (e) => e.message,
+            'message',
+            contains('open elsewhere'),
+          ),
+        ),
+        reason: '$filter',
+      );
+    }
+    expect((await owner.stats()).documentCount, 5);
   });
 
   test('the store refuses a filter that constrains nothing', () async {
@@ -160,7 +210,7 @@ void main() {
           isA<ArgumentError>().having(
             (e) => e.message,
             'message',
-            contains('clear()'),
+            contains('constrains nothing'),
           ),
         ),
         reason: '$filter',

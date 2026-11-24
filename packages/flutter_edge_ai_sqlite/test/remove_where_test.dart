@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:flutter_edge_ai_sqlite/src/sqlite_text_index.dart';
 import 'package:flutter_edge_ai_sqlite/src/testing/parity_cases.dart' as parity;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -145,9 +146,17 @@ void main() {
     store.configure(_schema);
     await store.initialize(_tempDb('rw_store_empty'));
     expect(store.supportsRemoveWhere, isTrue);
+    // By its own message: without the empty-filter check, the unconstrained
+    // check would refuse it too, with another one.
     await expectLater(
       store.removeDocumentsWhere(Filter()),
-      throwsArgumentError,
+      throwsA(
+        isA<ArgumentError>().having(
+          (e) => e.message,
+          'message',
+          contains('is empty'),
+        ),
+      ),
     );
   }, skip: skip);
 
@@ -180,7 +189,7 @@ void main() {
             isA<ArgumentError>().having(
               (e) => e.message,
               'message',
-              contains('clear()'),
+              contains('constrains nothing'),
             ),
           ),
           reason: '$filter',
@@ -208,7 +217,7 @@ void main() {
     final path = _tempDb('rw_busy');
     final store = await _parityStore('rw_busy', path: path);
     final other = sqlite3.open(path);
-    addTearDown(other.dispose);
+    addTearDown(other.close);
     other.execute('BEGIN EXCLUSIVE');
     addTearDown(() => other.execute('ROLLBACK'));
     await expectLater(
@@ -226,6 +235,62 @@ void main() {
       ),
     );
   }, skip: skip);
+
+  test('a connection already in a transaction is a VectorStoreException', () {
+    // runInTransaction refuses to write into a transaction it does not own
+    // with a StateError; removeDocumentsWhere reports it as a store failure,
+    // as it does a database error, and leaves that transaction alone.
+    final db = sqlite3.openInMemory();
+    addTearDown(db.close);
+    db.execute('BEGIN');
+    expect(
+      () => SqliteTextIndex.deleteWhere(
+        db,
+        whereSql: '1',
+        binds: const [],
+        text: null,
+      ),
+      throwsA(
+        isA<VectorStoreException>().having(
+          (e) => e.cause,
+          'cause',
+          isA<StateError>(),
+        ),
+      ),
+    );
+    expect(db.autocommit, isFalse);
+  });
+
+  test('a failure part-way through the delete removes nothing', () async {
+    // The second text-index delete aborts, after one document already left
+    // vec0 and the text index: the transaction takes that one back too.
+    final path = _tempDb('rw_partway');
+    final index = await _open(path);
+    await _addChunks(index);
+    final raw = sqlite3.open(path);
+    addTearDown(raw.close);
+    raw.execute(
+      'CREATE TRIGGER halfway BEFORE DELETE ON rag_text_documents '
+      'WHEN (SELECT count(*) FROM rag_text_documents) < 5 '
+      "BEGIN SELECT RAISE(ABORT, 'halfway'); END",
+    );
+
+    await expectLater(
+      index.removeWhere(_aMd),
+      throwsA(isA<VectorStoreException>()),
+    );
+    expect((await index.stats()).documentCount, 5);
+    expect(await _vectorIds(index), ['a1', 'a2', 'a3', 'b1', 'b2']);
+    expect(await _textIds(index), ['a1', 'a2', 'a3', 'b1', 'b2']);
+  }, skip: skip);
+
+  test('every refused parity case names a case in the table', () {
+    final names = {for (final c in parity.cases) c.name};
+    expect(parity.removeWhereRefused, isNotEmpty);
+    for (final name in parity.removeWhereRefused) {
+      expect(names, contains(name));
+    }
+  });
 
   test('the shared parity table holds for removeWhere', () async {
     // Each case on a fresh copy of the corpus: the filter removes exactly the

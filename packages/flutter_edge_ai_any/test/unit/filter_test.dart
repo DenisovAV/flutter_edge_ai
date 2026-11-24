@@ -24,6 +24,14 @@ void main() {
     expect(parity.cases, hasLength(20));
   });
 
+  test('every refused parity case names a case in the table', () {
+    final names = {for (final c in parity.cases) c.name};
+    expect(parity.removeWhereRefused, isNotEmpty);
+    for (final name in parity.removeWhereRefused) {
+      expect(names, contains(name));
+    }
+  });
+
   group('parity table through the store', () {
     late World w;
     // The store itself, as sqlite's suite does: RagIndex refuses an

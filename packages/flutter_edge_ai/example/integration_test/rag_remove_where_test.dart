@@ -65,6 +65,8 @@ void main() {
           path(await _location('${name}_parity')),
           parity.schema,
         );
+        // Disposed even when an expect below fails; dispose is idempotent.
+        addTearDown(index.dispose);
         for (final d in parity.docs) {
           await index.addVector(
             id: d.id,
@@ -127,6 +129,7 @@ void main() {
       );
       final location = path(await _location('${name}_file'));
       final first = await open(location, schema);
+      addTearDown(first.dispose);
       for (final (id, source) in [
         ('a1', 'a.md'),
         ('a2', 'a.md'),

@@ -1320,6 +1320,9 @@ final class QdrantVectorStore extends VectorStoreRepository {
 
   @override
   Future<int> removeDocumentsWhere(Filter filter) async {
+    // First: a closed or latched store reports its own reason, whatever the
+    // filter.
+    _assertUsable('removeDocumentsWhere');
     if (filter.isEmpty) {
       throw ArgumentError.value(
         filter,
@@ -1328,8 +1331,9 @@ final class QdrantVectorStore extends VectorStoreRepository {
       );
     }
     // Null: every condition constrains nothing (a range with no bound, a
-    // range on a text field, excluding an empty set, or only undeclared
-    // fields), so every document would match: refused like an empty filter.
+    // range on a non-number field, excluding an empty set, or only
+    // undeclared fields), so every document would match: refused like an
+    // empty filter.
     final filterJson = FilterCodec.encode(filter, _filterSchema);
     if (filterJson == null) {
       throw ArgumentError.value(
@@ -1338,7 +1342,6 @@ final class QdrantVectorStore extends VectorStoreRepository {
         'constrains nothing, so it would match every document; use clear()',
       );
     }
-    _assertUsable('removeDocumentsWhere');
     final lease = await _requireEmbeddingProfile('removeDocumentsWhere');
     final checkpoint = qdrantProfileOperationCheckpointForTesting;
     if (checkpoint != null) await checkpoint('removeDocumentsWhere');

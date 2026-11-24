@@ -545,9 +545,9 @@ so compare runs with the same `run.maxNumTokens`.
 
 ## Where it runs today
 
-The runtime and the hook run in Flutter apps on Android, iOS, macOS, Linux
-and Windows, in plain Dart programs on macOS arm64, Linux and Windows, and
-the web arm in a browser page. What an app does itself:
+litertlm_dart runs in Flutter apps (Android, iOS, macOS, Linux, Windows), in
+plain Dart programs (`dart run`, `dart test`, `dart build cli`) on macOS,
+Linux (x64 and arm64) and Windows, and on the web. What an app does itself:
 
 - **Android:** the GPU and the NPU load vendor libraries Android hands out
   only when the app's manifest declares them as `<uses-native-library
@@ -557,10 +557,12 @@ the web arm in a browser page. What an app does itself:
   Google Tensor, and MediaTek's NeuroPilot libraries for MediaTek. For
   `Backend.npu`, pass a `dispatchDir` holding one vendor's dispatch
   libraries, copied out of the APK by the app.
-- **macOS:** two companion frameworks, `GemmaModelConstraintProvider` and
-  `LiteRtLmMetalAccelerator` (on the `native-v*` release as xcframework
-  zips), must be embedded in the app's `Frameworks`; the hook does not do it
-  yet. Without them the engine does not load.
+- **macOS:** in an app, two companion frameworks,
+  `GemmaModelConstraintProvider` and `LiteRtLmMetalAccelerator` (on the
+  `native-v*` release as xcframework zips), must be embedded in the app's
+  `Frameworks`; the hook does not embed them. Without them the engine does
+  not load. A plain Dart program uses the `macos_companions: code_assets`
+  define instead (see [In a plain Dart program](#in-a-plain-dart-program)).
 - **One `libLiteRtLm` per app:** another package that bundles its own
   `libLiteRtLm` through a build hook leaves which build runs undefined.
 
@@ -628,8 +630,8 @@ Linux the program itself is `lib/libdartaot*.so`, run by the executable in
 
 ## Build options
 
-Set under `hooks: user_defines: litertlm_dart:` in the app's pubspec (the
-workspace root's, if the app is a workspace member):
+Set under `hooks: user_defines: litertlm_dart:` in the pubspec of the app or
+program you build (the workspace root's, if it is a workspace member):
 
 ```yaml
 hooks:
@@ -638,7 +640,12 @@ hooks:
       qualcomm_npu: true       # bundle Qualcomm's QNN runtime (Android, Linux arm64)
       google_tensor_npu: true  # Google Tensor G5/G6
       mediatek_npu: true       # MediaTek Dimensity
+      macos_companions: code_assets  # plain Dart on macOS only
 ```
+
+`macos_companions: code_assets` is for a plain Dart program on macOS and
+never goes in a Flutter app's resolution; see
+[In a plain Dart program](#in-a-plain-dart-program).
 
 On the MediaTek NPU every turn runs in a fresh native conversation that
 replays the history: there a conversation answers its second message empty

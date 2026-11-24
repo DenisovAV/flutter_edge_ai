@@ -985,5 +985,48 @@ pipeline. Current measurements show qdrant-edge roughly 5–11× faster at
 1k–10k documents; see the
 [benchmark report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/docs/benchmarks/rag_sqlite_vec_vs_qdrant.md).
 
+### Synced store: any-sync (experimental)
+
+`flutter_edge_ai_any` 0.1.0 is a third provider, `AnyVectorStoreProvider`
+(provider ID `any`), over [any-sync](https://github.com/anyproto/any-sync): a
+location's documents live in an end-to-end encrypted space that syncs between
+one user's devices, and each device keeps its own vector + BM25 index of them,
+so search never touches the network. Every public type is experimental.
+
+- **Native only:** Android arm64, iOS arm64 (device and Apple-silicon
+  simulator), macOS arm64, Linux x64 and arm64, Windows x64. On the web
+  `canHandle` is false and `AnySyncAccount.open` throws.
+- **No default network yet.** The app passes a nodeconf; the production
+  any-sync network is refused until its terms for third-party apps are known,
+  and relays are never enabled. What works is LAN sync between devices of one
+  account.
+- **Last writer wins** by a hybrid clock, and a document synced from a device
+  with another embedding profile is found by text search until a vector is
+  written for it.
+
+```dart
+final account = await AnySyncAccount.open(
+  dataDirectory: '$support/any/sdk',
+  indexDirectory: '$support/any/index',
+  mnemonic: mnemonic,
+  deviceKey: deviceKey,
+  nodeConfYaml: nodeConf,
+);
+final space = await account.createSpace('notes');
+final location = AnySyncLocation(spaceId: space.id, indexName: 'notes');
+final rag = FlutterEdgeAiRag(providers: [AnyVectorStoreProvider(account)]);
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: AnyVectorStoreProvider.providerId,
+    location: location.value,
+    enableTextSearch: true,
+  ),
+  embedder: embedder,
+);
+```
+
+Its [README](https://pub.dev/packages/flutter_edge_ai_any) lists the sync,
+lifecycle and encryption rules to read before relying on it.
+
 **Writing this with a coding assistant?** **dart run skills@ get --all** installs
 the **flutter-edge-ai-rag** skill with these profile, ownership, and filter rules.

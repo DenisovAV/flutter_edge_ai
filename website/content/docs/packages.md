@@ -25,6 +25,7 @@ depend on it. Apps ship only the runtimes and vector stores they use.
 | **`flutter_edge_ai_rag`** | Instance-scoped RAG orchestration, `RagIndex`, stable embedding profiles, filters, and vector-store provider contracts. | All |
 | **`flutter_edge_ai_qdrant`** | qdrant-edge provider for `flutter_edge_ai_rag`, via the official qdrant_edge UniFFI SDK. Fastest on native. | Native (no Web) |
 | **`flutter_edge_ai_sqlite`** | SQLite + `sqlite-vec` provider for `flutter_edge_ai_rag`. Exact + portable. | All (incl. Web) |
+| **`flutter_edge_ai_any`** | **Experimental.** [any-sync](https://github.com/anyproto/any-sync) provider for `flutter_edge_ai_rag`: a location's documents sync end-to-end encrypted between one user's devices, and each device keeps its own vector + BM25 index. No default network yet: LAN sync between an account's devices. See [Synced store](/docs/embeddings-and-rag#synced-store-any-sync-experimental). | Android arm64, iOS arm64, macOS arm64, Linux x64/arm64, Windows x64 (no Web) |
 | **`flutter_edge_ai_agent`** | On-device [agent skills](/docs/agent) — SKILL.md catalog + tool-calling loop (text / JS / native-intent / MCP). | Native, no Web (JS skills: no Linux) |
 | **`flutter_edge_ai_speech`** | On-device [speech](/docs/speech) — speech-to-text + text-to-speech + a `VoiceSession` voice loop (moonshine/Whisper/Parakeet STT + Matcha/Qwen3/Inflect TTS) via the LiteRT C API + `dart:ffi`. | Native (no Web) |
 | **`flutter_edge_ai_diagnostics`** | [Memory diagnostics](/docs/diagnostics) — the anonymous footprint (the memory the OS cannot reclaim) and the memory still available, read from the OS. No native code, no dependency on core. | Android + iOS + macOS + Linux + Windows |
@@ -82,6 +83,7 @@ is on the [Capabilities](/docs/capabilities) page.
 | Generate text embeddings from ONNX/ORT models | `flutter_edge_ai_embeddings` + `flutter_edge_ai_onnx` (`OnnxEmbeddingBackend`) |
 | On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
 | On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
+| A RAG location that syncs between one user's devices (experimental, native, LAN only for now) | `flutter_edge_ai_rag` + `flutter_edge_ai_any` |
 | On-device agent skills the model runs itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
 | Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS + Linux + Windows) | `flutter_edge_ai_diagnostics` |

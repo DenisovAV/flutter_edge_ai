@@ -61,6 +61,10 @@ only the engines, stores and features your app uses — see
   `flutter_edge_ai_sqlite` 2.3.0, `flutter_edge_ai_qdrant` 2.3.0):
   `RagIndex.removeWhere(filter)` removes every matching document and returns
   the count. See [Embeddings & RAG](/docs/embeddings-and-rag).
+- **A synced RAG store** (`flutter_edge_ai_any` 0.1.0, experimental, native
+  only): a `flutter_edge_ai_rag` location that syncs end-to-end encrypted
+  between one user's devices over any-sync, LAN only for now. See
+  [Synced store](/docs/embeddings-and-rag#synced-store-any-sync-experimental).
 - **`litertlm_dart`** (`flutter_edge_ai_litertlm` 1.21.0): the LiteRT-LM
   runtime and its native build hook moved to this package, so NPU flags go
   under `hooks: user_defines: litertlm_dart:`. On Android, Gemma 4 on the GPU

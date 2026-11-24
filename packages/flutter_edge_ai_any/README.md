@@ -1,7 +1,7 @@
 # flutter_edge_ai_any
 
-**Status: experimental, not published.** A
-[flutter_edge_ai_rag](../flutter_edge_ai_rag) vector-store provider over
+**Status: experimental.** A
+[flutter_edge_ai_rag](https://pub.dev/packages/flutter_edge_ai_rag) vector-store provider over
 [any-sync](https://github.com/anyproto/any-sync): a RAG location's documents
 live in an end-to-end encrypted space that syncs between a user's devices,
 and each device keeps its own local vector + BM25 index of them. Search never
@@ -11,6 +11,17 @@ Every public type is `@experimental`. Native platforms only (Android arm64,
 iOS arm64 device and Apple-silicon simulator, macOS arm64, Linux x64 and
 arm64, Windows x64); on the web `AnyVectorStoreProvider.canHandle` is false
 and `AnySyncAccount.open` throws `UnsupportedError`.
+
+## Install
+
+```yaml
+dependencies:
+  flutter_edge_ai_rag: ^1.3.0
+  flutter_edge_ai_any: ^0.1.0
+```
+
+There is no default network yet: see [Network](#network) before you plan on
+sync beyond a LAN.
 
 ## Use
 

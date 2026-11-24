@@ -31,6 +31,7 @@ dependencies:
   flutter_edge_ai_rag: ^1.3.0               # RagIndex, profiles, filters
   flutter_edge_ai_qdrant: ^2.3.0            # qdrant-edge; fastest on native
   flutter_edge_ai_sqlite: ^2.3.0            # sqlite-vec / vec0; all platforms incl. web — needs Flutter 3.47
+  # flutter_edge_ai_any: ^0.1.0             # experimental: any-sync store synced between a user's devices; native only, LAN for now
 
   # Optional — on-device speech (STT + TTS):
   flutter_edge_ai_speech: ^0.6.2               # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop

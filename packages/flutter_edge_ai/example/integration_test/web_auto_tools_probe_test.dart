@@ -86,70 +86,10 @@ void main() {
     report('runtime', liteRtLmWebRuntime);
     final steps = <String>[];
     await tester.runAsync(() async {
-      globalContext.callMethod('eval'.toJS, _capture.toJS);
-      await globalContext
-          .callMethod<JSPromise>('__autoToolsInstall'.toJS)
-          .toDart;
-      final engine = await Engine.create(EngineConfig(modelPath: _modelUrl));
       try {
-        final calls = <String>[];
-        final conversation = await engine.createConversation(
-          ConversationConfig(
-            tools: [
-              Tool(
-                name: 'get_weather',
-                description: 'Get the current weather for a city.',
-                parameters: const {
-                  'type': 'object',
-                  'properties': {
-                    'city': {'type': 'string'},
-                  },
-                  'required': ['city'],
-                },
-                execute: (a) {
-                  calls.add(jsonEncode(a));
-                  return {
-                    'city': a['city'],
-                    'temperature': 18,
-                    'condition': 'rain',
-                  };
-                },
-              ),
-            ],
-          ),
-        );
-        final first = await conversation.sendMessage(
-          Message.user("What's the weather in Paris?"),
-        );
-        report('first_calls', [...calls]);
-        report('first_reply', first.text);
-        report('history_after_first', await _history());
-        steps.add('first');
-
-        final before = calls.length;
-        final stopped = StringBuffer();
-        await for (final piece in conversation.sendMessageStream(
-          Message.user('And in Rome?'),
-        )) {
-          stopped.write(piece.text);
-          if (calls.length > before && piece.text.isNotEmpty) {
-            conversation.cancel();
-          }
-        }
-        report('stopped_calls', calls.sublist(before));
-        report('stopped_reply', stopped.toString());
-        steps.add('stopped');
-
-        final next = await conversation.sendMessage(
-          Message.user('Thanks. Which cities did you look up?'),
-        );
-        report('next_reply', next.text);
-        report('runtime_conversation_options', _options());
-        report('history_after_next', await _history());
-        steps.add('next');
-        await conversation.close();
-      } finally {
-        await engine.close();
+        await _probe(steps);
+      } catch (e, st) {
+        report('error', '$e\n$st');
       }
     });
     report('steps', steps);
@@ -159,4 +99,72 @@ void main() {
     );
     expect(steps, ['first', 'stopped', 'next']);
   });
+}
+
+Future<void> _probe(List<String> steps) async {
+  globalContext.callMethod('eval'.toJS, _capture.toJS);
+  await globalContext.callMethod<JSPromise>('__autoToolsInstall'.toJS).toDart;
+  final engine = await Engine.create(
+    EngineConfig(modelPath: _modelUrl, backend: const Backend.gpu()),
+  );
+  try {
+    final calls = <String>[];
+    final conversation = await engine.createConversation(
+      ConversationConfig(
+        tools: [
+          Tool(
+            name: 'get_weather',
+            description: 'Get the current weather for a city.',
+            parameters: const {
+              'type': 'object',
+              'properties': {
+                'city': {'type': 'string'},
+              },
+              'required': ['city'],
+            },
+            execute: (a) {
+              calls.add(jsonEncode(a));
+              return {
+                'city': a['city'],
+                'temperature': 18,
+                'condition': 'rain',
+              };
+            },
+          ),
+        ],
+      ),
+    );
+    final first = await conversation.sendMessage(
+      Message.user("What's the weather in Paris?"),
+    );
+    report('first_calls', [...calls]);
+    report('first_reply', first.text);
+    report('history_after_first', await _history());
+    steps.add('first');
+
+    final before = calls.length;
+    final stopped = StringBuffer();
+    await for (final piece in conversation.sendMessageStream(
+      Message.user('And in Rome?'),
+    )) {
+      stopped.write(piece.text);
+      if (calls.length > before && piece.text.isNotEmpty) {
+        conversation.cancel();
+      }
+    }
+    report('stopped_calls', calls.sublist(before));
+    report('stopped_reply', stopped.toString());
+    steps.add('stopped');
+
+    final next = await conversation.sendMessage(
+      Message.user('Thanks. Which cities did you look up?'),
+    );
+    report('next_reply', next.text);
+    report('runtime_conversation_options', _options());
+    report('history_after_next', await _history());
+    steps.add('next');
+    await conversation.close();
+  } finally {
+    await engine.close();
+  }
 }

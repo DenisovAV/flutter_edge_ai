@@ -291,14 +291,18 @@ print(reply.text);
 `execute` may be `async` and returns any JSON value (a map, a list, a
 string, a number, a bool or null). If it throws, or returns something that is
 not JSON, the model gets the error as text (`Error: …`) and answers on; a
-call to a name no tool declares gets `Error: Tool not found: <name>`. After 25
+call to a name no tool declares gets `Error: Tool not found: <name>` and does
+not stop the loop. Each of these is also printed as a warning. After 25
 rounds of calls in one message (Kotlin's and Swift's limit) the send fails
 with a `TurnFailedException`. `sendMessageStream` streams the text and thought
 of every round, not the calls it ran; `sendMessage` returns the last answer.
-A stop (`cancel()` or a cancelled subscription) also stops the loop: a stop
-while the tools run ends the reply with their calls, whose results are not
-sent. With a `responseFormat`, a message goes without it while a tool has
-`execute`, so the model can call it; the replies to tool results keep it.
+A stop (`cancel()` or a cancelled subscription) also stops the loop. A stop
+while the tools run ends the reply with their calls: they have run, only their
+results were not sent to the model, so do not run them again blindly. A close
+while the tools run ends the reply at once with `ConversationClosedException`.
+Natively, with a `responseFormat`, a message goes without it while a tool has
+`execute`, so the model can call it; the replies to tool results keep it (the
+web refuses a `responseFormat`).
 
 To run the calls yourself, leave `execute` out (a reply calling such a tool is
 returned to you with nothing run, even beside calls that have it) or set

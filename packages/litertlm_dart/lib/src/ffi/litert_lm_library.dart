@@ -43,9 +43,10 @@ DynamicLibrary openLiteRtLmLibrary() {
   }
   if (Platform.isMacOS) {
     // In a plain Dart program, the code asset (macos_load_error.dart).
+    final dir = liteRtLmOutsideFlutter ? macOSCodeAssetDir() : null;
     return requireOwnLiteRtLmBuild(
-      openMacOSLiteRtLm(),
-      liteRtLmOutsideFlutter ? macOSLiteRtLmAssetFile : macOSLiteRtLmFramework,
+      openMacOSLiteRtLm(codeAssetDir: () => dir),
+      dir == null ? macOSLiteRtLmFramework : '$dir/$macOSLiteRtLmAssetFile',
     );
   }
   if (Platform.isAndroid) {
@@ -67,7 +68,7 @@ DynamicLibrary openLiteRtLmLibrary() {
   // A plain Dart program has no bundle to look the library up in: there it
   // is opened by its absolute path in the code assets' directory
   // (native_asset_dir.dart).
-  final assetDir = liteRtLmOutsideFlutter ? nativeAssetDir : null;
+  final assetDir = liteRtLmOutsideFlutter ? requireNativeAssetDir() : null;
   if (Platform.isLinux) {
     // RUNPATH $ORIGIN: its NEEDED libLiteRt.so and
     // libGemmaModelConstraintProvider.so resolve from the bundle's lib/ (in

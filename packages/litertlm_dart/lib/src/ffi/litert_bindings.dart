@@ -240,12 +240,14 @@ DynamicLibrary _openLiteRt() {
     // named, so whatever comes back from the dev copies passes the check.
     // A plain Dart program built with `macos_companions: code_assets` opens
     // its code asset and nothing else (macos_load_error.dart).
+    final dir = liteRtLmOutsideFlutter ? macOSCodeAssetDir() : null;
     return requireOwnLiteRtLmBuild(
       openMacOSLiteRtLmForTflite(
         devCandidates: _devLiteRtLmCandidates,
         isOwnBuild: isUsableLiteRtLmBuild,
+        codeAssetDir: () => dir,
       ),
-      macOSLiteRtLmFramework,
+      dir == null ? macOSLiteRtLmFramework : '$dir/$macOSLiteRtLmAssetFile',
     );
   }
   if (Platform.isIOS) {
@@ -306,7 +308,7 @@ DynamicLibrary _openLiteRt() {
   //
   // A plain Dart program has no bundle: there the code assets' directory
   // (native_asset_dir.dart), by absolute path.
-  final assetDir = liteRtLmOutsideFlutter ? nativeAssetDir : null;
+  final assetDir = liteRtLmOutsideFlutter ? requireNativeAssetDir() : null;
   if (Platform.isLinux) {
     return DynamicLibrary.open(
       assetDir == null

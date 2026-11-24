@@ -2054,7 +2054,7 @@ class LiteRtLmFfiClient {
       //
       // A plain Dart program has no bundle: there the code assets' directory
       // (native_asset_dir.dart), and every open takes an absolute path.
-      final assetDir = liteRtLmOutsideFlutter ? nativeAssetDir : null;
+      final assetDir = liteRtLmOutsideFlutter ? requireNativeAssetDir() : null;
       final libDir =
           assetDir ?? '${File(Platform.resolvedExecutable).parent.path}/lib';
       // The preload takes the same absolute path, for the same reason: a
@@ -2093,6 +2093,11 @@ class LiteRtLmFfiClient {
         'libLiteRtWebGpuAccelerator.so',
         'libLiteRtLm.so',
       ]) {
+        // A plain Dart program runs on the CPU only (plain_dart_backends.dart),
+        // so it does not load the GPU accelerator (and its Dawn) at all.
+        if (assetDir != null && name == 'libLiteRtWebGpuAccelerator.so') {
+          continue;
+        }
         final fullPath = '$libDir/$name';
         final pathPtr = fullPath.toNativeUtf8();
         final handle = loadGlobal(pathPtr);
@@ -2122,7 +2127,7 @@ class LiteRtLmFfiClient {
       // (native_asset_dir.dart), and the preloads go through LoadLibraryExW
       // with the flag stream_proxy_load_global passes, which takes a path
       // outside the ANSI code page (the user's profile, for `dart run`).
-      final assetDir = liteRtLmOutsideFlutter ? nativeAssetDir : null;
+      final assetDir = liteRtLmOutsideFlutter ? requireNativeAssetDir() : null;
       String bundled(String name) =>
           assetDir == null ? name : nativeAssetPath(assetDir, name);
       proxyLib = openBundledWindowsLibrary(
@@ -2135,6 +2140,11 @@ class LiteRtLmFfiClient {
             Pointer Function(Pointer<Utf8>)
           >('stream_proxy_load_global');
       for (final name in windowsPreloadLibraries) {
+        // A plain Dart program runs on the CPU only (plain_dart_backends.dart),
+        // so it does not load the GPU accelerator (and its Dawn) at all.
+        if (assetDir != null && name == 'libLiteRtWebGpuAccelerator.dll') {
+          continue;
+        }
         if (assetDir != null) {
           try {
             loadWindowsAssetWithItsDirectory(bundled(name));

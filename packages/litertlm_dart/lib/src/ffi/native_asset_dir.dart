@@ -42,9 +42,10 @@ const streamProxyAnchorSymbol = 'stream_proxy_load_global';
 external Pointer<Void> _streamProxyAnchor(Pointer<Utf8> path);
 
 /// The directory this package's code assets are in, in a plain Dart program;
-/// null when it cannot be told (the program was not built with this
-/// package's build hook, as with `dart compile exe`, or the loader does not
-/// say). Resolved once per isolate (a top-level is per isolate).
+/// null when it cannot be told: the program was not built with this
+/// package's build hook (as with `dart compile exe`), the loader does not
+/// say, or the directory is not ours ([checkedAssetDir]). Resolved once per
+/// isolate (a top-level is per isolate).
 ///
 /// On Windows the standard handles are aligned first
 /// ([alignWindowsStdHandlesOnce]): resolving the symbol loads StreamProxy.dll,
@@ -52,6 +53,13 @@ external Pointer<Void> _streamProxyAnchor(Pointer<Utf8> path);
 String? get nativeAssetDir => _nativeAssetDir;
 
 final String? _nativeAssetDir = _resolveNativeAssetDir();
+
+/// The file name of libLiteRtLm among the code assets on this OS.
+String get liteRtLmAssetFile => Platform.isWindows
+    ? 'LiteRtLm.dll'
+    : Platform.isMacOS
+    ? 'libLiteRtLm.dylib'
+    : 'libLiteRtLm.so';
 
 String? _resolveNativeAssetDir() {
   if (Platform.isWindows) alignWindowsStdHandlesOnce();
@@ -62,16 +70,58 @@ String? _resolveNativeAssetDir() {
           _streamProxyAnchor,
         ).cast();
   } on ArgumentError {
-    // No asset under that id in this program.
+    // The symbol resolved nowhere: neither an asset under that id nor the
+    // process has it.
     return null;
   }
   final module = Platform.isWindows
       ? _windowsModulePath(address)
       : _dladdrModulePath(address);
-  return module == null
-      ? null
-      : directoryOfModule(module, windows: Platform.isWindows);
+  return checkedAssetDir(
+    module == null
+        ? null
+        : directoryOfModule(module, windows: Platform.isWindows),
+    mainLibraryFile: liteRtLmAssetFile,
+    exists: (path) => File(path).existsSync(),
+  );
 }
+
+/// [dir], the directory of the file the anchor symbol resolved to, when it
+/// is this package's code assets: it holds libLiteRtLm under its asset file
+/// name ([mainLibraryFile]). When no asset has the anchor's id, the VM looks
+/// the symbol up in the process instead, and a StreamProxy some other code
+/// loaded by name would answer; its directory is not ours. Null otherwise.
+@visibleForTesting
+String? checkedAssetDir(
+  String? dir, {
+  required String mainLibraryFile,
+  required bool Function(String path) exists,
+}) {
+  if (dir == null) return null;
+  return exists(
+        pathInAssetDir(dir, mainLibraryFile, windows: Platform.isWindows),
+      )
+      ? dir
+      : null;
+}
+
+/// The message when a plain Dart program has no code assets of this package
+/// to load LiteRT-LM from.
+const plainDartNoAssetsMessage =
+    'litertlm_dart: LiteRT-LM\'s native libraries are not among this Dart '
+    "program's code assets, so it cannot load. Run it with dart run or dart "
+    'test, or build it with dart build cli, which run its build hook; dart '
+    'compile exe runs no build hooks and cannot bundle LiteRT-LM.';
+
+/// [nativeAssetDir] in a plain Dart program; an [ArgumentError] with
+/// [plainDartNoAssetsMessage] when there is none, never a fall back to the
+/// lookup of a Flutter app.
+String requireNativeAssetDir() => requireAssetDir(nativeAssetDir);
+
+/// [dir], or the [ArgumentError] of [requireNativeAssetDir] when it is null.
+@visibleForTesting
+String requireAssetDir(String? dir) =>
+    dir ?? (throw ArgumentError(plainDartNoAssetsMessage));
 
 /// The directory of [modulePath], the file a loader reported: everything
 /// before its last separator (`/`, and on Windows also `\`). Null when
@@ -166,17 +216,18 @@ String? _windowsModulePath(Pointer<Void> address) {
       return null;
     }
     // A buffer that is filled to its end may have cut the path: grow it.
-    for (var size = 260; size <= 32768; size *= 2) {
+    for (var size = 260; ; size = size * 2 > 32768 ? 32768 : size * 2) {
       final buffer = calloc<Uint16>(size);
       try {
         final length = getModuleFileName(module.value, buffer.cast(), size);
         if (length == 0) return null;
         if (length < size) return buffer.cast<Utf16>().toDartString();
+        // The longest path Windows has, and it was cut.
+        if (size == 32768) return null;
       } finally {
         calloc.free(buffer);
       }
     }
-    return null;
   } finally {
     calloc.free(module);
   }
@@ -190,7 +241,7 @@ const _loadWithAlteredSearchPath = 0x8;
 /// `stream_proxy_load_global` a preload), and leaves it loaded. Unicode-safe,
 /// unlike the ANSI `stream_proxy_load_global`: the asset directory of `dart
 /// run` is under the user's profile. Throws an [ArgumentError] naming the
-/// Windows error when it does not load.
+/// path when it does not load.
 void loadWindowsAssetWithItsDirectory(String path) {
   alignWindowsStdHandlesOnce();
   final kernel32 = DynamicLibrary.open('kernel32.dll');
@@ -199,15 +250,11 @@ void loadWindowsAssetWithItsDirectory(String path) {
         IntPtr Function(Pointer<Utf16>, IntPtr, Uint32),
         int Function(Pointer<Utf16>, int, int)
       >('LoadLibraryExW');
-  final getLastError = kernel32
-      .lookupFunction<Uint32 Function(), int Function()>('GetLastError');
   final name = path.toNativeUtf16();
   try {
     if (loadLibraryEx(name, 0, _loadWithAlteredSearchPath) == 0) {
-      throw ArgumentError(
-        'LoadLibraryExW could not load $path (Windows error '
-        '${getLastError()})',
-      );
+      // No error code: the VM may reset GetLastError before Dart reads it.
+      throw ArgumentError('LoadLibraryExW could not load $path');
     }
   } finally {
     calloc.free(name);

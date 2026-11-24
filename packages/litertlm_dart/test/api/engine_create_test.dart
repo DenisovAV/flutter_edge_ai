@@ -70,10 +70,20 @@ class _BenchClient extends LiteRtLmFfiClient {
 }
 
 class _Host extends EngineHost implements LiteRtLmNpuHost {
-  _Host({this.abiName = 'macos_arm64', this.npuShips = false, this.client});
+  _Host({
+    this.abiName = 'macos_arm64',
+    this.npuShips = false,
+    this.client,
+    this.outsideFlutter = false,
+  });
 
   final String abiName;
   final bool npuShips;
+
+  /// False by default: the backend rules below are those of a Flutter app.
+  /// A plain Dart program runs on the CPU only (the test of that).
+  @override
+  final bool outsideFlutter;
 
   /// The client every create gets; null: a fresh real one.
   final LiteRtLmFfiClient? client;
@@ -828,5 +838,53 @@ void main() {
       await e.close();
     }
     expect(host.nativeLevels, [LiteRtLmLogLevel.silent, null]);
+  });
+
+  test('a plain Dart program runs on the CPU only: a GPU or NPU engine or '
+      'encoder is refused by name before any engine, never moved', () async {
+    host = _Host(outsideFlutter: true);
+    debugEngineHost = host;
+    final path = write('enc.litertlm', _bundle(vision: 'gpu'));
+    for (final (backend, vision, audio, named) in [
+      (const Backend.gpu(), null, null, 'The engine on Backend.gpu()'),
+      (Backend.npu(), null, null, 'The engine on Backend.npu()'),
+      (null, const Backend.gpu(), null, 'The vision encoder on Backend.gpu()'),
+      (null, null, Backend.npu(), 'The audio encoder on Backend.npu()'),
+    ]) {
+      await expectLater(
+        create(
+          path,
+          backend: backend,
+          visionBackend: vision,
+          audioBackend: audio,
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains(named),
+              contains('not supported outside Flutter'),
+              contains('CPU only'),
+            ),
+          ),
+        ),
+        reason: named,
+      );
+    }
+    expect(host.creates, isEmpty);
+    expect(host.prepared, isEmpty, reason: 'no NPU dispatch prepared');
+
+    final cpu = await create(
+      write('g.litertlm', _bundle()),
+      visionBackend: const Backend.cpu(),
+      audioBackend: const Backend.cpu(),
+    );
+    expect(host.creates.single.backend, 'cpu');
+    await cpu.close();
+  });
+
+  test('the real host is a plain Dart program under dart test', () {
+    expect(const EngineHost().outsideFlutter, isTrue);
   });
 }

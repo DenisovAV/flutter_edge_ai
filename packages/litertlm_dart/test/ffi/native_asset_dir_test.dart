@@ -323,22 +323,16 @@ void main() {
 
   test('a plain Dart program on Windows loads the GPU libraries from the '
       'code assets in order, and names the one that did not load', () {
+    resetWindowsGpuAssetsPreload();
+    addTearDown(resetWindowsGpuAssetsPreload);
     final loaded = <String>[];
-    preloadWindowsGpuAssets(r'C:\a\lib', load: loaded.add);
-    expect(loaded, [
-      for (final name in windowsGpuAssetLibraries) 'C:\\a\\lib\\$name',
-    ]);
-    loaded.clear();
+    void failing(String path) {
+      if (path.endsWith('dxcompiler.dll')) throw ArgumentError('error 126');
+      loaded.add(path);
+    }
+
     expect(
-      () => preloadWindowsGpuAssets(
-        r'C:\a\lib',
-        load: (path) {
-          if (path.endsWith('dxcompiler.dll')) {
-            throw ArgumentError('error 126');
-          }
-          loaded.add(path);
-        },
-      ),
+      () => preloadWindowsGpuAssets(r'C:\a\lib', load: failing),
       throwsA(
         isA<Exception>().having(
           (e) => '$e',
@@ -348,5 +342,22 @@ void main() {
       ),
     );
     expect(loaded.last, endsWith('dxil.dll'), reason: 'stops at the failure');
+    // A failed run is tried again, whole.
+    loaded.clear();
+    preloadWindowsGpuAssets(r'C:\a\lib', load: loaded.add);
+    expect(loaded, [
+      for (final name in windowsGpuAssetLibraries) 'C:\\a\\lib\\$name',
+    ]);
+  });
+
+  test('the Windows GPU libraries are loaded once per isolate: every later '
+      'open of LiteRtLm.dll skips them', () {
+    resetWindowsGpuAssetsPreload();
+    addTearDown(resetWindowsGpuAssetsPreload);
+    final loaded = <String>[];
+    for (var i = 0; i < 3; i++) {
+      preloadWindowsGpuAssets(r'C:\a\lib', load: loaded.add);
+    }
+    expect(loaded, hasLength(windowsGpuAssetLibraries.length));
   });
 }

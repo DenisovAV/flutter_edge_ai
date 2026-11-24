@@ -396,15 +396,27 @@ const windowsGpuAssetLibraries = [
   'libLiteRtWebGpuAccelerator.dll',
 ];
 
+/// The code assets' directory [preloadWindowsGpuAssets] has loaded
+/// [windowsGpuAssetLibraries] from in this isolate (a top-level is per
+/// isolate); null before its first success.
+String? _windowsGpuAssetsLoadedFrom;
+
+/// Forgets that [preloadWindowsGpuAssets] has run, so a test can run it again.
+@visibleForTesting
+void resetWindowsGpuAssetsPreload() => _windowsGpuAssetsLoadedFrom = null;
+
 /// Loads [windowsGpuAssetLibraries] from [assetDir], in order
 /// ([loadWindowsAssetWithItsDirectory]), before a plain Dart program opens
-/// LiteRtLm.dll or LiteRt.dll on Windows. Throws an [Exception] naming the
-/// file that did not load: the CPU needs none of them, but each is in every
-/// Windows build, so a missing one is a broken bundle, not a CPU-only one.
+/// LiteRtLm.dll or LiteRt.dll on Windows; once per isolate, since the opener
+/// of the EmbeddingGemma 2 pass and option scoring runs per operation, and a
+/// loaded DLL stays loaded. A failed run is tried again by the next call.
+/// Throws an [Exception] naming the file that did not load: each is in every
+/// Windows build, so a missing one is a broken bundle.
 void preloadWindowsGpuAssets(
   String assetDir, {
   void Function(String path) load = loadWindowsAssetWithItsDirectory,
 }) {
+  if (_windowsGpuAssetsLoadedFrom == assetDir) return;
   for (final name in windowsGpuAssetLibraries) {
     final path = pathInAssetDir(assetDir, name, windows: true);
     try {
@@ -416,4 +428,5 @@ void preloadWindowsGpuAssets(
       );
     }
   }
+  _windowsGpuAssetsLoadedFrom = assetDir;
 }

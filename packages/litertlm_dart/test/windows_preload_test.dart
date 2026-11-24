@@ -109,6 +109,15 @@ void main() {
     expect(list.toSet(), hasLength(list.length));
   });
 
+  test('the two Windows load lists name their shared libraries in one order, '
+      'so a plain Dart program and an app cannot drift apart', () {
+    final shared = windowsGpuAssetLibraries
+        .where(windowsPreloadLibraries.contains)
+        .toList();
+    expect(shared, ['LiteRt.dll', 'libLiteRtWebGpuAccelerator.dll']);
+    expect(windowsPreloadLibraries.where(shared.contains).toList(), shared);
+  });
+
   test('every Windows extra the hook registers is a file of the archive', () {
     final extras = [
       for (final name in _hookList(hook, 'windowsExtraLibs')) '$name.dll',

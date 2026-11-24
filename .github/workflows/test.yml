@@ -423,6 +423,46 @@ jobs:
   # hook and loads LiteRtLm.dll from the directory the Dart SDK copied the
   # code assets into (native_asset_dir.dart), no model needed. Linux runs the
   # same suites in tool/test_all.sh, macOS in the macOS job.
+  # Linux arm64 (Qualcomm IoT boards, arm servers): litertlm_dart's own
+  # suites, the adapter's host suites and the plain-Dart load check on a real
+  # arm64 host. Flutter publishes no linux-arm64 archive, so the SDK comes from
+  # a stable clone, which bootstraps an arm64 Dart SDK itself.
+  test-litertlm-dart-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter (stable clone)
+        run: |
+          git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Test litertlm_dart
+        working-directory: packages/litertlm_dart
+        run: dart test
+
+      - name: Test flutter_edge_ai_litertlm (host)
+        working-directory: packages/flutter_edge_ai_litertlm
+        run: flutter test
+
+      - name: litertlm_dart loads in plain Dart (dart run, moved dart build cli)
+        working-directory: packages/litertlm_dart/tool/plain_dart_check
+        run: |
+          dart pub get
+          dart run bin/plain_dart_check.dart
+          dart build cli -o "$RUNNER_TEMP/plain_dart_check_build"
+          mv "$RUNNER_TEMP/plain_dart_check_build/bundle" "$RUNNER_TEMP/plain_dart_check_moved"
+          cd / && "$RUNNER_TEMP/plain_dart_check_moved/bin/plain_dart_check"
+
   test-litertlm-dart-windows:
     runs-on: windows-latest
     timeout-minutes: 20

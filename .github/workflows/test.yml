@@ -394,3 +394,33 @@ jobs:
       - name: Test flutter_edge_ai_diagnostics (Windows host group included)
         working-directory: packages/flutter_edge_ai_diagnostics
         run: flutter test
+
+  # litertlm_dart in a plain Dart program on Windows: `dart test` runs the
+  # hook and loads LiteRtLm.dll from the directory the Dart SDK copied the
+  # code assets into (native_asset_dir.dart), no model needed. Linux runs the
+  # same suites in tool/test_all.sh, macOS in the macOS job.
+  test-litertlm-dart-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Test the plain-Dart load path of litertlm_dart
+        working-directory: packages/litertlm_dart
+        run: >-
+          dart test
+          test/ffi/native_asset_dir_test.dart
+          test/ffi/library_load_off_main_isolate_test.dart
+          test/ffi/windows_std_handles_test.dart
+          test/ffi/windows_std_handles_windows_test.dart

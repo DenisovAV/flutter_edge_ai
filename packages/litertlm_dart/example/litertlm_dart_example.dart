@@ -1,9 +1,9 @@
 // Loads a `.litertlm` model and streams a reply, the same code natively and
 // on the web.
 //
-// Natively: `dart run example/litertlm_dart_example.dart <model.litertlm>`
-// inside a Flutter app (see the README's "Where it runs today"); the build
-// hook bundles libLiteRtLm.
+// Natively inside a Flutter app (see the README's "Where it runs today"); the
+// build hook bundles libLiteRtLm. A plain Dart program runs on the CPU only:
+// see example/cli.
 //
 // On the web: compile it into a page whose index.html loads @litert-lm/core
 // 0.19.0 (the README's "On the web"), with a URL the page can fetch, e.g.

@@ -197,10 +197,13 @@ class InferenceChat {
   /// message's text as the session counts it, 257 per image, and each reply;
   /// audio is not counted.
   ///
-  /// When a message about to be queued, or a reply, takes the count to
-  /// `maxTokens - tokenBuffer`, the chat drops the oldest messages the model
-  /// holds and rebuilds its session from the rest, before the message is sent
-  /// or after the reply. [fullHistory] keeps every message.
+  /// When a message about to be queued takes the count to
+  /// `maxTokens - tokenBuffer`, the chat drops the oldest exchanges the model
+  /// holds and rebuilds its session from the rest before the message is sent;
+  /// when even dropping all of them would not make room, nothing is dropped
+  /// and the engine refuses the turn. A streamed reply that reaches it trims
+  /// after the reply; [generateChatResponse] counts its reply and leaves the
+  /// trim to the next message. [fullHistory] keeps every message.
   int get currentTokens {
     final current = _sessionIfAny;
     return (current == null ? null : _hooks.tokenCount(_engine(current))) ??
@@ -275,20 +278,36 @@ class InferenceChat {
       );
     }
 
-    // Before anything of this message reaches the session: a message that
-    // would take the count to the limit first drops the oldest history, as a
-    // reply that reaches it does. Messages already queued for the coming turn
-    // are kept.
+    // Only add tools prompt for the first user text message (not a tool response)
+    // and only if the model supports function calls.
+    // Runtime-injected declarations are exempt: when the runtime/SDK renders the
+    // tools itself (today the `tools_json` LiteRT-LM gets at conversation
+    // creation for Gemma 4 and for FunctionGemma on .litertlm; in future, e.g. a
+    // web Prompt API arm passing native `tools`), a Dart-side prompt injection
+    // would double-wrap them. Gated on [runtimeInjectsToolDeclarations], not a
+    // hardcoded model type.
+    final sendsToolsPrompt =
+        message.isUser &&
+        message.type == MessageType.text &&
+        !_toolsInstructionSent &&
+        tools.isNotEmpty &&
+        !noTool &&
+        supportsFunctionCalls &&
+        toolChoice != ToolChoice.none &&
+        !runtimeInjectsToolDeclarations;
+    final toolsPromptMessage = sendsToolsPrompt
+        ? Message(text: createToolsPrompt(), isUser: true)
+        : null;
+
+    // Sized before anything reaches the session, so a failed count sends
+    // nothing. A message (with the tools prompt going out before it) that
+    // would take the count to the limit first drops the oldest history, as
+    // a reply that reaches it does.
+    final toolsSize = toolsPromptMessage == null
+        ? 0
+        : await _tokensOf(toolsPromptMessage);
     final size = await _tokensOf(messageToSend);
-    final used = _hooks.tokenCount(_engine(session)) ?? _currentTokens;
-    if (used + size >= maxTokens - tokenBuffer &&
-        _hooks.history(_engine(session)) == null &&
-        _droppableMessages > 0) {
-      edgeAiLog(
-        'InferenceChat: Token limit reached before a turn, trimming...',
-      );
-      await _recreateSessionWithReducedChunks(incoming: size);
-    }
+    await _trimBeforeTurn(messageToSend, incoming: toolsSize + size);
 
     _stagedFrom ??= (
       full: _fullHistory.length,
@@ -298,34 +317,12 @@ class InferenceChat {
       toolsInstructionSent: _toolsInstructionSent,
     );
 
-    // Only add tools prompt for the first user text message (not a tool response)
-    // and only if the model supports function calls.
-    // Runtime-injected declarations are exempt: when the runtime/SDK renders the
-    // tools itself (today the `tools_json` LiteRT-LM gets at conversation
-    // creation for Gemma 4 and for FunctionGemma on .litertlm; in future, e.g. a
-    // web Prompt API arm passing native `tools`), a Dart-side prompt injection
-    // would double-wrap them. Gated on [runtimeInjectsToolDeclarations], not a
-    // hardcoded model type.
-    if (message.isUser &&
-        message.type == MessageType.text &&
-        !_toolsInstructionSent &&
-        tools.isNotEmpty &&
-        !noTool &&
-        supportsFunctionCalls &&
-        toolChoice != ToolChoice.none &&
-        !runtimeInjectsToolDeclarations) {
-      _toolsInstructionSent = true;
-      final toolsPrompt = createToolsPrompt();
-
-      // Create tools prompt message for both storage and session
-      final toolsPromptMessage = Message(text: toolsPrompt, isUser: true);
-
-      // Send to session
+    if (toolsPromptMessage != null) {
       await session.addQueryChunk(toolsPromptMessage);
-      _currentTokens += await _tokensOf(toolsPromptMessage);
-
-      // Store in _prefixes for replay
+      // Stored in _prefixes for replay, and counted, once it was sent.
       _prefixes.add(toolsPromptMessage);
+      _currentTokens += toolsSize;
+      _toolsInstructionSent = true;
     } else if (!supportsFunctionCalls && tools.isNotEmpty && !noTool) {
       // Log warning if model doesn't support function calls but tools are provided
       edgeAiLog(
@@ -604,6 +601,7 @@ class InferenceChat {
           );
           _fullHistory.add(toolCallMessage);
           _modelHistory.add(toolCallMessage);
+          _currentTokens += await _tokensOf(toolCallMessage);
           if (allCalls.length == 1) return allCalls.first;
           return ParallelFunctionCallResponse(calls: allCalls);
         }
@@ -640,6 +638,7 @@ class InferenceChat {
         );
         _fullHistory.add(toolCallMessage);
         _modelHistory.add(toolCallMessage);
+        _currentTokens += await _tokensOf(toolCallMessage);
         edgeAiLog(
           'InferenceChat: Added tool call to history: ${toolCallMessage.text}',
           level: EdgeAiLogLevel.verbose,
@@ -651,8 +650,10 @@ class InferenceChat {
       }
     }
 
-    // Regular text response
+    // Regular text response, counted as the streamed path counts it; the
+    // trim it may call for runs before the next message is sent.
     _commitText(cleanedResponse);
+    _currentTokens += await session.sizeInTokens(cleanedResponse);
 
     // Clear model history for single-turn models (e.g., FunctionGemma)
     if (_isSingleTurnModel) {
@@ -814,9 +815,10 @@ class InferenceChat {
   }
 
   /// A session rebuild that failed after a structured reply whose own
-  /// failure was that turn's error. The chat still holds the session it
-  /// closed, so every later turn throws this instead of a misleading "session
-  /// is closed", until [clearHistory] gets the chat a new session.
+  /// failure was that turn's error, or in the trim before a message is sent.
+  /// The chat still holds the session it closed, so every later turn throws
+  /// this instead of a misleading "session is closed", until [clearHistory]
+  /// gets the chat a new session.
   ({Object error, StackTrace stack})? _failedRebuild;
 
   void _throwIfRebuildFailed() {
@@ -1547,15 +1549,120 @@ class InferenceChat {
       await session.sizeInTokens(message.text) +
       _imageCount(message) * _tokensPerImage;
 
-  /// How many of the oldest [_modelHistory] messages a trim may drop: all of
-  /// them, except those queued for the coming turn.
-  int get _droppableMessages => _stagedFrom?.model ?? _modelHistory.length;
+  /// How many of the oldest [_modelHistory] messages a trim may drop: none
+  /// of those queued for the coming turn, and none of the tool calls still
+  /// waiting for their responses, or answered by a response being queued
+  /// ([incoming] or a queued one): a response without its call poisons the
+  /// turns after it.
+  int _keepFrom(Message? incoming) {
+    var keep = _stagedFrom?.model ?? _modelHistory.length;
+    final answering =
+        incoming?.type == MessageType.toolResponse ||
+        (keep < _modelHistory.length &&
+            _modelHistory[keep].type == MessageType.toolResponse);
+    if (answering) {
+      while (keep > 0 &&
+          _modelHistory[keep - 1].type == MessageType.toolResponse) {
+        keep--;
+      }
+    }
+    while (keep > 0 && _modelHistory[keep - 1].type == MessageType.toolCall) {
+      keep--;
+    }
+    return keep;
+  }
 
-  /// Rebuilds the session from the history left after dropping its oldest
-  /// messages until the count, plus [incoming] tokens about to be queued, is
-  /// below `maxTokens - tokenBuffer`. Messages queued for the coming turn are
-  /// never dropped; the take-back point of that turn moves with the drop.
-  Future<void> _recreateSessionWithReducedChunks({int incoming = 0}) async {
+  /// How many of the oldest [_modelHistory] messages to drop, and the tokens
+  /// they hold, so that the count plus [incoming] is below
+  /// `maxTokens - tokenBuffer`, dropping only the first [keep] messages and
+  /// in whole exchanges (a tool call with the responses that follow it).
+  /// Every message is sized before anything changes, so a count that throws
+  /// leaves the chat as it was. With [mustFit], null when dropping all [keep]
+  /// would still not fit.
+  Future<({int count, int tokens})?> _planDrop({
+    required int incoming,
+    required int keep,
+    bool mustFit = false,
+  }) async {
+    final limit = maxTokens - tokenBuffer;
+    var count = 0;
+    var tokens = 0;
+    while (_currentTokens - tokens + incoming >= limit && count < keep) {
+      var end = count + 1;
+      if (_modelHistory[count].type == MessageType.toolCall) {
+        while (end < keep &&
+            (_modelHistory[end].type == MessageType.toolCall ||
+                _modelHistory[end].type == MessageType.toolResponse)) {
+          end++;
+        }
+      }
+      for (var i = count; i < end; i++) {
+        tokens += await _tokensOf(_modelHistory[i]);
+      }
+      count = end;
+    }
+    if (mustFit && _currentTokens - tokens + incoming >= limit) return null;
+    return (count: count, tokens: tokens);
+  }
+
+  /// Drops the first [count] [_modelHistory] messages, which hold [tokens];
+  /// the take-back point of the turn being queued moves with them.
+  void _drop(int count, int tokens) {
+    if (count == 0) return;
+    _modelHistory.removeRange(0, count);
+    _currentTokens -= tokens;
+    if (_stagedFrom case final staged?) {
+      _stagedFrom = (
+        full: staged.full,
+        model: staged.model - count,
+        prefixes: staged.prefixes,
+        tokens: staged.tokens - tokens,
+        toolsInstructionSent: staged.toolsInstructionSent,
+      );
+    }
+  }
+
+  /// A new session holding the prefixes and [_modelHistory].
+  Future<void> _replayIntoNewSession() async {
+    await session.close();
+    session = await sessionCreator!();
+    for (final prefix in _prefixes) {
+      await session.addQueryChunk(prefix);
+    }
+    for (final message in _modelHistory) {
+      await session.addQueryChunk(message);
+    }
+  }
+
+  /// Before [message] (and [incoming] tokens with it) is sent: when that
+  /// takes the count to `maxTokens - tokenBuffer`, drops the oldest history
+  /// and rebuilds the session from the rest. Nothing is dropped when even
+  /// dropping all of it would not make room: the engine then refuses the
+  /// turn and the history stays. A rebuild that fails is thrown by every
+  /// later call, as after a reply, until [clearHistory].
+  Future<void> _trimBeforeTurn(Message message, {required int incoming}) async {
+    final used = _hooks.tokenCount(_engine(session)) ?? _currentTokens;
+    if (used + incoming < maxTokens - tokenBuffer) return;
+    // A session that keeps the transcript itself owns what fits.
+    if (_hooks.history(_engine(session)) != null) return;
+    final keep = _keepFrom(message);
+    if (keep == 0) return;
+    final plan = await _planDrop(incoming: incoming, keep: keep, mustFit: true);
+    if (plan == null || plan.count == 0) return;
+    edgeAiLog('InferenceChat: Token limit reached before a turn, trimming...');
+    _drop(plan.count, plan.tokens);
+    try {
+      await _replayIntoNewSession();
+    } catch (error, stack) {
+      _failedRebuild = (error: error, stack: stack);
+      rethrow;
+    }
+  }
+
+  /// Rebuilds the session after a reply took the count to
+  /// `maxTokens - tokenBuffer`, from the history left after dropping its
+  /// oldest exchanges until the count is below it.
+  Future<void> _recreateSessionWithReducedChunks() async {
     // A session that keeps the transcript itself is rebuilt from it: the
     // engine owns what fits its context.
     final engineHistory = _hooks.history(_engine(session));
@@ -1571,38 +1678,9 @@ class InferenceChat {
       return;
     }
 
-    var dropped = 0;
-    var droppedTokens = 0;
-    final droppable = _droppableMessages;
-    while (_currentTokens + incoming >= (maxTokens - tokenBuffer) &&
-        dropped < droppable) {
-      final size = await _tokensOf(_modelHistory.removeAt(0));
-      _currentTokens -= size;
-      droppedTokens += size;
-      dropped++;
-    }
-    if (_stagedFrom case final staged? when dropped > 0) {
-      _stagedFrom = (
-        full: staged.full,
-        model: staged.model - dropped,
-        prefixes: staged.prefixes,
-        tokens: staged.tokens - droppedTokens,
-        toolsInstructionSent: staged.toolsInstructionSent,
-      );
-    }
-
-    await session.close();
-    session = await sessionCreator!();
-
-    // Replay prefixes first (explicit prefix messages)
-    for (final prefix in _prefixes) {
-      await session.addQueryChunk(prefix);
-    }
-
-    // Then replay model history
-    for (final message in _modelHistory) {
-      await session.addQueryChunk(message);
-    }
+    final plan = (await _planDrop(incoming: 0, keep: _keepFrom(null)))!;
+    _drop(plan.count, plan.tokens);
+    await _replayIntoNewSession();
   }
 
   void _resetHistory() {
@@ -1629,6 +1707,9 @@ class InferenceChat {
         await addQueryChunk(message);
       }
       await _hooks.replayFinished(_engine(session));
+      // The replayed messages are history, not a turn being queued: a later
+      // trim may drop them and a failed turn does not take them back.
+      _stagedFrom = null;
     } catch (error, stack) {
       try {
         _resetHistory();

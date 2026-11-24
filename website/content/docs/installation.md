@@ -28,9 +28,9 @@ dependencies:
   flutter_edge_ai_embeddings: ^2.3.3           # embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via embeddingTokenizers: (needs a backend, e.g. LiteRtEmbeddingBackend above)
 
   # Optional — independent RAG orchestration plus one storage provider:
-  flutter_edge_ai_rag: ^1.2.0               # RagIndex, profiles, filters
-  flutter_edge_ai_qdrant: ^2.2.0            # qdrant-edge; fastest on native
-  flutter_edge_ai_sqlite: ^2.2.0            # sqlite-vec / vec0; all platforms incl. web — needs Flutter 3.47
+  flutter_edge_ai_rag: ^1.3.0               # RagIndex, profiles, filters
+  flutter_edge_ai_qdrant: ^2.3.0            # qdrant-edge; fastest on native
+  flutter_edge_ai_sqlite: ^2.3.0            # sqlite-vec / vec0; all platforms incl. web — needs Flutter 3.47
 
   # Optional — on-device speech (STT + TTS):
   flutter_edge_ai_speech: ^0.6.2               # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop

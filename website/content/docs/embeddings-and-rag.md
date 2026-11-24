@@ -56,16 +56,17 @@ dependencies:
   flutter_edge_ai: ^2.7.2
   flutter_edge_ai_litertlm: ^1.21.1
   flutter_edge_ai_embeddings: ^2.3.3 # tokenizers for .tflite / .onnx models
-  flutter_edge_ai_rag: ^1.2.0
-  flutter_edge_ai_sqlite: ^2.2.0 # all six platforms, including Web
-  # flutter_edge_ai_qdrant: ^2.2.0 # native alternative
+  flutter_edge_ai_rag: ^1.3.0
+  flutter_edge_ai_sqlite: ^2.3.0 # all six platforms, including Web
+  # flutter_edge_ai_qdrant: ^2.3.0 # native alternative
 ```
 
 <Warning>
 
 Upgrade every flutter_edge_ai package together: flutter_edge_ai_litertlm 1.21.0
-and flutter_edge_ai_onnx 0.10.0 need core 2.7.0, and text search needs rag
-1.2.0 with sqlite 2.2.0. The full list is in [Migration](/docs/migration).
+and flutter_edge_ai_onnx 0.10.0 need core 2.7.0, text search needs rag
+1.2.0 with sqlite 2.2.0, and `removeWhere` needs rag 1.3.0 with sqlite or
+qdrant 2.3.0. The full list is in [Migration](/docs/migration).
 
 </Warning>
 

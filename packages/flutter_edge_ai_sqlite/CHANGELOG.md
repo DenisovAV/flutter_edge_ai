@@ -1,4 +1,4 @@
-## Unreleased
+## 2.3.0
 - `removeWhere` on native and web, text index included (#860).
 
 ## 2.2.0

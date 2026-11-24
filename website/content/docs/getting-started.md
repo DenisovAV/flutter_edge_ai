@@ -57,6 +57,10 @@ only the engines, stores and features your app uses — see
   `flutter_edge_ai_sqlite` 2.2.0): `searchText`, `searchHybrid` (RRF) and
   `VectorStoreSpec.enableTextSearch`, with SQLite FTS5 on every platform. See
   [Text and hybrid search](/docs/embeddings-and-rag#text-and-hybrid-search).
+- **Remove documents by filter** (`flutter_edge_ai_rag` 1.3.0,
+  `flutter_edge_ai_sqlite` 2.3.0, `flutter_edge_ai_qdrant` 2.3.0):
+  `RagIndex.removeWhere(filter)` removes every matching document and returns
+  the count. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **`litertlm_dart`** (`flutter_edge_ai_litertlm` 1.21.0): the LiteRT-LM
   runtime and its native build hook moved to this package, so NPU flags go
   under `hooks: user_defines: litertlm_dart:`. On Android, Gemma 4 on the GPU

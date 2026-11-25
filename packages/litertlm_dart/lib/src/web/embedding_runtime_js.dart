@@ -8,6 +8,7 @@
 /// window.litertLmReady = (async () => {
 ///   const m = await import('<liteRtLmWebModuleUrl>');
 ///   window.Engine = m.Engine;
+///   window.LiteRtLmBackend = m.Backend;
 ///   window.EmbeddingEngine = m.EmbeddingEngine;
 ///   return m.Engine;
 /// })();
@@ -33,7 +34,10 @@
 /// [WindowLiteRtLmWebRuntime.readPrefix] is the page's own `fetch()`: the
 /// first bytes of the installed bundle, for its container header.
 ///
-/// With `backend: GPU` (4, the backend the embedder asks for) `create` sets
+/// The `Backend` ids sent are the page's own (`window.LiteRtLmBackend`,
+/// web_backend_ids.dart): 0.20.0 renumbered them.
+///
+/// With `backend: GPU` (the backend the embedder asks for) `create` sets
 /// up the module's one WebGPU device itself, from
 /// `navigator.gpu.requestAdapter({powerPreference: 'high-performance'})`;
 /// [WindowLiteRtLmWebRuntime.webGpuSupport] asks the same question first, so
@@ -47,21 +51,15 @@ import 'dart:typed_data';
 import '../runtime/runtime_log.dart';
 import 'litert_lm_js.dart'
     show
-        liteRtLmWebBackendCpu,
-        liteRtLmWebBackendGpu,
+        LiteRtLmWebBackendEnumError,
         awaitIfThenable,
         liteRtLmWebRuntimeMissing,
         noteOtherWebRuntimeVersion,
         noteWebDeleteFailure,
-        otherWebRuntimeVersionSentence;
+        otherWebRuntimeVersionSentence,
+        readLiteRtLmWebBackendIds;
 import 'web_embedder.dart';
 import 'web_runtime_version.dart';
-
-/// `Backend` in `@litert-lm/core` (`wasm_binding_types.js`).
-int _backendValue(LiteRtLmWebBackend backend) => switch (backend) {
-  LiteRtLmWebBackend.cpu => liteRtLmWebBackendCpu,
-  LiteRtLmWebBackend.gpu => liteRtLmWebBackendGpu,
-};
 
 /// `InputOverflowStrategy` in `@litert-lm/core`: `CHUNK_AND_AVERAGE: 0`,
 /// `TRUNCATE: 1`, `ERROR: 2`.
@@ -150,9 +148,14 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
         : LiteRtLmWebRuntimeState.embeddingEngineMissing;
   }
 
-  static LiteRtLmWebRuntimeState get _versionState => _missing().isEmpty
-      ? LiteRtLmWebRuntimeState.ready
-      : LiteRtLmWebRuntimeState.runtimeIncomplete;
+  /// [LiteRtLmWebRuntimeState.ready] once `window.EmbeddingEngine` has every
+  /// member this release calls and the page handed over its `Backend` enum;
+  /// throws [LiteRtLmWebBackendEnumError] when it did not.
+  static LiteRtLmWebRuntimeState get _versionState {
+    if (_missing().isNotEmpty) return LiteRtLmWebRuntimeState.runtimeIncomplete;
+    readLiteRtLmWebBackendIds();
+    return LiteRtLmWebRuntimeState.ready;
+  }
 
   static List<String> _missing() => liteRtLmWebRuntimeMissing(
     globalContext['EmbeddingEngine']! as JSObject,
@@ -189,18 +192,20 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
 
   @override
   Future<LiteRtLmWebEngine> create(LiteRtLmWebEngineSettings settings) async {
+    // Read again here: the ids sent are the page's own.
+    final ids = readLiteRtLmWebBackendIds();
     final js = JSObject()
       ..['model'] = settings.modelUrl.toJS
-      ..['backend'] = _backendValue(settings.backend).toJS
+      ..['backend'] = ids.idOf(settings.backend).toJS
       ..['maxInputLength'] = settings.maxInputLength.toJS;
     // Absent, never null: the runtime tests `!== undefined`, and a null
     // visionBackend would ask for a tower with no backend.
     if (settings.visionBackend case final vision?) {
-      js['visionBackend'] = _backendValue(vision).toJS;
+      js['visionBackend'] = ids.idOf(vision).toJS;
     }
     // The same rule: absent = the audio tower disabled.
     if (settings.audioBackend case final audio?) {
-      js['audioBackend'] = _backendValue(audio).toJS;
+      js['audioBackend'] = ids.idOf(audio).toJS;
     }
     if (settings.minInputLength case final min?) {
       js['minInputLength'] = min.toJS;

@@ -669,6 +669,7 @@ The same `Engine`, `Conversation` and `EmbeddingEngine` run in a browser over
 window.litertLmReady = (async () => {
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
   window.Engine = m.Engine;
+  window.LiteRtLmBackend = m.Backend;
   window.EmbeddingEngine = m.EmbeddingEngine;
   return m.Engine;
 })();
@@ -687,6 +688,11 @@ export: "Unsupported backend: 2", and the create failure names the page's
 version). A page that does not load the module, lacks
 `window.Engine`, or loads a runtime without a call this release makes is
 refused with a `StateError` naming what is missing and the version above.
+`window.LiteRtLmBackend` hands over the module's `Backend` enum: the backend
+ids sent and read back are the page's own (0.20.0 renumbered them), and an
+engine or embedding engine on a page without that line, or with something
+else there, is refused with a `StateError` (an `EmbedderLoadException` for an
+embedding engine) naming it.
 
 What differs on the web, measured on `@litert-lm/core` 0.19.0 with Gemma 4
 E2B's GPU export in Chrome 157 (2026-11-23):

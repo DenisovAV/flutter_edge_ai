@@ -24,6 +24,9 @@
 /// - a stop at the very end: every chunk read, `cancel()`, then the stream's
 ///   end, and whether the completed exchange is in `getHistory()`;
 /// - `backend: GPU` and `GPU_ARTISAN` named explicitly.
+/// Every backend id is read from the page's `window.LiteRtLmBackend` (the
+/// module's `Backend`, recorded as `backendEnum`), never written here:
+/// 0.20.0 renumbered it.
 /// The model (2.34 GB) is fetched for every `Engine.create` and handed to it
 /// as the response's ReadableStream: a Blob of it would need a `blob:` fetch
 /// past Chrome's limit. A local copy (LLM_MODEL_URL) keeps that cheap.
@@ -62,6 +65,14 @@ const _probe = r'''
 window.__litertlmProbe = async (url, image, audio) => {
   await window.litertLmReady;
   const Engine = window.Engine;
+  // The page's own Backend ids: 0.20.0 renumbered them (0.19.0: GPU_ARTISAN
+  // 2, CPU 3, GPU 4; 0.20.0: 1, 2, 3).
+  const B = window.LiteRtLmBackend;
+  if (!B || ![B.CPU, B.GPU, B.GPU_ARTISAN].every(Number.isInteger)) {
+    throw new Error('window.LiteRtLmBackend is not the module\'s Backend enum: '
+      + 'add window.LiteRtLmBackend = m.Backend; to web/index.html');
+  }
+  r.backendEnum = {...B};
   const r = {};
   const attempt = async (name, fn) => {
     try { r[name] = {ok: true, value: await fn()}; }
@@ -329,14 +340,14 @@ window.__litertlmProbe = async (url, image, audio) => {
 
   // P4: the GPU named explicitly.
   await attempt('explicit_gpu_backend', async () => {
-    const x = await Engine.create({model: await stream(), backend: 4});
+    const x = await Engine.create({model: await stream(), backend: B.GPU});
     const s = {backend: x.settings.backend};
     await x.delete();
     return s;
   });
 
   await attempt('explicit_gpu_artisan_backend', async () => {
-    const x = await Engine.create({model: await stream(), backend: 2});
+    const x = await Engine.create({model: await stream(), backend: B.GPU_ARTISAN});
     const s = {backend: x.settings.backend};
     await x.delete();
     return s;
@@ -363,9 +374,9 @@ window.__litertlmProbe = async (url, image, audio) => {
 
   // Vision: GPU_ARTISAN models reserve image space up front (maxNumImages).
   for (const [name, settings] of [
-    ['vision_gpu', {visionBackend: 4, mainExecutorSettings: {maxNumImages: 1}}],
-    ['vision_gpu_no_max_images', {visionBackend: 4}],
-    ['vision_cpu', {visionBackend: 3, mainExecutorSettings: {maxNumImages: 1}}],
+    ['vision_gpu', {visionBackend: B.GPU, mainExecutorSettings: {maxNumImages: 1}}],
+    ['vision_gpu_no_max_images', {visionBackend: B.GPU}],
+    ['vision_cpu', {visionBackend: B.CPU, mainExecutorSettings: {maxNumImages: 1}}],
   ]) {
     let v;
     await attempt('create_' + name, async () => {
@@ -456,8 +467,8 @@ window.__litertlmProbe = async (url, image, audio) => {
   }
 
   for (const [name, settings] of [
-    ['audio_cpu', {audioBackend: 3}],
-    ['audio_gpu', {audioBackend: 4}],
+    ['audio_cpu', {audioBackend: B.CPU}],
+    ['audio_gpu', {audioBackend: B.GPU}],
   ]) {
     let a;
     await attempt('create_' + name, async () => {
@@ -492,8 +503,8 @@ window.__litertlmProbe = async (url, image, audio) => {
   // Vision and audio in one engine, as a native multimodal load.
   let va;
   await attempt('create_vision_and_audio', async () => {
-    va = await Engine.create({model: await stream(), visionBackend: 4,
-      audioBackend: 3, mainExecutorSettings: {maxNumImages: 1}});
+    va = await Engine.create({model: await stream(), visionBackend: B.GPU,
+      audioBackend: B.CPU, mainExecutorSettings: {maxNumImages: 1}});
     return JSON.parse(JSON.stringify(va.settings));
   });
   if (va) {
@@ -506,7 +517,7 @@ window.__litertlmProbe = async (url, image, audio) => {
   }
 
   await attempt('cpu_default', async () => {
-    const x = await Engine.create({model: await stream(), backend: 3});
+    const x = await Engine.create({model: await stream(), backend: B.CPU});
     const c = await x.createConversation(greedy);
     const s = {backend: x.settings.backend, reply: await text(c, 'Say hi.')};
     await c.delete();
@@ -514,7 +525,7 @@ window.__litertlmProbe = async (url, image, audio) => {
     return s;
   });
   await attempt('cpu_number_of_threads', async () => {
-    const x = await Engine.create({model: await stream(), backend: 3,
+    const x = await Engine.create({model: await stream(), backend: B.CPU,
       mainExecutorSettings: {backendConfig: {number_of_threads: 2}}});
     const s = {backend: x.settings.backend,
                backendConfig: JSON.parse(JSON.stringify(x.settings.mainExecutorSettings.backendConfig))};

@@ -1056,11 +1056,17 @@ assign window globals and module scripts are deferred, so Dart awaits
 window.litertLmReady = (async () => {
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
   window.Engine = m.Engine;
+  window.LiteRtLmBackend = m.Backend;
   window.EmbeddingEngine = m.EmbeddingEngine;
   return m.Engine;
 })();
 </script>
 ```
+
+`window.LiteRtLmBackend` hands litertlm_dart the module's `Backend` enum, so
+the backend ids it sends are the page's own (the runtime's 0.20.0 release
+renumbered them); a page without it fails the model's or the embedder's load
+with an error that names the line.
 
 `window.EmbeddingEngine` (1.13.1) is what EmbeddingGemma 2 `.litertlm`
 embedders run on, on WebGPU: text and images, and from 1.13.2 audio and

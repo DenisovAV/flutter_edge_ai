@@ -32,6 +32,7 @@ const _pendingShim = r'''
         {name: 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm'},
       ],
     });
+    window.LiteRtLmBackend = {GPU_ARTISAN: 2, CPU: 3, GPU: 4};
     window.EmbeddingEngine = function EmbeddingEngine() {};
     window.EmbeddingEngine.prototype.computeEmbedding = function () {};
     window.EmbeddingEngine.prototype.delete = function () {};

@@ -54,8 +54,13 @@ JSObject get _eg => globalContext['__eg']! as JSObject;
 List<Object?> _list(String key) =>
     (_eg[key]! as JSArray<JSAny?>).toDart.map((v) => v.dartify()).toList();
 
-void _install(Uint8List header) {
+/// `Backend` of `@litert-lm/core` 0.19.0 and 0.20.0, which renumbered it.
+const _backends019 = {'GPU_ARTISAN': 2, 'CPU': 3, 'GPU': 4, 'NPU': 6};
+const _backends020 = {'GPU_ARTISAN': 1, 'CPU': 2, 'GPU': 3, 'NPU': 5};
+
+void _install(Uint8List header, {Object? backends = _backends019}) {
   globalContext.callMethod('eval'.toJS, _stub.toJS);
+  globalContext['LiteRtLmBackend'] = backends.jsify();
   globalContext['__header'] = header.toJS;
   globalContext.callMethod(
     'eval'.toJS,
@@ -68,6 +73,7 @@ void _install(Uint8List header) {
 void _remove() => globalContext.callMethod(
   'eval'.toJS,
   '''delete window.EmbeddingEngine; delete window.litertLmReady;
+     delete window.LiteRtLmBackend;
      delete window.__eg; if (window.__realFetch) window.fetch = window.__realFetch;'''
       .toJS,
 );
@@ -271,5 +277,79 @@ void main() {
         ),
       );
     });
+  });
+
+  group('the Backend ids sent are the page\'s own', () {
+    for (final (version, backends, gpu, cpu) in [
+      ('0.19.0', _backends019, 4, 3),
+      ('0.20.0', _backends020, 3, 2),
+    ]) {
+      test('$version: GPU is $gpu, CPU is $cpu', () async {
+        _remove();
+        _install(_header740m, backends: backends);
+        final engine = await EmbeddingEngine.create(
+          _config(vision: const Backend.gpu(), audio: const Backend.gpu()),
+        );
+        final settings = (_list('settings').single! as Map)
+            .cast<String, Object?>();
+        expect(settings['backend'], gpu);
+        expect(settings['visionBackend'], gpu);
+        expect(settings['audioBackend'], gpu);
+        await engine.close();
+
+        // The CPU, as the drive suite's record asks for it.
+        final embedder = web.LiteRtLmWebEmbedder(
+          web.LiteRtLmWebEmbedderConfig(
+            modelPath: 'blob:eg2',
+            fileName: 'embeddinggemma-2-740m.litertlm',
+            runtime: const web.WindowLiteRtLmWebRuntime(),
+            resolveUrl: (path) async => path,
+            revokeUrl: (_) {},
+            backend: web.LiteRtLmWebBackend.cpu,
+          ),
+        );
+        await embedder.load();
+        expect((_list('settings').last! as Map)['backend'], cpu);
+        await embedder.close();
+      });
+    }
+  });
+
+  group('a page whose Backend enum cannot be read is refused naming the '
+      'shim line, before anything is created', () {
+    for (final (what, backends, reason) in [
+      ('missing', null, 'window.LiteRtLmBackend is not set'),
+      ('not an object', 3, 'window.LiteRtLmBackend is a value of type number'),
+      ('without GPU', {'CPU': 2, 'GPU_ARTISAN': 1}, 'it has no GPU'),
+      (
+        'with a CPU that is not an integer',
+        {'CPU': 'cpu', 'GPU': 3, 'GPU_ARTISAN': 1},
+        'its CPU is a value of type string, not an integer',
+      ),
+      (
+        'with CPU and GPU equal',
+        {'CPU': 3, 'GPU': 3, 'GPU_ARTISAN': 1},
+        'are not three ids',
+      ),
+    ]) {
+      test(what, () async {
+        _remove();
+        _install(_header740m, backends: backends);
+        await expectLater(
+          EmbeddingEngine.create(_config()),
+          throwsA(
+            isA<EmbedderLoadException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains(reason),
+                contains('window.LiteRtLmBackend = m.Backend;'),
+              ),
+            ),
+          ),
+        );
+        expect(_list('settings'), isEmpty);
+      });
+    }
   });
 }

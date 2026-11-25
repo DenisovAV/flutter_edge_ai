@@ -289,6 +289,140 @@ void main() {
       );
     });
 
+    group('the Backend ids are the page\'s own (window.LiteRtLmBackend)', () {
+      for (final (version, backends) in [
+        ('0.19.0', backends019),
+        ('0.20.0', backends020),
+      ]) {
+        group(version, () {
+          final cpu = backends['CPU']!;
+          final gpu = backends['GPU']!;
+          final artisan = backends['GPU_ARTISAN']!;
+          setUp(() {
+            removeRuntime();
+            installRuntime(backends: backends);
+          });
+
+          test('the backend and the encoders are sent as its CPU ($cpu) and '
+              'GPU ($gpu), and read back as they resolved', () async {
+            setOnPage('resolvedVisionBackend', gpu);
+            setOnPage('resolvedAudioBackend', cpu);
+            final engine = await Engine.create(
+              EngineConfig(
+                modelPath: 'blob:x',
+                backend: const Backend.gpu(),
+                visionBackend: const Backend.gpu(),
+                audioBackend: const Backend.cpu(),
+              ),
+            );
+            final settings = asMap(list('createSettings').single);
+            expect(settings['backend'], gpu);
+            expect(settings['visionBackend'], gpu);
+            expect(settings['audioBackend'], cpu);
+            expect(engine.backend, const Backend.gpu());
+            expect(engine.visionBackend, const Backend.gpu());
+            expect(engine.audioBackend, const Backend.cpu());
+            await engine.close();
+          });
+
+          test('GPU_ARTISAN ($artisan) reads back as the GPU, CPU ($cpu) as '
+              'the CPU', () async {
+            setOnPage('resolvedBackend', artisan);
+            final engine = await Engine.create(webConfig());
+            expect(engine.backend, const Backend.gpu());
+            await engine.close();
+
+            setOnPage('resolvedBackend', cpu);
+            final onCpu = await Engine.create(
+              webConfig(backend: const Backend.cpu()),
+            );
+            expect(asMap(list('createSettings').last)['backend'], cpu);
+            expect(onCpu.backend, const Backend.cpu());
+            await onCpu.close();
+          });
+
+          test('an id it reports that is not CPU, GPU or GPU_ARTISAN is '
+              'refused naming the id and the enum\'s name for it, and the '
+              'engine is deleted', () async {
+            setOnPage('resolvedBackend', backends['NPU']);
+            await expectLater(
+              Engine.create(webConfig()),
+              throwsWith<StateError>(
+                'backend ${backends['NPU']}, which this release does not know '
+                '(NPU in the page\'s Backend)',
+              ),
+            );
+            expect(count('engineDeletes'), 1);
+
+            setOnPage('resolvedBackend', 42);
+            await expectLater(
+              Engine.create(webConfig()),
+              throwsWith<StateError>(
+                'backend 42, which this release does not know (not in the '
+                'page\'s Backend',
+              ),
+            );
+          });
+
+          test(
+            'an encoder on an id it does not know is refused naming it',
+            () async {
+              setOnPage('resolvedAudioBackend', backends['NPU']);
+              await expectLater(
+                Engine.create(
+                  EngineConfig(
+                    modelPath: 'blob:x',
+                    backend: const Backend.gpu(),
+                    audioBackend: const Backend.cpu(),
+                  ),
+                ),
+                throwsWith<LiteRtLmEngineCreateException>(
+                  'with its audio encoder on backend ${backends['NPU']}, which '
+                  'this release does not know (NPU in the page\'s Backend)',
+                ),
+              );
+              expect(count('engineDeletes'), 1);
+            },
+          );
+        });
+      }
+
+      for (final (what, backends, reason) in <(String, Object?, String)>[
+        ('missing', null, 'window.LiteRtLmBackend is not set'),
+        (
+          'not an object',
+          'GPU',
+          'window.LiteRtLmBackend is a value of type string',
+        ),
+        ('without CPU', {'GPU': 3, 'GPU_ARTISAN': 1}, 'it has no CPU'),
+        (
+          'with a GPU that is not an integer',
+          {'CPU': 2, 'GPU': 3.5, 'GPU_ARTISAN': 1},
+          'its GPU is 3.5, not an integer',
+        ),
+      ]) {
+        test('a page whose enum is $what is a StateError naming the shim '
+            'line, before Engine.create', () async {
+          if (backends == null) {
+            globalContext.delete('LiteRtLmBackend'.toJS);
+          } else {
+            globalContext['LiteRtLmBackend'] = backends.jsify();
+          }
+          await expectLater(
+            Engine.create(webConfig()),
+            throwsA(
+              errorWith<StateError>(reason).having(
+                (e) => e.message,
+                'message',
+                contains('window.LiteRtLmBackend = m.Backend;'),
+              ),
+            ),
+          );
+          expect(list('createSettings'), isEmpty);
+        });
+      }
+    });
+
     test('the runtime refusing the model is a LiteRtLmEngineCreateException '
         'carrying its message', () async {
       setOnPage('createError', 'Failed to load the model');

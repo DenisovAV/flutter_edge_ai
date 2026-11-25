@@ -5,7 +5,10 @@
 // (`window.Engine = m.Engine`): `dart:js_interop` static interop resolves
 // against the global, and the ESM export needs that explicit shim. It also
 // sets `window.litertLmReady`, a Promise that settles once the module loaded
-// (module scripts are deferred, so Dart can run first).
+// (module scripts are deferred, so Dart can run first), and
+// `window.LiteRtLmBackend = m.Backend`, the module's `Backend` enum, whose
+// ids this release sends and reads back (web_backend_ids.dart: 0.20.0
+// renumbered them).
 //
 // API surface mirrored, as published (`dist/engine.d.ts`, `conversation.d.ts`,
 // `conversation_config.d.ts`, `engine_settings.d.ts`):
@@ -27,19 +30,54 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import '../runtime/runtime_log.dart';
+import 'web_backend_ids.dart';
 import 'web_runtime_version.dart';
 
-/// `Backend` of `@litert-lm/core` (`wasm_binding_types.js`): `CPU: 3`,
-/// `GPU: 4`, for the version the page pins ([liteRtLmWebRuntimeVersion]).
-const liteRtLmWebBackendCpu = 3;
-const liteRtLmWebBackendGpu = 4;
+export 'web_backend_ids.dart'
+    show
+        LiteRtLmWebBackendEnumError,
+        LiteRtLmWebBackendIds,
+        liteRtLmWebBackendShimLine;
 
-/// `Backend.GPU_ARTISAN`: what `engine.settings.backend` reports for a
-/// Gemma 4 web or GPU export asked for the GPU (0.18.0 and 0.19.0, measured
-/// 2026-11-23): the same WebGPU, through the runtime's legacy executor.
-/// 0.19.0 takes `backend: GPU` (or GPU_ARTISAN) for it; 0.18.0 refused
-/// `backend: GPU` ("Unsupported backend: 2").
-const liteRtLmWebBackendGpuArtisan = 2;
+/// The page's `@litert-lm/core` `Backend` enum, as its module script hands it
+/// over (`window.LiteRtLmBackend = m.Backend;`): read at each engine and
+/// embedding engine create, before anything is sent. Throws
+/// [LiteRtLmWebBackendEnumError] (a [StateError] naming that line) when the
+/// page did not set it, or set something else.
+LiteRtLmWebBackendIds readLiteRtLmWebBackendIds() =>
+    LiteRtLmWebBackendIds.parse(_enumEntries(globalContext['LiteRtLmBackend']));
+
+/// [value]'s own enumerable entries, a number as a [num] and anything else
+/// as its `typeof`; a description of [value] when it is not a plain object,
+/// null when it is not set.
+Object? _enumEntries(JSAny? value) {
+  if (value == null || value.isUndefinedOrNull) return null;
+  if (!value.typeofEquals('object')) {
+    return 'a value of type ${_typeOf(value)}';
+  }
+  final object = value as JSObject;
+  final keys = (globalContext['Object']! as JSObject)
+      .callMethod<JSArray<JSString>>('keys'.toJS, object)
+      .toDart;
+  return <String, Object?>{
+    for (final key in keys)
+      key.toDart: switch (object[key.toDart]) {
+        final JSAny entry when entry.isA<JSNumber>() =>
+          (entry as JSNumber).toDartDouble,
+        final entry => entry == null ? 'undefined' : _typeOf(entry),
+      },
+  };
+}
+
+String _typeOf(JSAny value) => [
+  'string',
+  'number',
+  'boolean',
+  'bigint',
+  'symbol',
+  'function',
+  'object',
+].firstWhere(value.typeofEquals, orElse: () => 'unknown');
 
 /// What the page's `Engine` (or `EmbeddingEngine`) constructor lacks of what
 /// this release calls ([members] on its prototype, `create` on itself); empty

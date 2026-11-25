@@ -88,6 +88,7 @@ import '../embedder/embedder_types.dart';
 import '../embedder/litertlm_container.dart';
 import '../runtime/runtime_log.dart';
 import 'page_lock.dart';
+import 'web_backend_ids.dart';
 import 'web_runtime_version.dart';
 
 /// The `@litert-lm/core` backends the pass can ask for (`Backend.CPU`,
@@ -245,8 +246,11 @@ enum LiteRtLmWebGpuSupport {
 /// The page's `@litert-lm/core` embedding runtime, as the pass uses it.
 abstract interface class LiteRtLmWebRuntime {
   /// Waits for the page's loader (`window.litertLmReady`) when there is one,
-  /// then reports whether `window.EmbeddingEngine` exists. Throws when the
-  /// loader itself failed (the module could not be imported).
+  /// then reports whether `window.EmbeddingEngine` exists. Throws
+  /// [LiteRtLmWebBackendEnumError] when it does but the page did not hand
+  /// over `@litert-lm/core`'s `Backend` enum ([liteRtLmWebBackendShimLine]),
+  /// and anything else when the loader itself failed (the module could not
+  /// be imported).
   Future<LiteRtLmWebRuntimeState> ensureReady();
 
   /// What `window.EmbeddingEngine` lacks of what this release calls, after
@@ -666,6 +670,8 @@ final class LiteRtLmWebEmbedder {
     final LiteRtLmWebRuntimeState state;
     try {
       state = await _config.runtime.ensureReady();
+    } on LiteRtLmWebBackendEnumError catch (e) {
+      throw EmbedderLoadException(e.message, cause: e);
     } catch (e) {
       throw EmbedderLoadException(
         '@litert-lm/core did not load on this page (window.litertLmReady '
@@ -681,8 +687,8 @@ final class LiteRtLmWebEmbedder {
           'web/index.html does not load @litert-lm/core, so there is no '
           'EmbeddingEngine for EmbeddingGemma 2. Add the module script from '
           "litertlm_dart's README (On the web): it imports "
-          '$liteRtLmWebModuleUrl, sets window.Engine = m.Engine; and '
-          '$liteRtLmWebShimLine',
+          '$liteRtLmWebModuleUrl, sets window.Engine = m.Engine;, '
+          '$liteRtLmWebBackendShimLine and $liteRtLmWebShimLine',
         );
       case LiteRtLmWebRuntimeState.embeddingEngineMissing:
         throw const EmbedderLoadException(

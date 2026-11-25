@@ -60,6 +60,7 @@ T _eval<T extends JSAny?>(String source) =>
 void _clearPage() => _js('''
   delete window.EmbeddingEngine;
   delete window.litertLmReady;
+  delete window.LiteRtLmBackend;
   delete window.__eg2;
   delete navigator.gpu;
   delete window.__gpuRequests;
@@ -91,6 +92,8 @@ int get _gpuRequests => (globalContext['__gpuRequests']! as JSArray).length;
 void _installEngine() => _js('''
   window.__eg2 = { settings: [], inputs: [], options: [], deletes: 0,
                    maxSeq: 1024, createError: null, computeError: null };
+  // The page's Backend enum, as @litert-lm/core 0.19.0 numbers it.
+  window.LiteRtLmBackend = {GPU_ARTISAN: 2, CPU: 3, GPU: 4};
   window.EmbeddingEngine = function () {};
   // The members the release calls, which the runtime check looks for.
   window.EmbeddingEngine.prototype.computeEmbedding = function () {};
@@ -255,6 +258,7 @@ void main() {
       () async {
         _js('''
         window.litertLmReady = new Promise((resolve) => setTimeout(() => {
+          window.LiteRtLmBackend = {GPU_ARTISAN: 2, CPU: 3, GPU: 4};
           window.EmbeddingEngine = function () {};
           window.EmbeddingEngine.create = async function () {};
           window.EmbeddingEngine.prototype.computeEmbedding = function () {};
@@ -340,6 +344,49 @@ void main() {
             ),
       ),
     );
+  });
+
+  test('a page without window.LiteRtLmBackend: the app gets an '
+      'EmbeddingLoadException naming the line, and create is never '
+      'called', () async {
+    _installEngine();
+    _stubGpu();
+    _js('delete window.LiteRtLmBackend;');
+    await expectLater(
+      _start(),
+      throwsA(
+        isA<EmbeddingLoadException>()
+            .having((e) => e.engine, 'engine', 'LiteRT-LM')
+            .having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('window.LiteRtLmBackend is not set'),
+                contains('window.LiteRtLmBackend = m.Backend;'),
+              ),
+            ),
+      ),
+    );
+    expect(_count('settings'), 0, reason: 'create was called');
+  });
+
+  test('a 0.20.0 page: create gets its GPU id (3)', () async {
+    _installEngine();
+    _stubGpu();
+    _js(
+      'window.LiteRtLmBackend = '
+      '{UNSPECIFIED: 0, GPU_ARTISAN: 1, CPU: 2, GPU: 3, '
+      'GOOGLE_TENSOR_ARTISAN: 4, NPU: 5};',
+    );
+    final model = await _start();
+    try {
+      final settings =
+          (globalContext['__eg2']! as JSObject)['settings']!.dartify()!
+              as List<Object?>;
+      expect((settings.single! as Map)['backend'], 3);
+    } finally {
+      await model.close();
+    }
   });
 
   test('text only: WebGPU asked once, then create gets GPU (4), '

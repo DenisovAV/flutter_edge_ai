@@ -12,6 +12,8 @@
 // - `getTokenCount()` runs on the engine's executor mutex: a test can hold
 //   it, as a generation that rejected but has not left the module does;
 // - an engine's `delete()` is a Promise, a conversation's returns nothing.
+// The page's `Backend` enum (`window.LiteRtLmBackend`) is 0.19.0's unless a
+// test installs another layout ([backends019], [backends020]).
 library;
 
 import 'dart:async';
@@ -243,10 +245,42 @@ void js(String name, [String? arg]) => arg == null
     ? globalContext.callMethod(name.toJS)
     : globalContext.callMethod(name.toJS, arg.toJS);
 
-void installRuntime() => globalContext.callMethod('eval'.toJS, _stub.toJS);
+/// `Backend` of `@litert-lm/core` 0.19.0 (`wasm_binding_types.js`).
+const backends019 = {
+  'UNSPECIFIED': 0,
+  'CPU_ARTISAN': 1,
+  'GPU_ARTISAN': 2,
+  'CPU': 3,
+  'GPU': 4,
+  'GOOGLE_TENSOR_ARTISAN': 5,
+  'NPU': 6,
+};
+
+/// `Backend` of `@litert-lm/core` 0.20.0: CPU_ARTISAN removed, the rest
+/// renumbered.
+const backends020 = {
+  'UNSPECIFIED': 0,
+  'GPU_ARTISAN': 1,
+  'CPU': 2,
+  'GPU': 3,
+  'GOOGLE_TENSOR_ARTISAN': 4,
+  'NPU': 5,
+};
+
+/// Installs the stub with [backends] as the page's `window.LiteRtLmBackend`
+/// (none when null); the engine resolves to its `GPU`.
+void installRuntime({Map<String, int>? backends = backends019}) {
+  globalContext.callMethod('eval'.toJS, _stub.toJS);
+  if (backends != null) {
+    globalContext['LiteRtLmBackend'] = backends.jsify();
+    setOnPage('resolvedBackend', backends['GPU']);
+  } else {
+    globalContext.delete('LiteRtLmBackend'.toJS);
+  }
+}
 
 void removeRuntime() {
-  for (final key in ['litertLmReady', 'Engine', '__page']) {
+  for (final key in ['litertLmReady', 'Engine', '__page', 'LiteRtLmBackend']) {
     globalContext.delete(key.toJS);
   }
 }

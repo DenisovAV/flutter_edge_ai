@@ -33,6 +33,7 @@ import '../runtime/types.dart';
 import 'litert_lm_js.dart';
 import 'page_lock.dart';
 import 'web_conversation_handle.dart';
+import 'web_embedder.dart' show LiteRtLmWebBackend;
 import 'web_runtime_version.dart';
 import 'web_session_config.dart';
 
@@ -430,16 +431,19 @@ Future<Engine> createWebEngine(
 }) async {
   _refuseOnWeb(config);
   final constructor = await _awaitRuntime();
+  // The page's own Backend ids: the same number is another backend on
+  // another @litert-lm/core (0.20.0 renumbered them).
+  final ids = readLiteRtLmWebBackendIds();
   // Said before the create: an older runtime fails it ("Unsupported backend:
   // 2" on 0.18.0), and the reason is the version.
   noteOtherWebRuntimeVersion();
   final settings = JSObject()..['model'] = model ?? config.modelPath.toJS;
-  settings['backend'] = _webBackendValue(config.backend).toJS;
+  settings['backend'] = _webBackendValue(config.backend, ids).toJS;
   if (config.visionBackend case final vision?) {
-    settings['visionBackend'] = _webBackendValue(vision).toJS;
+    settings['visionBackend'] = _webBackendValue(vision, ids).toJS;
   }
   if (config.audioBackend case final audio?) {
-    settings['audioBackend'] = _webBackendValue(audio).toJS;
+    settings['audioBackend'] = _webBackendValue(audio, ids).toJS;
   }
   final executor = JSObject();
   // A GPU_ARTISAN model (Gemma 4's web exports) reserves its images' space
@@ -510,19 +514,16 @@ Future<Engine> createWebEngine(
       : null;
   final Backend backend;
   try {
-    backend = switch (resolvedBackend.isA<JSNumber>()
-        ? (resolvedBackend as JSNumber).toDartInt
-        : null) {
-      liteRtLmWebBackendCpu => const Backend.cpu(),
-      liteRtLmWebBackendGpu ||
-      liteRtLmWebBackendGpuArtisan => const Backend.gpu(),
-      final other => throw StateError(
-        other == null
+    final id = _resolvedId(resolvedBackend);
+    backend = switch (id == null ? null : _backendOf(id, ids)) {
+      final known? => known,
+      null => throw StateError(
+        id == null
             ? '$liteRtLmWebRuntime reported no backend for the engine '
                   '(settings.backend), so this release cannot say where it '
                   'runs.'
-            : '$liteRtLmWebRuntime resolved the engine to backend $other, '
-                  'which this release does not know.',
+            : '$liteRtLmWebRuntime resolved the engine to backend $id, '
+                  'which this release does not know (${ids.nameOf(id)}).',
       ),
     };
   } catch (_) {
@@ -539,26 +540,20 @@ Future<Engine> createWebEngine(
   Backend? encoder(String medium, Backend? asked) {
     if (asked == null) return null;
     final value = resolved?['${medium}Backend'];
-    if (!value.isA<JSNumber>()) {
+    final code = _resolvedId(value);
+    if (code == null) {
       reasons.add(
         'without its $medium encoder (settings.${medium}Backend not '
         'reported): the model may have none',
       );
       return null;
     }
-    final code = (value as JSNumber).toDartInt;
-    return switch (code) {
-      liteRtLmWebBackendCpu => const Backend.cpu(),
-      liteRtLmWebBackendGpu ||
-      liteRtLmWebBackendGpuArtisan => const Backend.gpu(),
-      _ => () {
-        reasons.add(
-          'with its $medium encoder on backend $code, which this release '
-          'does not know',
-        );
-        return null;
-      }(),
-    };
+    if (_backendOf(code, ids) case final known?) return known;
+    reasons.add(
+      'with its $medium encoder on backend $code, which this release does '
+      'not know (${ids.nameOf(code)})',
+    );
+    return null;
   }
 
   final vision = encoder('vision', config.visionBackend);
@@ -607,14 +602,32 @@ Future<Conversation> createConversationWithDefault(
   defaultSamplerConfig: defaultSamplerConfig,
 );
 
-/// `@litert-lm/core`'s `Backend` value for [backend]: CPU (WebAssembly) or
-/// GPU (WebGPU). A Gemma 4 web export asked for the GPU resolves to
-/// GPU_ARTISAN, the same WebGPU (0.19.0, measured 2026-11-23).
-int _webBackendValue(Backend backend) => switch (backend) {
-  CpuBackend() => liteRtLmWebBackendCpu,
-  GpuBackend() => liteRtLmWebBackendGpu,
-  NpuBackend() => throw UnsupportedError('No NPU on the web.'),
-};
+/// The page's `Backend` id for [backend]: CPU (WebAssembly) or GPU (WebGPU).
+/// A Gemma 4 web export asked for the GPU resolves to GPU_ARTISAN, the same
+/// WebGPU (0.19.0, measured 2026-11-23).
+int _webBackendValue(Backend backend, LiteRtLmWebBackendIds ids) =>
+    switch (backend) {
+      CpuBackend() => ids.cpu,
+      GpuBackend() => ids.gpu,
+      NpuBackend() => throw UnsupportedError('No NPU on the web.'),
+    };
+
+/// What the runtime reported for a backend, as an integer id; null when it
+/// reported none or no integer.
+int? _resolvedId(JSAny? value) {
+  if (!value.isA<JSNumber>()) return null;
+  final number = (value as JSNumber).toDartDouble;
+  return number == number.truncateToDouble() ? number.toInt() : null;
+}
+
+/// Where a model the runtime resolved to [id] runs; null for an id this
+/// release does not know.
+Backend? _backendOf(int id, LiteRtLmWebBackendIds ids) =>
+    switch (ids.backendOf(id)) {
+      LiteRtLmWebBackend.cpu => const Backend.cpu(),
+      LiteRtLmWebBackend.gpu => const Backend.gpu(),
+      null => null,
+    };
 
 void _refuseOnWeb(EngineConfig config) {
   final refused = [

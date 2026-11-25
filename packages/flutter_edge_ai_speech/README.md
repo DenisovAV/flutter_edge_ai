@@ -179,6 +179,15 @@ listened to); `close()` ends a running stream with a `StateError`.
 The model is copied once into the app's support directory, because LiteRT
 opens models by path, and checked against its SHA-256 there.
 
+Silero detects any voice, not only the user's. On LibriSpeech speech with
+known pauses (40 streams per condition, macOS CPU) it missed no utterance and
+started on no noise, in quiet and in white noise down to 10 dB SNR, and ended
+an utterance a median 0.65-0.67 s after the speech stopped (`minSilence` is
+0.6 s). With other talkers in the background, three at -15 dB or one at
+-10 dB, as a reply playing without echo cancellation would be, it stayed in
+speech for seconds at a time. Barge-in needs the microphone's echo
+cancellation, or the microphone off while the reply plays.
+
 ## Voice loop
 
 `VoiceSession` chains STT → LLM → TTS into one push-to-talk turn with barge-in.

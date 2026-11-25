@@ -86,7 +86,11 @@ class MobileModelManager extends ModelFileManager
       // deleting — a just-restarted download's temp on cold start).
       await Future<void>.delayed(const Duration(seconds: 5));
       final downloader = FileDownloader();
-      await downloader.resumeFromBackground();
+      // The one resumeFromBackground() of the process, made with a listener
+      // attached so the completions it replays are kept, not dropped (#873).
+      // An install that ran before this has already triggered it; then this
+      // just waits for it.
+      await SmartDownloader.backgroundCompletions.reconcile();
 
       // Narrow the blanket gate to GENUINELY-RUNNING native tasks. A legacy
       // record re-materialized by resumeFromBackground() shows up as a *paused*

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_edge_ai/src/domain/web_storage_mode.dart';
+import 'package:flutter_edge_ai/src/services/completed_downloads.dart';
 import 'package:flutter_edge_ai/src/services/download_service.dart';
 import 'package:flutter_edge_ai/src/services/remote_size_probe.dart';
 import 'package:flutter_edge_ai/src/services/file_system_service.dart';
@@ -193,8 +194,10 @@ class ServiceRegistry {
     FileSystemService fileSystem,
     ModelRepository repository,
     String? huggingFaceToken,
-    int maxDownloadRetries,
-  ) {
+    int maxDownloadRetries, {
+    CompletedDownloads? completedDownloads,
+    RemoteSizeProbe? sizeProbe,
+  }) {
     if (kIsWeb) {
       // Web: Use WebNetworkSourceHandler with cache-aware metadata saving
       final webDownload = downloadService as WebDownloadService;
@@ -212,6 +215,8 @@ class ServiceRegistry {
         repository: repository,
         huggingFaceToken: huggingFaceToken,
         maxDownloadRetries: maxDownloadRetries,
+        completedDownloads: completedDownloads,
+        sizeProbe: sizeProbe,
       );
     }
   }
@@ -281,6 +286,11 @@ class ServiceRegistry {
       modelRepository: modelRepository,
       protectedFilesRegistry: protectedFilesRegistry,
       remoteSizeProbe: remoteSizeProbe ?? platform.createRemoteSizeProbe(),
+      // Reads core's own downloader's state, so only with that downloader:
+      // an injected DownloadService has its own (#873).
+      completedDownloads: downloadService == null
+          ? platform.createCompletedDownloads()
+          : null,
     );
   }
 
@@ -294,6 +304,7 @@ class ServiceRegistry {
     ModelRepository? modelRepository,
     ProtectedFilesRegistry? protectedFilesRegistry,
     required this.remoteSizeProbe,
+    CompletedDownloads? completedDownloads,
   }) {
     // Initialize infrastructure services
     _fileSystemService = fileSystemService;
@@ -319,6 +330,8 @@ class ServiceRegistry {
       _modelRepository,
       huggingFaceToken,
       maxDownloadRetries,
+      completedDownloads: completedDownloads,
+      sizeProbe: remoteSizeProbe,
     );
 
     _assetHandler = _createAssetSourceHandler(

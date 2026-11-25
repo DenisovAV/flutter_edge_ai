@@ -16,6 +16,7 @@ import '../../infrastructure/web_cache_interop_stub.dart'
     if (dart.library.js_interop) '../../infrastructure/web_cache_interop.dart';
 import '../../infrastructure/web_opfs_interop_stub.dart'
     if (dart.library.js_interop) '../../infrastructure/web_opfs_service.dart';
+import '../../services/completed_downloads.dart';
 import '../../services/download_service.dart';
 import '../../services/file_system_service.dart';
 
@@ -86,3 +87,7 @@ final class _NoRemoteSizes implements RemoteSizeProbe {
     CancelToken? cancelToken,
   }) async => null;
 }
+
+/// A web download cannot outlive the page: nothing finishes while the app is
+/// closed (#873).
+CompletedDownloads? createCompletedDownloads() => null;

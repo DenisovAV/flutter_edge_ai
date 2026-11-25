@@ -1,9 +1,12 @@
 import 'package:flutter_edge_ai/src/domain/model_source.dart';
 import 'package:flutter_edge_ai/src/handlers/source_handler.dart';
 import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
+import 'package:flutter_edge_ai/src/services/completed_downloads.dart';
 import 'package:flutter_edge_ai/src/services/download_service.dart';
 import 'package:flutter_edge_ai/src/services/file_system_service.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart';
+import 'package:flutter_edge_ai/src/services/remote_size_probe.dart';
+import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:path/path.dart' as path;
 
 /// Handles installation of models from network URLs (HTTP/HTTPS)
@@ -20,12 +23,21 @@ class NetworkSourceHandler implements SourceHandler {
   final String? huggingFaceToken;
   final int maxDownloadRetries;
 
+  /// Downloads that finished while the app was closed, whose files are
+  /// recorded instead of downloaded again (#873). Null: none are reused.
+  final CompletedDownloads? completedDownloads;
+
+  /// The size of a file whose finished download did not state it (#873).
+  final RemoteSizeProbe? sizeProbe;
+
   NetworkSourceHandler({
     required this.downloadService,
     required this.fileSystem,
     required this.repository,
     this.huggingFaceToken,
     this.maxDownloadRetries = 10,
+    this.completedDownloads,
+    this.sizeProbe,
   });
 
   @override
@@ -49,13 +61,21 @@ class NetworkSourceHandler implements SourceHandler {
         targetFilename ?? path.basename(Uri.parse(source.url).path);
     final targetPath = await fileSystem.getWriteTargetPath(filename);
 
-    // Download file with cancellation support
-    await downloadService.download(
+    // Download file with cancellation support, unless it already finished
+    // while the app was closed (#873).
+    if (!await _finishedWhileClosed(
       source.url,
       targetPath,
       token: effectiveToken,
       cancelToken: cancelToken,
-    );
+    )) {
+      await downloadService.download(
+        source.url,
+        targetPath,
+        token: effectiveToken,
+        cancelToken: cancelToken,
+      );
+    }
 
     // Get file size for metadata
     final sizeBytes = await fileSystem.getFileSize(targetPath);
@@ -97,16 +117,27 @@ class NetworkSourceHandler implements SourceHandler {
         targetFilename ?? path.basename(Uri.parse(source.url).path);
     final targetPath = await fileSystem.getWriteTargetPath(filename);
 
-    // Download with progress tracking, configurable retries, and cancellation support
-    await for (final progress in downloadService.downloadWithProgress(
+    if (await _finishedWhileClosed(
       source.url,
       targetPath,
       token: effectiveToken,
-      maxRetries: maxDownloadRetries,
       cancelToken: cancelToken,
-      foreground: source.foreground,
     )) {
-      yield progress;
+      // Finished while the app was closed (#873): nothing to download, but the
+      // caller still sees the stream end on 100.
+      yield 100;
+    } else {
+      // Download with progress tracking, configurable retries, and cancellation support
+      await for (final progress in downloadService.downloadWithProgress(
+        source.url,
+        targetPath,
+        token: effectiveToken,
+        maxRetries: maxDownloadRetries,
+        cancelToken: cancelToken,
+        foreground: source.foreground,
+      )) {
+        yield progress;
+      }
     }
 
     // Get file size for metadata
@@ -135,6 +166,44 @@ class NetworkSourceHandler implements SourceHandler {
   bool supportsResume(ModelSource source) {
     if (source is! NetworkSource) return false;
     return source.supportsResume;
+  }
+
+  /// Whether the file at [targetPath] is a download of [url] that finished
+  /// while the app was closed, to be recorded instead of downloaded again
+  /// (#873).
+  ///
+  /// Only on evidence: [completedDownloads] has a completion of this source
+  /// for it, with no live or paused task, and the file is exactly the size
+  /// the download's final response stated — or, when it stated none, the size
+  /// [sizeProbe] reports. Anything less, and the file is downloaded as before,
+  /// over whatever is there; nothing is deleted first.
+  Future<bool> _finishedWhileClosed(
+    String url,
+    String targetPath, {
+    String? token,
+    CancelToken? cancelToken,
+  }) async {
+    final completed = completedDownloads;
+    if (completed == null) return false;
+    final completion = await completed.completedWhileAway(url, targetPath);
+    if (completion == null) return false;
+    final total =
+        completion.totalBytes ??
+        await sizeProbe?.sizeOf(url, token: token, cancelToken: cancelToken);
+    if (total == null || total <= 0) return false;
+    final size = await fileSystem.getFileSize(targetPath);
+    if (size != total) {
+      edgeAiLog(
+        'NetworkSourceHandler: $targetPath finished while the app was closed '
+        'but is $size bytes, not $total: downloading it again',
+      );
+      return false;
+    }
+    edgeAiLog(
+      'NetworkSourceHandler: $targetPath finished while the app was closed '
+      '($size bytes): recording it instead of downloading again',
+    );
+    return true;
   }
 
   /// Checks if URL is a HuggingFace URL that may require authentication

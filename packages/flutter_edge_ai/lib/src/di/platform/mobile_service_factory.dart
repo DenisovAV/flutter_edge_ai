@@ -5,8 +5,10 @@ library;
 
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/web_storage_mode.dart';
+import '../../infrastructure/background_completed_downloads.dart';
 import '../../infrastructure/background_downloader_service.dart';
 import '../../infrastructure/http_remote_size_probe.dart';
+import '../../services/completed_downloads.dart';
 import '../../services/download_service.dart';
 import '../../services/file_system_service.dart';
 import '../../services/remote_size_probe.dart';
@@ -29,3 +31,8 @@ DownloadService createDownloadService(
 
 /// Creates the default [RemoteSizeProbe]: HEAD requests over `dart:io`.
 RemoteSizeProbe createRemoteSizeProbe() => HttpRemoteSizeProbe();
+
+/// Downloads that finished while the app was closed (#873), for core's own
+/// [BackgroundDownloaderService]: it answers on Android, null elsewhere.
+CompletedDownloads? createCompletedDownloads() =>
+    const BackgroundCompletedDownloads();

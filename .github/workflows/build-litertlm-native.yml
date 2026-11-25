@@ -12,7 +12,7 @@ on:
         description: 'LiteRT-LM ref (tag, branch, or commit SHA)'
         required: true
       prebuilt_ref:
-        description: 'Upstream ref to take prebuilt companion libs from (default: the exact v0.19.1 source SHA)'
+        description: 'Upstream ref to take the prebuilt constraint provider from (default: the exact v0.20.0 source SHA; Dawn always comes from the source ref)'
         required: false
       publish_release:
         description: 'Publish to GitHub Release'
@@ -34,15 +34,24 @@ jobs:
   build-linux-x86_64:
     name: Linux x86_64
     if: ${{ !inputs.qualcomm_dispatch_linux_only }}
-    # Pin to ubuntu-22.04 (glibc 2.35) for broader compatibility. Our
-    # libLiteRtLm.so ends up needing GLIBC_2.34 and GLIBCXX_3.4.30 (GCC 12
-    # libstdc++), which works on Ubuntu 22.04+ / Debian 12+ / RHEL 10+.
-    # Google prebuilt companions (libLiteRt.so etc.) only require 2.26-2.27.
+    # Pin to ubuntu-22.04 (glibc 2.35, GCC 12 libstdc++) for broader
+    # compatibility. Everything built here is clang-17 against this runner's
+    # libstdc++: libLiteRtLm.so, and from LiteRT-LM v0.20.0 also libLiteRt.so
+    # and libLiteRtWebGpuAccelerator.so, which upstream no longer ships
+    # prebuilt (c57b9ae0). Each may need up to GLIBC_2.35, GLIBCXX_3.4.30 and
+    # CXXABI_1.3.13 and NEEDs libstdc++.so.6 + libgcc_s.so.1 (libLiteRtLm.so
+    # needed GLIBC_2.34 on v0.19.1): Ubuntu 22.04+ / Debian 12+ / RHEL 10+.
+    # check_linux_bundle.py fails a bundle above that floor. The Google
+    # prebuilts that remain (constraint provider, Dawn) need GLIBC 2.26-2.27
+    # and no C++ runtime; Google's 0.19.1 libLiteRt.so and accelerator did too.
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    # 40 min on v0.19.1 (run 43178054231). v0.20.0 adds the ML Drift WebGPU
+    # delegate to the build: the accelerator is runtime data of
+    # //c:libLiteRtLm.dylib in dynamic mode (769af92e), and built by name below.
+    timeout-minutes: 150
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '7a03724cece417f1724c923b3d527b4319730841' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '95df4c2a932b4917ace66fcfef6c154e8d2a6699' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -97,9 +106,21 @@ jobs:
           # the runtime in one process — the suspected reason a second
           # engine_create trips 'wgpu::Instance already set'. Upstream docs
           # require litert_runtime_link_mode=dynamic for GPU on every platform.
+          #
+          # From v0.20.0 upstream's prebuilt/ has no libLiteRt.so and no GPU
+          # accelerator (c57b9ae0; only the constraint provider and Dawn are
+          # left), so both are built here, in the same invocation and with the
+          # same flags as libLiteRtLm. libLiteRt.so was already compiled as a
+          # link input of libLiteRtLm on v0.19.1; we shipped Google's copy in
+          # its place. The accelerator target is the one runtime/executor/BUILD
+          # selects for Linux in dynamic mode (default_dynamic_gpu_accelerator).
+          # Both are named explicitly so a select() change upstream fails here
+          # instead of shipping nothing.
           bazelisk build -c opt --strip=always \
             --define=litert_runtime_link_mode=dynamic \
-            '//c:libLiteRtLm.dylib'
+            '//c:libLiteRtLm.dylib' \
+            '@litert//litert/c:litert_runtime_c_api_so' \
+            '@litert//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_so'
 
       - name: Build libStreamProxy.so
         run: |
@@ -120,21 +141,54 @@ jobs:
           if grep -a -q '17TopKWebGpuSampler' artifacts/libLiteRtLm.so; then
             echo "::error::libLiteRtLm.so links the TopK WebGPU sampler (section 20 did not apply)"; exit 1
           fi
-          # `|| true` used to hide an empty glob here. That was survivable when
-          # libLiteRt.so was optional; it is not now. litert_runtime_link_mode=dynamic
-          # deliberately keeps the LiteRt C API OUT of libLiteRtLm, so these
-          # companions became hard DT_NEEDED dependencies — shipping without them
-          # is a green CI run, a valid SHA256, and a dlopen failure on the user's
-          # machine. A git-lfs pointer stub would pass a bare existence test too,
-          # so assert ELF, not presence.
+          # litert_runtime_link_mode=dynamic keeps the LiteRt C API OUT of
+          # libLiteRtLm, so libLiteRt.so and the accelerator are hard runtime
+          # dependencies — shipping without them is a green CI run, a valid
+          # SHA256, and a dlopen failure on the user's machine.
+          #
+          # From v0.20.0 both are ours, built above from LiteRT at the tag's
+          # pin (c57b9ae0 removed Google's from prebuilt/). Each is taken from
+          # its target's own output path, never from the first match of a
+          # recursive search: the .runfiles trees and the _solib_ link farm
+          # mirror it (the accelerator is runtime data of //c:libLiteRtLm.dylib,
+          # 769af92e). Any other real copy under bazel-bin must be the same
+          # bytes, or two builds of it exist and we would not know which ships.
+          pick_built() {
+            local name="$1" want="/tmp/LiteRT-LM/bazel-bin/external/litert/litert/$2/$1" others=() o
+            if [ ! -f "$want" ]; then
+              echo "::error::$want was not built"
+              exit 1
+            fi
+            mapfile -t others < <(find /tmp/LiteRT-LM/bazel-bin/ -name "$name" \
+              -not -path '*.runfiles/*' -not -path '*/_solib_*')
+            for o in "${others[@]}"; do
+              [ "$(realpath "$o")" = "$(realpath "$want")" ] && continue
+              if ! cmp -s "$o" "$want"; then
+                echo "::error::$o differs from $want: two builds of $name under bazel-bin"
+                exit 1
+              fi
+              echo "  identical copy of $name: $o"
+            done
+            cp "$want" "artifacts/$name"
+            echo "$name <- $want"
+          }
+          pick_built libLiteRt.so c
+          pick_built libLiteRtWebGpuAccelerator.so runtime/accelerators/gpu
+          # Only the constraint provider (fetched from $PREBUILT_REF in the
+          # clone step) and Dawn come from upstream's prebuilt/ now. A LiteRT
+          # runtime or accelerator back in there means upstream ships one
+          # again: decide which copy ships rather than letting a glob pick.
           shopt -s nullglob
-          libs=(/tmp/LiteRT-LM/prebuilt/linux_x86_64/*.so)
-          if [ ${#libs[@]} -eq 0 ]; then
-            echo "::error::no prebuilt .so under prebuilt/linux_x86_64 — git lfs pull produced nothing"
+          pre=/tmp/LiteRT-LM/prebuilt/linux_x86_64
+          stale=("$pre"/libLiteRt*.so)
+          if [ ${#stale[@]} -ne 0 ]; then
+            echo "::error::$pre carries ${stale[*]##*/} again; this workflow ships the LiteRT runtime and accelerator it builds"
             exit 1
           fi
-          cp "${libs[@]}" artifacts/
-          for want in libLiteRt.so libLiteRtWebGpuAccelerator.so libwebgpu_dawn.so libGemmaModelConstraintProvider.so; do
+          cp "$pre/libwebgpu_dawn.so" "$pre/libGemmaModelConstraintProvider.so" artifacts/
+          # A git-lfs pointer stub would pass a bare existence test, so assert
+          # ELF, not presence.
+          for want in libLiteRtLm.so libLiteRt.so libLiteRtWebGpuAccelerator.so libwebgpu_dawn.so libGemmaModelConstraintProvider.so; do
             if [ ! -s "artifacts/$want" ]; then
               echo "::error::missing $want — dynamic link mode requires it at runtime"
               exit 1
@@ -144,11 +198,11 @@ jobs:
               exit 1
             fi
           done
-          # v0.14.0 Dawn split — libLiteRtWebGpuAccelerator.so now hard-links the
-          # separate libwebgpu_dawn.so. Set $ORIGIN rpath so each lib resolves its
-          # flat-layout siblings from its own directory at dlopen time.
+          # Set $ORIGIN rpath so each lib resolves its flat-layout siblings
+          # (libLiteRt.so, libwebgpu_dawn.so, the provider) from its own
+          # directory at dlopen time.
           sudo apt-get update -qq && sudo apt-get install -y -qq patchelf
-          chmod u+w artifacts/*.so   # git-lfs prebuilt .so are read-only; patchelf edits in place
+          chmod u+w artifacts/*.so   # Bazel outputs and git-lfs files are read-only; patchelf edits in place
           # The provider must speak the same Constraint ABI as the runtime we just
           # built. Upstream's 2026-08-21 change put ComputeMask where
           # ComputeBitmap was, and a provider built before it segfaults on the
@@ -174,15 +228,52 @@ jobs:
           name: litertlm-linux_x86_64
           path: artifacts/
 
+      # After the upload, so a failing gate still leaves the bundle to read;
+      # the publish job needs this job green.
+      - name: Check link closure and symbol binding
+        # The Dart client dlopens these RTLD_LAZY | RTLD_GLOBAL: a function
+        # symbol nothing defines does not fail the load, it kills the process
+        # at its first call ("symbol lookup error"), and nothing in this
+        # build calls the GPU. From v0.20.0 libLiteRt.so and the accelerator
+        # are ours, built against LiteRT's Dawn headers and linked to Google's
+        # Dawn binary. NEEDED closure, SONAMEs, RUNPATH, every undefined
+        # symbol, the GLIBC/GLIBCXX/CXXABI floor and the accelerator's single
+        # export, on the bytes that ship (review-linux B2).
+        run: python3 packages/litertlm_dart/native/litert_lm/check_linux_bundle.py artifacts
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Load the bundle in a plain Dart program (LD_BIND_NOW=1)
+        # tool/plain_dart_check against these artifacts (the hook takes a
+        # populated native/litert_lm/prebuilt/linux_x86_64/ before any download):
+        # libLiteRt, the provider, the accelerator and libLiteRtLm opened the
+        # way the client opens them, and an engine create that gets as far as
+        # the missing model. LD_BIND_NOW=1 makes ld.so bind every symbol at
+        # dlopen, so the "symbol lookup error" the check above reasons about
+        # becomes a load failure here. No GPU on the runner: the GPU's own
+        # load is not run.
+        run: |
+          dest=packages/litertlm_dart/native/litert_lm/prebuilt/linux_x86_64
+          mkdir -p "$dest"
+          cp artifacts/*.so "$dest/"
+          cd packages/litertlm_dart/tool/plain_dart_check
+          dart pub get
+          LD_BIND_NOW=1 dart run bin/plain_dart_check.dart
+
   build-linux-arm64:
     name: Linux arm64
     if: ${{ !inputs.qualcomm_dispatch_linux_only }}
-    # Pin to ubuntu-22.04-arm (glibc 2.35) for broader compatibility.
+    # Pin to ubuntu-22.04-arm (glibc 2.35, GCC 12 libstdc++): the same floor
+    # as the x86_64 job, held by check_linux_bundle.py.
     runs-on: ubuntu-22.04-arm
-    timeout-minutes: 60
+    # Raised with the x86_64 job: v0.20.0 builds libLiteRt.so and the ML Drift
+    # WebGPU accelerator from source too, and this job also runs three tests.
+    timeout-minutes: 150
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '7a03724cece417f1724c923b3d527b4319730841' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '95df4c2a932b4917ace66fcfef6c154e8d2a6699' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -235,9 +326,21 @@ jobs:
           # the runtime in one process — the suspected reason a second
           # engine_create trips 'wgpu::Instance already set'. Upstream docs
           # require litert_runtime_link_mode=dynamic for GPU on every platform.
+          #
+          # From v0.20.0 upstream's prebuilt/ has no libLiteRt.so and no GPU
+          # accelerator (c57b9ae0; only the constraint provider and Dawn are
+          # left), so both are built here, in the same invocation and with the
+          # same flags as libLiteRtLm. libLiteRt.so was already compiled as a
+          # link input of libLiteRtLm on v0.19.1; we shipped Google's copy in
+          # its place. The accelerator target is the one runtime/executor/BUILD
+          # selects for Linux in dynamic mode (default_dynamic_gpu_accelerator).
+          # Both are named explicitly so a select() change upstream fails here
+          # instead of shipping nothing.
           bazelisk build -c opt --strip=always \
             --define=litert_runtime_link_mode=dynamic \
-            '//c:libLiteRtLm.dylib'
+            '//c:libLiteRtLm.dylib' \
+            '@litert//litert/c:litert_runtime_c_api_so' \
+            '@litert//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_so'
 
       - name: Test SentencePiece NUL pieces (patch_c_api.sh section 17)
         # A byte-level BPE vocabulary carries NUL-byte pieces (Qwen3-0.6B,
@@ -298,21 +401,54 @@ jobs:
           if grep -a -q '17TopKWebGpuSampler' artifacts/libLiteRtLm.so; then
             echo "::error::libLiteRtLm.so links the TopK WebGPU sampler (section 20 did not apply)"; exit 1
           fi
-          # `|| true` used to hide an empty glob here. That was survivable when
-          # libLiteRt.so was optional; it is not now. litert_runtime_link_mode=dynamic
-          # deliberately keeps the LiteRt C API OUT of libLiteRtLm, so these
-          # companions became hard DT_NEEDED dependencies — shipping without them
-          # is a green CI run, a valid SHA256, and a dlopen failure on the user's
-          # machine. A git-lfs pointer stub would pass a bare existence test too,
-          # so assert ELF, not presence.
+          # litert_runtime_link_mode=dynamic keeps the LiteRt C API OUT of
+          # libLiteRtLm, so libLiteRt.so and the accelerator are hard runtime
+          # dependencies — shipping without them is a green CI run, a valid
+          # SHA256, and a dlopen failure on the user's machine.
+          #
+          # From v0.20.0 both are ours, built above from LiteRT at the tag's
+          # pin (c57b9ae0 removed Google's from prebuilt/). Each is taken from
+          # its target's own output path, never from the first match of a
+          # recursive search: the .runfiles trees and the _solib_ link farm
+          # mirror it (the accelerator is runtime data of //c:libLiteRtLm.dylib,
+          # 769af92e). Any other real copy under bazel-bin must be the same
+          # bytes, or two builds of it exist and we would not know which ships.
+          pick_built() {
+            local name="$1" want="/tmp/LiteRT-LM/bazel-bin/external/litert/litert/$2/$1" others=() o
+            if [ ! -f "$want" ]; then
+              echo "::error::$want was not built"
+              exit 1
+            fi
+            mapfile -t others < <(find /tmp/LiteRT-LM/bazel-bin/ -name "$name" \
+              -not -path '*.runfiles/*' -not -path '*/_solib_*')
+            for o in "${others[@]}"; do
+              [ "$(realpath "$o")" = "$(realpath "$want")" ] && continue
+              if ! cmp -s "$o" "$want"; then
+                echo "::error::$o differs from $want: two builds of $name under bazel-bin"
+                exit 1
+              fi
+              echo "  identical copy of $name: $o"
+            done
+            cp "$want" "artifacts/$name"
+            echo "$name <- $want"
+          }
+          pick_built libLiteRt.so c
+          pick_built libLiteRtWebGpuAccelerator.so runtime/accelerators/gpu
+          # Only the constraint provider (fetched from $PREBUILT_REF in the
+          # clone step) and Dawn come from upstream's prebuilt/ now. A LiteRT
+          # runtime or accelerator back in there means upstream ships one
+          # again: decide which copy ships rather than letting a glob pick.
           shopt -s nullglob
-          libs=(/tmp/LiteRT-LM/prebuilt/linux_arm64/*.so)
-          if [ ${#libs[@]} -eq 0 ]; then
-            echo "::error::no prebuilt .so under prebuilt/linux_arm64 — git lfs pull produced nothing"
+          pre=/tmp/LiteRT-LM/prebuilt/linux_arm64
+          stale=("$pre"/libLiteRt*.so)
+          if [ ${#stale[@]} -ne 0 ]; then
+            echo "::error::$pre carries ${stale[*]##*/} again; this workflow ships the LiteRT runtime and accelerator it builds"
             exit 1
           fi
-          cp "${libs[@]}" artifacts/
-          for want in libLiteRt.so libLiteRtWebGpuAccelerator.so libwebgpu_dawn.so libGemmaModelConstraintProvider.so; do
+          cp "$pre/libwebgpu_dawn.so" "$pre/libGemmaModelConstraintProvider.so" artifacts/
+          # A git-lfs pointer stub would pass a bare existence test, so assert
+          # ELF, not presence.
+          for want in libLiteRtLm.so libLiteRt.so libLiteRtWebGpuAccelerator.so libwebgpu_dawn.so libGemmaModelConstraintProvider.so; do
             if [ ! -s "artifacts/$want" ]; then
               echo "::error::missing $want — dynamic link mode requires it at runtime"
               exit 1
@@ -322,11 +458,11 @@ jobs:
               exit 1
             fi
           done
-          # v0.14.0 Dawn split — libLiteRtWebGpuAccelerator.so now hard-links the
-          # separate libwebgpu_dawn.so. Set $ORIGIN rpath so each lib resolves its
-          # flat-layout siblings from its own directory at dlopen time.
+          # Set $ORIGIN rpath so each lib resolves its flat-layout siblings
+          # (libLiteRt.so, libwebgpu_dawn.so, the provider) from its own
+          # directory at dlopen time.
           sudo apt-get update -qq && sudo apt-get install -y -qq patchelf
-          chmod u+w artifacts/*.so   # git-lfs prebuilt .so are read-only; patchelf edits in place
+          chmod u+w artifacts/*.so   # Bazel outputs and git-lfs files are read-only; patchelf edits in place
           # The provider must speak the same Constraint ABI as the runtime we just
           # built. Upstream's 2026-08-21 change put ComputeMask where
           # ComputeBitmap was, and a provider built before it segfaults on the
@@ -352,19 +488,57 @@ jobs:
           name: litertlm-linux_arm64
           path: artifacts/
 
+      # After the upload, so a failing gate still leaves the bundle to read;
+      # the publish job needs this job green.
+      - name: Check link closure and symbol binding
+        # The Dart client dlopens these RTLD_LAZY | RTLD_GLOBAL: a function
+        # symbol nothing defines does not fail the load, it kills the process
+        # at its first call ("symbol lookup error"), and nothing in this
+        # build calls the GPU. From v0.20.0 libLiteRt.so and the accelerator
+        # are ours, built against LiteRT's Dawn headers and linked to Google's
+        # Dawn binary. NEEDED closure, SONAMEs, RUNPATH, every undefined
+        # symbol, the GLIBC/GLIBCXX/CXXABI floor and the accelerator's single
+        # export, on the bytes that ship (review-linux B2).
+        run: python3 packages/litertlm_dart/native/litert_lm/check_linux_bundle.py artifacts
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Load the bundle in a plain Dart program (LD_BIND_NOW=1)
+        # tool/plain_dart_check against these artifacts (the hook takes a
+        # populated native/litert_lm/prebuilt/linux_arm64/ before any download):
+        # libLiteRt, the provider, the accelerator and libLiteRtLm opened the
+        # way the client opens them, and an engine create that gets as far as
+        # the missing model. LD_BIND_NOW=1 makes ld.so bind every symbol at
+        # dlopen, so the "symbol lookup error" the check above reasons about
+        # becomes a load failure here. No GPU on the runner: the GPU's own
+        # load is not run.
+        run: |
+          dest=packages/litertlm_dart/native/litert_lm/prebuilt/linux_arm64
+          mkdir -p "$dest"
+          cp artifacts/*.so "$dest/"
+          cd packages/litertlm_dart/tool/plain_dart_check
+          dart pub get
+          LD_BIND_NOW=1 dart run bin/plain_dart_check.dart
+
   build-windows-x86_64:
     name: Windows x86_64
     if: ${{ !inputs.qualcomm_dispatch_linux_only }}
     runs-on: windows-latest
-    timeout-minutes: 150
+    # ~50 min of Bazel on v0.19.1. v0.20.0 adds the ML Drift WebGPU delegate
+    # under MSVC (the accelerator is built from source now), on top of
+    # LiteRtLm, libLiteRt and the Intel dispatch (review-windows M7).
+    timeout-minutes: 240
     defaults:
       run:
         shell: pwsh
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '7a03724cece417f1724c923b3d527b4319730841' }}
-      # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: the
-      # v0.19.0 tag's own prebuilt is newer and its LiteRT pin contains #11120.
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '95df4c2a932b4917ace66fcfef6c154e8d2a6699' }}
+      # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: from
+      # v0.20.0 the accelerator is built from LiteRT at the tag's pin, which
+      # contains #11120 (dp4a off on Intel GPUs).
       ANDROID_NDK_HOME: ''
       BAZEL_OUTPUT_BASE: 'D:\b'
     steps:
@@ -431,9 +605,16 @@ jobs:
       - name: Build LiteRtLm.dll
         # litert_runtime_link_mode=dynamic keeps the LiteRt C API OUT of
         # libLiteRtLm so it resolves against the separately shipped libLiteRt at
-        # runtime — which is what the prebuilt WebGPU accelerator and the split
-        # libwebgpu_dawn expect. Upstream documents it as mandatory
-        # for GPU (docs/getting-started/build-and-run.md).
+        # runtime, the one the WebGPU accelerator registers with. Upstream
+        # documents it as mandatory for GPU (docs/getting-started/build-and-run.md).
+        #
+        # From v0.20.0 upstream's prebuilt/ has no libLiteRt.dll and no
+        # accelerator (c57b9ae0), so both are built here, in the same
+        # invocation: @litert//litert/c:libLiteRt (LiteRtLm.dll already linked
+        # against its import library on v0.19.1; we shipped Google's DLL in its
+        # place) and the accelerator runtime/executor/BUILD selects for Windows
+        # in dynamic mode (default_dynamic_gpu_accelerator). Named explicitly
+        # so a select() change upstream fails here instead of shipping nothing.
         #
         # It replaces `litert_link_capi_so=true`, which upstream has since
         # removed: that name has zero occurrences in the v0.16.0 tree, so we
@@ -447,10 +628,14 @@ jobs:
         # to select, so passing it would be a silent no-op like the one above.
         #
         # static_link_msvcrt (/MT) makes LiteRtLm.dll carry its own C++ runtime,
-        # as Google's companion DLLs and our StreamProxy.dll already do. On the
+        # as our StreamProxy.dll and Google's 0.19.1 companion DLLs did. On the
         # /MD default it imported vcruntime140_threads.dll (C11 threads, VC++
         # 14.38+), which no Flutter app ships and a clean Windows lacks: the
-        # Store reviewer's "Failed to preload LiteRtLm.dll" (#456).
+        # Store reviewer's "Failed to preload LiteRtLm.dll" (#456). It reaches
+        # the accelerator, but NOT libLiteRt.dll: LiteRT declares
+        # features = ["-static_link_msvcrt"] on that target (litert/c/BUILD),
+        # so it builds /MD. Which way that goes is decision D8, open; the
+        # import check after Collect reports it (see its TODO).
         run: |
           cd C:\LiteRT-LM
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
@@ -462,7 +647,10 @@ jobs:
             --features=static_link_msvcrt `
             --spawn_strategy=local `
             --define=litert_runtime_link_mode=dynamic `
-            '//c:libLiteRtLm.dylib'
+            '//c:libLiteRtLm.dylib' `
+            '@litert//litert/c:libLiteRt' `
+            '@litert//litert/runtime/accelerators/gpu:libLiteRtWebGpuAccelerator'
+          if ($LASTEXITCODE -ne 0) { throw "LiteRtLm.dll / libLiteRt.dll / accelerator build failed (exit $LASTEXITCODE)" }
 
       - name: Build Intel NPU dispatch
         # Build LiteRtDispatch.dll from the SAME pin as the runtime instead of
@@ -527,10 +715,12 @@ jobs:
           Get-ChildItem -Recurse dxc | Where-Object { $_.Name -in 'dxil.dll','dxcompiler.dll' } | Select-Object FullName, Length
 
       - name: Collect artifacts
-        # Ship BOTH naming conventions for Google's prebuilt companion DLLs:
+        # Ship BOTH naming conventions for the companion DLLs (libLiteRt and
+        # the accelerator built above, the prebuilt constraint provider):
         # - Prefixless (LiteRt.dll) for Native Assets on Windows
         # - Original lib* (libLiteRt.dll) to satisfy LiteRtLm.dll's PE import table
-        # Plus DXC runtime DLLs (dxil + dxcompiler) for WebGPU/DX12 GPU init.
+        # Dawn ships once, as webgpu_dawn.dll. Plus DXC runtime DLLs (dxil +
+        # dxcompiler) for WebGPU/DX12 GPU init.
         run: |
           New-Item -ItemType Directory -Path artifacts -Force
           Copy-Item C:\LiteRT-LM\bazel-bin\c\libLiteRtLm.dylib artifacts\LiteRtLm.dll
@@ -541,9 +731,8 @@ jobs:
           if ($dll.Contains('AVTopKWebGpuSampler@lm@litert@@')) {
             throw 'LiteRtLm.dll links the TopK WebGPU sampler (section 20 did not apply)'
           }
-          # The CRT check for #456 runs at the END of this step, once every DLL
-          # is in artifacts\ — see "the allow-list is what a Flutter Windows
-          # app already ships" below.
+          # The CRT check for #456 runs in its own step after the upload, once
+          # every DLL is in artifacts\ (Check DLL imports).
           Copy-Item StreamProxy.dll artifacts\
           $prebuilt = 'C:\LiteRT-LM\prebuilt\windows_x86_64'
           # No `else` used to mean a missing companion shipped silently. With
@@ -556,10 +745,52 @@ jobs:
           # and our MSVC build of it crashed the first GPU decode
           # (0xC0000409). Section 20 leaves it out and no sampler DLL ships, so
           # GPU decoding samples on the CPU.
-          foreach ($base in @('libGemmaModelConstraintProvider','libLiteRt','libLiteRtWebGpuAccelerator','libwebgpu_dawn')) {
-            $src = "$prebuilt\$base.dll"
+          # From v0.20.0 upstream's prebuilt/ holds only the constraint provider
+          # and webgpu_dawn.dll (c57b9ae0; cea62fa2 deleted libwebgpu_dawn.dll).
+          # libLiteRt.dll and the WebGPU accelerator are ours, built above from
+          # LiteRT at the tag's pin. A LiteRT runtime or accelerator back in
+          # prebuilt/ means upstream ships one again: decide which copy ships
+          # rather than letting this step pick.
+          $stale = @(Get-ChildItem -Path $prebuilt -Filter 'libLiteRt*.dll' -ErrorAction SilentlyContinue)
+          if ($stale.Count -ne 0) {
+            throw "$prebuilt carries $($stale.Name -join ', ') again; this workflow ships the LiteRT runtime and accelerator it builds"
+          }
+          # Each from its target's own output path, never from the first match
+          # of a recursive search: .runfiles mirrors (the accelerator is runtime
+          # data of //c:libLiteRtLm.dylib in dynamic mode, 769af92e; .bazelrc
+          # enables runfiles on Windows) and the _solib_ link farm hold copies.
+          # Any other real copy under bazel-bin must be the same bytes, or two
+          # builds of it exist and we would not know which ships (the same
+          # concern as the dispatch's unique match below).
+          $pickOne = {
+            param($name, $dir)
+            $want = "C:\LiteRT-LM\bazel-bin\external\litert\litert\$dir\$name"
+            if (-not (Test-Path $want)) { throw "$want was not built" }
+            $wantFull = (Get-Item $want).FullName
+            $wantHash = (Get-FileHash $want -Algorithm SHA256).Hash
+            $others = @(Get-ChildItem -Recurse -Filter $name -Path C:\LiteRT-LM\bazel-bin -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -notmatch '\.runfiles\\' -and $_.FullName -notmatch '\\_solib_' -and $_.FullName -ne $wantFull })
+            foreach ($o in $others) {
+              if ((Get-FileHash $o.FullName -Algorithm SHA256).Hash -ne $wantHash) {
+                throw "$($o.FullName) differs from ${want}: two builds of $name under bazel-bin"
+              }
+              Write-Host "  identical copy of ${name}: $($o.FullName)"
+            }
+            Write-Host "$name <- $want"
+            $want
+          }
+          $built = @{
+            'libLiteRt' = (& $pickOne 'libLiteRt.dll' 'c')
+            'libLiteRtWebGpuAccelerator' = (& $pickOne 'libLiteRtWebGpuAccelerator.dll' 'runtime\accelerators\gpu')
+            'libGemmaModelConstraintProvider' = "$prebuilt\libGemmaModelConstraintProvider.dll"
+          }
+          # Both names of each: lib* is what the PE imports name (LiteRtLm.dll
+          # imports libLiteRt.dll), the prefixless copy is the Native Assets
+          # name (LiteRt.dll is what LiteRtBindings and the preload open).
+          foreach ($base in $built.Keys) {
+            $src = $built[$base]
             if (-not (Test-Path $src)) {
-              throw "prebuilt companion missing: $base.dll - LiteRtLm.dll imports it"
+              throw "companion missing: $src - LiteRtLm.dll imports it"
             }
             $len = (Get-Item $src).Length
             if ($len -lt 100kb) {
@@ -568,6 +799,21 @@ jobs:
             Copy-Item $src "artifacts\$base.dll"
             $stripped = $base -replace '^lib',''
             Copy-Item $src "artifacts\$stripped.dll"
+          }
+          # Dawn under its one name: the accelerator's import of it is a
+          # delay-load of webgpu_dawn.dll through a stub import library
+          # (runtime/components/BUILD webgpu_dawn_shared_lib). That stub is a
+          # DLL of the same name in bazel-bin (runtime\components\stub\), with
+          # empty functions: never take Dawn from bazel-bin, and assert that
+          # what ships is the prebuilt byte for byte.
+          $dawnSrc = "$prebuilt\webgpu_dawn.dll"
+          if (-not (Test-Path $dawnSrc)) { throw "prebuilt webgpu_dawn.dll missing under $prebuilt" }
+          if ((Get-Item $dawnSrc).Length -lt 1mb) {
+            throw "webgpu_dawn.dll is $((Get-Item $dawnSrc).Length) bytes - a git-lfs pointer or the stub, not Dawn"
+          }
+          Copy-Item $dawnSrc artifacts\webgpu_dawn.dll
+          if ((Get-FileHash artifacts\webgpu_dawn.dll).Hash -ne (Get-FileHash $dawnSrc).Hash) {
+            throw "artifacts\webgpu_dawn.dll is not upstream's prebuilt Dawn"
           }
           # Same ABI assert as the Linux jobs: a provider from before upstream's
           # ComputeMask change segfaults on the first tool call and nothing else
@@ -789,44 +1035,132 @@ jobs:
           Write-Host "OpenVino release verified: $sdkRelease (version.txt '$sdkBuild', openvino.dll '$($embedded[0])'); $($ovDlls.Count) DLLs byte-identical to the SDK"
           Write-Host "NPU stack: LiteRtDispatch + $($ovDlls.Count) OpenVino/TBB DLLs"
           Get-ChildItem artifacts\
-          # Every DLL we build ourselves, at the END of this step so that all
-          # three are actually in artifacts\ — the first version of this loop
-          # ran before StreamProxy and the dispatch were copied and skipped
-          # them with a silent `continue`, which is the same vacuity it was
-          # written to remove. Missing now means the build is broken: throw.
-          # The allow-list is what a Flutter Windows app already ships beside its
-          # exe, NOT what the redistributable installs — the redist also carries
-          # vcruntime140_threads.dll, and needing that is exactly #456. Checked
-          # over every DLL in the bundle, not only ours: openvino/tbb come from
-          # Intel's SDK and an SDK bump is precisely how a new CRT import would
-          # arrive unnoticed. LiteRtLm must import none at all; LiteRtDispatch
-          # links OpenVINO's C++ API and keeps the dynamic CRT.
-          $allowed = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
-          $shipped = @(Get-ChildItem artifacts\*.dll | ForEach-Object { $_.Name })
-          foreach ($must in @('LiteRtLm.dll', 'LiteRtDispatch.dll', 'StreamProxy.dll')) {
-            if ($shipped -notcontains $must) { throw "$must is not in artifacts - this step should have copied it" }
-          }
-          foreach ($ours in $shipped) {
-            $path = "artifacts\$ours"
-            $deps = dumpbin /dependents $path
-            if (-not ($deps -match '^\s+KERNEL32\.dll')) {
-              throw "dumpbin listed no imports for ${ours}:`n$($deps -join "`n")"
-            }
-            $crt = @($deps -match '^\s+(msvcp|vcruntime|concrt)\d' | ForEach-Object { $_.Trim().ToLower() })
-            $bad = @($crt | Where-Object { $allowed -notcontains $_ })
-            if ($ours -eq 'LiteRtLm.dll' -and $crt.Count -gt 0) {
-              throw "LiteRtLm.dll imports the VC++ runtime: $($crt -join ', ') - static_link_msvcrt did not apply"
-            }
-            if ($bad.Count -gt 0) {
-              throw "$ours imports a VC++ runtime a Flutter Windows app does not ship: $($bad -join ', ')"
-            }
-            Write-Host "$ours CRT imports: $(if ($crt.Count) { $crt -join ', ' } else { 'none' })"
-          }
 
       - uses: actions/upload-artifact@v4
         with:
           name: litertlm-windows_x86_64
           path: artifacts/
+
+      # After the upload, so a failing gate still leaves the bundle to read;
+      # the publish job needs this job green.
+      - name: Check DLL imports (C++ runtime and import closure)
+        # Every DLL in the bundle, ours and Intel's: an OpenVINO bump is how a
+        # new runtime import would arrive unnoticed. dumpbin /dependents lists
+        # normal AND delay-load imports; both count, because from v0.20.0 Dawn
+        # is a delay-load (a missing webgpu_dawn.dll then kills the process at
+        # the first wgpu call instead of failing LoadLibrary).
+        #
+        # 1. C++ runtime. The allow-list is what a Flutter Windows app already
+        #    ships beside its exe, NOT what the redistributable installs: the
+        #    redist also carries vcruntime140_threads.dll, and needing that is
+        #    exactly #456. vcomp140 (OpenMP), ucrtbased and the *d debug
+        #    runtimes are no Flutter app's either.
+        # 2. Import closure: every import is a file of this bundle, a Windows
+        #    system DLL (or API set), or an allowed C++ runtime DLL. A name only
+        #    the build machine has is a LoadLibrary failure on the user's.
+        run: |
+          $shipped = @(Get-ChildItem artifacts\*.dll | ForEach-Object { $_.Name })
+          $shippedLower = @($shipped | ForEach-Object { $_.ToLower() })
+          foreach ($must in @('LiteRtLm.dll', 'LiteRtDispatch.dll', 'StreamProxy.dll',
+                              'libLiteRt.dll', 'LiteRt.dll', 'libLiteRtWebGpuAccelerator.dll',
+                              'webgpu_dawn.dll', 'libGemmaModelConstraintProvider.dll')) {
+            if ($shipped -notcontains $must) { throw "$must is not in artifacts - Collect artifacts should have copied it" }
+          }
+          $allowedCrt = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
+          $crtPattern = '^(msvcp|vcruntime|concrt|vcomp|msvcr|vccorlib)\d|^ucrtbased\.dll$'
+          # TODO(D8, maintainer decision pending): the C++ runtime of the DLLs
+          # built from LiteRT's source. libLiteRt.dll is /MD: litert/c/BUILD
+          # declares features = ["-static_link_msvcrt"] on the target, which our
+          # --features=static_link_msvcrt cannot override; the accelerator gets
+          # our /MT. Until D8 is decided this gate REPORTS their runtime imports
+          # and lets the allow-list pass them. Then either add libLiteRt.dll,
+          # LiteRt.dll and the accelerator here (a LiteRT BUILD patch to /MT,
+          # review-windows B1) or keep them allowed and say so in the docs that
+          # verify_tarball_manifest.sh holds to the bundle.
+          $mustBeStatic = @('LiteRtLm.dll', 'StreamProxy.dll')
+          # Windows system DLLs and API sets this bundle may import by name.
+          # ze_loader.dll is Intel's Level Zero loader, installed with the
+          # Intel GPU/NPU driver (OpenVINO's NPU plugin, loaded only on
+          # PreferredBackend.npu).
+          $system = @(
+            'kernel32.dll', 'kernelbase.dll', 'ntdll.dll', 'user32.dll', 'gdi32.dll',
+            'advapi32.dll', 'shell32.dll', 'shlwapi.dll', 'ole32.dll', 'oleaut32.dll',
+            'combase.dll', 'ws2_32.dll', 'mswsock.dll', 'iphlpapi.dll', 'bcrypt.dll',
+            'bcryptprimitives.dll', 'crypt32.dll', 'secur32.dll', 'rpcrt4.dll',
+            'dbghelp.dll', 'version.dll', 'setupapi.dll', 'cfgmgr32.dll', 'psapi.dll',
+            'powrprof.dll', 'winmm.dll', 'comctl32.dll', 'ucrtbase.dll',
+            'd3d11.dll', 'd3d12.dll', 'dxgi.dll', 'dxcore.dll', 'd3dcompiler_47.dll',
+            'opengl32.dll', 'ze_loader.dll'
+          )
+          $systemPattern = '^(api-ms-win-|ext-ms-win-)'
+          $failures = @()
+          $dawnImporters = @()
+          foreach ($dll in $shipped) {
+            $out = dumpbin /dependents "artifacts\$dll"
+            if ($LASTEXITCODE -ne 0) { throw "dumpbin /dependents failed on ${dll}:`n$($out -join "`n")" }
+            $section = $null
+            $imports = @()
+            $delay = @()
+            foreach ($line in $out) {
+              if ($line -match 'Image has the following delay load dependencies') { $section = 'delay'; continue }
+              if ($line -match 'Image has the following dependencies') { $section = 'import'; continue }
+              if ($line -match '^\s+Summary\s*$') { $section = $null; continue }
+              if ($section -and $line -match '^\s+(\S+\.dll)\s*$') {
+                if ($section -eq 'delay') { $delay += $Matches[1].ToLower() } else { $imports += $Matches[1].ToLower() }
+              }
+            }
+            # A parse that found nothing reads as "imports nothing", which is
+            # the answer this check exists to distrust.
+            if ($imports -notcontains 'kernel32.dll') {
+              throw "dumpbin listed no KERNEL32.dll import for ${dll}:`n$($out -join "`n")"
+            }
+            $all = @($imports + $delay | Sort-Object -Unique)
+            $crt = @($all | Where-Object { $_ -match $crtPattern })
+            Write-Host "${dll}: imports [$($imports -join ', ')]"
+            Write-Host "    delay-load [$(if ($delay.Count) { $delay -join ', ' } else { 'none' })]; C++ runtime [$(if ($crt.Count) { $crt -join ', ' } else { 'none' })]"
+            if ($all -contains 'webgpu_dawn.dll') {
+              $dawnImporters += "$dll ($(if ($delay -contains 'webgpu_dawn.dll') { 'delay-load' } else { 'import' }))"
+            }
+            if ($mustBeStatic -contains $dll -and $crt.Count -gt 0) {
+              $failures += "$dll imports the VC++ runtime: $($crt -join ', ') - static_link_msvcrt did not apply"
+            }
+            $badCrt = @($crt | Where-Object { $allowedCrt -notcontains $_ })
+            if ($badCrt.Count -gt 0) {
+              $failures += "$dll imports a C++ runtime a Flutter Windows app does not ship: $($badCrt -join ', ')"
+            }
+            foreach ($i in $all) {
+              if ($shippedLower -contains $i) { continue }
+              if ($system -contains $i -or $i -match $systemPattern) { continue }
+              if ($allowedCrt -contains $i) { continue }
+              $failures += "$dll imports $i, which is neither in the bundle nor a Windows system DLL"
+            }
+          }
+          Write-Host "webgpu_dawn.dll imported by: $(if ($dawnImporters.Count) { $dawnImporters -join ', ' } else { 'nothing (it is loaded only by name at run time)' })"
+          if ($failures.Count -gt 0) {
+            throw "DLL import check failed:`n$($failures -join "`n")"
+          }
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Load the bundle in a plain Dart program
+        # tool/plain_dart_check against these artifacts (the hook takes a
+        # populated native\litert_lm\prebuilt\windows_x86_64\ before any
+        # download): LiteRt.dll, the accelerator, Dawn, the shader compiler and
+        # LiteRtLm.dll preloaded the way the client loads them, and an engine
+        # create that gets as far as the missing model. The runner has the VC++
+        # redistributable installed, so this does not prove the CRT question
+        # above; it proves every normal import resolves. No GPU on the runner.
+        run: |
+          $dest = 'packages\litertlm_dart\native\litert_lm\prebuilt\windows_x86_64'
+          New-Item -ItemType Directory -Path $dest -Force | Out-Null
+          Copy-Item artifacts\* $dest
+          cd packages\litertlm_dart\tool\plain_dart_check
+          dart pub get
+          if ($LASTEXITCODE -ne 0) { throw "dart pub get failed" }
+          dart run bin/plain_dart_check.dart
+          if ($LASTEXITCODE -ne 0) { throw "plain_dart_check failed (exit $LASTEXITCODE)" }
 
   # The Qualcomm NPU dispatch for Linux arm64 and our libcdsprpc.so shim. A
   # job of its own: it builds from a standalone LiteRT checkout (the
@@ -875,7 +1209,7 @@ jobs:
       contents: write
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '7a03724cece417f1724c923b3d527b4319730841' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '95df4c2a932b4917ace66fcfef6c154e8d2a6699' }}
     steps:
       - name: Refuse to overwrite published native assets
         env:

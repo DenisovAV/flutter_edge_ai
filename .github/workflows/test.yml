@@ -102,6 +102,12 @@ jobs:
       # build keeps or drops what the lookup needs on its own.
       - name: litertlm_dart loads in plain Dart (dart run, moved dart build cli)
         working-directory: packages/litertlm_dart/tool/plain_dart_check
+        # Every symbol bound at dlopen, not at first call: an undefined
+        # function in libLiteRtLm, libLiteRt or the GPU accelerator then fails
+        # the load here instead of killing a user's process at its first call
+        # ("symbol lookup error"; review-linux B2).
+        env:
+          LD_BIND_NOW: '1'
         run: |
           dart pub get
           dart run bin/plain_dart_check.dart
@@ -456,6 +462,12 @@ jobs:
 
       - name: litertlm_dart loads in plain Dart (dart run, moved dart build cli)
         working-directory: packages/litertlm_dart/tool/plain_dart_check
+        # Every symbol bound at dlopen, not at first call: an undefined
+        # function in libLiteRtLm, libLiteRt or the GPU accelerator then fails
+        # the load here instead of killing a user's process at its first call
+        # ("symbol lookup error"; review-linux B2).
+        env:
+          LD_BIND_NOW: '1'
         run: |
           dart pub get
           dart run bin/plain_dart_check.dart

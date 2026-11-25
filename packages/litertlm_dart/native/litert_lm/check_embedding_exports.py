@@ -170,7 +170,9 @@ OWN_BUILD_SYMBOLS = [
 # Every LiteRT C function LiteRtBindings looks up (lib/src/ffi/litert_bindings.dart;
 # a VM test compares them): embeddings on .tflite and every speech model. They
 # come out of the library LiteRtBindings opens — libLiteRtLm on Apple and
-# Android, Google's libLiteRt.so / LiteRt.dll beside it on Linux and Windows.
+# Android, libLiteRt.so / LiteRt.dll beside it on Linux and Windows (Google's
+# prebuilt up to native-v0.19.1-c; from LiteRT-LM v0.20.0 our own build of
+# LiteRT at the tag's pin, which upstream no longer ships prebuilt).
 # Missing one, that load fails on that target only (the opaque-options three
 # carry the speech-to-text GPU options, #747).
 LITERT_BINDINGS_SYMBOLS = [
@@ -203,8 +205,12 @@ LITERT_BINDINGS_SYMBOLS = [
 # The LLM functions the C API 1.0 Dart client (core 2.6.0, PRs L2, L3 and 6)
 # binds beyond the ones above: the version gate, structured output, real
 # conversations for open sessions, the effective NPU context (#4184), and our
-# patches' section 16 rewind and section 23 turn-end record. Missing one, that
-# feature fails on that target only, at its first use.
+# patches' section 16 rewind and section 23 turn-end record, and section 4b's
+# four NPU executor flag setters, which every NPU load calls from LiteRT-LM
+# v0.20.0 (it resolves an unset flag from the bundle's metadata, else off).
+# They leave the library through the Windows .def list in patch_c_api.sh like
+# every other export. Missing one, that feature fails on that target only, at
+# its first use.
 LLM_SYMBOLS = [
     "litert_lm_benchmark_info_get_max_num_tokens",
     "litert_lm_conversation_config_set_constraint_provider",
@@ -215,6 +221,10 @@ LLM_SYMBOLS = [
     "litert_lm_conversation_optional_args_set_constraint",
     "litert_lm_conversation_rewind_cancelled_turn",
     "litert_lm_conversation_wait_until_done",
+    "litert_lm_engine_settings_set_enable_neon_for_npu_greedy_sampling",
+    "litert_lm_engine_settings_set_use_hw_cache_update_for_npu",
+    "litert_lm_engine_settings_set_use_hw_masking_for_npu",
+    "litert_lm_engine_settings_set_use_hw_ple_for_npu",
     "litert_lm_get_api_version",
     "litert_lm_stream_chunk_get_error",
     "litert_lm_stream_chunk_get_text",
@@ -245,8 +255,9 @@ DISPATCH_SYMBOL = "LiteRtDispatchQueryInterface"
 DISPATCH_RETIRED = "LiteRtDispatchGetApi"
 
 # The library LiteRtBindings opens where it is not the main library, by the
-# platform in the bundle's label (litertlm-<platform>): Google's prebuilt
-# LiteRT beside libLiteRtLm (_openLiteRt in lib/src/ffi/litert_bindings.dart).
+# platform in the bundle's label (litertlm-<platform>): the LiteRT runtime
+# beside libLiteRtLm (_openLiteRt in lib/src/ffi/litert_bindings.dart), built
+# from LiteRT's source from LiteRT-LM v0.20.0.
 # Every other platform links LiteRT into the main library.
 LITERT_C_LIBRARY = {"linux": "libLiteRt.so", "windows": "LiteRt.dll"}
 

@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
     hide VoiceActivityDetector;
+import 'package:flutter_edge_ai_speech/src/vad/bundled_vad_model.dart';
 import 'package:flutter_edge_ai_speech/src/vad/vad_worker.dart';
 // The native detector itself: the package library's conditional export
 // resolves to the web stub for the analyzer, which has no test hooks.
@@ -92,11 +93,11 @@ Stream<Uint8List> chunked(Uint8List bytes, int size) async* {
 final _bundledFile = File('assets/vad/silero_vad_16k_v6.2.3.tflite');
 
 void main() {
-  setUp(() => VoiceActivityDetector.debugVadEngineFactory = _peakEngine);
+  setUp(() => debugVadEngineFactory = _peakEngine);
   tearDown(() {
-    VoiceActivityDetector.debugVadEngineFactory = null;
-    VoiceActivityDetector.debugBundledModelBytes = null;
-    VoiceActivityDetector.debugModelCacheDir = null;
+    debugVadEngineFactory = null;
+    debugBundledModelBytes = null;
+    debugVadModelCacheDir = null;
   });
 
   Future<VoiceActivityDetector> create([String path = '/fake/silero.tflite']) =>
@@ -289,12 +290,12 @@ void main() {
     var reads = 0;
     setUp(() {
       dir = Directory.systemTemp.createTempSync('vad_cache_');
-      VoiceActivityDetector.debugModelCacheDir = dir;
+      debugVadModelCacheDir = dir;
       cached = File(
         '${dir.path}/flutter_edge_ai_speech/vad/silero_vad_16k_v6.2.3.tflite',
       );
       reads = 0;
-      VoiceActivityDetector.debugBundledModelBytes = () async {
+      debugBundledModelBytes = () async {
         reads++;
         return _bundledFile.readAsBytes();
       };
@@ -333,13 +334,11 @@ void main() {
     );
 
     test('an asset that does not match its SHA-256 is refused', () async {
-      VoiceActivityDetector.debugBundledModelBytes = () async =>
-          Uint8List(bundledVadModelBytes);
+      debugBundledModelBytes = () async => Uint8List(bundledVadModelBytes);
       await expectLater(VoiceActivityDetector.create(), throwsStateError);
       expect(cached.existsSync(), isFalse);
       // A later create tries again instead of repeating the failure.
-      VoiceActivityDetector.debugBundledModelBytes = () async =>
-          _bundledFile.readAsBytes();
+      debugBundledModelBytes = () async => _bundledFile.readAsBytes();
       await (await VoiceActivityDetector.create()).close();
       expect(digest(cached), bundledVadModelSha256);
     });

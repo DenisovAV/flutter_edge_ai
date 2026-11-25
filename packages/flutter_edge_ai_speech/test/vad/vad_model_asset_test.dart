@@ -4,7 +4,7 @@
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter_edge_ai_speech/src/vad/voice_activity_detector.dart';
+import 'package:flutter_edge_ai_speech/src/vad/bundled_vad_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

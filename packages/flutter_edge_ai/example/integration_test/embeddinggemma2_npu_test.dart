@@ -22,8 +22,8 @@
 //   image golden (min/mean); text → image top-1 on the ten scenes;
 // - load and per-embed times.
 //
-// The bundle is picked by SoC: --dart-define=EG2_NPU_SOC=<SM8850|SM8650|
-// QCS8275>, else the device's own (Android `ro.soc.model`), else the first SoC
+// The bundle is picked by SoC: --dart-define=EG2_NPU_SOC=<SM8850|SM8750|
+// SM8650|QCS8275>, else the device's own (Android `ro.soc.model`), else the first SoC
 // whose 270m is staged. Bundles are staged under their Hugging Face names (the
 // generic 270m for the refusal too; it is downloaded when absent):
 //   Android  /data/local/tmp/flutter_gemma_test/  (adb push, or on a DDP
@@ -69,6 +69,10 @@ const _pins = <String, (String, String)>{
   'SM8650': (
     '7dabcb17eed982d6de4435aaf29cc56147a627f6ab20a1e37aadd7af5399457b',
     'ec7d2ee513830337343567409f32fea4a3e4f8f7b94facd0a20f3d3523cd7480',
+  ),
+  'SM8750': (
+    'b5615709768db4ca4fb4f04514e7e41b0680ccb12dd5f90371193f7fd12e7c99',
+    'c5c05cb59833541a2d0d9374c7b50d2c3a406a4a84c85762775e5f9c6d96cd0c',
   ),
   'QCS8275': (
     '128c32151613a5bbf8b5695b2d9ae271057338febbf06e3aeebf29e1353cb51d',

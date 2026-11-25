@@ -2590,8 +2590,24 @@ class LiteRtLmFfiClient {
     // The vendor and the bundle decide (`npuHwMasking`): Intel turns the HW
     // mask update path off, except for a bundle whose NPU-compiled mask graphs
     // are known to be wrong (Intel's public Gemma 4 26B for Panther Lake).
-    final useHwMasking = backend == 'npu' ? npuDispatch!.useHwMasking : null;
-    final npuFlags = backend == 'npu' ? npuExecutorFlags : null;
+    //
+    // D3/D5 test branches only: `--dart-define=LITERTLM_NPU_UPSTREAM_DEFAULTS=
+    // true` leaves all four NPU executor flags unset (LiteRT-LM v0.20.0's own
+    // resolution: the bundle's NPU executor metadata, else off), for an A/B
+    // against the v0.19.1 values on one build. Qualcomm, Tensor and MediaTek
+    // runs only: it does not keep Intel's explicit mask value.
+    final useHwMasking = backend == 'npu' && !_npuUpstreamDefaults
+        ? npuDispatch!.useHwMasking
+        : null;
+    final npuFlags = backend == 'npu' && !_npuUpstreamDefaults
+        ? npuExecutorFlags
+        : null;
+    if (backend == 'npu' && _npuUpstreamDefaults) {
+      runtimeLog(
+        '[LiteRtLmFfi] NPU: LITERTLM_NPU_UPSTREAM_DEFAULTS — all four NPU '
+        'executor flags left unset (bundle metadata, else off)',
+      );
+    }
     if (useHwMasking != null) {
       runtimeLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=$useHwMasking');
     }
@@ -5383,3 +5399,9 @@ final class ScoringStops {
     }
   }
 }
+
+/// D3/D5 test toggle: leave the four NPU executor flags to LiteRT-LM v0.20.0's
+/// own resolution instead of the v0.19.1 values (see the LLM load).
+const _npuUpstreamDefaults = bool.fromEnvironment(
+  'LITERTLM_NPU_UPSTREAM_DEFAULTS',
+);

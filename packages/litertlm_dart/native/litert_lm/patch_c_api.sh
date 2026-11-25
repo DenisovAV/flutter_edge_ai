@@ -1267,6 +1267,19 @@ fi
 LORA_DIR="$(cd "$(dirname "$0")" && pwd)/patches"
 for LORA_PATCH in "$LORA_DIR/litert_lm_zero_lora_buffers_4d4fd6e5.patch" \
     "$LORA_DIR/text_lora_sessions.patch"; do
+  # The build scripts reuse a tree and reset it with `git checkout -f`, which
+  # leaves the untracked files an earlier run's patch created (part 1 adds two
+  # testdata files), and `git apply --check` then fails on "already exists".
+  # When the patch is not applied, an untracked file it creates is such a
+  # leftover: remove it so the patch can create it again.
+  if ! git -C "$DIR" apply --reverse --check "$LORA_PATCH" 2>/dev/null; then
+    for created in $(git -C "$DIR" apply --summary "$LORA_PATCH" | awk '$1 == "create" {print $4}'); do
+      if [ -e "$DIR/$created" ] && ! git -C "$DIR" ls-files --error-unmatch "$created" >/dev/null 2>&1; then
+        rm -f "$DIR/$created"
+        echo "  section 33: removed $created left by an earlier run"
+      fi
+    done
+  fi
   if git -C "$DIR" apply --check "$LORA_PATCH" 2>/dev/null; then
     git -C "$DIR" apply "$LORA_PATCH"
     echo "  OK: section 33: applied $(basename "$LORA_PATCH")"

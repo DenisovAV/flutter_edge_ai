@@ -1,5 +1,6 @@
-// The streaming capability interfaces: found through `asStreaming`, absent on
-// a plain recognizer or synthesizer, and off by default in the catalog.
+// Streaming speech on SpeechRecognizer / SpeechSynthesizer: a model that
+// cannot stream says so and refuses, the catalog is off by default, and the
+// value types hold their rules.
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -15,26 +16,19 @@ class _PlainRecognizer implements SpeechRecognizer {
   Future<String> transcribe(Uint8List pcm16kMono, {String? language}) async =>
       '';
   @override
-  void addCloseListener(void Function() listener) {}
-  @override
-  Future<void> close() async {}
-}
-
-class _StreamingRecognizer extends _PlainRecognizer
-    implements StreamingSpeechRecognizer {
+  StreamingSttInfo? get streaming => null;
   @override
   Stream<TranscriptUpdate> transcribeStream(
     Stream<Uint8List> pcm16kMono, {
     String? language,
     TranscribeStreamOptions options = const TranscribeStreamOptions(),
-  }) => const Stream.empty();
+  }) => Stream.error(UnsupportedError('this model does not stream'));
   @override
-  Future<void> flush() async {}
+  Future<void> flush() => Future.error(StateError('no stream'));
   @override
-  StreamingSttInfo get streaming => const StreamingSttInfo(
-    kind: StreamingKind.windowed,
-    window: Duration(seconds: 5),
-  );
+  void addCloseListener(void Function() listener) {}
+  @override
+  Future<void> close() async {}
 }
 
 class _PlainSynth implements SpeechSynthesizer {
@@ -43,33 +37,39 @@ class _PlainSynth implements SpeechSynthesizer {
   @override
   Future<Uint8List> synthesize(String text) async => Uint8List(0);
   @override
+  bool get supportsStreaming => false;
+  @override
+  Stream<SpeechChunk> synthesizeStream(String text) =>
+      Stream.error(UnsupportedError('this model does not stream'));
+  @override
+  SpeechTextStream openTextStream() =>
+      throw UnsupportedError('this model does not stream');
+  @override
   void addCloseListener(void Function() listener) {}
   @override
   Future<void> close() async {}
 }
 
-class _StreamingSynth extends _PlainSynth
-    implements StreamingSpeechSynthesizer {
-  @override
-  Stream<SpeechChunk> synthesizeStream(String text) => const Stream.empty();
-  @override
-  SpeechTextStream openTextStream() => throw UnimplementedError();
-}
-
 void main() {
-  test('asStreaming finds a streaming recognizer and is null otherwise', () {
-    final SpeechRecognizer streaming = _StreamingRecognizer();
-    final SpeechRecognizer plain = _PlainRecognizer();
-    expect(streaming.asStreaming, same(streaming));
-    expect(streaming.asStreaming!.streaming.kind, StreamingKind.windowed);
-    expect(plain.asStreaming, isNull);
-  });
+  test(
+    'a recognizer that cannot stream says so and refuses on listen',
+    () async {
+      final SpeechRecognizer recognizer = _PlainRecognizer();
+      expect(recognizer.streaming, isNull);
+      final stream = recognizer.transcribeStream(const Stream.empty());
+      await expectLater(stream, emitsError(isA<UnsupportedError>()));
+      await expectLater(recognizer.flush(), throwsStateError);
+    },
+  );
 
-  test('asStreaming finds a streaming synthesizer and is null otherwise', () {
-    final SpeechSynthesizer streaming = _StreamingSynth();
-    final SpeechSynthesizer plain = _PlainSynth();
-    expect(streaming.asStreaming, same(streaming));
-    expect(plain.asStreaming, isNull);
+  test('a synthesizer that cannot stream says so and refuses', () async {
+    final SpeechSynthesizer synthesizer = _PlainSynth();
+    expect(synthesizer.supportsStreaming, isFalse);
+    await expectLater(
+      synthesizer.synthesizeStream('hi'),
+      emitsError(isA<UnsupportedError>()),
+    );
+    expect(synthesizer.openTextStream, throwsUnsupportedError);
   });
 
   test('catalog variants do not stream unless they say so', () {

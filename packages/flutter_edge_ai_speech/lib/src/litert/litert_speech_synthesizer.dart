@@ -29,6 +29,17 @@ typedef VoidCallback = void Function();
 /// class. Unlike STT, there is no input-conversion step: the worker takes
 /// text in and returns 16-bit PCM bytes out.
 class LiteRtSpeechSynthesizer extends SpeechSynthesizer with CloseNotifier {
+  @override
+  bool get supportsStreaming => false;
+
+  @override
+  Stream<SpeechChunk> synthesizeStream(String text) =>
+      Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  SpeechTextStream openTextStream() =>
+      throw UnsupportedError('this model does not stream');
+
   LiteRtSpeechSynthesizer._(this._worker, this.onClose) {
     // A worker that dies on its own turns this synthesizer closed and tells
     // its listeners, so core drops its cached synthesizer and the next

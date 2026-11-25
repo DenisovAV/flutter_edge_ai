@@ -161,19 +161,15 @@ SessionMetrics class
 SessionRequest class final
 SkillExecutorProvider class abstract
 SkillExecutorRegistry class
-SpeechChunk class final experimental
+SpeechChunk class final
 SpeechRecognizer class abstract
-SpeechRecognizerStreaming extension experimental
-SpeechStreamOverrunException class final experimental
+SpeechStreamOverrunException class final
 SpeechSynthesizer class abstract
-SpeechSynthesizerStreaming extension experimental
-SpeechTextStream class abstract interface experimental
+SpeechTextStream class abstract interface
 StorageStats class
-StreamingKind enum experimental
-StreamingLatency enum experimental
-StreamingSpeechRecognizer class abstract interface experimental
-StreamingSpeechSynthesizer class abstract interface experimental
-StreamingSttInfo class final experimental
+StreamingKind enum
+StreamingLatency enum
+StreamingSttInfo class final
 StructuredDelivery enum
 StructuredOutputException class sealed
 StructuredOutputSupport class final
@@ -191,8 +187,8 @@ TokenPassGraph class final
 TokenizedInput class
 Tool class
 ToolChoice enum
-TranscribeStreamOptions class final experimental
-TranscriptUpdate class final experimental
+TranscribeStreamOptions class final
+TranscriptUpdate class final
 TtsBackendProvider class abstract
 TtsInstallation class
 TtsInstallationBuilder class
@@ -210,7 +206,7 @@ VisionEncoderValidationException class
 VisionEncoderValidator class
 VisionSpecs class abstract
 WebStorageMode enum
-WordTiming class final experimental
+WordTiming class final
 defaultMaxFunctionBufferLength variable const
 detectImageMimeType function
 edgeAiLog function

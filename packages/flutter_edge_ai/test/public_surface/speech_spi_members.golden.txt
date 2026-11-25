@@ -5,23 +5,20 @@
 
 abstract class SpeechRecognizer
   field String? language
+  getter StreamingSttInfo? streaming abstract
   method void addCloseListener(void Function() listener) abstract
   method Future<void> close() abstract
+  method Future<void> flush() abstract
   method Future<String> transcribe(Uint8List pcm16kMono, {String? language}) abstract
+  method Stream<TranscriptUpdate> transcribeStream(Stream<Uint8List> pcm16kMono, {String? language, TranscribeStreamOptions options = const TranscribeStreamOptions()}) abstract
 
 abstract class SpeechSynthesizer
   getter int sampleRate abstract
+  getter bool supportsStreaming abstract
   method void addCloseListener(void Function() listener) abstract
   method Future<void> close() abstract
-  method Future<Uint8List> synthesize(String text) abstract
-
-abstract interface class StreamingSpeechRecognizer implements SpeechRecognizer
-  getter StreamingSttInfo streaming abstract
-  method Future<void> flush() abstract
-  method Stream<TranscriptUpdate> transcribeStream(Stream<Uint8List> pcm16kMono, {String? language, TranscribeStreamOptions options = const TranscribeStreamOptions()}) abstract
-
-abstract interface class StreamingSpeechSynthesizer implements SpeechSynthesizer
   method SpeechTextStream openTextStream() abstract
+  method Future<Uint8List> synthesize(String text) abstract
   method Stream<SpeechChunk> synthesizeStream(String text) abstract
 
 abstract interface class SpeechTextStream
@@ -108,7 +105,7 @@ abstract base class SttVariant extends CatalogVariant
   getter List<ModelArtifact> files @nonVirtual
   getter ModelArtifact model abstract
   getter ModelRuntimeDefaults runtimeDefaults
-  getter bool supportsStreaming @experimental
+  getter bool supportsStreaming
   getter ModelArtifact tokenizer abstract
   getter SttModelType type abstract
 
@@ -116,6 +113,6 @@ abstract base class TtsVariant extends CatalogVariant
   constructor const TtsVariant()
   getter String baseUrl abstract
   getter ModelRuntimeDefaults runtimeDefaults
-  getter bool supportsStreaming @experimental
+  getter bool supportsStreaming
   getter TtsModelType type abstract
 

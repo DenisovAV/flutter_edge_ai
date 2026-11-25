@@ -1,5 +1,5 @@
 ## Unreleased
-- Experimental streaming speech interfaces: `transcribeStream`, `synthesizeStream`, `openTextStream`, via `asStreaming`.
+- **Breaking for implementers:** `SpeechRecognizer`/`SpeechSynthesizer` gain streaming members (`transcribeStream`, `synthesizeStream`, `openTextStream`).
 
 ## 2.7.2
 - `DeciderAnswer.confidence` docs: it equals Jev's confidence for Choice answers only.

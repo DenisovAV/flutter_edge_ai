@@ -1,7 +1,6 @@
 // Member goldens of the SPIs engine and backend packages compile against:
-// the embedding SPI, the option-scoring SPI, the speech SPI (with the
-// streaming capability interfaces; their `asStreaming` extensions are pinned
-// by name in the symbol goldens) and the experimental Decider API. The
+// the embedding SPI, the option-scoring SPI, the speech SPI (with its
+// streaming members and their value types) and the experimental Decider API. The
 // embedding SPI was the first, and the notes below describe it.
 //
 // The symbol goldens (public_surface_test.dart) pin top-level NAMES only, so a
@@ -97,14 +96,12 @@ final _optionScoringGolden = File(
   'test/public_surface/option_scoring_spi_members.golden.txt',
 );
 
-/// The speech contracts: what an STT or TTS backend implements, and the
-/// streaming capability interfaces with their value types. Backends and test
+/// The speech contracts: what an STT or TTS backend implements, streaming
+/// included, and the streaming value types. Backends and test
 /// fakes implement these member by member, so a member change is reviewed.
 const _speechTypes = [
   'SpeechRecognizer',
   'SpeechSynthesizer',
-  'StreamingSpeechRecognizer',
-  'StreamingSpeechSynthesizer',
   'SpeechTextStream',
   'TranscriptUpdate',
   'TranscribeStreamOptions',

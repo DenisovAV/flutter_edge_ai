@@ -289,6 +289,20 @@ class _FakeSttBackend implements SttBackendProvider {
 }
 
 class _FakeSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
+  @override
+  StreamingSttInfo? get streaming => null;
+
+  @override
+  Stream<TranscriptUpdate> transcribeStream(
+    Stream<Uint8List> pcm16kMono, {
+    String? language,
+    TranscribeStreamOptions options = const TranscribeStreamOptions(),
+  }) => Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  Future<void> flush() =>
+      Future.error(StateError('flush: no transcribeStream is running'));
+
   _FakeSpeechRecognizer(this.language);
 
   int closeCalls = 0;
@@ -331,6 +345,17 @@ class _FakeTtsBackend implements TtsBackendProvider {
 }
 
 class _FakeSpeechSynthesizer extends SpeechSynthesizer with CloseNotifier {
+  @override
+  bool get supportsStreaming => false;
+
+  @override
+  Stream<SpeechChunk> synthesizeStream(String text) =>
+      Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  SpeechTextStream openTextStream() =>
+      throw UnsupportedError('this model does not stream');
+
   int closeCalls = 0;
 
   @override

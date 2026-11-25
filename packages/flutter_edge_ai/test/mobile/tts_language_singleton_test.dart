@@ -192,6 +192,17 @@ class _FakeTtsBackend implements TtsBackendProvider {
 
 class _FakeSpeechSynthesizer extends SpeechSynthesizer with CloseNotifier {
   @override
+  bool get supportsStreaming => false;
+
+  @override
+  Stream<SpeechChunk> synthesizeStream(String text) =>
+      Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  SpeechTextStream openTextStream() =>
+      throw UnsupportedError('this model does not stream');
+
+  @override
   int get sampleRate => 24000;
 
   @override

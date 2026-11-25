@@ -25,19 +25,15 @@ export 'src/interface.dart'
 export 'src/model_file_manager_interface.dart'
     show ModelFileManager, ModelReplacePolicy;
 
-// Streaming speech: what a recognizer or synthesizer implements when its
-// model can work on audio or text as it arrives.
+// Streaming speech: the value types of SpeechRecognizer.transcribeStream and
+// SpeechSynthesizer.synthesizeStream / openTextStream.
 export 'src/streaming_speech.dart'
     show
         SpeechChunk,
-        SpeechRecognizerStreaming,
         SpeechStreamOverrunException,
-        SpeechSynthesizerStreaming,
         SpeechTextStream,
         StreamingKind,
         StreamingLatency,
-        StreamingSpeechRecognizer,
-        StreamingSpeechSynthesizer,
         StreamingSttInfo,
         TranscribeStreamOptions,
         TranscriptUpdate,

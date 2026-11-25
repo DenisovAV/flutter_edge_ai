@@ -143,10 +143,10 @@ final class LiteRtSttVariant extends SttVariant {
       _backendsHere(compiledForNpu: npuTarget != null).difference(_withheld);
 
   /// Parakeet's CTC builds stream (`LiteRtSpeechRecognizer` loads them as a
-  /// `StreamingSpeechRecognizer`); moonshine and Whisper do not yet. A build
-  /// compiled for an NPU does not load at all.
+  /// `StreamingSpeechRecognizer` on every backend it loads on); moonshine and
+  /// Whisper do not yet. A build compiled for an NPU does not load at all.
   @override
-  bool get streaming => type == SttModelType.parakeet && npuTarget == null;
+  bool get supportsStreaming => type == SttModelType.parakeet && npuTarget == null;
 }
 
 /// A text-to-speech model this package runs.

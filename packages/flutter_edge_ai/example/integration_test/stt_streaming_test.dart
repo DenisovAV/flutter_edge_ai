@@ -51,7 +51,7 @@ void main() {
           .install();
     } else {
       final variant = LiteRtSpeechModels.parakeetCtc0_6b.i8;
-      expect(variant.streaming, isTrue);
+      expect(variant.supportsStreaming, isTrue);
       await FlutterEdgeAi.installStt().fromCatalog(variant).install();
     }
     final recognizer = await FlutterEdgeAi.getActiveStt();

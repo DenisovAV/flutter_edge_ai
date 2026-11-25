@@ -9,6 +9,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
+    show LiteRtSpeechModels;
 import 'package:flutter_edge_ai_speech/src/litert/litert_speech_recognizer.dart';
 import 'package:flutter_edge_ai_speech/src/litert/stt_core.dart'
     show CtcWindowTokens;
@@ -142,6 +144,35 @@ void main() {
     final whisper = await create(profile: const SttModelProfile.whisper());
     addTearDown(whisper.close);
     expect(whisper.asStreaming, isNull);
+  });
+
+  test('the catalog says a build streams exactly when the recognizer it '
+      'loads into is a StreamingSpeechRecognizer', () async {
+    var checked = 0;
+    for (final model in LiteRtSpeechModels.stt) {
+      for (final variant in model.variants) {
+        if (variant.npuTarget != null) {
+          expect(variant.supportsStreaming, isFalse, reason: variant.id);
+          continue;
+        }
+        final recognizer = await create(
+          profile: SttModelProfile.forType(variant.type),
+        );
+        expect(
+          recognizer.asStreaming != null,
+          variant.supportsStreaming,
+          reason: variant.id,
+        );
+        await recognizer.close();
+        checked++;
+      }
+    }
+    expect(checked, greaterThan(0));
+    for (final model in LiteRtSpeechModels.tts) {
+      for (final variant in model.variants) {
+        expect(variant.supportsStreaming, isFalse, reason: variant.id);
+      }
+    }
   });
 
   test(

@@ -335,9 +335,10 @@ final class LiteRtStreamingSpeechRecognizer extends LiteRtSpeechRecognizer
     String? language,
     TranscribeStreamOptions options = const TranscribeStreamOptions(),
   }) {
-    if (options.maxBufferedAudio < streaming.window) {
+    final set = options.maxBufferedAudio;
+    if (set != null && set < streaming.window) {
       throw ArgumentError.value(
-        options.maxBufferedAudio,
+        set,
         'options.maxBufferedAudio',
         'must be at least the model window, ${streaming.window}',
       );
@@ -497,12 +498,13 @@ final class _SttStream {
     final samples = pcm16LEToFloat32(bytes);
     _queue.add(samples);
     _pendingSamples += samples.length;
-    final limit = _options.maxBufferedAudio.inMicroseconds * _rate ~/ 1000000;
+    final limitTime = _options.maxBufferedAudioFor(_owner.streaming.window);
+    final limit = limitTime.inMicroseconds * _rate ~/ 1000000;
     if (_pendingSamples > limit) {
       _fail(
         SpeechStreamOverrunException(
           buffered: _at(_pendingSamples),
-          limit: _options.maxBufferedAudio,
+          limit: limitTime,
         ),
       );
       return;

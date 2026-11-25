@@ -267,21 +267,31 @@ echo "QAIRT version: $QAIRT_VERSION"
 # script's job is keeping the two halves matched: the dispatch built here must
 # negotiate with that pinned runtime, so refuse to build against any other
 # QAIRT release.
-HOOK_QNN="$(sed -n "s/^const qnnRuntimeVersion = '\\(.*\\)';/\\1/p" \
-  "$SCRIPT_DIR/../../lib/src/hook/qnn_runtime.dart")"
+# Per target (decision D3): Android pairs the dispatch with the Maven runtime
+# (qnnRuntimeVersion), Linux arm64 with the QAIRT zip the hook reads its
+# libraries from (qairtBuild in lib/src/hook/qairt_linux.dart, compared on its
+# x.y.z, which is what sdk.yaml carries).
+if [ "$TARGET" = linux_arm64 ]; then
+  HOOK_SRC=qairt_linux.dart
+  HOOK_QNN="$(sed -n "s/^const qairtBuild = '\\([0-9]*\\.[0-9]*\\.[0-9]*\\)\\..*';/\\1/p" \
+    "$SCRIPT_DIR/../../lib/src/hook/qairt_linux.dart")"
+else
+  HOOK_SRC=qnn_runtime.dart
+  HOOK_QNN="$(sed -n "s/^const qnnRuntimeVersion = '\\(.*\\)';/\\1/p" \
+    "$SCRIPT_DIR/../../lib/src/hook/qnn_runtime.dart")"
+fi
 if [ -z "$QAIRT_VERSION" ] || [ -z "$HOOK_QNN" ]; then
   echo "ERROR: could not read the QAIRT version ('$QAIRT_VERSION') or the hook's" >&2
-  echo "       qnnRuntimeVersion ('$HOOK_QNN') — cannot prove the pair matches" >&2
+  echo "       $TARGET runtime release in $HOOK_SRC ('$HOOK_QNN') — cannot prove the pair matches" >&2
   exit 1
 fi
 if [ "$QAIRT_VERSION" != "$HOOK_QNN" ]; then
   echo "ERROR: LiteRT builds the dispatch against QAIRT $QAIRT_VERSION, but the hook" >&2
-  echo "       fetches qnn-runtime $HOOK_QNN. Bump qnnRuntimeVersion and" >&2
-  echo "       qnnRuntimeSha256 in lib/src/hook/qnn_runtime.dart to the matching" >&2
-  echo "       com.qualcomm.qti:qnn-runtime release first." >&2
+  echo "       fetches the $TARGET QNN runtime $HOOK_QNN (lib/src/hook/$HOOK_SRC)." >&2
+  echo "       Move that pin (version and sha256s) to the matching release first." >&2
   exit 1
 fi
-echo "  matches the hook's qnn-runtime $HOOK_QNN"
+echo "  matches the hook's $TARGET QNN runtime $HOOK_QNN ($HOOK_SRC)"
 
 # 5. Check 16 KB page alignment. Google Play rejects an APK in which any .so
 # has a PT_LOAD p_align below 16 KB. The dispatch is linked with

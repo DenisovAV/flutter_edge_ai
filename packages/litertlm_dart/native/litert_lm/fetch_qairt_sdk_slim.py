@@ -16,8 +16,9 @@ that LITERT_QAIRT_SDK can point at:
 
 Usage: fetch_qairt_sdk_slim.py <out-dir> [--host aarch64-oe-linux-gcc11.2]
 
-The URL, build and archive size are LiteRT's pin at the v0.18.0 LiteRT commit
-(third_party/qairt/workspace.bzl) and the hook's (lib/src/hook/qairt_linux.dart).
+The URL, build and archive size are QAIRT 2.52.0.261104 (D3 test branch,
+candidate A: Google's LiteRT v2.4.0 pair, not LiteRT bf49eb62's 2.51.1 pin)
+and the hook's (lib/src/hook/qairt_linux.dart).
 A different total size in a range answer means a different file, and stops.
 
 Integrity: the dispatch we ship is compiled from these headers, so a tampered
@@ -35,15 +36,15 @@ import sys
 import urllib.request
 import zlib
 
-BUILD = "2.50.0.260828"
+BUILD = "2.52.0.261104"
 URL = ("https://softwarecenter.qualcomm.com/api/download/software/sdks/"
        f"Qualcomm_AI_Runtime_Community/All/{BUILD}/v{BUILD}.zip")
-LENGTH = 2601473189
+LENGTH = 3036597557
 ROOT = f"qairt/{BUILD}/"
-# 216 headers + sdk.yaml + LICENSE.pdf + the two host libraries; the libraries
+# 222 headers + sdk.yaml + LICENSE.pdf + the two host libraries; the libraries
 # are the same bytes the hook pins (lib/src/hook/qairt_linux.dart).
-SLICE_FILES = 220
-SLICE_SHA256 = "1f77a3a5012fe27802dec528f97903f85fad838a47895c5445814eef9cf90617"
+SLICE_FILES = 226
+SLICE_SHA256 = "ee0bab438e18a2197119e5d93ae7f5338b0f5bb1ebf237cffa61912910cfc527"
 
 
 def ranged(url, start, end):

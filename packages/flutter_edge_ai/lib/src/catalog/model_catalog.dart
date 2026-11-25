@@ -239,8 +239,9 @@ abstract base class SttVariant extends CatalogVariant {
   ModelRuntimeDefaults get runtimeDefaults => const ModelRuntimeDefaults();
 
   /// Whether the recognizer this build loads into is a
-  /// `StreamingSpeechRecognizer`, so an app can pick a model for streaming
-  /// before installing it. False unless a subclass says so.
+  /// `StreamingSpeechRecognizer` on the platforms where the build runs
+  /// ([backendsHere]), so an app can pick a model for streaming before
+  /// installing it. False unless a subclass says so.
   bool get streaming => false;
 
   /// [model] and [tokenizer], which is what the installer downloads; not
@@ -271,8 +272,9 @@ abstract base class TtsVariant extends CatalogVariant {
   ModelRuntimeDefaults get runtimeDefaults => const ModelRuntimeDefaults();
 
   /// Whether the synthesizer this build loads into is a
-  /// `StreamingSpeechSynthesizer`, so an app can pick a voice for streaming
-  /// before installing it. False unless a subclass says so.
+  /// `StreamingSpeechSynthesizer` on the platforms where the build runs
+  /// ([backendsHere]), so an app can pick a voice for streaming before
+  /// installing it. False unless a subclass says so.
   bool get streaming => false;
 }
 

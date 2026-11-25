@@ -31,18 +31,22 @@ abstract interface class SpeechTextStream
   method Future<void> close() abstract
 
 final class TranscriptUpdate
-  constructor const TranscriptUpdate({required String confirmedDelta, required String unconfirmed, required Duration confirmedUntil, List<WordTiming> confirmedWords = const [], bool endpoint = false})
+  constructor TranscriptUpdate({required String confirmedDelta, required String unconfirmed, required Duration confirmedUntil, List<WordTiming> confirmedWords = const [], bool endpoint = false})
   field final String confirmedDelta
   field final Duration confirmedUntil
   field final List<WordTiming> confirmedWords
   field final bool endpoint
   field final String unconfirmed
+  getter int hashCode
+  method bool ==(Object other)
   method String toString()
 
 final class TranscribeStreamOptions
   constructor const TranscribeStreamOptions({StreamingLatency latency = StreamingLatency.lowLatency, Duration maxBufferedAudio = const Duration(seconds: 10)})
   field final StreamingLatency latency
   field final Duration maxBufferedAudio
+  getter int hashCode
+  method bool ==(Object other)
 
 enum StreamingLatency
   value balanced
@@ -56,15 +60,18 @@ final class StreamingSttInfo
   constructor const StreamingSttInfo({required StreamingKind kind, required Duration window})
   field final StreamingKind kind
   field final Duration window
+  getter int hashCode
+  method bool ==(Object other)
+  method String toString()
 
 final class SpeechStreamOverrunException implements Exception
-  constructor const SpeechStreamOverrunException(Duration buffered, Duration limit)
+  constructor const SpeechStreamOverrunException({required Duration buffered, required Duration limit})
   field final Duration buffered
   field final Duration limit
   method String toString()
 
 final class SpeechChunk
-  constructor const SpeechChunk({required Uint8List pcm, required int sampleRate, required int index, List<WordTiming> words = const []})
+  constructor SpeechChunk({required Uint8List pcm, required int sampleRate, required int index, List<WordTiming> words = const []})
   field final int index
   field final Uint8List pcm
   field final int sampleRate

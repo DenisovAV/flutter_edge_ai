@@ -81,13 +81,39 @@ void main() {
     const options = TranscribeStreamOptions();
     expect(options.latency, StreamingLatency.lowLatency);
     expect(options.maxBufferedAudio, const Duration(seconds: 10));
-    const update = TranscriptUpdate(
+    final update = TranscriptUpdate(
       confirmedDelta: ' hello',
       unconfirmed: 'wor',
       confirmedUntil: Duration(milliseconds: 800),
     );
     expect(update.endpoint, isFalse);
     expect(update.confirmedWords, isEmpty);
+    expect(
+      update,
+      TranscriptUpdate(
+        confirmedDelta: ' hello',
+        unconfirmed: 'wor',
+        confirmedUntil: const Duration(milliseconds: 800),
+      ),
+    );
+    final words = [
+      const WordTiming(
+        word: 'a',
+        start: 0,
+        end: 1,
+        audioStart: Duration.zero,
+        audioEnd: Duration(milliseconds: 10),
+      ),
+    ];
+    final withWords = TranscriptUpdate(
+      confirmedDelta: 'a',
+      unconfirmed: '',
+      confirmedUntil: Duration.zero,
+      confirmedWords: words,
+    );
+    words.clear();
+    expect(withWords.confirmedWords, hasLength(1), reason: 'copied');
+    expect(() => withWords.confirmedWords.clear(), throwsUnsupportedError);
     const word = WordTiming(
       word: 'hello',
       start: 1,
@@ -107,8 +133,8 @@ void main() {
     );
     expect(
       const SpeechStreamOverrunException(
-        Duration(seconds: 11),
-        Duration(seconds: 10),
+        buffered: Duration(seconds: 11),
+        limit: Duration(seconds: 10),
       ).toString(),
       contains('over the 0:00:10.000000 limit'),
     );

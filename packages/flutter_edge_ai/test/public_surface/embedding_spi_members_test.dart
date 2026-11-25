@@ -1,4 +1,8 @@
-// Member golden of the embedding SPI: what engine packages compile against.
+// Member goldens of the SPIs engine and backend packages compile against:
+// the embedding SPI, the option-scoring SPI, the speech SPI (with the
+// streaming capability interfaces; their `asStreaming` extensions are pinned
+// by name in the symbol goldens) and the experimental Decider API. The
+// embedding SPI was the first, and the notes below describe it.
 //
 // The symbol goldens (public_surface_test.dart) pin top-level NAMES only, so a
 // dropped parameter default, a member turned abstract or a new required named

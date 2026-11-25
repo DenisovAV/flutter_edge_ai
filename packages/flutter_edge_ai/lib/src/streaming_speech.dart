@@ -34,7 +34,7 @@ import 'interface.dart' show SpeechRecognizer, SpeechSynthesizer;
 @experimental
 abstract interface class StreamingSpeechRecognizer implements SpeechRecognizer {
   /// Transcribes [pcm16kMono], 16 kHz mono 16-bit little-endian PCM in chunks
-  /// of any size, as it arrives.
+  /// of any size, as it arrives. The returned stream is single-subscription.
   ///
   /// - One stream runs at a time per recognizer. The stream claims the
   ///   recognizer when it is listened to, not when this is called, so a
@@ -92,8 +92,10 @@ abstract interface class StreamingSpeechRecognizer implements SpeechRecognizer {
   /// `FlutterEdgeAi.getActiveStt` shares, another part of the app may own
   /// the stream. Errors arrive in the returned future, never thrown at the
   /// call: a [StateError] when no stream holds the recognizer (before the
-  /// stream is listened to, or after its input has ended), and when the
-  /// stream ends or fails before the flush is done.
+  /// stream is listened to), when the running stream's input has ended (it
+  /// keeps the recognizer until its last update is out, but has nothing
+  /// left to flush), and when the stream ends or fails before the flush is
+  /// done.
   Future<void> flush();
 
   /// How this model streams.

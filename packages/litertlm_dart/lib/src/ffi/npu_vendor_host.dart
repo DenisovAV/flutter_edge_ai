@@ -218,18 +218,30 @@ Future<NpuChoice> chooseNpuVendor({
 
 /// What an NPU attempt hands LiteRT-LM: the `dispatch_lib_dir` its vendor
 /// prepared, what to set `use_hw_masking_for_npu` to ([npuHwMasking]; null
-/// leaves LiteRT-LM's default), and whether the load's weight banks are to be
-/// claimed ([npuStagesWeightBanks]).
+/// leaves LiteRT-LM's resolution: the bundle's NPU executor metadata, else
+/// off), and whether the load's weight banks are to be claimed
+/// ([npuStagesWeightBanks]). The other three NPU executor flags are set to
+/// [npuExecutorFlags] on every NPU load.
 typedef NpuDispatch = ({
   String dir,
   bool? useHwMasking,
   bool stagesWeightBanks,
 });
 
+/// The NPU executor flags other than the mask, as every NPU load had them up
+/// to LiteRT-LM v0.19.1, where all four flags defaulted to on. v0.20.0
+/// (upstream fd79fb15) resolves an unset flag from the bundle's NPU executor
+/// metadata, else off, which would change the decode path of every NPU bundle
+/// we know; so they are set explicitly until the new defaults are measured per
+/// vendor (0.20 migration decision D5).
+const ({bool neonGreedySampling, bool hwCacheUpdate, bool hwPle})
+npuExecutorFlags = (neonGreedySampling: true, hwCacheUpdate: true, hwPle: true);
+
 /// What an LLM engine on [vendor]'s NPU sets `use_hw_masking_for_npu` to for
-/// the bundle at [path] ([bundle]: null when the file could not be read); null
-/// leaves LiteRT-LM's default (true on v0.19.x), which Qualcomm, Tensor and
-/// MediaTek run on.
+/// the bundle at [path] ([bundle]: null when the file could not be read).
+///
+/// Qualcomm, Tensor and MediaTek: on, explicitly — the value they ran with up
+/// to LiteRT-LM v0.19.1, where it was the default (see [npuExecutorFlags]).
 ///
 /// Intel: off (false), because with it on LiteRT sets up the kWH HW mask
 /// method, which Intel preview NPUs (LunarLake/PantherLake) did not fully
@@ -244,7 +256,7 @@ typedef NpuDispatch = ({
 /// Only an aux section stamped for the Panther Lake NPU, of a listed length,
 /// is hashed ([sha256OfRange], off the calling isolate by default); a hash
 /// that cannot be read is logged and counts as unlisted.
-Future<bool?> npuHwMasking(
+Future<bool> npuHwMasking(
   NpuStack vendor,
   BundleInfo? bundle, {
   required String path,
@@ -252,9 +264,9 @@ Future<bool?> npuHwMasking(
   Future<String> Function(String path, int begin, int end) sha256OfRange =
       sha256OfFileRange,
 }) async => switch (vendor) {
-  NpuStack.qualcomm => null,
-  NpuStack.googleTensor => null,
-  NpuStack.mediatek => null,
+  NpuStack.qualcomm => true,
+  NpuStack.googleTensor => true,
+  NpuStack.mediatek => true,
   NpuStack.intel => await _intelBrokenNpuMasks(
     bundle,
     path: path,

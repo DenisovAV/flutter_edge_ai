@@ -1023,6 +1023,7 @@ class EngineCreateRequest {
     this.nativeLogLevel,
     this.dispatchLibDir,
     this.useHwMaskingForNpu,
+    this.npuExecutorFlags,
     this.kernelBatchSize,
     this.blockSigprof = false,
     this.listWeightBanks = false,
@@ -1075,8 +1076,13 @@ class EngineCreateRequest {
   final String? dispatchLibDir;
 
   /// What `use_hw_masking_for_npu` is set to (`npuHwMasking` decides); null
-  /// leaves LiteRT-LM's default.
+  /// leaves LiteRT-LM's resolution (bundle metadata, else off).
   final bool? useHwMaskingForNpu;
+
+  /// The other three NPU executor flags (`npuExecutorFlags` on an NPU load);
+  /// null off the NPU, which leaves LiteRT-LM's resolution.
+  final ({bool neonGreedySampling, bool hwCacheUpdate, bool hwPle})?
+  npuExecutorFlags;
 
   /// Flushes the GPU command queue every N ops (#364); null leaves the
   /// engine's default.
@@ -1336,6 +1342,30 @@ EngineCreateResult createEngineWith(
           b.litert_lm_engine_settings_set_use_hw_masking_for_npu(
             settings,
             useHwMasking,
+          ),
+        );
+      }
+      final npuFlags = r.npuExecutorFlags;
+      if (npuFlags != null) {
+        setter(
+          'litert_lm_engine_settings_set_enable_neon_for_npu_greedy_sampling',
+          b.litert_lm_engine_settings_set_enable_neon_for_npu_greedy_sampling(
+            settings,
+            npuFlags.neonGreedySampling,
+          ),
+        );
+        setter(
+          'litert_lm_engine_settings_set_use_hw_cache_update_for_npu',
+          b.litert_lm_engine_settings_set_use_hw_cache_update_for_npu(
+            settings,
+            npuFlags.hwCacheUpdate,
+          ),
+        );
+        setter(
+          'litert_lm_engine_settings_set_use_hw_ple_for_npu',
+          b.litert_lm_engine_settings_set_use_hw_ple_for_npu(
+            settings,
+            npuFlags.hwPle,
           ),
         );
       }
@@ -2518,8 +2548,16 @@ class LiteRtLmFfiClient {
     // mask update path off, except for a bundle whose NPU-compiled mask graphs
     // are known to be wrong (Intel's public Gemma 4 26B for Panther Lake).
     final useHwMasking = backend == 'npu' ? npuDispatch!.useHwMasking : null;
+    final npuFlags = backend == 'npu' ? npuExecutorFlags : null;
     if (useHwMasking != null) {
       runtimeLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=$useHwMasking');
+    }
+    if (npuFlags != null) {
+      runtimeLog(
+        '[LiteRtLmFfi] NPU: enable_neon_for_npu_greedy_sampling='
+        '${npuFlags.neonGreedySampling} use_hw_cache_update_for_npu='
+        '${npuFlags.hwCacheUpdate} use_hw_ple_for_npu=${npuFlags.hwPle}',
+      );
     }
 
     if (npuDispatchDir != null) {
@@ -2586,6 +2624,7 @@ class LiteRtLmFfiClient {
         nativeLogLevel: nativeLogLevel,
         dispatchLibDir: npuDispatchDir,
         useHwMaskingForNpu: useHwMasking,
+        npuExecutorFlags: npuFlags,
         kernelBatchSize: kernelBatchSize,
         // The QNN backend's init fails under the debug VM's SIGPROF sampling
         // on Linux (see withSigprofBlocked); Android's FastRPC client

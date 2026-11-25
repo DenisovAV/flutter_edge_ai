@@ -2,7 +2,7 @@
 # Patch LiteRT-LM C API source to add:
 # 1. cc_binary(linkshared=True) target for shared library (Linux dynamic-list
 #    + Windows .def whitelist for the symbols our Dart FFI bindings call)
-# 2. set_use_hw_masking_for_npu setter (Intel LunarLake/PantherLake NPU)
+# 2. setters for the four NPU executor flags (use_hw_masking_for_npu etc.)
 # 3. GPU smooth-UI knobs — gpu_context_low_priority + kernel_batch_size (#364)
 # 4. LiteRT patches: Apple registers only the statically linked GPU
 #    accelerator; two LiteRT backports after the v0.20.0 pin
@@ -129,7 +129,10 @@ EXPORTS
   litert_lm_engine_settings_set_num_prefill_tokens
   litert_lm_engine_settings_set_parallel_file_section_loading
   litert_lm_engine_settings_set_prefill_chunk_size
+  litert_lm_engine_settings_set_enable_neon_for_npu_greedy_sampling
+  litert_lm_engine_settings_set_use_hw_cache_update_for_npu
   litert_lm_engine_settings_set_use_hw_masking_for_npu
+  litert_lm_engine_settings_set_use_hw_ple_for_npu
   litert_lm_json_response_delete
   litert_lm_json_response_get_string
   litert_lm_responses_delete
@@ -190,58 +193,66 @@ else
   echo "  SKIP: c/BUILD already has shared lib target"
 fi
 
-# ── 4b. Add set_use_hw_masking_for_npu for Intel LunarLake/PantherLake ──
-# Default NpuConfig.use_hw_masking_for_npu=true makes LiteRT setup HW mask
-# update path (MaskUpdateMethod::kWH) which Intel preview NPU silicon
-# doesn't fully support → engine_create crash (CFG / 0xc0000409). Per Matt
-# Kreileder's Intel NPU pipeline instructions, must call with `false` for
-# LunarLake / PantherLake. Upstream C API doesn't expose this — patch in
-# our own setter that writes through NpuConfig variant on main executor.
-if ! grep -q "set_use_hw_masking_for_npu" "$DIR/c/engine.h"; then
-  sed -i.bak '/Creates a LiteRT LM Engine from the given settings/i\
-// Sets whether to use hardware masking for NPU. Default is true which on\
-// Intel LunarLake/PantherLake preview silicon causes engine_create to\
-// crash because the NPU HW mask update path is not fully supported.\
-// Pass false to force CPU/SIMD mask update fallback.\
-LITERT_LM_C_API_EXPORT\
-LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_masking_for_npu(\
-    LiteRtLmEngineSettings* settings, bool value);\
-' "$DIR/c/engine.h"
-  rm -f "$DIR/c/engine.h.bak"
-  echo "  OK: Added set_use_hw_masking_for_npu to c/engine.h"
-else
-  echo "  SKIP: c/engine.h already has set_use_hw_masking_for_npu"
-fi
-
-if ! grep -q "set_use_hw_masking_for_npu" "$DIR/c/engine.cc"; then
-  sed -i.bak '/^LiteRtLmStatusCode litert_lm_engine_settings_set_activation_data_type(/i\
-LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_masking_for_npu(\
-    LiteRtLmEngineSettings* settings, bool value) {\
-  if (!IsValidEngineSettings(settings)) {\
-    return kLiteRtLmStatusInvalidArgument;\
-  }\
-  auto\& exec = settings->settings->GetMutableMainExecutorSettings();\
-  litert::lm::NpuConfig config;\
-  auto current = exec.GetBackendConfig<litert::lm::NpuConfig>();\
-  if (current.ok()) {\
-    config = *current;\
-  }\
-  config.use_hw_masking_for_npu = value;\
-  exec.SetBackendConfig(config);\
-  return kLiteRtLmStatusOk;\
-}\
-\
-' "$DIR/c/engine.cc"
-  rm -f "$DIR/c/engine.cc.bak"
-  grep -q '^LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_masking_for_npu(' \
-    "$DIR/c/engine.cc" || {
-    echo "  ERROR: section 4b: the set_activation_data_type anchor moved; no impl" >&2
+# ── 4b. NPU executor flags: setters for the four NpuConfig options ──
+# LiteRT-LM's NPU executor has four hand-written components: NEON greedy
+# sampling, the mask update, the KV-cache update and the per-layer embedding
+# lookup. Up to v0.19.1 all four defaulted to on, and this section added a
+# setter for the mask only: Intel LunarLake/PantherLake needs it off (the HW
+# mask path ended engine_create with 0xC0000409), and Intel's Gemma 4 26B for
+# Panther Lake needs it on (npu_vendor_host.dart). v0.20.0 (fd79fb15) makes
+# each an optional resolved from the bundle's LlmNpuExecutorMetadata, else off,
+# and still exposes none in the C API. So every flag gets a setter here: until
+# the new defaults are measured per vendor (0.20 migration decision D5) the
+# Dart side passes the 0.19 values explicitly. An unset flag keeps upstream's
+# resolution (metadata, else off).
+NPU_FLAGS="enable_neon_for_npu_greedy_sampling use_hw_masking_for_npu use_hw_cache_update_for_npu use_hw_ple_for_npu"
+grep -q 'std::optional<bool> use_hw_masking_for_npu' "$DIR/runtime/executor/llm_executor_settings.h" || {
+  echo "  ERROR: section 4b: NpuConfig's flags are no longer std::optional<bool>" >&2
+  exit 1
+}
+for flag in $NPU_FLAGS; do
+  grep -q "std::optional<bool> $flag = std::nullopt;" "$DIR/runtime/executor/llm_executor_settings.h" || {
+    echo "  ERROR: section 4b: NpuConfig has no optional $flag" >&2
     exit 1
   }
-  echo "  OK: Added set_use_hw_masking_for_npu impl to c/engine.cc"
-else
-  echo "  SKIP: c/engine.cc already has set_use_hw_masking_for_npu"
-fi
+  if ! grep -q "litert_lm_engine_settings_set_$flag(" "$DIR/c/engine.h"; then
+    sed -i.bak "/Creates a LiteRT LM Engine from the given settings/i\\
+// Sets NpuConfig.$flag on the main executor (patch_c_api.sh section 4b).\\
+// Unset, LiteRT-LM takes it from the bundle's NPU executor metadata, else off.\\
+LITERT_LM_C_API_EXPORT\\
+LiteRtLmStatusCode litert_lm_engine_settings_set_$flag(\\
+    LiteRtLmEngineSettings* settings, bool value);\\
+" "$DIR/c/engine.h"
+    rm -f "$DIR/c/engine.h.bak"
+  fi
+  if ! grep -q "^LiteRtLmStatusCode litert_lm_engine_settings_set_$flag(" "$DIR/c/engine.cc"; then
+    sed -i.bak "/^LiteRtLmStatusCode litert_lm_engine_settings_set_activation_data_type(/i\\
+LiteRtLmStatusCode litert_lm_engine_settings_set_$flag(\\
+    LiteRtLmEngineSettings* settings, bool value) {\\
+  if (!IsValidEngineSettings(settings)) {\\
+    return kLiteRtLmStatusInvalidArgument;\\
+  }\\
+  auto\\& exec = settings->settings->GetMutableMainExecutorSettings();\\
+  litert::lm::NpuConfig config;\\
+  auto current = exec.GetBackendConfig<litert::lm::NpuConfig>();\\
+  if (current.ok()) {\\
+    config = *current;\\
+  }\\
+  config.$flag = value;\\
+  exec.SetBackendConfig(config);\\
+  return kLiteRtLmStatusOk;\\
+}\\
+\\
+" "$DIR/c/engine.cc"
+    rm -f "$DIR/c/engine.cc.bak"
+  fi
+  grep -q "litert_lm_engine_settings_set_$flag(" "$DIR/c/engine.h" &&
+    grep -q "^LiteRtLmStatusCode litert_lm_engine_settings_set_$flag(" "$DIR/c/engine.cc" || {
+    echo "  ERROR: section 4b: an anchor moved; no set_$flag" >&2
+    exit 1
+  }
+  echo "  OK: litert_lm_engine_settings_set_$flag"
+done
 
 # ── 4c. Add GPU smooth-UI knobs — gpu_context_low_priority + kernel_batch_size ──
 # #364: on Android/OpenCL a GPU prefill monopolizes the Adreno GPU and starves
@@ -542,8 +553,14 @@ PATHW_UTILS="$DIR/runtime/executor/litert_compiled_model_executor_utils.cc"
 # "tflite_weights:<model type>" (tied embeddings deduplicated across models,
 # 90aac9c); this section rewrites only a model's own group, so such a bundle
 # still fails on Linux and Windows.
-grep -qF 'kModelWeightGroupName = "tflite_weights";' "$PATHW_UTILS" ||
-  pathw_fail "GetExternalWeightResources no longer names the group \"tflite_weights\""
+PATHW_RESOURCES_H="$DIR/runtime/components/model_resources.h"
+# Since v0.20.0 the constant lives in model_resources.h and
+# GetExternalWeightResources asks GetWeightsSectionOffset for the model's own
+# group by it.
+grep -qF 'constexpr absl::string_view kModelWeightGroupName = "tflite_weights";' "$PATHW_RESOURCES_H" ||
+  pathw_fail "model_resources.h no longer names the group \"tflite_weights\""
+grep -qF 'section_offset = resources.GetWeightsSectionOffset(model_type_str);' "$PATHW_UTILS" ||
+  pathw_fail "GetExternalWeightResources no longer reads the model's own group through GetWeightsSectionOffset"
 # NotFound from GetWeightsSectionOffset must still mean "no scoped file".
 grep -qF 'absl::IsNotFound(section_offset.status())' "$PATHW_UTILS" ||
   pathw_fail "GetExternalWeightResources no longer treats NotFound as no external weights"

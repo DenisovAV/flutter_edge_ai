@@ -23,3 +23,16 @@ was modified.
 | `test/streaming/timestamp_text_merger_test.dart` | `omni/speech2text/timestamp_text_merger_test.cc` |
 | `test/streaming/detokenizer_test.dart` | `omni/speech2text/tokenizer_detokenizer_test.cc` |
 | `test/streaming/audio_windower_test.dart` | the `AudioInputSource` cases of `omni/speech2text/asr_session_test.cc` |
+
+Changes to the merge, each marked "Deviation from Omni" where it is made and
+measured on LibriSpeech (numbers in the package README): words confirmed early
+stay in the overlap alignment; a current-only word aligned inside text already
+confirmed is dropped; the tail of a word cut by the window start is dropped up
+to `tol.matchLate` frames into the window, not only `tol.substitution`.
+
+Not ported: Omni's skip of silent windows, its trimming of trailing silence,
+and `MaybeRetryWithCenteredFeatures` (a window whose first token comes late is
+run again on features framed differently). Small differences:
+`shiftShortChunkBack` accepts an overlap of 1 sample where Omni requires
+`hop_length` (160), which real audio, whose kept overlap is thousands of
+samples, never reaches; the window's start fraction is a double, not a float.

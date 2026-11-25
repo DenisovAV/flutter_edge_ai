@@ -48,7 +48,10 @@
 ///   says EmbeddingGemma 2 on the web needs WebGPU and why;
 /// - last: the CPU path, asked for directly, still fails in
 ///   `EmbeddingEngine.create` on both bundles, and the error says why — the
-///   day a newer `@litert-lm/core` loads them there, this test says so.
+///   day a newer `@litert-lm/core` loads them there, this test says so, and
+///   records for each bundle that loads its load time, dimension, the golden
+///   texts' cosine to the native vectors, their median latency and what an
+///   over-long text does (0.20.0 loads the 270m there: 2026-11-25).
 /// Measured, never asserted (in the response file and the log):
 /// - M11: the longest main-thread stall while images and texts are embedded
 ///   on WebGPU;
@@ -1290,6 +1293,7 @@ void main() {
       'load either bundle there, and the error says why', (tester) async {
     _start('CPU refused');
     final record = <String, Object?>{};
+    final refusals = <String, EmbeddingLoadException?>{};
     for (final (model, ensure, images) in [
       (_eg2, _ensureEg2, false),
       (_eg2Vision, _ensureEg2Vision, true),
@@ -1302,21 +1306,58 @@ void main() {
         images: images,
       );
       EmbeddingLoadException? refusal;
+      // What a CPU engine does when it loads (measured, not asserted): the
+      // golden texts against the native CPU vectors, their latency, and an
+      // over-long text.
+      final measured = <String, Object?>{};
       try {
+        final watch = Stopwatch()..start();
         await pass.load();
+        measured['loadMs'] = watch.elapsedMilliseconds;
+        final cosines = <double>[];
+        final micros = <int>[];
+        for (final item in _golden) {
+          watch.reset();
+          final vector = await pass.embed(
+            EmbeddingInput.text(item.text),
+            _taskFor(item.role),
+          );
+          micros.add(watch.elapsedMicroseconds);
+          measured['dimension'] = vector.length;
+          cosines.add(cosine(vector, item.vector));
+        }
+        measured['minCosVsNativeGolden'] = cosines.reduce(math.min);
+        measured['perTextMedianMs'] = _median(micros);
+        try {
+          await pass.embed(EmbeddingInput.text('word ' * 3000), TaskType.none);
+          measured['overLong'] = 'embedded';
+        } on EmbeddingInputTooLongException catch (e) {
+          measured['overLong'] =
+              'EmbeddingInputTooLongException(${e.maxInputTokens}, '
+              '${e.actualTokens})';
+        }
       } on EmbeddingLoadException catch (e) {
         refusal = e;
+      } catch (e) {
+        measured['error'] = '$e';
       } finally {
         await pass.close();
       }
-      record[model.filename] = refusal?.message;
+      record[model.filename] = refusal?.message ?? measured;
+      refusals[model.filename] = refusal;
+      // Reported before the expectations, so a load that passes is recorded.
+      report('cpu_refusal', record);
+      _log('CPU ${model.filename}: ${record[model.filename]}');
+    }
+    // After both bundles were tried, so each is recorded.
+    for (final MapEntry(key: file, value: refusal) in refusals.entries) {
       expect(
         refusal,
         isNotNull,
         reason:
-            '${model.filename} loaded on the CPU: @litert-lm/core now reads '
-            'its external weights there, and the WebGPU-only rule (and its '
-            'documentation) should be revisited',
+            '$file loaded on the CPU: @litert-lm/core now reads its external '
+            'weights there, and the WebGPU-only rule (and its documentation) '
+            'should be revisited',
       );
       expect(
         refusal!.message,
@@ -1330,9 +1371,7 @@ void main() {
         ),
       );
     }
-    report('cpu_refusal', record);
-    _log('CPU: $record');
-  }, timeout: const Timeout(Duration(minutes: 30)));
+  }, timeout: const Timeout(Duration(minutes: 60)));
 
   testWidgets('every test above started (an absent test reads as a pass '
       'under flutter drive)', (tester) async {

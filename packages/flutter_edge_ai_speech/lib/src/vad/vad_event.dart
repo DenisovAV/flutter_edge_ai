@@ -21,8 +21,10 @@ sealed class VadEvent {
 /// utterance).
 ///
 /// Reported once the speech has lasted `VadOptions.minSpeech`, so it arrives
-/// that much after it began; keep at least that much audio to hand the whole
-/// utterance to speech-to-text.
+/// at least that much after it began, and up to `minSpeech + minSilence`
+/// plus one 32 ms frame after it when the speech pauses before that (see
+/// `VadOptions.minSpeech`). To hand the whole utterance to speech-to-text,
+/// keep that much audio, plus `VadOptions.speechPad` and one input chunk.
 final class VadSpeechStart extends VadEvent {
   const VadSpeechStart(this.startSample);
 

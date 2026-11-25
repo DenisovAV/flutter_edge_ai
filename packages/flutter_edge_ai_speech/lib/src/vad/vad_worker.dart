@@ -187,14 +187,35 @@ final class VadWorker {
   }
 
   /// Frees the model and ends the worker. Requests sent before are answered
-  /// first; later ones fail with [StateError]. Idempotent.
+  /// first; later ones fail with [StateError]. Waits however long the native
+  /// call in flight takes, printing a notice after [slowCloseNotice]; never
+  /// kills the worker. Completes normally even when the native dispose
+  /// failed: that is printed as a warning. Idempotent.
   Future<void> close() => _closeFuture ??= _shutDown();
+
+  /// How long [close] waits before it says what it is waiting for.
+  static Duration slowCloseNotice = const Duration(seconds: 10);
 
   Future<void> _shutDown() async {
     _closing = true;
     if (!_gone.isCompleted) {
       _commandPort.send(const _Close());
-      await _gone.future;
+      // Never killed (its model would stay resident): wait, and say once
+      // what for when it takes long.
+      final notice = Timer(
+        slowCloseNotice,
+        () => _warn(
+          'closing the VAD model $_modelPath has taken '
+          '${slowCloseNotice.inSeconds} s: the worker is still inside a '
+          'native call. It keeps waiting rather than kill the worker, '
+          'because a killed worker never frees its native model.',
+        ),
+      );
+      try {
+        await _gone.future;
+      } finally {
+        notice.cancel();
+      }
     }
     _fromWorker.close();
     _failPending('the VAD worker for $_modelPath stopped without answering');
@@ -264,7 +285,9 @@ void _workerEntry(_Init init) {
   try {
     engine.load();
   } catch (e) {
-    init.replyTo.send(_LoadFailed('$e'));
+    // spawn wraps it in a StateError: send the message alone, not
+    // "Bad state: ..." twice.
+    init.replyTo.send(_LoadFailed(e is StateError ? e.message : '$e'));
     return;
   }
   final commands = ReceivePort();

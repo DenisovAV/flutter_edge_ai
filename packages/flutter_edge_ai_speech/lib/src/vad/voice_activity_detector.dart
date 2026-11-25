@@ -45,14 +45,24 @@ final class VoiceActivityDetector {
   Object? _owner;
 
   bool _closed = false;
-  final _closedSignal = Completer<String>();
+
+  /// Ends the running detect stream when the detector closes or its worker
+  /// dies; set while one runs, so nothing piles up on a long-lived detector.
+  void Function(String reason)? _endDetect;
 
   /// Loads the detector. [modelPath] is a Silero VAD `.tflite` with the
   /// bundled model's tensors (`[1,1,512]` audio and `[1,320]` state in, the
   /// probability and the state out); `null` uses the model this package
   /// ships, copied once into the app's support directory and checked against
-  /// the SHA-256 the package pins. Throws [ArgumentError] for [options] that cannot
-  /// work, and [StateError] when the model does not load.
+  /// the SHA-256 the package pins; that needs the Flutter binding
+  /// (`rootBundle`, `path_provider`), so a plain Dart program or a
+  /// background isolate without it passes [modelPath].
+  ///
+  /// Throws [ArgumentError] for [options] that cannot work, and
+  /// [StateError] when the model does not load or does not have those
+  /// tensors. Copying the bundled model can also fail with the errors of
+  /// the asset bundle, `path_provider` and the file system
+  /// (`FlutterError`, `MissingPluginException`, `FileSystemException`).
   static Future<VoiceActivityDetector> create({
     String? modelPath,
     VadOptions options = const VadOptions(),
@@ -75,7 +85,8 @@ final class VoiceActivityDetector {
   /// It ends after the input ends, with a [VadSpeechEnd] of reason
   /// [VadEndReason.inputEnded] if speech was going on; a trailing partial
   /// frame is analysed padded with zeros, and no event is placed past the
-  /// audio received. Cancelling the subscription cancels the input. An error
+  /// audio received. A sample split across two chunks is joined; an odd
+  /// byte left when the input ends (half a sample) is dropped. Cancelling the subscription cancels the input. An error
   /// of the input or of the model ends the stream with that error, and
   /// [close] (or the worker ending) ends it with a [StateError], even while
   /// the input is idle.
@@ -87,9 +98,17 @@ final class VoiceActivityDetector {
     StreamSubscription<Uint8List>? input;
     var reset = true;
     var done = false;
+    // Chunks are analysed one after another, in order, even when the input
+    // delivers several before listen() has returned (a sync controller
+    // adding in onListen), when there is no subscription to pause yet.
+    var chain = Future<void>.value();
+
+    // Declared before use; assigned once [finish] exists.
+    late final void Function(String) endDetect;
 
     void release() {
       if (identical(_owner, token)) _owner = null;
+      if (identical(_endDetect, endDetect)) _endDetect = null;
     }
 
     void finish([Object? error, StackTrace? stack]) {
@@ -100,6 +119,8 @@ final class VoiceActivityDetector {
       unawaited(out.close());
       unawaited(input?.cancel());
     }
+
+    endDetect = (reason) => finish(StateError(reason));
 
     void emit(Iterable<VadEvent> events) {
       for (final event in events) {
@@ -133,27 +154,30 @@ final class VoiceActivityDetector {
           return;
         }
         _owner = token;
-        unawaited(
-          _closedSignal.future.then((reason) => finish(StateError(reason))),
-        );
+        _endDetect = endDetect;
         try {
           input = pcm16kMono.listen(
             (chunk) {
-              input!.pause();
-              analyse(framer.add(chunk)).then((_) {
-                if (!done) input!.resume();
-              }, onError: finish);
+              input?.pause();
+              chain = chain
+                  .then((_) => done ? null : analyse(framer.add(chunk)))
+                  .then((_) {
+                    if (!done) input?.resume();
+                  }, onError: finish);
             },
             onError: finish,
-            onDone: () async {
-              try {
-                final pending = framer.pendingSamples;
-                await analyse(framer.flushPadded(), validInLast: pending);
-                emit(endpointer.finish());
-                finish();
-              } catch (e, st) {
-                finish(e, st);
-              }
+            onDone: () {
+              chain = chain.then((_) async {
+                if (done) return;
+                try {
+                  final pending = framer.pendingSamples;
+                  await analyse(framer.flushPadded(), validInLast: pending);
+                  emit(endpointer.finish());
+                  finish();
+                } catch (e, st) {
+                  finish(e, st);
+                }
+              });
             },
             cancelOnError: true,
           );
@@ -181,9 +205,16 @@ final class VoiceActivityDetector {
   /// state; a trailing partial frame is padded with zeros. For tests and for
   /// policies of an app's own.
   ///
-  /// Throws [StateError] if the detector is closed or another call holds the
-  /// model.
+  /// Throws [ArgumentError] for an odd number of bytes (half a sample), and
+  /// [StateError] if the detector is closed or another call holds the model.
   Future<Float32List> probabilities(Uint8List pcm16kMono) async {
+    if (pcm16kMono.length.isOdd) {
+      throw ArgumentError.value(
+        pcm16kMono.length,
+        'pcm16kMono.length',
+        'must be even: 16-bit samples are two bytes',
+      );
+    }
     final refusal = _refusal('probabilities');
     if (refusal != null) throw refusal;
     final token = Object();
@@ -203,7 +234,10 @@ final class VoiceActivityDetector {
   }
 
   /// Frees the model and ends the worker. A [detect] stream still running
-  /// ends with a [StateError]. Idempotent.
+  /// ends with a [StateError]; a [probabilities] call already sent is
+  /// answered first. Completes normally even when the native dispose fails:
+  /// that is only printed as a warning, and the model may stay resident.
+  /// Idempotent.
   Future<void> close() {
     _markClosed('VoiceActivityDetector was closed');
     return _worker.close();
@@ -211,7 +245,7 @@ final class VoiceActivityDetector {
 
   void _markClosed(String reason) {
     _closed = true;
-    if (!_closedSignal.isCompleted) _closedSignal.complete(reason);
+    _endDetect?.call(reason);
   }
 
   StateError? _refusal(String call) {

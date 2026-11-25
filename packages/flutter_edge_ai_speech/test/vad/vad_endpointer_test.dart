@@ -79,8 +79,9 @@ void main() {
     expect(end.reason, VadEndReason.silence);
     expect(end.start, ms(290));
     expect(end.end, ms(1280 + 30));
-    // 19 silent frames (608 ms) are needed: frames 40..58.
-    expect(index, 58);
+    // Silence counts from the end of frame 40, as Silero's temp_end: 19
+    // frames more (608 ms) are needed, frames 41..59.
+    expect(index, 59);
   });
 
   test('a pause shorter than minSilence does not end the utterance', () {
@@ -97,20 +98,56 @@ void main() {
   test('probabilities between the two thresholds keep the silence mark: '
       'hysteresis', () {
     // Silence starts at frame 30, then the voice hovers at 0.4 (below 0.5,
-    // above 0.35): the mark stays, so the utterance still ends.
+    // above 0.35): the mark stays, but as in Silero's iterator only a frame
+    // below the negative threshold ends the utterance, at the mark.
     final events = run(VadEndpointer(options), [
       ...frames(30, 0.9),
       0.1,
       ...frames(30, 0.4),
+      0.1,
     ], finish: false);
-    final end = events.last.$2 as VadSpeechEnd;
-    expect(end.end, ms(30 * 32 + 30));
+    final (index, last) = events.last;
+    expect(index, 61, reason: 'no end while the voice hovers');
+    expect((last as VadSpeechEnd).end, ms(30 * 32 + 30));
     // ...while hovering alone, right after speech, never marks silence.
     final hovering = run(VadEndpointer(options), [
       ...frames(30, 0.9),
       ...frames(60, 0.4),
     ], finish: false);
     expect(hovering.map((e) => e.$2).whereType<VadSpeechEnd>(), isEmpty);
+  });
+
+  test('before a start, hovering between the thresholds after a pause '
+      'drops the speech once minSilence has passed', () {
+    // 5 speech frames (160 ms < minSpeech), a silent frame, then hovering:
+    // no start is ever reported, and the candidate is dropped, so a later
+    // burst starts anew.
+    final events = run(VadEndpointer(options), [
+      ...frames(5, 0.9),
+      0.1,
+      ...frames(40, 0.4),
+      ...frames(10, 0.9),
+    ], finish: false);
+    final start = events.single.$2 as VadSpeechStart;
+    expect(start.start, ms(46 * 32 - 30));
+  });
+
+  test('a pause inside speech not reported yet counts towards minSpeech, '
+      'so the start comes before minSpeech + minSilence + one frame', () {
+    // 3 speech frames, 17 silent ones (544 ms < minSilence), speech again:
+    // confirmed on the first frame back, 20 frames (640 ms) after the onset.
+    final events = run(VadEndpointer(options), [
+      ...frames(3, 0.9),
+      ...frames(17, 0.02),
+      ...frames(5, 0.9),
+    ], finish: false);
+    final (index, start) = events.single;
+    expect(index, 20);
+    expect((start as VadSpeechStart).startSample, 0);
+    expect(
+      Duration(milliseconds: (index + 1) * 32),
+      lessThan(const Duration(milliseconds: 250 + 600 + 32)),
+    );
   });
 
   test('a frame at the threshold clears the silence mark', () {

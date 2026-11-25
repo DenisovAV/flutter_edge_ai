@@ -5,6 +5,7 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -70,7 +71,7 @@ Future<String> _writeBundledModel() async {
     if (await _isBundledModel(file)) return file.path;
 
     final bytes = await (debugBundledModelBytes ?? _assetBytes)();
-    if (sha256.convert(bytes).toString() != bundledVadModelSha256) {
+    if (await _sha256(bytes) != bundledVadModelSha256) {
       throw StateError(
         'VoiceActivityDetector: the bundled model $bundledVadModelAsset '
         '(${bytes.length} bytes) does not match its SHA-256 '
@@ -81,12 +82,18 @@ Future<String> _writeBundledModel() async {
     final partial = File(
       '${file.path}.$pid.${Random().nextInt(1 << 32)}.partial',
     );
-    await partial.writeAsBytes(bytes, flush: true);
     try {
+      await partial.writeAsBytes(bytes, flush: true);
       await partial.rename(file.path);
     } on FileSystemException {
-      // Windows refuses to replace a file another process has open.
-      if (await partial.exists()) await partial.delete();
+      // A failed write (a full disk) leaves a partial file; Windows refuses
+      // to replace a file another process has open. Either way, no partial
+      // file is left behind, and another writer's good copy is used.
+      try {
+        if (await partial.exists()) await partial.delete();
+      } on FileSystemException {
+        // Best effort: the unique name never collides with a later write.
+      }
       if (!await _isBundledModel(file)) rethrow;
     }
     return file.path;
@@ -101,9 +108,13 @@ Future<bool> _isBundledModel(File file) async {
   if (!await file.exists() || await file.length() != bundledVadModelBytes) {
     return false;
   }
-  final digest = sha256.convert(await file.readAsBytes()).toString();
-  return digest == bundledVadModelSha256;
+  return await _sha256(await file.readAsBytes()) == bundledVadModelSha256;
 }
+
+/// The SHA-256 of [bytes], off the calling isolate: create runs on the UI
+/// isolate, and hashing 1.25 MB there would cost a frame.
+Future<String> _sha256(Uint8List bytes) =>
+    Isolate.run(() => sha256.convert(bytes).toString());
 
 Future<Uint8List> _assetBytes() async {
   final data = await rootBundle.load(bundledVadModelAsset);

@@ -61,12 +61,21 @@ final class SileroVadCore {
       );
       final core = SileroVadCore._(bindings, environment, graph);
       try {
+        checkSileroVadLayout(
+          inputCount: _inputCount(bindings, graph.model),
+          inputShapes: [
+            for (var i = 0; i < 2; i++)
+              _inputShape(bindings, graph.compiledModel, i),
+          ],
+          outputShapes: _outputShapes(bindings, graph.compiledModel, 2),
+        );
         core.probability(Float32List(vadFrameSamples));
         core.reset();
       } catch (e) {
         throw StateError(
           'VoiceActivityDetector: $modelPath is not a Silero VAD model with '
-          'inputs [1,1,512] and [1,$sileroStateWidth]: $e',
+          'inputs [1,1,512] and [1,$sileroStateWidth] and outputs [1,1,1] '
+          'and [1,$sileroStateWidth]: $e',
         );
       }
       edgeAiLog('[SileroVadCore] loaded $modelPath');
@@ -119,5 +128,100 @@ final class SileroVadCore {
     _disposed = true;
     destroyGraphs(_bindings, [_graph]);
     _bindings.destroyEnvironment(_environment);
+  }
+}
+
+/// Throws [FormatException] unless the graph's first signature has the
+/// bundled model's layout: two inputs, audio `[1,1,512]` and state
+/// `[1,320]`, and outputs probability `[1,1,1]` and state `[1,320]`, in that
+/// order. Tensor element types are not read (the LiteRT C API bound here has
+/// no accessor for them); the probe frame [SileroVadCore.load] runs next
+/// catches a graph that does not compute a probability.
+void checkSileroVadLayout({
+  required int inputCount,
+  required List<List<int>> inputShapes,
+  required List<List<int>> outputShapes,
+}) {
+  const inputs = [
+    [1, 1, vadFrameSamples],
+    [1, sileroStateWidth],
+  ];
+  const outputs = [
+    [1, 1, 1],
+    [1, sileroStateWidth],
+  ];
+  if (inputCount != inputs.length) {
+    throw FormatException('the graph has $inputCount inputs, not 2');
+  }
+  bool same(List<int> a, List<int> b) =>
+      a.length == b.length &&
+      Iterable<int>.generate(a.length).every((i) => a[i] == b[i]);
+  for (var i = 0; i < inputs.length; i++) {
+    if (!same(inputShapes[i], inputs[i])) {
+      throw FormatException('input $i is ${inputShapes[i]}, not ${inputs[i]}');
+    }
+  }
+  for (var i = 0; i < outputs.length; i++) {
+    if (i >= outputShapes.length || !same(outputShapes[i], outputs[i])) {
+      throw FormatException(
+        'output $i is ${i < outputShapes.length ? outputShapes[i] : 'missing'}'
+        ', not ${outputs[i]}',
+      );
+    }
+  }
+}
+
+int _inputCount(LiteRtBindings bindings, LiteRtModel model) {
+  final sig = calloc<LiteRtSignature>();
+  final count = calloc<Size>();
+  try {
+    bindings.getModelSignature(model, 0, sig).check('LiteRtGetModelSignature');
+    bindings
+        .getNumSignatureInputs(sig.value, count)
+        .check('LiteRtGetNumSignatureInputs');
+    return count.value;
+  } finally {
+    calloc
+      ..free(sig)
+      ..free(count);
+  }
+}
+
+List<int> _inputShape(
+  LiteRtBindings bindings,
+  LiteRtCompiledModel graph,
+  int index,
+) {
+  final layout = LiteRtLayoutView.calloc();
+  try {
+    bindings
+        .getInputTensorLayout(graph, 0, index, layout.pointer)
+        .check('LiteRtGetCompiledModelInputTensorLayout($index)');
+    return [for (var i = 0; i < layout.rank; i++) layout.dimension(i)];
+  } finally {
+    layout.free();
+  }
+}
+
+/// The first [count] output shapes: the C API fills layouts from output 0.
+List<List<int>> _outputShapes(
+  LiteRtBindings bindings,
+  LiteRtCompiledModel graph,
+  int count,
+) {
+  final layouts = calloc<LiteRtLayoutPosix>(count);
+  try {
+    bindings
+        .getOutputTensorLayouts(graph, 0, count, layouts.cast(), false)
+        .check('LiteRtGetCompiledModelOutputTensorLayouts');
+    return [
+      for (var o = 0; o < count; o++)
+        [
+          for (var i = 0; i < ((layouts + o).ref.rankAndHasStrides & 0x7f); i++)
+            (layouts + o).ref.dimensions[i],
+        ],
+    ];
+  } finally {
+    calloc.free(layouts);
   }
 }

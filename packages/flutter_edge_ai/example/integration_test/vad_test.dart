@@ -10,7 +10,8 @@
 //    The signal generator is ported to Dart, unchanged in substance, from
 //    anira-project/models, models/silero-vad/export/make_vad_golden.py at
 //    04edd100eaf3d49e30160a47048b21f35102d882, by the anira-project/models
-//    authors, SPDX-License-Identifier: Apache-2.0, licensed under the Apache
+//    authors, SPDX-License-Identifier: Apache-2.0 (that file's header; the
+//    export scripts beside it are MIT), licensed under the Apache
 //    License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0).
 //    Modified: ported from Python to Dart; `_signal` below is that port.
 // 2. The streaming path on that signal: 200 ms chunks give the events one

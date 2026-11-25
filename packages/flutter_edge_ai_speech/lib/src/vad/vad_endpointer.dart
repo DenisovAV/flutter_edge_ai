@@ -3,15 +3,22 @@
 // so every rule is unit-tested without a model.
 //
 // It follows Silero's reference streaming iterator (`VADIterator` in
-// silero-vad's `utils_vad.py`): speech turns on at `threshold`; once on, a
-// frame below the negative threshold marks where silence began, a frame at or
-// above `threshold` clears that mark, and a frame in between leaves it; the
-// utterance ends when the silence since the mark reaches `minSilence`. Two
+// silero-vad's `utils_vad.py`, checked against its master on 2026-11-25):
+// speech turns on at `threshold`; once on, a frame below the negative
+// threshold marks where silence began, a frame at or above `threshold` clears
+// that mark, and a frame in between leaves it; a frame below the negative
+// threshold ends the utterance when `minSilence` has passed since the end of
+// the frame that set the mark, and the utterance then ends where that frame
+// began, plus the pad. Two
 // rules are added for a live stream, where an event must be decided as the
 // audio arrives: a start is reported only once the speech has lasted
 // `minSpeech` (Silero's offline segmenter drops shorter segments after the
 // fact, which a live caller cannot undo), and an utterance is cut at
-// `maxUtterance`.
+// `maxUtterance`. A pause shorter than `minSilence` inside speech not yet
+// reported keeps it, and the pause counts towards `minSpeech`; such speech is
+// dropped once the silence has lasted `minSilence` on any frame, so a start
+// is reported less than `minSpeech + minSilence` plus one frame after the
+// onset.
 library;
 
 import 'vad_event.dart';
@@ -59,6 +66,10 @@ final class VadEndpointer {
   /// Where the current silence began, while speech is on; null when the
   /// last frames were speech.
   int? _silenceFrom;
+
+  /// The end of the frame that set [_silenceFrom]: silence is measured from
+  /// here, as Silero's `temp_end`.
+  int _silenceMarkEnd = 0;
 
   /// The reported (padded) start of the utterance in progress.
   int _reportedStart = 0;
@@ -119,8 +130,11 @@ final class VadEndpointer {
           _confirmIfLongEnough(frameEnd, events);
         }
       case _Phase.candidate:
-        _track(probability, frameStart);
-        if (_silenceLongEnough(frameEnd)) {
+        _track(probability, frameStart, frameEnd);
+        // Any frame drops a candidate once the silence has lasted: a voice
+        // wavering between the thresholds must not hold a start back
+        // without bound.
+        if (_silenceFrom != null && frameEnd - _silenceMarkEnd >= _minSilence) {
           // Speech too short to report: forget it.
           _phase = _Phase.idle;
           _silenceFrom = null;
@@ -128,8 +142,8 @@ final class VadEndpointer {
           _confirmIfLongEnough(frameEnd, events);
         }
       case _Phase.speaking:
-        _track(probability, frameStart);
-        if (_silenceLongEnough(frameEnd)) {
+        _track(probability, frameStart, frameEnd);
+        if (_silenceLongEnough(probability, frameEnd)) {
           _end(_silenceFrom! + _pad, VadEndReason.silence, events);
         }
     }
@@ -158,18 +172,21 @@ final class VadEndpointer {
     return events;
   }
 
-  void _track(double probability, int frameStart) {
+  void _track(double probability, int frameStart, int frameEnd) {
     if (probability >= options.threshold) {
       _silenceFrom = null;
-    } else if (probability < _negative) {
-      _silenceFrom ??= frameStart;
+    } else if (probability < _negative && _silenceFrom == null) {
+      _silenceFrom = frameStart;
+      _silenceMarkEnd = frameEnd;
     }
   }
 
-  bool _silenceLongEnough(int frameEnd) {
-    final silence = _silenceFrom;
-    return silence != null && frameEnd - silence >= _minSilence;
-  }
+  /// Only a frame below the negative threshold ends an utterance, as in
+  /// Silero's iterator; a frame between the thresholds never does.
+  bool _silenceLongEnough(double probability, int frameEnd) =>
+      _silenceFrom != null &&
+      probability < _negative &&
+      frameEnd - _silenceMarkEnd >= _minSilence;
 
   void _confirmIfLongEnough(int frameEnd, List<VadEvent> events) {
     final speechEnd = _silenceFrom ?? frameEnd;

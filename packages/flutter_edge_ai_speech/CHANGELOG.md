@@ -1,3 +1,6 @@
+## Unreleased
+- Voice activity detection: `VoiceActivityDetector`, with Silero VAD v6.3 bundled.
+
 ## 0.6.3
 - Requires `litertlm_dart` 0.20.0 and `flutter_edge_ai_litertlm` ^1.22.0.
 

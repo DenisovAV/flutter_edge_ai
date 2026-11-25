@@ -167,9 +167,12 @@ await vad.close();
 Positions are sample indices from the first sample of the stream (16 kHz),
 with `start`/`end` getters as `Duration`s. A start is reported once the
 speech has lasted `VadOptions.minSpeech` (250 ms), timed back to where it
-began, so keep that much audio buffered to hand the whole utterance to
-speech-to-text. An utterance ends after `minSilence` (600 ms) of silence, at
-`maxUtterance` (30 s), or when the input ends. The thresholds, the hysteresis
+began. A pause shorter than `minSilence` before that counts towards it, so
+the start can come up to `minSpeech + minSilence` plus one 32 ms frame
+(882 ms by default) after the voice began: to hand the whole utterance to
+speech-to-text, keep that much audio, plus `speechPad` and one input chunk.
+An utterance ends after `minSilence` (600 ms) of silence, at `maxUtterance`
+(30 s), or when the input ends. The thresholds, the hysteresis
 and the padding follow Silero's reference iterator; all of them are
 `VadOptions` fields. `probabilities(pcm)` returns the raw speech probability
 of every 32 ms frame for a policy of your own. One `detect` stream or
@@ -177,13 +180,17 @@ of every 32 ms frame for a policy of your own. One `detect` stream or
 listened to); `close()` ends a running stream with a `StateError`.
 
 The model is copied once into the app's support directory, because LiteRT
-opens models by path, and checked against its SHA-256 there.
+opens models by path, and checked against its SHA-256 there. That needs the
+Flutter binding (`rootBundle`, `path_provider`): in a plain Dart program or
+a background isolate without it, pass `create(modelPath:)` a copy of the
+`.tflite`.
 
 Silero detects any voice, not only the user's. On LibriSpeech speech with
 known pauses (40 streams per condition, macOS CPU) it missed no utterance and
 started on no noise, in quiet and in white noise down to 10 dB SNR, and ended
-an utterance a median 0.59-0.65 s after the speech stopped (`minSilence` is
-0.6 s; 0.65-0.67 s with v6.2.3). With other talkers in the background, three
+an utterance a median 0.62-0.68 s after the speech stopped (`minSilence`,
+0.6 s, counts from the end of the first silent 32 ms frame, as in Silero's
+iterator). With other talkers in the background, three
 at -15 dB or one at -10 dB, as a reply playing without echo cancellation
 would be, it stayed in speech for seconds at a time. Barge-in needs the microphone's echo
 cancellation, or the microphone off while the reply plays.

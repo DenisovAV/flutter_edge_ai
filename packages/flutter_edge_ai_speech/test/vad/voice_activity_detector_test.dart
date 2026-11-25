@@ -3,6 +3,7 @@
 // path is packages/flutter_edge_ai/example/integration_test/vad_test.dart.
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha256;
@@ -17,14 +18,21 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../litert/worker_test_support.dart';
 
-/// Speech when the frame's peak is above 0.1: loud frames are speech.
+/// Speech when the frame's peak is above 0.1: loud frames are speech. A
+/// silent frame's probability grows by 1e-6 per frame since the last
+/// [reset], so a state that was not reset shows.
 ///
 /// A model path `<anything>@<log>` logs `frame` per call to the log and
 /// blocks on the log's gate before answering, as a native call that has not
-/// returned yet; one ending in `broken.tflite` fails to load.
+/// returned yet; one ending in `broken.tflite` fails to load, one ending in
+/// `dies.tflite` ends the worker isolate at its first frame, one ending in
+/// `dies-idle.tflite` ends it 300 ms after the load, and one ending in
+/// `stateful.tflite` ignores the audio and calls speech every frame from the
+/// 40th since the last reset, so a stray reset shows in the events.
 final class _PeakEngine implements VadWorkerEngine {
   _PeakEngine(this.modelPath);
   final String modelPath;
+  int _sinceReset = 0;
 
   String? get _log {
     final at = modelPath.indexOf('@');
@@ -36,10 +44,17 @@ final class _PeakEngine implements VadWorkerEngine {
     if (modelPath.endsWith('broken.tflite')) {
       throw StateError('fake load failure');
     }
+    if (modelPath.endsWith('dies-idle.tflite')) {
+      Timer(const Duration(milliseconds: 300), Isolate.exit);
+    }
   }
 
   @override
   double probability(Float32List frame) {
+    if (modelPath.endsWith('/dies.tflite')) Isolate.exit();
+    if (modelPath.endsWith('stateful.tflite')) {
+      return _sinceReset++ >= 40 ? 0.9 : 0.02;
+    }
     final log = _log;
     if (log != null) {
       appendLogLine(log, 'frame');
@@ -49,11 +64,12 @@ final class _PeakEngine implements VadWorkerEngine {
     for (final s in frame) {
       if (s.abs() > peak) peak = s.abs();
     }
-    return peak > 0.1 ? 0.9 : 0.02;
+    final n = _sinceReset++;
+    return peak > 0.1 ? 0.9 : 0.02 + (n < 1000 ? n : 1000) * 1e-6;
   }
 
   @override
-  void reset() {}
+  void reset() => _sinceReset = 0;
 
   @override
   void dispose() {}
@@ -142,10 +158,79 @@ void main() {
     addTearDown(vad.close);
     final p = await vad.probabilities(speech);
     expect(p, hasLength((speech.length ~/ 2 / 512).ceil()));
-    expect(p.first, closeTo(0.02, 1e-6));
+    expect(p.first, closeTo(0.02, 1e-7));
     expect(p[20], closeTo(0.9, 1e-6));
     expect(await vad.probabilities(Uint8List(0)), isEmpty);
   });
+
+  test('every call starts from a fresh model state', () async {
+    final vad = await create();
+    addTearDown(vad.close);
+    final silence = audio(0.5, loud: false);
+    final first = await vad.probabilities(silence);
+    expect(first.last, greaterThan(first.first), reason: 'the fake counts');
+    expect(await vad.probabilities(silence), first);
+    // A detect stream after them starts from zero as well: its first chunk
+    // is analysed with the state reset.
+    await vad.detect(chunked(silence, 4096)).toList();
+    expect(await vad.probabilities(silence), first);
+  });
+
+  test('probabilities refuses half a sample', () async {
+    final vad = await create();
+    addTearDown(vad.close);
+    expect(() => vad.probabilities(Uint8List(3)), throwsArgumentError);
+    // ...and holds nothing after refusing.
+    expect(await vad.probabilities(Uint8List(1024)), hasLength(1));
+  });
+
+  test('an input that delivers chunks inside listen() is analysed in order, '
+      'as one stream', () async {
+    // The fake calls speech from the 40th frame since a reset: only a
+    // stream analysed as one, reset once, ever gets there.
+    final vad = await create('/fake/stateful.tflite');
+    addTearDown(vad.close);
+    final frames = [for (var i = 0; i < 60; i++) Uint8List(1024)];
+    final events = await vad.detect(_EagerStream(frames)).toList();
+    expect(events.first, const VadSpeechStart(40 * 512 - 480));
+  });
+
+  test('a worker that dies while the input is idle ends the stream with '
+      'StateError', () async {
+    final vad = await create('/fake/dies-idle.tflite');
+    addTearDown(vad.close);
+    final input = StreamController<Uint8List>();
+    final events = vad.detect(input.stream).toList();
+    await expectLater(events, throwsStateError);
+    await input.close();
+  });
+
+  test('a worker that dies ends a running stream with StateError', () async {
+    final vad = await create('/fake/dies.tflite');
+    addTearDown(vad.close);
+    final input = StreamController<Uint8List>();
+    final events = vad.detect(input.stream).toList();
+    input.add(audio(0.1, loud: true));
+    await expectLater(events, throwsStateError);
+    expect(() => vad.probabilities(Uint8List(2)), throwsStateError);
+    await input.close();
+  });
+
+  test(
+    'close while a probabilities call is in the model still answers it',
+    () async {
+      final dir = Directory.systemTemp.createTempSync('vad_gate_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final log = gatedLog(dir, 'engine');
+      final vad = await create('/fake/silero.tflite@${log.path}');
+      final p = vad.probabilities(Uint8List(1024));
+      await waitForLine(log, 'frame');
+      final closing = vad.close();
+      release(log);
+      expect(await p, hasLength(1));
+      await closing;
+    },
+  );
 
   group('one call at a time', () {
     test(
@@ -268,7 +353,7 @@ void main() {
         isA<StateError>().having(
           (e) => e.message,
           'message',
-          contains('fake load failure'),
+          allOf(contains('fake load failure'), isNot(contains('Bad state'))),
         ),
       ),
     );
@@ -321,6 +406,20 @@ void main() {
       );
     });
 
+    test('a copy that cannot be put in place leaves no partial file and '
+        'fails create with the file system error', () async {
+      // A directory where the copy goes: the rename onto it fails.
+      Directory(cached.path).createSync(recursive: true);
+      await expectLater(
+        VoiceActivityDetector.create(),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(
+        dir.listSync(recursive: true).where((e) => e.path.endsWith('.partial')),
+        isEmpty,
+      );
+    });
+
     test(
       'a copy of the right size with the wrong bytes is written again',
       () async {
@@ -343,4 +442,22 @@ void main() {
       expect(digest(cached), bundledVadModelSha256);
     });
   });
+}
+
+/// A stream that delivers every chunk from inside [listen], before it
+/// returns the subscription, then ends: some platform streams do.
+final class _EagerStream extends Stream<Uint8List> {
+  _EagerStream(this._chunks);
+  final List<Uint8List> _chunks;
+
+  @override
+  StreamSubscription<Uint8List> listen(
+    void Function(Uint8List)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    _chunks.forEach(onData ?? (_) {});
+    return const Stream<Uint8List>.empty().listen(null, onDone: onDone);
+  }
 }

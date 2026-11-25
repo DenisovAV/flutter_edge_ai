@@ -34,19 +34,28 @@ final class VadOptions {
   final double? negativeThreshold;
 
   /// Speech shorter than this is dropped: no event is emitted for it. A start
-  /// is therefore reported this long after the voice began, timed back to
-  /// where it began.
+  /// is therefore reported at least this long after the voice began, timed
+  /// back to where it began. A pause shorter than [minSilence] does not drop
+  /// speech not yet reported, and counts towards this length, so the start
+  /// can come up to `minSpeech + minSilence` plus one 32 ms frame after the
+  /// voice began: an app that keeps audio to hand the whole utterance to
+  /// speech-to-text keeps that much, plus [speechPad] and one input chunk.
   final Duration minSpeech;
 
-  /// Silence this long ends an utterance.
+  /// Silence this long ends an utterance. It is measured from the end of the
+  /// first silent frame, as in Silero's iterator, so the end is reported
+  /// `minSilence` plus one frame after the voice stopped.
   final Duration minSilence;
 
   /// Kept on both sides of an utterance, so its first and last sounds are not
   /// cut.
   final Duration speechPad;
 
-  /// An utterance this long is ended even if the speaker goes on; the next
-  /// speech frame starts a new one.
+  /// An utterance this long from its first speech frame is ended even if the
+  /// speaker goes on; the reported utterance, which starts [speechPad]
+  /// earlier, is `maxUtterance + speechPad` long. The detector then starts
+  /// over: a new utterance needs [minSpeech] of speech again and its start
+  /// is never before the cut.
   final Duration maxUtterance;
 
   /// [negativeThreshold] with its default applied.

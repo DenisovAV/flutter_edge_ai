@@ -16,12 +16,19 @@ final class VoiceActivityDetector {
   // ignore: unused_element
   VoiceActivityDetector._(this.options);
 
+  /// The sample rate [detect] and [probabilities] take.
   static const int sampleRate = 16000;
+
+  /// The audio each probability covers: 512 samples, 32 ms.
   static const Duration frameDuration = Duration(milliseconds: 32);
 
+  /// The endpoint policy of [detect].
   final VadOptions options;
 
-  /// Throws [UnsupportedError]: the detector runs on native platforms only.
+  /// Loads the detector on native platforms (Silero VAD on the CPU in a
+  /// worker isolate of its own; the bundled model unless [modelPath] is
+  /// given). On the web it throws [UnsupportedError]: the detector runs
+  /// LiteRT through dart:ffi.
   static Future<VoiceActivityDetector> create({
     String? modelPath,
     VadOptions options = const VadOptions(),
@@ -32,11 +39,17 @@ final class VoiceActivityDetector {
     );
   }
 
+  /// Speech events for 16 kHz mono 16-bit PCM in chunks of any size: a
+  /// [VadSpeechStart] when speech has lasted `VadOptions.minSpeech`, a
+  /// [VadSpeechEnd] when it ends. Never reached on the web.
   Stream<VadEvent> detect(Stream<Uint8List> pcm16kMono) =>
       throw UnsupportedError('VoiceActivityDetector is not available on web');
 
+  /// The speech probability of each 32 ms frame of [pcm16kMono]. Never
+  /// reached on the web.
   Future<Float32List> probabilities(Uint8List pcm16kMono) =>
       throw UnsupportedError('VoiceActivityDetector is not available on web');
 
+  /// Frees the model and its worker. Nothing to free on the web.
   Future<void> close() async {}
 }

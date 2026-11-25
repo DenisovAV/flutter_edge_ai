@@ -127,15 +127,33 @@ jobs:
             '@litert//litert/c:libLiteRt' `
             '@litert//litert/runtime/accelerators/gpu:libLiteRtWebGpuAccelerator'
           if ($LASTEXITCODE -ne 0) {
-            # TEMPORARY diagnostics (0.20 migration): why TF patch_cmds fail here.
+            # TEMPORARY diagnostics (0.20 migration): TF's rules_android patch_cmds
+            # reproduced in a throwaway workspace, every output printed.
             $rc = $LASTEXITCODE
-            Write-Host "--- where bash / sed"; where.exe bash; where.exe sed
-            $f = "$env:BAZEL_OUTPUT_BASE\external\build_bazel_rules_android\toolchains\android_sdk\BUILD"
-            Write-Host "--- $f"; Get-Item $f -ErrorAction SilentlyContinue | Format-List FullName,Length,Attributes,LinkType,Target
-            Get-ChildItem "$env:BAZEL_OUTPUT_BASE\external\build_bazel_rules_android" -ErrorAction SilentlyContinue | Select-Object -First 8 | Format-Table Name,Attributes,LinkType
-            Push-Location "$env:BAZEL_OUTPUT_BASE\external\build_bazel_rules_android" -ErrorAction SilentlyContinue
-            & bash -c "echo bash=\$BASH \$BASH_VERSION; type sed; sed --version | head -1; sed -i -e 's|@androidsdk//:sdk|:toolchain_type|g' toolchains/android_sdk/BUILD; echo sed-rc=\$?" 2>&1
-            Write-Host "bash exit $LASTEXITCODE"
+            New-Item -ItemType Directory -Force D:\diag | Out-Null
+            Set-Content D:\diag\WORKSPACE ('load("//:r.bzl", "r")', 'r(name = "ra")')
+            Set-Content D:\diag\BUILD ''
+            Set-Content D:\diag\.bazelversion '7.6.1'
+            Set-Content D:\diag\r.bzl @(
+              'def _impl(ctx):',
+              '    ctx.download_and_extract(',
+              '        url = ["https://github.com/bazelbuild/rules_android/releases/download/v0.6.0/rules_android-v0.6.0.tar.gz"],',
+              '        sha256 = "af84b69ab3d16dd1a41056286e6511f147a94ccea995603e13e934c915c1631c",',
+              '        stripPrefix = "rules_android-0.6.0",',
+              '    )',
+              '    for cmd in [',
+              '        "echo BASH=$BASH; command -v sed; pwd; ls toolchains/android_sdk | head",',
+              '        "sed -i -e ''s|@androidsdk//:sdk|:toolchain_type|g'' toolchains/android_sdk/BUILD",',
+              '        "sed -i -e ''s|:bootclasspath_android_only|@rules_java//toolchains:platformclasspath|g'' tools/jdk/BUILD",',
+              '        "sed -i -e ''/@bazel_gazelle/d; /gazelle(/d'' BUILD",',
+              '    ]:',
+              '        res = ctx.execute(["bash", "-c", cmd])',
+              '        print("CMD %s RC %d OUT [%s] ERR [%s]" % (cmd, res.return_code, res.stdout, res.stderr))',
+              '    ctx.file("BUILD", "")',
+              'r = repository_rule(implementation = _impl)'
+            )
+            Push-Location D:\diag
+            bazel --output_base=D:\diagob fetch @ra//... 2>&1 | ForEach-Object { Write-Host $_ }
             Pop-Location
             throw "LiteRtLm.dll / libLiteRt.dll / accelerator build failed (exit $rc)"
           }

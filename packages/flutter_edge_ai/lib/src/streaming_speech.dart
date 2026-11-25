@@ -7,7 +7,9 @@
 //
 // These are experimental: core may add members to the two interfaces in a
 // minor release, so a backend that implements them pins core to a minor
-// version range. Apps only call them, which no such addition breaks.
+// version range. A member added does not break an app that only calls them;
+// a value added to one of the enums breaks an app's `switch` over it that
+// has no default arm.
 library;
 
 import 'dart:typed_data';
@@ -23,7 +25,12 @@ import 'interface.dart' show SpeechRecognizer, SpeechSynthesizer;
 /// cannot stream.
 ///
 /// Experimental: core may add members in a minor release. Implement it only
-/// in a backend that pins core to a minor version range.
+/// in a backend that pins core to a minor version range, and only on an
+/// instance that can stream: [SpeechRecognizerStreaming.asStreaming] answers
+/// by type, so a recognizer that implements this and throws
+/// [UnsupportedError] from it (a web stub, a model that cannot stream) makes
+/// it lie. A wrapper around a recognizer hides this interface unless it
+/// implements it too.
 @experimental
 abstract interface class StreamingSpeechRecognizer implements SpeechRecognizer {
   /// Transcribes [pcm16kMono], 16 kHz mono 16-bit little-endian PCM in chunks
@@ -38,13 +45,22 @@ abstract interface class StreamingSpeechRecognizer implements SpeechRecognizer {
   ///   completes.
   /// - [language] (Whisper only, as in `transcribe`) is checked and read when
   ///   the stream is listened to; later changes to the recognizer's language
-  ///   do not affect it.
+  ///   do not affect it. One the model cannot take ends the stream with an
+  ///   [ArgumentError].
   /// - `transcribe` calls made while a stream runs are not refused: they
   ///   wait their turn on the same model, between two windows of the stream.
+  ///   The stream's audio waits while they run, and counts towards
+  ///   [TranscribeStreamOptions.maxBufferedAudio]: a batch call longer than
+  ///   that limit, on a live input, ends the stream with a
+  ///   [SpeechStreamOverrunException].
   /// - Audio received but not analysed yet is held up to
   ///   [TranscribeStreamOptions.maxBufferedAudio]; past it the stream ends
   ///   with a [SpeechStreamOverrunException]. Audio is never dropped
-  ///   silently. Pausing this stream does not pause reading [pcm16kMono].
+  ///   silently: a sample split across two chunks is joined, and only an odd
+  ///   byte left when the input ends (half a sample) is dropped.
+  /// - Pausing this stream pauses neither reading [pcm16kMono] nor the
+  ///   model: windows keep running and their updates wait in the stream
+  ///   until it resumes, so a pause never causes an overrun.
   /// - The stream ends after the input ends and the last update is out, with
   ///   [TranscriptUpdate.endpoint] true. An input error ends it with that
   ///   error. Closing the recognizer, or its worker ending, stops reading the
@@ -67,9 +83,17 @@ abstract interface class StreamingSpeechRecognizer implements SpeechRecognizer {
   /// The first update that covers all audio received before this call
   /// confirms all of it and has [TranscriptUpdate.endpoint] true; with no
   /// new audio since the last update, that is an update with empty texts.
-  /// Completes after that update has been emitted. Calls made before it
-  /// completes share it. Throws [StateError] when no stream runs (including
-  /// after the running stream's input has ended).
+  /// Completes after that update has been added to the stream, also while
+  /// its listener is paused (the update then waits in the stream). Calls
+  /// made before it completes share it.
+  ///
+  /// It acts on whichever stream holds the recognizer, so call it only from
+  /// the code that runs that stream: on the recognizer
+  /// `FlutterEdgeAi.getActiveStt` shares, another part of the app may own
+  /// the stream. Errors arrive in the returned future, never thrown at the
+  /// call: a [StateError] when no stream holds the recognizer (before the
+  /// stream is listened to, or after its input has ended), and when the
+  /// stream ends or fails before the flush is done.
   Future<void> flush();
 
   /// How this model streams.
@@ -86,14 +110,24 @@ final class TranscriptUpdate {
     required this.confirmedUntil,
     List<WordTiming> confirmedWords = const [],
     this.endpoint = false,
-  }) : confirmedWords = List.unmodifiable(confirmedWords);
+  }) : assert(
+         !endpoint || unconfirmed == '',
+         'an endpoint update has no unconfirmed text',
+       ),
+       assert(
+         !confirmedUntil.isNegative,
+         'confirmedUntil counts from the stream start',
+       ),
+       confirmedWords = List.unmodifiable(confirmedWords);
 
   /// Text confirmed since the previous update, to append to the confirmed
-  /// transcript (with its leading space, if any). Often empty.
+  /// transcript (with its leading space, if any). Often empty. The confirmed
+  /// transcript is the whole stream's: a flush does not start it over.
   final String confirmedDelta;
 
   /// The text heard after the confirmed transcript, which later audio may
-  /// still change. Replaces the previous update's [unconfirmed].
+  /// still change. Replaces the previous update's [unconfirmed]. Always
+  /// empty from an incremental model ([StreamingKind.incremental]).
   final String unconfirmed;
 
   /// Audio time, from the stream's first sample, before which every word
@@ -140,11 +174,16 @@ final class TranscriptUpdate {
 /// How far behind the audio a windowed recognizer may run. The window
 /// length is the model's ([StreamingSttInfo.window]); the overlap decides
 /// how often a window runs and how soon text is confirmed.
+///
+/// Values may be added in a minor release: give a `switch` over it a
+/// default arm.
 @experimental
 enum StreamingLatency {
   /// Windows overlap by three quarters: a window runs every quarter window
   /// of audio (1.25 s for a 5 s window), four times the work of a batch
-  /// transcription.
+  /// transcription. The default: Parakeet CTC int8 transcribed LibriSpeech
+  /// test-clean as accurately either way (2.85% and 2.80% WER over 93
+  /// minutes), and this confirms text twice as often.
   lowLatency,
 
   /// Windows overlap by half: a window runs every half window, twice the
@@ -157,7 +196,7 @@ enum StreamingLatency {
 final class TranscribeStreamOptions {
   const TranscribeStreamOptions({
     this.latency = StreamingLatency.lowLatency,
-    this.maxBufferedAudio = const Duration(seconds: 10),
+    this.maxBufferedAudio,
   });
 
   /// For a windowed model; an incremental one ignores it.
@@ -165,10 +204,19 @@ final class TranscribeStreamOptions {
 
   /// The most audio received but not analysed yet (the overlap a windowed
   /// model keeps on purpose does not count); past it the stream fails with
-  /// a [SpeechStreamOverrunException]. Must be at least the model's
-  /// [StreamingSttInfo.window], or `transcribeStream` throws
-  /// [ArgumentError].
-  final Duration maxBufferedAudio;
+  /// a [SpeechStreamOverrunException]. Null, the default, is 10 s, or the
+  /// model's [StreamingSttInfo.window] when that is longer. A value must be
+  /// at least that window, or `transcribeStream` throws [ArgumentError].
+  final Duration? maxBufferedAudio;
+
+  /// [maxBufferedAudio] for a model whose window is [window], the default
+  /// applied.
+  Duration maxBufferedAudioFor(Duration window) {
+    final set = maxBufferedAudio;
+    if (set != null) return set;
+    const fallback = Duration(seconds: 10);
+    return window > fallback ? window : fallback;
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -178,9 +226,17 @@ final class TranscribeStreamOptions {
 
   @override
   int get hashCode => Object.hash(latency, maxBufferedAudio);
+
+  @override
+  String toString() =>
+      'TranscribeStreamOptions(${latency.name}, '
+      'maxBufferedAudio: ${maxBufferedAudio ?? 'default'})';
 }
 
 /// How a streaming recognizer's model works.
+///
+/// Values may be added in a minor release: give a `switch` over it a
+/// default arm.
 @experimental
 enum StreamingKind {
   /// It re-reads overlapping windows of a fixed length, so text near the
@@ -200,7 +256,7 @@ final class StreamingSttInfo {
   final StreamingKind kind;
 
   /// The audio one model run reads: the window of a windowed model, the
-  /// chunk of an incremental one.
+  /// chunk of an incremental one. Longer than zero.
   final Duration window;
 
   @override
@@ -243,7 +299,8 @@ final class SpeechStreamOverrunException implements Exception {
 /// `FlutterEdgeAi.getActiveTts` returns.
 ///
 /// Experimental: core may add members in a minor release. Implement it only
-/// in a backend that pins core to a minor version range.
+/// in a backend that pins core to a minor version range, and only on an
+/// instance that can stream (see [StreamingSpeechRecognizer]).
 @experimental
 abstract interface class StreamingSpeechSynthesizer
     implements SpeechSynthesizer {
@@ -255,7 +312,8 @@ abstract interface class StreamingSpeechSynthesizer
   /// another holds it then, or the synthesizer is closed, it ends at once
   /// with a [StateError]. The claim is released when the stream is done,
   /// ends with an error, or when its cancel future completes. `synthesize`
-  /// calls made meanwhile wait their turn on the same model.
+  /// calls made meanwhile wait their turn on the same model: for the step in
+  /// flight, never for the stream to end.
   ///
   /// The stream is single-subscription and synthesis runs only a few chunks
   /// ahead of its listener. Cancelling the subscription stops synthesis at
@@ -271,7 +329,10 @@ abstract interface class StreamingSpeechSynthesizer
   /// [StateError] if another stream holds it or the synthesizer is closed.
   /// The claim is released when [SpeechTextStream.audio] is done or ends
   /// with an error, or when [SpeechTextStream.cancel] (or the cancel of
-  /// [SpeechTextStream.audio]'s subscription) completes.
+  /// [SpeechTextStream.audio]'s subscription) completes. **A text stream
+  /// dropped without [SpeechTextStream.close] or [SpeechTextStream.cancel]
+  /// holds the synthesizer until it is closed.** `synthesize` calls wait
+  /// only for the step in flight, as with [synthesizeStream].
   SpeechTextStream openTextStream();
 }
 
@@ -283,11 +344,17 @@ final class SpeechChunk {
     required this.sampleRate,
     required this.index,
     List<WordTiming> words = const [],
-  }) : words = List.unmodifiable(words);
+  }) : assert(sampleRate > 0, 'sampleRate must be positive'),
+       assert(index >= 0, 'index counts from 0'),
+       assert(pcm.lengthInBytes.isEven, 'pcm holds whole 16-bit samples'),
+       words = List.unmodifiable(words);
 
   /// 16-bit little-endian mono PCM at [sampleRate], as `synthesize` returns.
+  /// Not copied: the synthesizer does not touch it again, and a listener
+  /// must not change it.
   final Uint8List pcm;
 
+  /// The synthesizer's `SpeechSynthesizer.sampleRate`.
   final int sampleRate;
 
   /// 0 for the first chunk of a stream, then 1, 2, …
@@ -296,6 +363,11 @@ final class SpeechChunk {
   /// The words whose audio starts in this chunk; empty when the model gives
   /// no timings.
   final List<WordTiming> words;
+
+  @override
+  String toString() =>
+      'SpeechChunk(#$index, ${pcm.lengthInBytes ~/ 2} samples at '
+      '$sampleRate Hz, ${words.length} words)';
 }
 
 /// Text in, [audio] out: what [StreamingSpeechSynthesizer.openTextStream]
@@ -307,9 +379,10 @@ abstract interface class SpeechTextStream {
   void add(String delta);
 
   /// No more text: what is left is spoken and [audio] ends. Completes when
-  /// [audio] is done, so it waits for a listener to drain [audio]; a
-  /// synthesis failure completes it with that error. Calling it again
-  /// returns the same future.
+  /// [audio] is done, so **it never completes while nobody listens to
+  /// [audio]**: listen first, or do not await it. A synthesis failure
+  /// completes it with that error. Calling it again returns the same
+  /// future; after [cancel] it returns [cancel]'s future.
   Future<void> close();
 
   /// The audio, single-subscription, a few chunks ahead of its listener at
@@ -321,9 +394,11 @@ abstract interface class SpeechTextStream {
   Stream<SpeechChunk> get audio;
 
   /// Drops the text not yet spoken and the audio not yet delivered (a
-  /// barge-in), whether or not [audio] has a listener. Completes when
-  /// synthesis has stopped; [audio] then ends without an error. Calling it
-  /// again, or after [audio] has ended, returns the same future.
+  /// barge-in), whether or not [audio] has a listener. Synthesis stops at
+  /// the next step boundary (the step in flight finishes, its audio is
+  /// dropped); this completes when it has stopped, and [audio] then ends
+  /// without an error. Calling it again, or after [audio] has ended,
+  /// returns the same future.
   Future<void> cancel();
 }
 
@@ -332,9 +407,11 @@ abstract interface class SpeechTextStream {
 /// [word] is the text as written where it comes from: the transcript for
 /// speech-to-text, the caller's text for text-to-speech (`42`, not the
 /// `forty two` that is spoken). [start] and [end] are UTF-16 indices into
-/// that text: for speech-to-text the confirmed transcript, for
-/// text-to-speech everything given to the stream so far. [audioStart] and
-/// [audioEnd] count from the stream's first sample, pauses included.
+/// that text, half-open (`text.substring(start, end) == word`): for
+/// speech-to-text the confirmed transcript of the whole stream (a flush
+/// does not start it over), for text-to-speech everything given to the
+/// stream so far. [audioStart] and [audioEnd] (half-open too, `audioStart <=
+/// audioEnd`) count from the stream's first sample, pauses included.
 @experimental
 final class WordTiming {
   const WordTiming({
@@ -343,7 +420,8 @@ final class WordTiming {
     required this.end,
     required this.audioStart,
     required this.audioEnd,
-  });
+  }) : assert(start >= 0 && start <= end, 'start and end index the text'),
+       assert(end - start == word.length, 'word is the text start..end');
 
   final String word;
   final int start;
@@ -368,10 +446,15 @@ final class WordTiming {
 }
 
 /// Finds the streaming side of a recognizer.
+///
+/// On an object that is both a recognizer and a synthesizer, `asStreaming`
+/// is ambiguous: name the extension,
+/// `SpeechRecognizerStreaming(object).asStreaming`.
 @experimental
 extension SpeechRecognizerStreaming on SpeechRecognizer {
   /// This recognizer as a [StreamingSpeechRecognizer], or null when its model
-  /// cannot stream.
+  /// cannot stream. Answered by type: see [StreamingSpeechRecognizer] for
+  /// the rule implementers follow so that it does not lie.
   StreamingSpeechRecognizer? get asStreaming {
     final self = this;
     return self is StreamingSpeechRecognizer ? self : null;
@@ -379,6 +462,9 @@ extension SpeechRecognizerStreaming on SpeechRecognizer {
 }
 
 /// Finds the streaming side of a synthesizer.
+///
+/// On an object that is both, name the extension, as for
+/// [SpeechRecognizerStreaming].
 @experimental
 extension SpeechSynthesizerStreaming on SpeechSynthesizer {
   /// This synthesizer as a [StreamingSpeechSynthesizer], or null when its

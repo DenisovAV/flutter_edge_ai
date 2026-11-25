@@ -42,11 +42,13 @@ final class TranscriptUpdate
   method String toString()
 
 final class TranscribeStreamOptions
-  constructor const TranscribeStreamOptions({StreamingLatency latency = StreamingLatency.lowLatency, Duration maxBufferedAudio = const Duration(seconds: 10)})
+  constructor const TranscribeStreamOptions({StreamingLatency latency = StreamingLatency.lowLatency, Duration? maxBufferedAudio})
   field final StreamingLatency latency
-  field final Duration maxBufferedAudio
+  field final Duration? maxBufferedAudio
   getter int hashCode
   method bool ==(Object other)
+  method Duration maxBufferedAudioFor(Duration window)
+  method String toString()
 
 enum StreamingLatency
   value balanced
@@ -76,6 +78,7 @@ final class SpeechChunk
   field final Uint8List pcm
   field final int sampleRate
   field final List<WordTiming> words
+  method String toString()
 
 final class WordTiming
   constructor const WordTiming({required String word, required int start, required int end, required Duration audioStart, required Duration audioEnd})
@@ -105,7 +108,7 @@ abstract base class SttVariant extends CatalogVariant
   getter List<ModelArtifact> files @nonVirtual
   getter ModelArtifact model abstract
   getter ModelRuntimeDefaults runtimeDefaults
-  getter bool streaming
+  getter bool supportsStreaming @experimental
   getter ModelArtifact tokenizer abstract
   getter SttModelType type abstract
 
@@ -113,6 +116,6 @@ abstract base class TtsVariant extends CatalogVariant
   constructor const TtsVariant()
   getter String baseUrl abstract
   getter ModelRuntimeDefaults runtimeDefaults
-  getter bool streaming
+  getter bool supportsStreaming @experimental
   getter TtsModelType type abstract
 

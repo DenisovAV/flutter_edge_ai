@@ -1,3 +1,6 @@
+## Unreleased
+- Experimental streaming speech interfaces: `transcribeStream`, `synthesizeStream`, `openTextStream`, via `asStreaming`.
+
 ## 2.7.2
 - `DeciderAnswer.confidence` docs: it equals Jev's confidence for Choice answers only.
 - Package skills: web `.litertlm` on `@litert-lm/core` 0.19.0 with `gemma4E2bIt.webGpu`.

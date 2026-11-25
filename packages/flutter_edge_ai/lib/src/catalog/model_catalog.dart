@@ -1,5 +1,5 @@
 import 'package:flutter_edge_ai/src/catalog/model_artifact.dart';
-import 'package:meta/meta.dart' show nonVirtual;
+import 'package:meta/meta.dart' show experimental, nonVirtual;
 import 'package:flutter_edge_ai/src/catalog/npu_target.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
 import 'package:flutter_edge_ai/src/embedding/embedding_modality.dart';
@@ -239,10 +239,12 @@ abstract base class SttVariant extends CatalogVariant {
   ModelRuntimeDefaults get runtimeDefaults => const ModelRuntimeDefaults();
 
   /// Whether the recognizer this build loads into is a
-  /// `StreamingSpeechRecognizer` on the platforms where the build runs
-  /// ([backendsHere]), so an app can pick a model for streaming before
-  /// installing it. False unless a subclass says so.
-  bool get streaming => false;
+  /// `StreamingSpeechRecognizer` on every platform and backend where the
+  /// build runs ([backendsHere]), so an app can pick a model for streaming
+  /// before installing it. False when any of them cannot stream; false
+  /// unless a subclass says so. Experimental, as the streaming interfaces.
+  @experimental
+  bool get supportsStreaming => false;
 
   /// [model] and [tokenizer], which is what the installer downloads; not
   /// overridable.
@@ -272,10 +274,12 @@ abstract base class TtsVariant extends CatalogVariant {
   ModelRuntimeDefaults get runtimeDefaults => const ModelRuntimeDefaults();
 
   /// Whether the synthesizer this build loads into is a
-  /// `StreamingSpeechSynthesizer` on the platforms where the build runs
-  /// ([backendsHere]), so an app can pick a voice for streaming before
-  /// installing it. False unless a subclass says so.
-  bool get streaming => false;
+  /// `StreamingSpeechSynthesizer` on every platform and backend where the
+  /// build runs ([backendsHere]), so an app can pick a voice for streaming
+  /// before installing it. False when any of them cannot stream; false
+  /// unless a subclass says so. Experimental, as the streaming interfaces.
+  @experimental
+  bool get supportsStreaming => false;
 }
 
 /// A list of models, as one package or `FlutterEdgeAi.catalog` offers them.

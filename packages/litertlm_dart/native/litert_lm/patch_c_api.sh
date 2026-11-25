@@ -4,15 +4,20 @@
 #    + Windows .def whitelist for the symbols our Dart FFI bindings call)
 # 2. set_use_hw_masking_for_npu setter (Intel LunarLake/PantherLake NPU)
 # 3. GPU smooth-UI knobs — gpu_context_low_priority + kernel_batch_size (#364)
-# 4. gpu_registry.cc dlopen rewrite for App-Store-safe framework paths (Apple)
+# 4. LiteRT patches: Apple registers only the statically linked GPU
+#    accelerator; two LiteRT backports after the v0.20.0 pin
 # 16. litert_lm_conversation_rewind_cancelled_turn: a stopped turn is rewound
 #     instead of leaving the conversation poisoned
 # 17. SentencePiece loads a BPE vocabulary with a NUL-byte piece (#659); on
 #     v0.19.0 a second patch on top of upstream's, which accepts only "\0"
 # 26. ThinkingBudgetConstraint copies a user bitmap by data() and vocabulary
 #     size (Windows: the Gemma provider's vector is libc++, the runtime MSVC)
-# 27. The NPU executor aliases a multi-signature KV cache held in a custom
-#     tensor buffer (Intel OpenVINO) instead of refusing it (upstream 3db1cfd0ab)
+#
+# v0.20.0 migration: sections 15, 22, 24 and 27 are anchors only now (upstream
+# a48771d2, 9738e180, e0dcad4e and 3db1cfd0ab ship what they patched); section
+# 10b drops the Google Tensor dispatch and Intel GlobalGraph v3 backports (in
+# the LiteRT pin bf49eb62) and adds two LiteRT backports after that pin
+# (aa9e40cd5, 95d3d567b).
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -309,34 +314,16 @@ else
   echo "  SKIP: c/engine.cc already has set_gpu_context_low_priority"
 fi
 
-# ── 10. Patch sampler_factory.cc + WORKSPACE for App-Store-safe dlopen on Apple ──
+# ── 10. Apple GPU: no accelerator or sampler library is dlopened ──
 #
-# `gpu_registry.cc` (LiteRT) and `sampler_factory.cc` (LiteRT-LM) hardcode the
-# dylib basename "libLiteRtMetalAccelerator.dylib" / "libLiteRtTopKMetalSampler.dylib"
-# in their dlopen calls. Native Assets bundles each prebuilt dylib as
-# `<X>.framework/<X>` (Apple's required structure for iOS) — there is no flat
-# `lib<X>.dylib` file in the app bundle for dyld to find by basename.
-#
-# Older flutter_edge_ai versions worked around this by symlinking lib*.dylib
-# alongside the frameworks in `Frameworks/`, but Apple App Store Connect
-# rejects that with ITMS-90432 ("Unexpected file found in Frameworks").
-#
-# Proper fix: rewrite the dlopen path on Apple to a relative-to-executable
-# framework path, which dyld resolves natively:
-#   `@executable_path/../Frameworks/<X>.framework/<X>` on macOS
-#   `@executable_path/Frameworks/<X>.framework/<X>` on iOS
-#
-# On Apple the framework is LiteRtLmMetalAccelerator, not upstream's
-# LiteRtMetalAccelerator: flutter_litert >= 3.4.0 ships a framework under the
-# upstream name for its own LiteRT, an app bundle holds only one of the two,
-# and Native Assets — embedded last — silently replaced flutter_litert's, whose
-# LiteRT then could not register a Metal accelerator built for another LiteRT.
-# build_ios.sh / build_macos.sh copy upstream's dylib under the new name.
-#
-# Verified empirically (2026-04-30) on a built macOS Runner.app: the
-# @executable_path-relative form resolves both from a binary in Contents/MacOS
-# and from a binary inside another framework's Versions/A — i.e. it works for
-# gpu_registry's call site inside libLiteRtLm.dylib.
+# Native Assets bundles each dylib as `<X>.framework/<X>`, so a dlopen by
+# basename finds nothing in an Apple app (and the old lib*.dylib symlinks were
+# App Store ITMS-90432). Up to native-v0.19.1 section 10b rewrote LiteRT's
+# Metal accelerator dlopen to our LiteRtLmMetalAccelerator.framework path (a
+# name of our own: flutter_litert >= 3.4.0 ships LiteRtMetalAccelerator.framework
+# for its own LiteRT, and an app holds one framework per name). From v0.20.0
+# libLiteRtLm links the Metal accelerator in, so 10b compiles the dlopen path
+# out on Apple instead (patches/litert_gpu_registry_apple.patch).
 
 # 10a. sampler_factory.cc — DELIBERATELY NOT PATCHED.
 #
@@ -359,125 +346,71 @@ fi
 # path — same behavior we had pre-0.14.1. Inference still runs on the GPU
 # accelerator; only the per-token argmax happens on CPU (~1-5 ms/token).
 
-# 10b. gpu_registry.cc lives in LiteRT (transitive dep). Bazel applies
-# patch_cmds AFTER extracting an http_archive — that's the canonical hook for
-# patching transitive deps. Use python with a separator to avoid the multi-
-# layer shell-inside-Bazel-string-inside-python quoting nightmare.
+# 10b. LiteRT patches. gpu_registry.cc and the two backports live in LiteRT, a
+# transitive Bazel dependency: the litert http_archive gets a `patches` list
+# (applied at fetch, before upstream's own patch_cmds), and Bazel fails the
+# fetch when a hunk does not apply — the loud failure a moved upstream line
+# has to produce.
+#   - patches/litert_gpu_registry_apple.patch: on Apple only the accelerator
+#     linked into libLiteRtLm is registered and no accelerator library is ever
+#     dlopened (flutter_litert in the same app; D1 of the 0.20 migration: no
+#     Metal framework ships). Up to native-v0.19.1 this section also rewrote
+#     the dlopen name to our framework path with a sed in patch_cmds; there is
+#     nothing to dlopen now, so that is gone.
+#   - patches/litert_webgpu_stage_spatial_bindings.patch: LiteRT aa9e40cd5
+#     (LiteRT-LM #4460, WebGPU prefill_8 on Windows D3D12 and Linux Vulkan).
+#   - patches/litert_adreno_flash_decode_keys.patch: LiteRT 95d3d567b
+#     (Gemma 4 float32 on Adreno 8xx).
+# The two backports are after the v0.20.0 LiteRT pin bf49eb62; drop each once
+# the pin contains its commit. The pin already has the Google Tensor dispatch
+# OSS hooks change and OpenVINO GlobalGraph v3 (cac3c771e), whose backports
+# this list carried up to native-v0.19.1.
+LITERT_PATCHES=(
+  litert_gpu_registry_apple
+  litert_webgpu_stage_spatial_bindings
+  litert_adreno_flash_decode_keys
+)
 export WORKSPACE_FILE="$DIR/WORKSPACE"
-if [ -f "$WORKSPACE_FILE" ] && ! grep -q "FLUTTER_GEMMA_GPU_REGISTRY_PATCH" "$WORKSPACE_FILE"; then
-  python3 << 'PYEOF'
-import os
+export LITERT_PATCH_LABELS="$(printf '//:flutter_gemma_%s.patch ' "${LITERT_PATCHES[@]}")"
+[ -f "$WORKSPACE_FILE" ] || { echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2; exit 1; }
+python3 << 'PYEOF2'
+import os, re
 ws = os.environ['WORKSPACE_FILE']
-with open(ws, 'r') as f:
+labels = os.environ['LITERT_PATCH_LABELS'].split()
+with open(ws) as f:
     content = f.read()
-
-# Anchor on the litert http_archive's own patch_cmds list, not on the text of a
-# command inside it: v0.18.0 rewrote that command (a shell loop replaced
-# `sed … third_party/*/*`) and the old anchor stopped matching.
-new_line_after_anchor = """
-        # FLUTTER_GEMMA_GPU_REGISTRY_PATCH — App Store ITMS-90432 fix:
-        # rewrite gpu_registry.cc dlopen path on Apple to a framework path so
-        # dyld resolves the bundled .framework/<X> via @executable_path. iOS
-        # bundle is flat (Frameworks/), macOS bundle has Contents/Frameworks/.
-        "sed -i.bak 's|\\"libLiteRtMetalAccelerator\\" SO_EXT|FLUTTER_GEMMA_METAL_FW_PATH|g' litert/runtime/accelerators/gpu_registry.cc",
-        # Inject the macro definition right after the namespace opens. Its
-        # non-Apple branch names SO_EXT, which LiteRT defines before the
-        # namespace in older revisions and inside it since the v0.18.0 pin;
-        # a macro expands where it is used, so either order works. The
-        # TargetConditionals.h include must be wrapped in #if defined(__APPLE__)
-        # — that header is Apple-only, Android NDK doesn't ship it. Using awk
-        # to avoid sed nesting issues.
-        "awk 'BEGIN{p=0} /^namespace litert::internal/ && !p {print; print \\"\\"; print \\"#if defined(__APPLE__)\\"; print \\"#include <TargetConditionals.h>\\"; print \\"#if TARGET_OS_OSX\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"@executable_path/../Frameworks/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator\\\\\\"\\"; print \\"#elif TARGET_OS_IPHONE\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"@executable_path/Frameworks/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator\\\\\\"\\"; print \\"#else\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"libLiteRtLmMetalAccelerator.dylib\\\\\\"\\"; print \\"#endif\\"; print \\"#else\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"libLiteRtMetalAccelerator\\\\\\" SO_EXT\\"; print \\"#endif\\"; p=1; next} {print}' litert/runtime/accelerators/gpu_registry.cc > /tmp/gpu_registry.cc.new && mv /tmp/gpu_registry.cc.new litert/runtime/accelerators/gpu_registry.cc","""
-
-# Insert our commands first in that list. They don't depend on upstream's own
-# patch_cmds, so their position in it doesn't matter.
-name_idx = content.find('name = "litert",')
-pc_idx = content.find('patch_cmds = [', name_idx) if name_idx >= 0 else -1
-end_idx = content.find('\n)', name_idx) if name_idx >= 0 else -1
-if pc_idx < 0 or (end_idx >= 0 and pc_idx > end_idx):
-    # Fatal, not a warning: without §10b the Apple builds dlopen the Metal
-    # accelerator by its bare upstream name, which no app bundle provides, and
-    # GPU silently falls back to CPU.
-    raise SystemExit("  ERROR: litert patch_cmds not found in WORKSPACE; section 10b "
-                     "cannot apply — re-anchor it for this LiteRT-LM revision")
+name_idx = content.find('    name = "litert",\n')
+if name_idx < 0:
+    raise SystemExit("  ERROR: section 10b: no litert http_archive in WORKSPACE")
+end_idx = content.find('\n)', name_idx)
+block = content[name_idx:end_idx]
+queued = re.findall(r'"(//:flutter_gemma_[a-z0-9_]+\.patch)"', block)
+if queued:
+    # A tree this script patched before. Its list must be exactly ours: an
+    # older script's list names backports the pin already contains, which
+    # would fail the fetch (or worse, a sed this version no longer expects).
+    if queued != labels:
+        raise SystemExit("  ERROR: section 10b: WORKSPACE queues %s, want %s; "
+                         "start from a fresh LiteRT-LM tree" % (queued, labels))
+    print("  SKIP: litert archive already queues our patches")
 else:
-    at = pc_idx + len('patch_cmds = [')
-    content = content[:at] + new_line_after_anchor + content[at:]
-    # The Apple accelerator order and the RTLD_DEFAULT fallback are a real diff
-    # (patches/litert_gpu_registry_apple.patch, copied next to WORKSPACE by the
-    # shell below). Bazel applies `patches` BEFORE `patch_cmds`, and fails the
-    # fetch when a hunk does not apply — the loud failure a moved upstream
-    # line has to produce. The macro it uses is defined by the awk above.
-    # OpenVINO 2026.4.1 (which Intel's Gemma 4 12B for Panther Lake needs) is
-    # in the LiteRT pin since v0.19.0 (dcb657e8 contains 991d15588a), so the
-    # backport patch is gone.
-    # Intel's public Gemma 4 12B for Panther Lake carries an OpenVINO
-    # GlobalGraph container v3, which the pin's dispatch refuses ("unsupported
-    # container version"). patches/litert_intel_globalgraph_v3.patch is
-    # upstream LiteRT PR #10843 (merge 1f3f61d0), confined to
-    # litert/vendors/intel_openvino/: the v3 parser (still reads v2) and the
-    # dispatch's multi-context KV-tier changes. It is exactly
-    # `git diff dcb657e8 1f3f61d0 -- litert/vendors/intel_openvino`; drop it
-    # once the LiteRT pin contains 1f3f61d0.
+    if 'patches = [' in block:
+        raise SystemExit("  ERROR: section 10b: the litert archive has upstream "
+                         "patches now; merge our list into it")
+    entries = ''.join('        "%s",\n' % l for l in labels)
     content = content.replace(
         '    name = "litert",\n',
-        '    name = "litert",\n'
-        '    patches = [\n'
-        '        "//:flutter_gemma_litert_gpu_registry.patch",\n'
-        '        "//:flutter_gemma_litert_google_tensor_dispatch_oss.patch",\n'
-        '        "//:flutter_gemma_litert_intel_globalgraph_v3.patch",\n'
-        '    ],\n'
+        '    name = "litert",\n    patches = [\n' + entries + '    ],\n'
         '    patch_args = ["-p1"],\n', 1)
-    if 'flutter_gemma_litert_gpu_registry.patch' not in content:
-        raise SystemExit("  ERROR: could not add the gpu_registry patch to the litert archive")
     with open(ws, 'w') as f:
         f.write(content)
-    print("  OK: Patched WORKSPACE litert.patch_cmds with gpu_registry.cc dlopen rewrite")
-    print("  OK: litert archive applies patches/litert_gpu_registry_apple.patch")
-    print("  OK: LiteRT Google Tensor dispatch drops its unused internal hooks dependency")
-    print("  OK: LiteRT Intel OpenVINO dispatch reads GlobalGraph v3 (PR #10843 backport)")
-PYEOF
-  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
-    "$DIR/flutter_gemma_litert_gpu_registry.patch"
-  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
-    "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
-  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_intel_globalgraph_v3.patch" \
-    "$DIR/flutter_gemma_litert_intel_globalgraph_v3.patch"
-else
-  if [ -f "$WORKSPACE_FILE" ]; then
-    # A tree patched by an older patch_c_api.sh has the sed but not the diff:
-    # its Apple build still tries libLiteRtGpuAccelerator first and falls back
-    # to RTLD_DEFAULT, which in an app with flutter_litert is that runtime's
-    # accelerator (the litertlm 1.10.0 iOS crash). Refuse it rather than skip.
-    if ! grep -q "flutter_gemma_litert_gpu_registry.patch" "$WORKSPACE_FILE"; then
-      echo "  ERROR: $WORKSPACE_FILE was patched by an older patch_c_api.sh" \
-        "(no gpu_registry diff); start from a fresh LiteRT-LM tree" >&2
-      exit 1
-    fi
-    if ! grep -q "flutter_gemma_litert_google_tensor_dispatch_oss.patch" \
-        "$WORKSPACE_FILE"; then
-      echo "  ERROR: $WORKSPACE_FILE has no Google Tensor OSS dispatch patch;" \
-        "start from a fresh LiteRT-LM tree" >&2
-      exit 1
-    fi
-    if ! grep -q "flutter_gemma_litert_intel_globalgraph_v3.patch" \
-        "$WORKSPACE_FILE"; then
-      echo "  ERROR: $WORKSPACE_FILE has no Intel GlobalGraph v3 patch;" \
-        "start from a fresh LiteRT-LM tree" >&2
-      exit 1
-    fi
-    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
-      "$DIR/flutter_gemma_litert_gpu_registry.patch"
-    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
-      "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
-    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_intel_globalgraph_v3.patch" \
-      "$DIR/flutter_gemma_litert_intel_globalgraph_v3.patch"
-    echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
-  else
-    echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2
-    exit 1
-  fi
-fi
+    for l in labels:
+        print("  OK: litert archive applies patches/%s"
+              % l.replace('//:flutter_gemma_', ''))
+PYEOF2
+for name in "${LITERT_PATCHES[@]}"; do
+  cp "$(cd "$(dirname "$0")" && pwd)/patches/$name.patch" "$DIR/flutter_gemma_$name.patch"
+done
 
 # ── 11. Qualcomm NPU options on Linux (HTP burst) ──
 #
@@ -663,36 +596,34 @@ done
 
 # ── 15. Windows: no C runtime descriptor crosses into libLiteRt.dll ──
 # Since LiteRT-LM 9589b6b4 (first in v0.17.0) a bundle with a non-empty
-# TF_LITE_AUX (every AOT NPU bundle) is loaded file-backed:
-# CreateModelFromFileSection passes litert::Model::CreateFromFd a CRT
-# descriptor. On Windows that is an index into one CRT's table; LiteRtLm.dll
-# and the prebuilt libLiteRt.dll each link their own, so the runtime has no
-# such descriptor. v0.17.0 failed engine_create ("Failed to load model from
-# fd"); v0.18.0 ends the process in libLiteRt.dll with 0xC0000409. Reproduced
-# on upstream's own litert_lm_advanced_main (LiteRT-LM #4023). Windows takes
-# the buffer-backed path, as v0.16.0 did for every bundle. Android, Apple and
-# Linux are unchanged: there a descriptor belongs to the process.
-#
-# A real diff on top of section 13's (same file), plus an anchor: a second
-# caller of CreateFromFd would hand the runtime a descriptor again.
-NOFD_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/windows_no_fd_model_loading.patch"
-if git -C "$DIR" apply --check "$NOFD_PATCH" 2>/dev/null; then
-  git -C "$DIR" apply "$NOFD_PATCH"
-  echo "  OK: Windows loads .litertlm sections buffer-backed, never by descriptor"
-elif git -C "$DIR" apply --reverse --check "$NOFD_PATCH" 2>/dev/null; then
-  echo "  SKIP: Windows buffer-backed section loading already applied"
-else
-  echo "  ERROR: $NOFD_PATCH does not apply to this LiteRT-LM revision —" >&2
-  echo "         model_resources_litert_lm.cc moved; re-create the patch against it." >&2
+# TF_LITE_AUX (every AOT NPU bundle) is loaded file-backed: a CRT descriptor
+# reaches libLiteRt.dll, which links its own CRT, and the process ended with
+# 0xC0000409 (LiteRT-LM #4023). Our patch for it is gone: upstream a48771d2
+# (in v0.20.0) returns Unimplemented from CreateModelFromFileSection under
+# `_WIN32 && LITERT_DYNAMIC_RUNTIME`, and the caller falls back to
+# buffer-backed loading. Anchors only: the guard must be there, the only
+# descriptor call must stay behind it, and the define must reach the file
+# through @litert//litert/cc:litert_model (LiteRT puts LITERT_DYNAMIC_RUNTIME
+# on that target under litert_runtime_link_mode=dynamic, which our Windows
+# build sets). A guard whose define never arrives is the old crash.
+MRL="$DIR/runtime/components/model_resources_litert_lm.cc"
+grep -q 'defined(_WIN32) && defined(LITERT_DYNAMIC_RUNTIME)' "$MRL" || {
+  echo "  ERROR: section 15: upstream's Windows buffer-backed fallback is gone from $MRL" >&2
   exit 1
-fi
-nofd_callers="$(grep -rlE 'CreateFromFd\(|LiteRtCreateModelFromFd\(' --include='*.cc' \
-  "$DIR/runtime" "$DIR/c" | grep -v '_test\.cc$' | sed "s|^$DIR/||" | sort | tr '\n' ' ')"
-[ "$nofd_callers" = "runtime/components/model_resources_litert_lm.cc " ] || {
+}
+nofd_callers="$(grep -rlE 'CreateLiteRtModelFromFd\(|LiteRtCreateModelFromFd\(|CreateFromFd\(' \
+  --include='*.cc' "$DIR/runtime" "$DIR/c" | grep -v '_test\.cc$' | sed "s|^$DIR/||" | sort | tr '\n' ' ')"
+[ "$nofd_callers" = "runtime/components/model_resources.cc runtime/components/model_resources_litert_lm.cc " ] || {
   echo "  ERROR: section 15: unexpected CreateFromFd callers: $nofd_callers" >&2
   exit 1
 }
-echo "  OK: section 15 anchors hold"
+awk '/name = "model_resources_litert_lm"/,/^\)/' "$DIR/runtime/components/BUILD" \
+  | grep -q '"@litert//litert/cc:litert_model"' || {
+  echo "  ERROR: section 15: model_resources_litert_lm no longer depends on" \
+    "@litert//litert/cc:litert_model, which carries LITERT_DYNAMIC_RUNTIME" >&2
+  exit 1
+}
+echo "  OK: section 15: Windows loads AOT sections buffer-backed (upstream a48771d2)"
 
 # ── 16. Rewind a cancelled conversation turn ──
 # Conversation::CancelProcess leaves the session poisoned: every later task
@@ -896,39 +827,36 @@ else
   exit 1
 fi
 
-# ── 19. Android: the statically linked GPU accelerator is OpenCL only ──
-# From v0.19.0 libLiteRtLm links runtime/executor:default_static_gpu_accelerator
-# on Apple and Android. On Android that is LiteRT's combined ML Drift
-# accelerator, whose WebGPU delegate makes libLiteRtLm NEED
-# libwebgpu_dawn.so — which this bundle does not carry (Android GPU is
-# OpenCL only, see build_android.sh). LiteRT's ml_drift_cl_accelerator is the
-# same accelerator without WebGPU.
-ANDROID_CL_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/android_static_gpu_opencl.patch"
-if grep -q 'name = "default_static_gpu_accelerator"' "$DIR/runtime/executor/BUILD"; then
-  if git -C "$DIR" apply --check "$ANDROID_CL_PATCH" 2>/dev/null; then
-    git -C "$DIR" apply "$ANDROID_CL_PATCH"
-    echo "  OK: Android links the OpenCL-only GPU accelerator"
-  elif git -C "$DIR" apply --reverse --check "$ANDROID_CL_PATCH" 2>/dev/null; then
-    echo "  SKIP: Android OpenCL-only accelerator already applied"
-  else
-    echo "  ERROR: $ANDROID_CL_PATCH does not apply to this LiteRT-LM revision" >&2
-    exit 1
-  fi
-fi
+# ── 19. Android: the statically linked GPU accelerator ──
+# Up to v0.19.1 this section swapped Android's combined ML Drift accelerator
+# (whose WebGPU delegate made libLiteRtLm NEED libwebgpu_dawn.so) for the
+# OpenCL-only one. v0.20.0 (upstream 6cf79561) links ml_drift_cl_gl_accelerator
+# instead: OpenCL and OpenGL, no WebGPU. We take it as is (0.20 migration
+# decision D2); build_android.sh's NEEDED lint and verify_tarball_manifest.sh
+# keep a Dawn dependency or a stray accelerator library out. Anchor only: a
+# default that brings WebGPU back must fail here, not in an app.
+awk '/name = "default_static_gpu_accelerator"/,/^\)/' "$DIR/runtime/executor/BUILD" \
+  | grep -A1 '"@platforms//os:android"' \
+  | grep -q 'gpu:ml_drift_cl_gl_accelerator"' || {
+  echo "  ERROR: section 19: Android's static GPU accelerator is no longer" \
+    "ml_drift_cl_gl_accelerator; re-check what it links (Dawn?)" >&2
+  exit 1
+}
+echo "  OK: section 19: Android links the OpenCL + OpenGL accelerator (upstream 6cf79561)"
 
 # ── 20. Linux and Windows: no fused GPU sampler ──
-# From v0.19.0 the TopK GPU samplers are compiled from ML Drift source
-# (upstream 47d7ba6, 7ea259d, 43b79e8) and runtime/components:
-# default_static_gpu_samplers links the WebGPU one into libLiteRtLm on every
-# non-Apple, non-Android target, including the dynamic-link mode Linux and
-# Windows use (litert_runtime_link_mode=dynamic), where the accelerator itself
-# stays out (it is Google's prebuilt libLiteRtWebGpuAccelerator). Our
-# libstdc++/MSVC build of the sampler then crashed the first GPU decode:
-# SIGSEGV in TopKWebGpuSampler::SampleToIdAndScoreBuffer on a T4,
-# 0xC0000409 in LiteRtLm.dll on Arc B390 and Arc 140V. This leaves the
-# sampler out in dynamic-link mode, as the accelerator already is; with no
-# sampler library shipped either, the sampler factory samples on the CPU and
-# the logits stay on the GPU.
+# From v0.19.0 the TopK GPU samplers are compiled from ML Drift source and
+# runtime/components:default_static_gpu_samplers links the WebGPU one into
+# libLiteRtLm on every non-Apple, non-Android target, including the
+# dynamic-link mode Linux and Windows use (litert_runtime_link_mode=dynamic).
+# Against Google's prebuilt libLiteRtWebGpuAccelerator our libstdc++/MSVC
+# build of the sampler crashed the first GPU decode: SIGSEGV in
+# TopKWebGpuSampler::SampleToIdAndScoreBuffer on a T4, 0xC0000409 in
+# LiteRtLm.dll on Arc B390 and Arc 140V. This leaves the sampler out in
+# dynamic-link mode; the sampler factory samples on the CPU and the logits
+# stay on the GPU. From v0.20.0 the accelerator is built from source with the
+# same toolchain (upstream 769af92e), so the crash's premise may be gone; the
+# section stays until a Linux and a Windows GPU decode run without it.
 DESKTOP_SAMPLER_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/desktop_no_static_gpu_sampler.patch"
 if grep -q 'name = "default_static_gpu_samplers"' "$DIR/runtime/components/BUILD"; then
   if git -C "$DIR" apply --check "$DESKTOP_SAMPLER_PATCH" 2>/dev/null; then
@@ -992,25 +920,18 @@ cp "$XNN_SRC_DIR/patches/xnnpack_pf32_sme2_apple.patch" \
   "$DIR/flutter_gemma_xnnpack_pf32_sme2_apple.patch"
 
 # ── 22. NPU executor: save every KV cache buffer of a conversation ──
-# LiteRT-LM keeps several conversations on one engine by saving the active
-# one (CloneContext) and restoring the next (RestoreContext). The NPU
-# executor saved only the KV buffers its prefill signature takes; a layer
-# only the decode signature reads (Gemma 4 E2B on the Qualcomm SM8750
-# bundle: kv_cache_k_14 and kv_cache_v_14 of 30) kept the previous
-# conversation's values, measured on a DDP Galaxy S25 Ultra 2026-11-02 (N1,
-# doc/research/npu-0.19.md): every conversation then answered with the last
-# one's fact. Saving every buffer in input_kv_cache_buffers covers them;
-# RestoreContext already restores whatever was saved.
-NPU_SAVE_ALL_KV_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/npu_context_save_all_kv.patch"
-if git -C "$DIR" apply --check "$NPU_SAVE_ALL_KV_PATCH" 2>/dev/null; then
-  git -C "$DIR" apply "$NPU_SAVE_ALL_KV_PATCH"
-  echo "  OK: NPU CloneContext saves every KV cache buffer"
-elif git -C "$DIR" apply --reverse --check "$NPU_SAVE_ALL_KV_PATCH" 2>/dev/null; then
-  echo "  SKIP: NPU CloneContext already saves every KV cache buffer"
-else
-  echo "  ERROR: $NPU_SAVE_ALL_KV_PATCH does not apply to this LiteRT-LM revision" >&2
+# The NPU executor's CloneContext saved only the KV buffers its prefill
+# signature takes, so a layer only decode reads kept the previous
+# conversation's values (Gemma 4 E2B on the Qualcomm SM8750 bundle, DDP Galaxy
+# S25 Ultra 2026-11-02, N1). Our patch is gone: upstream 9738e180 (in v0.20.0,
+# LiteRT-LM #4355) saves every buffer of the active context group. Anchor only.
+grep -q 'ActiveContextGroup().input_kv_cache_buffers' \
+    "$DIR/runtime/executor/llm_litert_npu_compiled_model_executor.cc" || {
+  echo "  ERROR: section 22: NPU CloneContext no longer saves the active group's" \
+    "input_kv_cache_buffers (upstream 9738e180)" >&2
   exit 1
-fi
+}
+echo "  OK: section 22: NPU CloneContext saves every KV cache buffer (upstream 9738e180)"
 
 # ── 23. How a turn ended: the turn-end record ──
 # A streamed reply ends with the same final chunk whether the model ended it
@@ -1064,28 +985,18 @@ else
 fi
 
 # ── 24. A prefill that reuses the KV positions a rewind left keeps its step ──
-# After a rewind (section 16, or upstream's own rewind_to_checkpoint) the
-# executor's step is back at the checkpoint, but its processed tokens still
-# hold what the stopped send prefilled and decoded. The resource manager's
-# prefill drops the input tokens that match them and, when they all match
-# (the stopped exchange of a stopped reply usually does: it ends with the
-# reply's last token, which the executor holds as its pending token), calls
-# the executor with the step after them in the prefill params only. The
-# executor takes its step from SetCurrentStep, so the rest of the input was
-# prefilled from the checkpoint's step and the matched tokens were lost:
-# Gemma 4 E2B rewound with "The salt-laced wind was Elara's" held 5 tokens
-# instead of 34 and forgot the conversation (macOS CPU and Metal, 2026-11-04,
-# probe command convrewind). The other branch already sets the step.
-MATCHED_STEP_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/resource_manager_matched_step.patch"
-if git -C "$DIR" apply --check "$MATCHED_STEP_PATCH" 2>/dev/null; then
-  git -C "$DIR" apply "$MATCHED_STEP_PATCH"
-  echo "  OK: a prefill after a rewind keeps the matched tokens' step"
-elif git -C "$DIR" apply --reverse --check "$MATCHED_STEP_PATCH" 2>/dev/null; then
-  echo "  SKIP: matched-step fix already applied"
-else
-  echo "  ERROR: $MATCHED_STEP_PATCH does not apply to this LiteRT-LM revision" >&2
+# After a rewind, a prefill whose input fully matched the processed tokens ran
+# from the checkpoint's step and lost the matched tokens (Gemma 4 E2B, macOS CPU
+# and Metal, 2026-11-04, probe convrewind). Our patch is gone: upstream
+# e0dcad4e (in v0.20.0) calls SetCurrentStep(current_step) on that branch.
+# Anchor only.
+grep -q 'ABSL_RETURN_IF_ERROR(llm_executor_->SetCurrentStep(current_step));' \
+    "$DIR/runtime/framework/resource_management/resource_manager.cc" || {
+  echo "  ERROR: section 24: the full-match prefill no longer sets the executor's" \
+    "step (upstream e0dcad4e)" >&2
   exit 1
-fi
+}
+echo "  OK: section 24: a prefill after a rewind keeps the matched step (upstream e0dcad4e)"
 
 # ── 25. A new context starts a hybrid model's linear attention state at zero ──
 # LFM2 keeps a convolution state (kv_cache_c_) beside its attention KV cache.
@@ -1147,36 +1058,16 @@ if grep -q 'words().end()' \
 fi
 
 # ── 27. A multi-signature NPU KV cache in an OpenVINO buffer is aliased ──
-# Backport of LiteRT-LM 3db1cfd0ab ("Alias multi-signature NPU KV caches on
-# Intel OpenVINO tensor buffers", 2026-10-27, after v0.19.1). When a bundle's
-# signatures declare KV caches of different lengths, the NPU executor creates
-# one buffer per cache and aliases it for the other signatures
-# (CreateAliasBuffer). Only host memory, AHWB, dma-buf and ION buffers could be
-# aliased, so a cache the Intel dispatch allocates as an OpenVINO tensor
-# buffer (kLiteRtTensorBufferTypeOpenVINOTensorBuffer = 100, the first user
-# custom type) failed engine_create with "Unsupported tensor buffer type for
-# cross-platform aliasing: 100": Intel's public
-# gemma4-12B-it-Intel_PTL_NPU.litertlm (OpenVINO GlobalGraph container v3,
-# read since section 10b's litert_intel_globalgraph_v3.patch) on
-# native-v0.19.1-a on Panther Lake. A custom buffer type now gets a
-# view of the same type from the source's custom handle, through the import
-# handler the type registered (the Intel dispatch registers one at the LiteRT
-# pin). Only a custom buffer type takes the branch, so it matters on Windows
-# (Intel NPU) and is applied on every target to keep one source tree.
-NPU_ALIAS_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/npu_alias_custom_tensor_buffers.patch"
-if git -C "$DIR" apply --check "$NPU_ALIAS_PATCH" 2>/dev/null; then
-  git -C "$DIR" apply "$NPU_ALIAS_PATCH"
-  echo "  OK: the NPU executor aliases KV caches in custom tensor buffers"
-elif git -C "$DIR" apply --reverse --check "$NPU_ALIAS_PATCH" 2>/dev/null; then
-  echo "  SKIP: NPU custom-buffer alias already applied"
-else
-  echo "  ERROR: $NPU_ALIAS_PATCH does not apply to this LiteRT-LM revision" >&2
-  exit 1
-fi
+# Intel's GlobalGraph-v3 bundles (gemma4-12B-it-Intel_PTL_NPU.litertlm) keep
+# KV caches of several lengths in OpenVINO tensor buffers, which
+# CreateAliasBuffer could not alias ("Unsupported tensor buffer type for
+# cross-platform aliasing: 100"). Our backport is gone: upstream 3db1cfd0ab is
+# in v0.20.0. Anchor only.
 if ! grep -q 'IsUserCustomBuffer' \
     "$DIR/runtime/executor/npu/llm_litert_npu_compiled_model_executor_utils.cc"; then
   echo "  ERROR: section 27: CreateAliasBuffer has no custom-buffer branch" >&2
   exit 1
 fi
+echo "  OK: section 27: NPU KV caches in custom tensor buffers are aliased (upstream 3db1cfd0ab)"
 
 echo "Patch complete."

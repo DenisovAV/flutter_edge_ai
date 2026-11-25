@@ -8,18 +8,7 @@
 #
 # Usage:
 #   ./build_ios.sh [ref]
-#   ./build_ios.sh 7a03724c       # v0.19.1 (the default)
-#   ./build_ios.sh v0.11.0        # WARNING: v0.11.0 prebuilt accelerators
-#                                 # are ABI-incompatible with libLiteRtLm
-#                                 # rebuilt from v0.11.0 source — crashes
-#                                 # in libLiteRtMetalAccelerator on engine
-#                                 # init/teardown. Use 032334d (post-6571c42
-#                                 # which re-syncs accelerator binaries with
-#                                 # WORKSPACE LITERT_REF).
-#   ./build_ios.sh v0.10.2        # WARNING: predates Metal accelerator,
-#                                 # produces libLiteRtLm.dylib that crashes
-#                                 # iPhone GPU with EXC_BAD_ACCESS in
-#                                 # litert_lm_engine_create.
+#   ./build_ios.sh 95df4c2a       # v0.20.0 (the default)
 
 set -euo pipefail
 
@@ -49,11 +38,10 @@ else
 fi
 
 # 2. Checkout version
-# v0.19.1. Build from an exact release commit: its source and its prebuilt accelerator
-# dylibs come from one tree, which is the invariant that matters — mixing
-# them is what crashed in libLiteRtMetalAccelerator (see the build-native
-# skill). v0.11.0 itself is broken — see the WARNING above.
-DEFAULT_REF="7a03724cece417f1724c923b3d527b4319730841"
+# v0.20.0. Build from an exact release commit. Since v0.20.0 the Metal
+# accelerator is compiled from the same tree and linked into libLiteRtLm, so
+# the old source/prebuilt accelerator mismatch cannot happen any more.
+DEFAULT_REF="95df4c2a932b4917ace66fcfef6c154e8d2a6699"
 TARGET_REF="${VERSION:-$DEFAULT_REF}"
 echo "Checking out $TARGET_REF..."
 git checkout -f "$TARGET_REF"
@@ -92,7 +80,7 @@ echo "Pulling LFS files..."
 # segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
 # main in 4453b286, and that provider carries the LogitMask types. Upstream's
 # own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-7a03724cece417f1724c923b3d527b4319730841}"
+PREBUILT_REF="${PREBUILT_REF:-95df4c2a932b4917ace66fcfef6c154e8d2a6699}"
 echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/ios_arm64/*,prebuilt/ios_sim_arm64/*"
 # One file, from a different commit than the source: fetch it straight from the
@@ -217,60 +205,28 @@ echo "StreamProxy (simulator): OK"
 # 8. Copy companion libs
 echo ""
 echo "=== Copying companion libs ==="
-# libLiteRtMetalAccelerator.dylib was added upstream in commit 5e0d86b ("Update
-# dependencies of litert_lm") — must be on a tag/commit that includes it. The
-# v0.10.2 tag predates that commit. The other two upstream iOS prebuilts are not
-# copied, for reasons of our own: libLiteRt.dylib is not needed, because
-# libLiteRtLm.dylib carries the LiteRt C API itself (it exports the LiteRt*
-# symbols and loads no libLiteRt.dylib — checked with otool -L at v0.17.0); and
-# libLiteRtTopKMetalSampler.dylib is unreachable while sampler_factory.cc keeps
-# its basename dlopen (patch_c_api.sh, 10a). Upstream #2072 — those two shipped
-# as x86_64 binaries — was closed in May 2026 and is no longer a reason.
-#
-# We ship upstream's libLiteRtMetalAccelerator.dylib as
-# libLiteRtLmMetalAccelerator.dylib, so its framework is
-# LiteRtLmMetalAccelerator.framework: flutter_litert >= 3.4.0
-# embeds a LiteRtMetalAccelerator.framework for its own LiteRT, an app bundle
-# holds one framework per name, and ours silently replaced theirs. The id moves
-# with the name (+8 bytes of load commands; upstream's simulator build has 48
-# bytes of slack), and patch_c_api.sh §10 points gpu_registry at the new path.
-for lib in libGemmaModelConstraintProvider.dylib libLiteRtMetalAccelerator.dylib; do
-  out="${lib/libLiteRtMetalAccelerator/libLiteRtLmMetalAccelerator}"
+# Only the Gemma constraint provider is left in upstream's prebuilt/ (v0.20.0
+# deleted every prebuilt libLiteRt and accelerator, c57b9ae0). Missing is fatal:
+# without it every tool call fails.
+# Up to native-v0.19.1 this also shipped upstream's prebuilt Metal accelerator
+# as LiteRtLmMetalAccelerator.framework. libLiteRtLm links the Metal
+# accelerator in (runtime/executor:default_static_gpu_accelerator), and LiteRT's
+# gpu_registry registers it before it dlopens anything, so from
+# native-v0.20.0-a no Metal framework ships (0.20 migration decision D1);
+# copies an older build left behind are removed.
+for lib in libGemmaModelConstraintProvider.dylib; do
   for pair in "ios_arm64:$DEVICE_DIR" "ios_sim_arm64:$SIM_DIR"; do
     src="prebuilt/${pair%%:*}/$lib"
-    # Missing is fatal: without the accelerator the GPU falls back to CPU
-    # silently, and without the provider every tool call fails.
     [ -f "$src" ] || { echo "ERROR: upstream prebuilt missing: $src" >&2; exit 1; }
-    cp "$src" "${pair##*:}/$out"
-    echo "  $lib → ${pair%%:*}/$out"
+    cp "$src" "${pair##*:}/$lib"
+    echo "  $lib → ${pair%%:*}/$lib"
   done
 done
-# Sets a dylib's install name and proves it took: install_name_tool refuses
-# when the new id does not fit the header slack, and a dylib that keeps the old
-# id still loads, so nothing downstream would notice.
-set_dylib_id() {
-  local lib="$1" id="$2" out
-  out="$(install_name_tool -id "$id" "$lib" 2>&1)" || {
-    echo "ERROR: install_name_tool -id $id $(basename "$lib"): $out" >&2
-    exit 1
-  }
-  [ "$(otool -D "$lib" | tail -1)" = "$id" ] || {
-    echo "ERROR: $(basename "$lib") id is '$(otool -D "$lib" | tail -1)', want $id" >&2
-    exit 1
-  }
-}
 for dir in "$DEVICE_DIR" "$SIM_DIR"; do
-  # A copy under the upstream name from an older build would ship beside the
-  # renamed one and bring the collision back.
-  rm -f "$dir/libLiteRtMetalAccelerator.dylib"
-  if [ -f "$dir/libLiteRtLmMetalAccelerator.dylib" ]; then
-    chmod +w "$dir/libLiteRtLmMetalAccelerator.dylib"
-    # Invalidates the signature; step 8b's vtool re-signs it.
-    set_dylib_id "$dir/libLiteRtLmMetalAccelerator.dylib" @rpath/libLiteRtLmMetalAccelerator.dylib
-  fi
+  rm -f "$dir/libLiteRtMetalAccelerator.dylib" "$dir/libLiteRtLmMetalAccelerator.dylib"
 done
 
-# 8b. Normalize iOS minos of all 4 companion dylibs to 13.0 — this matches
+# 8b. Normalize iOS minos of all 3 companion dylibs to 13.0 — this matches
 # the MinimumOSVersion that Flutter Native Assets hardcodes into the
 # generated framework wrapper Info.plist (flutter/flutter#148501). Without
 # this, App Store Connect rejects the archive with ITMS-90208 ("framework
@@ -328,7 +284,7 @@ normalize_apple_minos() {
 for arch_dir_pair in "ios:$DEVICE_DIR" "iossim:$SIM_DIR"; do
   platform="${arch_dir_pair%%:*}"
   dir="${arch_dir_pair##*:}"
-  for libname in libGemmaModelConstraintProvider libLiteRtLm libLiteRtLmMetalAccelerator libStreamProxy; do
+  for libname in libGemmaModelConstraintProvider libLiteRtLm libStreamProxy; do
     d="$dir/${libname}.dylib"
     if [ -f "$d" ]; then
       normalize_apple_minos "$d" "$platform"
@@ -338,9 +294,29 @@ for arch_dir_pair in "ios:$DEVICE_DIR" "iossim:$SIM_DIR"; do
   done
 done
 
-# Every framework libLiteRtLm dlopens by path must be in the bundle. The Metal
-# accelerator is loaded by dlopen, not linked, so nothing else checks it — and
-# without it the GPU falls back to CPU with no error at all.
+# The GPU accelerator is linked into libLiteRtLm and sets
+# LiteRtStaticLinkedAcceleratorGpuDef when the library loads; gpu_registry
+# registers it before it tries any library. An iOS slice cannot be loaded on
+# the build Mac, so this checks the pieces instead: the pointer is exported
+# and the Metal accelerator ("GPU Metal", its LiteRtAcceleratorImpl name) is in
+# the binary. A device run proves the rest (build-native skill).
+check_static_gpu_accelerator() {
+  local dir="$1"
+  local syms; syms="$(nm -gU "$dir/libLiteRtLm.dylib" || true)"
+  grep -q ' _LiteRtStaticLinkedAcceleratorGpuDef$' <<<"$syms" || {
+    echo "ERROR: $dir/libLiteRtLm.dylib exports no LiteRtStaticLinkedAcceleratorGpuDef" >&2
+    exit 1
+  }
+  local metal; metal="$(strings "$dir/libLiteRtLm.dylib" | grep -x 'GPU Metal' || true)"
+  [ -n "$metal" ] || {
+    echo "ERROR: $dir/libLiteRtLm.dylib carries no Metal accelerator" >&2
+    exit 1
+  }
+  echo "  GPU: Metal accelerator statically linked"
+}
+# Every framework libLiteRtLm dlopens by path must be in the bundle. From
+# native-v0.20.0-a LiteRT's gpu_registry dlopens nothing on Apple
+# (patches/litert_gpu_registry_apple.patch), so none should be named at all.
 check_dlopened_frameworks() {
   local dir="$1" fw missing=0
   for fw in $(strings "$dir/libLiteRtLm.dylib" \
@@ -353,14 +329,13 @@ check_dlopened_frameworks() {
       missing=1
     fi
   done
-  # Our framework must be the only GPU accelerator named. A name that fails to
-  # dlopen sends gpu_registry to RTLD_DEFAULT, which in an app with
-  # flutter_litert binds that runtime's accelerator and crashes
-  # (patches/litert_gpu_registry_apple.patch). No `grep -q`: under pipefail its
+  # No GPU accelerator library may be named: one that resolved (or, after a
+  # failed dlopen, the default lookup) in an app with flutter_litert binds that
+  # runtime's accelerator and crashes (patches/litert_gpu_registry_apple.patch). No `grep -q`: under pipefail its
   # early exit SIGPIPEs strings and reads as "not found".
   local foreign
   foreign="$(strings "$dir/libLiteRtLm.dylib" \
-    | grep -E 'libLiteRtGpuAccelerator|^(lib)?LiteRtMetalAccelerator(\.dylib)?$' || true)"
+    | grep -E 'libLiteRt[A-Za-z]*Accelerator|LiteRt(Lm)?MetalAccelerator' || true)"
   if [ -n "$foreign" ]; then
     echo "ERROR: libLiteRtLm still names another GPU accelerator: $foreign" >&2
     missing=1
@@ -374,6 +349,7 @@ echo "=== Verification ==="
 echo "Device (ios_arm64):"
 ls -lh "$DEVICE_DIR/"
 nm -gU "$DEVICE_DIR/libLiteRtLm.dylib" | grep "litert_lm_engine_create" | head -1
+check_static_gpu_accelerator "$DEVICE_DIR"
 check_dlopened_frameworks "$DEVICE_DIR"
 for dylib in "$DEVICE_DIR"/*.dylib; do
   verify_flutter_ios_strip "$dylib"
@@ -382,6 +358,7 @@ echo ""
 echo "Simulator (ios_sim_arm64):"
 ls -lh "$SIM_DIR/"
 nm -gU "$SIM_DIR/libLiteRtLm.dylib" | grep "litert_lm_engine_create" | head -1
+check_static_gpu_accelerator "$SIM_DIR"
 check_dlopened_frameworks "$SIM_DIR"
 for dylib in "$SIM_DIR"/*.dylib; do
   verify_flutter_ios_strip "$dylib"

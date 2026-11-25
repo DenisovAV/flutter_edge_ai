@@ -11,7 +11,7 @@
 #
 # Usage:
 #   ./build_android.sh [ref]
-#   ./build_android.sh 7a03724c       # v0.19.1 (the default)
+#   ./build_android.sh 95df4c2a       # v0.20.0 (the default)
 #   ./build_android.sh v0.11.0        # WARNING: v0.11.0 prebuilt accelerators
 #                                     # are ABI-incompatible with libLiteRtLm
 #                                     # rebuilt from v0.11.0 source. Use 032334d
@@ -23,7 +23,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/android_arm64"
 LITERT_LM_DIR="${LITERT_LM_DIR:-/tmp/LiteRT-LM}"
-DEFAULT_REF="7a03724cece417f1724c923b3d527b4319730841"   # v0.19.1
+DEFAULT_REF="95df4c2a932b4917ace66fcfef6c154e8d2a6699"   # v0.20.0
 VERSION="${1:-}"
 
 # Resolve Android NDK — prefer ANDROID_NDK_HOME env, else newest under
@@ -117,7 +117,7 @@ echo "Pulling LFS files..."
 # segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
 # main in 4453b286, and that provider carries the LogitMask types. Upstream's
 # own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-7a03724cece417f1724c923b3d527b4319730841}"
+PREBUILT_REF="${PREBUILT_REF:-95df4c2a932b4917ace66fcfef6c154e8d2a6699}"
 echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/android_arm64/*"
 # One file, from a different commit than the source: fetch it straight from the
@@ -177,17 +177,9 @@ bazelisk build \
   '//c:libLiteRtLm.dylib' \
   '@litert//litert/vendors/google_tensor/dispatch:dispatch_api_so'
 
-# LiteRT-LM v0.19.0 stopped shipping prebuilt TopK GPU samplers (43b79e8); the
-# OpenCL one is built from source with ML Drift (47d7ba6). Older refs have no
-# such target and keep the prebuilt.
-if grep -q 'name = "top_k_opencl_sampler_so"' runtime/components/BUILD; then
-  bazelisk build \
-    -c opt \
-    --strip=always \
-    --config=android_arm64 \
-    --linkopt=-Wl,-z,max-page-size=16384 \
-    '//runtime/components:top_k_opencl_sampler_so'
-fi
+# The TopK OpenCL sampler is linked into libLiteRtLm.so (runtime/components:
+# default_static_gpu_samplers); the separate top_k_opencl_sampler_so was built
+# here up to native-v0.19.1 and deleted again below, so it is no longer built.
 
 # 6. Copy + rename .dylib → .so (bazel target name is hardcoded to .dylib).
 mkdir -p "$PREBUILT_DIR"
@@ -260,27 +252,20 @@ LITERT_DIR="${LITERT_DIR:-}" "$SCRIPT_DIR/run_mediatek_dispatch_compat_test.sh"
   "$SCRIPT_DIR/mediatek_dispatch_compat.c" -llog
 echo "  libLiteRtDispatch_MediaTek.so → $PREBUILT_DIR/"
 
-# 8. Copy companion libs from upstream prebuilt (we don't rebuild these
-#    — they're Google's GPU accelerator + sampler binaries).
+# 8. Copy companion libs from upstream prebuilt (we don't rebuild these).
 #
-#    Android GPU is OpenCL only. upstream's prebuilt/android_arm64/ also carries
-#    libLiteRtGpuAccelerator.so, libLiteRtWebGpuAccelerator.so and
-#    libLiteRtTopKWebGpuSampler.so, and all three list libwebgpu_dawn.so in
-#    NEEDED. We never shipped Dawn on Android, so from native-v0.14.0 (when Dawn
-#    was split out) through v0.17.x those three sat in every APK (~18 MB) and
-#    could not be dlopen'ed; gpu_registry silently moved on to the OpenCL
-#    accelerator. Google's own Android SDKs ship no Dawn either: the
-#    litertlm-android AAR is a single liblitertlm_jni.so with ML Drift OpenCL
-#    linked in, and litert-gpu ships only libLiteRtClGlAccelerator.so. Adding
-#    Dawn instead would put a different accelerator first in gpu_registry's
-#    order on every Android device — a path nobody ships.
+#    Android GPU is the accelerator linked into libLiteRtLm.so (OpenCL +
+#    OpenGL from native-v0.20.0-a, OpenCL only before). No Dawn ships on
+#    Android: from native-v0.14.0 through v0.17.x upstream's WebGPU accelerator
+#    and sampler sat in every APK (~18 MB), NEEDED libwebgpu_dawn.so and could
+#    not be dlopen'ed. Google's own Android SDKs ship no Dawn either. Only the
+#    Gemma constraint provider is still Google's prebuilt.
 echo ""
 echo "=== Copying companion libs from upstream prebuilt ==="
 # From native-v0.19.0-a only the constraint provider: libLiteRtLm.so links the
-# OpenCL accelerator and sampler in (patch_c_api.sh section 19), and Adreno 830
-# and Mali-G715 run the GPU without upstream's separate
-# libLiteRtOpenClAccelerator.so and libLiteRtTopKOpenClSampler.so with the
-# same results (DDP, 2026-11-04), so those two are no longer shipped.
+# GPU accelerator and the OpenCL sampler in. From native-v0.20.0-a that
+# accelerator is upstream's OpenCL + OpenGL one (6cf79561, patch_c_api.sh
+# section 19); upstream's prebuilt/ holds no accelerator at all any more.
 for lib in libGemmaModelConstraintProvider.so; do
   if [ -f "prebuilt/android_arm64/$lib" ]; then
     cp "prebuilt/android_arm64/$lib" "$PREBUILT_DIR/$lib"
@@ -297,6 +282,7 @@ done
 # PREBUILT_DIR outlives builds: drop copies an older build left there, or they
 # get packed into the tarball again.
 for lib in libLiteRtGpuAccelerator.so \
+           libLiteRtClGlAccelerator.so \
            libLiteRtOpenClAccelerator.so \
            libLiteRtTopKOpenClSampler.so \
            libLiteRtWebGpuAccelerator.so \

@@ -8,21 +8,14 @@
 #
 # Usage:
 #   ./build_macos.sh [ref]
-#   ./build_macos.sh 7a03724c       # v0.19.1 (the default)
-#   ./build_macos.sh v0.11.0        # WARNING: v0.11.0 prebuilt accelerators
-#                                   # are ABI-incompatible with libLiteRtLm
-#                                   # rebuilt from v0.11.0 source — crashes
-#                                   # in libLiteRtMetalAccelerator on engine
-#                                   # init/teardown. Use 032334d (post-6571c42
-#                                   # on main, which re-syncs accelerator
-#                                   # binaries with WORKSPACE LITERT_REF).
+#   ./build_macos.sh 95df4c2a       # v0.20.0 (the default)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/macos_arm64"
 LITERT_LM_DIR="${LITERT_LM_DIR:-/tmp/LiteRT-LM}"
-DEFAULT_REF="7a03724cece417f1724c923b3d527b4319730841"   # v0.19.1
+DEFAULT_REF="95df4c2a932b4917ace66fcfef6c154e8d2a6699"   # v0.20.0
 VERSION="${1:-}"
 
 # Since v0.18.0 the WORKSPACE registers the Android NDK toolchain whenever
@@ -82,7 +75,7 @@ echo "Pulling LFS files..."
 # segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
 # main in 4453b286, and that provider carries the LogitMask types. Upstream's
 # own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-7a03724cece417f1724c923b3d527b4319730841}"
+PREBUILT_REF="${PREBUILT_REF:-95df4c2a932b4917ace66fcfef6c154e8d2a6699}"
 echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/macos_arm64/*"
 # One file, from a different commit than the source: fetch it straight from the
@@ -143,44 +136,21 @@ chmod +w "$PREBUILT_DIR/libLiteRtLm.dylib"
 install_name_tool -id @rpath/libLiteRtLm.dylib "$PREBUILT_DIR/libLiteRtLm.dylib"
 install_name_tool -add_rpath '@loader_path/../../..' "$PREBUILT_DIR/libLiteRtLm.dylib" 2>/dev/null || true
 
-# Copy companion libs from prebuilt.
-# We ship upstream's libLiteRtMetalAccelerator.dylib as
-# libLiteRtLmMetalAccelerator.dylib, so its framework is
-# LiteRtLmMetalAccelerator.framework: flutter_litert >= 3.4.0
-# embeds a LiteRtMetalAccelerator.framework for its own LiteRT, an app bundle
-# holds one framework per name, and ours silently replaced theirs. The id moves
-# with the name (+8 bytes of load commands; upstream's simulator build has 48
-# bytes of slack), and patch_c_api.sh §10 points gpu_registry at the new path.
-for lib in libGemmaModelConstraintProvider.dylib libLiteRtMetalAccelerator.dylib; do
-  out="${lib/libLiteRtMetalAccelerator/libLiteRtLmMetalAccelerator}"
-  # Missing is fatal: without the accelerator the GPU falls back to CPU
-  # silently, and without the provider every tool call fails.
+# Copy the one companion left in upstream's prebuilt/: the Gemma constraint
+# provider. Missing is fatal: without it every tool call fails.
+# Up to native-v0.19.1 this also copied upstream's prebuilt Metal accelerator
+# and shipped it as LiteRtLmMetalAccelerator.framework. Upstream deleted its
+# prebuilt accelerators at v0.20.0 (c57b9ae0), and libLiteRtLm links the Metal
+# accelerator in (runtime/executor:default_static_gpu_accelerator, set by
+# LiteRtStaticLinkedAcceleratorGpuDef when the library loads), which LiteRT's
+# gpu_registry registers before it dlopens anything. So no Metal framework ships
+# from native-v0.20.0-a (0.20 migration decision D1); a stale copy is removed.
+for lib in libGemmaModelConstraintProvider.dylib; do
   [ -f "prebuilt/macos_arm64/$lib" ] || { echo "ERROR: upstream prebuilt missing: prebuilt/macos_arm64/$lib" >&2; exit 1; }
-  cp "prebuilt/macos_arm64/$lib" "$PREBUILT_DIR/$out"
-  echo "Copied $lib as $out"
+  cp "prebuilt/macos_arm64/$lib" "$PREBUILT_DIR/$lib"
+  echo "Copied $lib"
 done
-# Sets a dylib's install name and proves it took: install_name_tool refuses
-# when the new id does not fit the header slack, and a dylib that keeps the old
-# id still loads, so nothing downstream would notice.
-set_dylib_id() {
-  local lib="$1" id="$2" out
-  out="$(install_name_tool -id "$id" "$lib" 2>&1)" || {
-    echo "ERROR: install_name_tool -id $id $(basename "$lib"): $out" >&2
-    exit 1
-  }
-  [ "$(otool -D "$lib" | tail -1)" = "$id" ] || {
-    echo "ERROR: $(basename "$lib") id is '$(otool -D "$lib" | tail -1)', want $id" >&2
-    exit 1
-  }
-}
-rm -f "$PREBUILT_DIR/libLiteRtMetalAccelerator.dylib"
-if [ -f "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib" ]; then
-  chmod +w "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib"
-  set_dylib_id "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib" @rpath/libLiteRtLmMetalAccelerator.dylib
-  # The macOS stager re-signs what it stages, but a bundle consumer that loads
-  # the dylib straight from the cache needs a valid signature too.
-  codesign --force --sign - "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib"
-fi
+rm -f "$PREBUILT_DIR/libLiteRtMetalAccelerator.dylib" "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib"
 
 # 7. Build stream proxy
 echo "Building stream proxy..."
@@ -199,9 +169,37 @@ clang -shared -o "$PREBUILT_DIR/libStreamProxy.dylib" \
 # 8. Verify
 echo ""
 echo "=== Verification ==="
-# Every framework libLiteRtLm dlopens by path must be in the bundle. The Metal
-# accelerator is loaded by dlopen, not linked, so nothing else checks it — and
-# without it the GPU falls back to CPU with no error at all.
+# The GPU accelerator is linked into libLiteRtLm: loading the library must set
+# LiteRtStaticLinkedAcceleratorGpuDef, which gpu_registry registers before it
+# tries any library. A build that lost it would dlopen a framework no bundle
+# carries and run the GPU on the CPU with no error, so this loads the library
+# for real and reads the pointer.
+check_static_gpu_accelerator() {
+  local dir="$1" probe
+  probe="$(mktemp -d)/static_gpu_probe"
+  cat > "$probe.c" << 'CEOF'
+#include <dlfcn.h>
+#include <stdio.h>
+int main(int argc, char** argv) {
+  void* lib = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
+  if (!lib) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+  void** def = (void**)dlsym(lib, "LiteRtStaticLinkedAcceleratorGpuDef");
+  if (!def) { fprintf(stderr, "LiteRtStaticLinkedAcceleratorGpuDef is not exported\n"); return 3; }
+  if (!*def) { fprintf(stderr, "LiteRtStaticLinkedAcceleratorGpuDef is null after load\n"); return 4; }
+  return 0;
+}
+CEOF
+  clang -arch arm64 -o "$probe" "$probe.c"
+  if DYLD_LIBRARY_PATH="$dir" "$probe" "$dir/libLiteRtLm.dylib"; then
+    echo "  GPU: Metal accelerator statically linked (LiteRtStaticLinkedAcceleratorGpuDef set)"
+  else
+    echo "ERROR: libLiteRtLm has no statically linked GPU accelerator" >&2
+    exit 1
+  fi
+}
+# Every framework libLiteRtLm dlopens by path must be in the bundle. From
+# native-v0.20.0-a LiteRT's gpu_registry dlopens nothing on Apple
+# (patches/litert_gpu_registry_apple.patch), so none should be named at all.
 check_dlopened_frameworks() {
   local dir="$1" fw missing=0
   for fw in $(strings "$dir/libLiteRtLm.dylib" \
@@ -214,20 +212,20 @@ check_dlopened_frameworks() {
       missing=1
     fi
   done
-  # Our framework must be the only GPU accelerator named. A name that fails to
-  # dlopen sends gpu_registry to RTLD_DEFAULT, which in an app with
-  # flutter_litert binds that runtime's accelerator and crashes
-  # (patches/litert_gpu_registry_apple.patch). No `grep -q`: under pipefail its
+  # No GPU accelerator library may be named: one that resolved (or, after a
+  # failed dlopen, the default lookup) in an app with flutter_litert binds that
+  # runtime's accelerator and crashes (patches/litert_gpu_registry_apple.patch). No `grep -q`: under pipefail its
   # early exit SIGPIPEs strings and reads as "not found".
   local foreign
   foreign="$(strings "$dir/libLiteRtLm.dylib" \
-    | grep -E 'libLiteRtGpuAccelerator|^(lib)?LiteRtMetalAccelerator(\.dylib)?$' || true)"
+    | grep -E 'libLiteRt[A-Za-z]*Accelerator|LiteRt(Lm)?MetalAccelerator' || true)"
   if [ -n "$foreign" ]; then
     echo "ERROR: libLiteRtLm still names another GPU accelerator: $foreign" >&2
     missing=1
   fi
   [ "$missing" -eq 0 ] || exit 1
 }
+check_static_gpu_accelerator "$PREBUILT_DIR"
 check_dlopened_frameworks "$PREBUILT_DIR"
 echo "Symbols:"
 nm -gU "$PREBUILT_DIR/libLiteRtLm.dylib" | grep "litert_lm_engine_create" | head -2

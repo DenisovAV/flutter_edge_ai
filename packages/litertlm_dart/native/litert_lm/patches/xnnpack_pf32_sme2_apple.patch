@@ -16,12 +16,13 @@ Drop this when XNNPACK fixes #11789: re-run the scorerep probe at 1/4/12
 threads on an SME2 Mac without it. When the XNNPACK pin moves, the fetch fails
 (tensorflow_xnnpack_patch_file.patch names the pinned archive) until this is
 re-checked against the new pin.
-Against XNNPACK 28d1fc6d908bc4d80920be989177b7eb1a4aebc8, strip 1.
+Against XNNPACK 08cc38b61f7589f84e91c6e343e0f130ae3279ca (TensorFlow faa06da4,
+LiteRT-LM v0.20.0), strip 1.
 
 diff -ru a/src/configs/gemm-config.c b/src/configs/gemm-config.c
---- a/src/configs/gemm-config.c	2026-11-02 08:45:09
-+++ b/src/configs/gemm-config.c	2026-11-02 08:45:09
-@@ -514,7 +514,8 @@
+--- a/src/configs/gemm-config.c	2026-11-25 04:45:21
++++ b/src/configs/gemm-config.c	2026-11-25 04:45:21
+@@ -533,7 +533,8 @@
    const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
    assert(hardware_config != NULL);
    (void) hardware_config;  // May be unused.
@@ -32,8 +33,8 @@ diff -ru a/src/configs/gemm-config.c b/src/configs/gemm-config.c
        const size_t mr = xnn_pf32_gemm_minmax_ukernel_32x32__neonsme2_get_mr();
        const size_t nr = xnn_pf32_gemm_minmax_ukernel_32x32__neonsme2_get_nr();
 diff -ru a/src/configs/pack-lh-config.c b/src/configs/pack-lh-config.c
---- a/src/configs/pack-lh-config.c	2026-11-02 08:45:09
-+++ b/src/configs/pack-lh-config.c	2026-11-02 08:45:09
+--- a/src/configs/pack-lh-config.c	2026-11-25 04:45:21
++++ b/src/configs/pack-lh-config.c	2026-11-25 04:45:21
 @@ -93,7 +93,8 @@
    assert(hardware_config != NULL);
    (void)hardware_config;

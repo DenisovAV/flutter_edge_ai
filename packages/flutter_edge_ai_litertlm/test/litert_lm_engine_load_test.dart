@@ -661,7 +661,7 @@ void main() {
       expect(host.preparedFor, [NpuStack.qualcomm]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/qualcomm',
-        useHwMasking: null,
+        useHwMasking: true,
         stagesWeightBanks: false,
       ));
       await stamped.close();
@@ -710,7 +710,7 @@ void main() {
         expect(host.preparedFor, [NpuStack.googleTensor], reason: soc);
         expect(host.npuDispatches.single, (
           dir: '/fake/npu/googleTensor',
-          useHwMasking: null,
+          useHwMasking: true,
           stagesWeightBanks: false,
         ));
       }
@@ -747,7 +747,7 @@ void main() {
       expect(host.preparedFor, [NpuStack.mediatek]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/mediatek',
-        useHwMasking: null,
+        useHwMasking: true,
         stagesWeightBanks: false,
       ));
     },

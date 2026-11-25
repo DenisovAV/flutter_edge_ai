@@ -25,7 +25,7 @@ unset ANDROID_NDK_HOME
 echo "=== Building libLiteRtLm.dylib for iOS ==="
 
 # 1. Clone or update LiteRT-LM
-if [ -d "$LITERT_LM_DIR/.git" ]; then
+if [ -e "$LITERT_LM_DIR/.git" ]; then  # a clone or a git worktree
   echo "Updating $LITERT_LM_DIR..."
   cd "$LITERT_LM_DIR"
   # --force so a tag that moved upstream (e.g. v0.11.0 itself was retagged

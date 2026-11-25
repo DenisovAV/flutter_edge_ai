@@ -20,8 +20,8 @@ import 'package:hooks/hooks.dart';
 
 const _packageName = 'litertlm_dart';
 
-/// This build's defines: `hooks.user_defines.litertlm_dart`, then the key
-/// apps set before the hook moved here (legacy_user_defines.dart).
+/// This build's defines: `hooks.user_defines.litertlm_dart` (a define left
+/// under the old key fails the build, legacy_user_defines.dart).
 late HookDefines _defines;
 
 /// The macOS companion a plain Dart program (`macos_companions:
@@ -1455,13 +1455,16 @@ void main(List<String> args) async {
 
     final pubspec = workspacePubspecFor(input.outputDirectoryShared);
     if (pubspec != null) output.dependencies.add(pubspec.uri);
+    if (pubspec != null) {
+      final refusal = legacyUserDefinesRefusal(
+        userDefinesIn(pubspec.readAsStringSync(), legacyUserDefinesPackage),
+        pubspec.path,
+      );
+      if (refusal != null) throw StateError(refusal);
+    }
     _defines = HookDefines(
       current: (key) => input.userDefines[key],
       currentPath: input.userDefines.path,
-      legacy: pubspec == null
-          ? const {}
-          : userDefinesIn(pubspec.readAsStringSync(), legacyUserDefinesPackage),
-      legacyBase: pubspec?.parent.uri,
     );
 
     final codeConfig = input.config.code;

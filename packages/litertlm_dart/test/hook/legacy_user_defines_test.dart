@@ -76,81 +76,63 @@ hooks:
     });
   });
 
-  group('HookDefines', () {
-    late List<String> warned;
+  group('legacyUserDefinesRefusal', () {
+    test('no define under the old key: no refusal', () {
+      expect(legacyUserDefinesRefusal(const {}, '/ws/pubspec.yaml'), isNull);
+    });
 
-    HookDefines defines({
-      Map<String, Object?> current = const {},
-      Map<String, Object?> legacy = const {},
-    }) => HookDefines(
-      current: (key) => current[key],
-      currentPath: (key) => switch (current[key]) {
-        final String path => Uri.file('/app/$path'),
-        _ => null,
+    test(
+      'a define under the old key fails the build and names the new key',
+      () {
+        final message = legacyUserDefinesRefusal({
+          'qualcomm_npu': true,
+          'mediatek_npu': true,
+        }, '/ws/pubspec.yaml');
+        expect(
+          message,
+          allOf(
+            contains('/ws/pubspec.yaml'),
+            contains(
+              'hooks.user_defines.flutter_edge_ai_litertlm.mediatek_npu',
+            ),
+            contains(
+              'hooks.user_defines.flutter_edge_ai_litertlm.qualcomm_npu',
+            ),
+            contains('hooks.user_defines.litertlm_dart'),
+            contains(
+              'litertlm_dart: mediatek_npu, litertlm_dart: qualcomm_npu',
+            ),
+            contains('0.20.0'),
+          ),
+        );
       },
-      legacy: legacy,
-      legacyBase: Uri.directory('/workspace/'),
-      warn: warned.add,
     );
+  });
 
-    setUp(() => warned = []);
+  group('HookDefines', () {
+    HookDefines defines({Map<String, Object?> current = const {}}) =>
+        HookDefines(
+          current: (key) => current[key],
+          currentPath: (key) => switch (current[key]) {
+            final String path => Uri.file('/app/$path'),
+            _ => null,
+          },
+        );
 
-    test('the current key wins, and nothing is said', () {
-      final d = defines(
-        current: {'qualcomm_npu': false},
-        legacy: {'qualcomm_npu': true},
-      );
+    test('reads the current key', () {
+      final d = defines(current: {'qualcomm_npu': false});
       expect(d['qualcomm_npu'], isFalse);
-      expect(warned, isEmpty);
+      expect(d.packageOf('qualcomm_npu'), 'litertlm_dart');
     });
 
-    test('a value only under the old key is used and said once', () {
-      final d = defines(legacy: {'qualcomm_npu': true});
-      expect(d['qualcomm_npu'], isTrue);
-      expect(d['qualcomm_npu'], isTrue);
-      expect(warned, hasLength(1));
-      expect(
-        warned.single,
-        allOf(
-          contains('hooks.user_defines.flutter_edge_ai_litertlm.qualcomm_npu'),
-          contains('hooks.user_defines.litertlm_dart.qualcomm_npu'),
-        ),
-      );
-    });
-
-    test('packageOf names the key a value came from, for the errors about '
-        'that value', () {
-      final d = defines(
-        current: {'qualcomm_npu_aar': 7},
-        legacy: {'qualcomm_npu_aar': 'x', 'mediatek_npu_aar': 8},
-      );
-      expect(d.packageOf('qualcomm_npu_aar'), 'litertlm_dart');
-      expect(d.packageOf('mediatek_npu_aar'), 'flutter_edge_ai_litertlm');
-      expect(d.packageOf('qualcomm_npu_maven_url'), 'litertlm_dart');
-    });
-
-    test('a key set under neither is null', () {
+    test('a key that is not set is null', () {
       expect(defines()['mediatek_npu'], isNull);
       expect(defines().path('qualcomm_npu_aar'), isNull);
-      expect(warned, isEmpty);
     });
 
-    test('a path under the old key resolves against its pubspec', () {
-      final d = defines(legacy: {'qualcomm_npu_aar': 'third_party/qnn.aar'});
-      expect(
-        d.path('qualcomm_npu_aar'),
-        Uri.file('/workspace/third_party/qnn.aar'),
-      );
-      expect(warned, hasLength(1));
-    });
-
-    test('a path under the current key wins', () {
-      final d = defines(
-        current: {'qualcomm_npu_aar': 'mine.aar'},
-        legacy: {'qualcomm_npu_aar': 'old.aar'},
-      );
+    test('a path resolves against the pubspec that set it', () {
+      final d = defines(current: {'qualcomm_npu_aar': 'mine.aar'});
       expect(d.path('qualcomm_npu_aar'), Uri.file('/app/mine.aar'));
-      expect(warned, isEmpty);
     });
   });
 }

@@ -53,8 +53,8 @@ OPENVINO_ZIP = (
 )
 # Android opt-in: what the hook fetches (lib/src/hook/qnn_runtime.dart).
 QNN_AAR = (
-    "https://repo1.maven.org/maven2/com/qualcomm/qti/qnn-runtime/2.50.0/"
-    "qnn-runtime-2.50.0.aar"
+    "https://repo1.maven.org/maven2/com/qualcomm/qti/qnn-runtime/2.52.0/"
+    "qnn-runtime-2.52.0.aar"
 )
 
 SEPARATOR = "-" * 80
@@ -210,7 +210,7 @@ def main():
             ["Qualcomm AI Engine Direct (QNN) runtime"],
             "Applies only to Android apps built with `qualcomm_npu: true` in "
             "their pubspec's hooks: user_defines. The build hook of such an "
-            "app fetches com.qualcomm.qti:qnn-runtime:2.50.0 from Maven "
+            "app fetches com.qualcomm.qti:qnn-runtime:2.52.0 from Maven "
             "Central and bundles its QNN libraries into the app. Those "
             "libraries are licensed by Qualcomm Technologies, Inc. under the "
             "AI Stack License, LICENSE.pdf in that artifact, which the hook "

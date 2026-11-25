@@ -325,6 +325,16 @@ void main() {
       );
       expect(qnnRuntimeVersion, builtAgainst[bundle]);
     },
+    // D3 test branch: qnnRuntimeVersion is 2.52.0, but no native-v* archive
+    // carries a dispatch built against it yet. Apps built from this branch
+    // must use a local prebuilt/android_arm64/ dispatch from
+    // build_qualcomm_dispatch.sh against QAIRT 2.52.0 (the hook prefers it
+    // over the download). The release that ships such a dispatch adds its tag
+    // above and drops this skip.
+    skip: liteRtLmNativeVersion == '0.19.1-c'
+        ? 'D3 test branch: QAIRT 2.52.0 runtime vs native-v0.19.1-c '
+              '(2.50.0); pair it with a local 2.52.0 dispatch'
+        : false,
   );
 
   group('cache', () {

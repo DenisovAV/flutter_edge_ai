@@ -105,12 +105,14 @@ jobs:
         # source from v0.20.0: upstream's prebuilt/ no longer has them.
         run: |
           # TF repository rules run patch_cmds as ctx.execute(["bash", "-c", ...])
-          # (third_party/repo.bzl), so `bash` is looked up on PATH; on a GitHub
-          # Windows runner that finds System32's WSL launcher first, with no
-          # distribution, and the fetch fails. Git's bin\ holds only bash, sh and
-          # git, and its bash puts usr\bin (sed) on its own PATH. usr\bin itself
-          # is not prepended: it has a link.exe and a find.exe.
-          $env:PATH = "C:\Program Files\Git\bin;$env:PATH"
+          # (third_party/repo.bzl): `bash` and the `sed` it runs come from PATH.
+          # On the runner neither resolved (System32's WSL launcher, then Git's
+          # bin\ wrapper both failed the fetch of build_bazel_rules_android). Git's
+          # usr\bin first, as on the Panther Lake box where this build passed;
+          # its link.exe does not shadow MSVC: Bazel calls the linker by the
+          # absolute path it resolves from Visual Studio.
+          $env:PATH = "C:\Program Files\Git\usr\bin;$env:PATH"
+          $env:BAZEL_SH = "C:\Program Files\Git\usr\bin\bash.exe"
           cd C:\LiteRT-LM
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build -c opt `
@@ -132,12 +134,14 @@ jobs:
         # runtime pinned to 2026.3.0) is what broke backend=npu (#3217).
         run: |
           # TF repository rules run patch_cmds as ctx.execute(["bash", "-c", ...])
-          # (third_party/repo.bzl), so `bash` is looked up on PATH; on a GitHub
-          # Windows runner that finds System32's WSL launcher first, with no
-          # distribution, and the fetch fails. Git's bin\ holds only bash, sh and
-          # git, and its bash puts usr\bin (sed) on its own PATH. usr\bin itself
-          # is not prepended: it has a link.exe and a find.exe.
-          $env:PATH = "C:\Program Files\Git\bin;$env:PATH"
+          # (third_party/repo.bzl): `bash` and the `sed` it runs come from PATH.
+          # On the runner neither resolved (System32's WSL launcher, then Git's
+          # bin\ wrapper both failed the fetch of build_bazel_rules_android). Git's
+          # usr\bin first, as on the Panther Lake box where this build passed;
+          # its link.exe does not shadow MSVC: Bazel calls the linker by the
+          # absolute path it resolves from Visual Studio.
+          $env:PATH = "C:\Program Files\Git\usr\bin;$env:PATH"
+          $env:BAZEL_SH = "C:\Program Files\Git\usr\bin\bash.exe"
           cd C:\LiteRT-LM
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build -c opt `

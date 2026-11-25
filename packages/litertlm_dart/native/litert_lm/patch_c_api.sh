@@ -388,6 +388,11 @@ fi
 #     (withdraws 12ec5f18d's Adreno 8xx FP32 kernel change).
 #   - patches/litert_ocl_ahwb_import_arm_only.patch: LiteRT 4be73079f
 #     (Exynos/Xclipse OpenCL SIGSEGV, LiteRT-LM #4423).
+#   - patches/litert_intel_webgpu_no_dp4a.patch: LiteRT aec6afeb85, which
+#     upstream reverted (9d3824510e) before the pin: no int8 src-quantized
+#     (dp4a) FC/conv on an Intel GPU, whose outputs are corrupted on D3D12
+#     (Gemma 4 12B answered no text on Panther Lake, LiteRT-LM #4083). Drop it
+#     once the dp4a path is fixed upstream, not when the pin moves.
 # The backports are after the v0.20.0 LiteRT pin bf49eb62; drop each once
 # the pin contains its commit. The pin already has the Google Tensor dispatch
 # OSS hooks change and OpenVINO GlobalGraph v3 (cac3c771e), whose backports
@@ -399,6 +404,7 @@ LITERT_PATCHES=(
   litert_adreno_flash_decode_keys
   litert_adreno_gen8_fp32_watchdog
   litert_ocl_ahwb_import_arm_only
+  litert_intel_webgpu_no_dp4a
 )
 export WORKSPACE_FILE="$DIR/WORKSPACE"
 export LITERT_PATCH_LABELS="$(printf '//:flutter_gemma_%s.patch ' "${LITERT_PATCHES[@]}")"

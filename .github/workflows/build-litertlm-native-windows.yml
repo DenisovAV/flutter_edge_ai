@@ -126,7 +126,19 @@ jobs:
             '//c:libLiteRtLm.dylib' `
             '@litert//litert/c:libLiteRt' `
             '@litert//litert/runtime/accelerators/gpu:libLiteRtWebGpuAccelerator'
-          if ($LASTEXITCODE -ne 0) { throw "LiteRtLm.dll / libLiteRt.dll / accelerator build failed (exit $LASTEXITCODE)" }
+          if ($LASTEXITCODE -ne 0) {
+            # TEMPORARY diagnostics (0.20 migration): why TF patch_cmds fail here.
+            $rc = $LASTEXITCODE
+            Write-Host "--- where bash / sed"; where.exe bash; where.exe sed
+            $f = "$env:BAZEL_OUTPUT_BASE\external\build_bazel_rules_android\toolchains\android_sdk\BUILD"
+            Write-Host "--- $f"; Get-Item $f -ErrorAction SilentlyContinue | Format-List FullName,Length,Attributes,LinkType,Target
+            Get-ChildItem "$env:BAZEL_OUTPUT_BASE\external\build_bazel_rules_android" -ErrorAction SilentlyContinue | Select-Object -First 8 | Format-Table Name,Attributes,LinkType
+            Push-Location "$env:BAZEL_OUTPUT_BASE\external\build_bazel_rules_android" -ErrorAction SilentlyContinue
+            & bash -c "echo bash=\$BASH \$BASH_VERSION; type sed; sed --version | head -1; sed -i -e 's|@androidsdk//:sdk|:toolchain_type|g' toolchains/android_sdk/BUILD; echo sed-rc=\$?" 2>&1
+            Write-Host "bash exit $LASTEXITCODE"
+            Pop-Location
+            throw "LiteRtLm.dll / libLiteRt.dll / accelerator build failed (exit $rc)"
+          }
 
       - name: Build Intel NPU dispatch
         # Same pin as the runtime — see build-litertlm-native.yml for why the

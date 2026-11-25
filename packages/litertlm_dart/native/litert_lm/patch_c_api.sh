@@ -375,7 +375,11 @@ fi
 #     (LiteRT-LM #4460, WebGPU prefill_8 on Windows D3D12 and Linux Vulkan).
 #   - patches/litert_adreno_flash_decode_keys.patch: LiteRT 95d3d567b
 #     (Gemma 4 float32 on Adreno 8xx).
-# The two backports are after the v0.20.0 LiteRT pin bf49eb62; drop each once
+#   - patches/litert_adreno_gen8_fp32_watchdog.patch: LiteRT 435efa884
+#     (withdraws 12ec5f18d's Adreno 8xx FP32 kernel change).
+#   - patches/litert_ocl_ahwb_import_arm_only.patch: LiteRT 4be73079f
+#     (Exynos/Xclipse OpenCL SIGSEGV, LiteRT-LM #4423).
+# The backports are after the v0.20.0 LiteRT pin bf49eb62; drop each once
 # the pin contains its commit. The pin already has the Google Tensor dispatch
 # OSS hooks change and OpenVINO GlobalGraph v3 (cac3c771e), whose backports
 # this list carried up to native-v0.19.1.
@@ -383,6 +387,8 @@ LITERT_PATCHES=(
   litert_gpu_registry_apple
   litert_webgpu_stage_spatial_bindings
   litert_adreno_flash_decode_keys
+  litert_adreno_gen8_fp32_watchdog
+  litert_ocl_ahwb_import_arm_only
 )
 export WORKSPACE_FILE="$DIR/WORKSPACE"
 export LITERT_PATCH_LABELS="$(printf '//:flutter_gemma_%s.patch ' "${LITERT_PATCHES[@]}")"

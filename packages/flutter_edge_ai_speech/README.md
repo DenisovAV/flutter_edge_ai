@@ -183,9 +183,9 @@ Silero detects any voice, not only the user's. On LibriSpeech speech with
 known pauses (40 streams per condition, macOS CPU) it missed no utterance and
 started on no noise, in quiet and in white noise down to 10 dB SNR, and ended
 an utterance a median 0.59-0.65 s after the speech stopped (`minSilence` is
-0.6 s; 0.65-0.67 s with v6.2.3). With other talkers in the background, three at -15 dB or one at
--10 dB, as a reply playing without echo cancellation would be, it stayed in
-speech for seconds at a time. Barge-in needs the microphone's echo
+0.6 s; 0.65-0.67 s with v6.2.3). With other talkers in the background, three
+at -15 dB or one at -10 dB, as a reply playing without echo cancellation
+would be, it stayed in speech for seconds at a time. Barge-in needs the microphone's echo
 cancellation, or the microphone off while the reply plays.
 
 ## Voice loop

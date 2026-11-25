@@ -100,7 +100,7 @@ jobs:
 
       - name: Build LiteRtLm.dll
         # static_link_msvcrt: see build-litertlm-native.yml (#456); it does not
-        # reach libLiteRt.dll, which LiteRT builds /MD (decision D8, open).
+        # reach libLiteRt.dll, which LiteRT builds /MD (decision D9, open).
         # libLiteRt.dll and the WebGPU accelerator are built from LiteRT's
         # source from v0.20.0: upstream's prebuilt/ no longer has them.
         run: |

@@ -634,7 +634,7 @@ jobs:
         # Store reviewer's "Failed to preload LiteRtLm.dll" (#456). It reaches
         # the accelerator, but NOT libLiteRt.dll: LiteRT declares
         # features = ["-static_link_msvcrt"] on that target (litert/c/BUILD),
-        # so it builds /MD. Which way that goes is decision D8, open; the
+        # so it builds /MD. Which way that goes is decision D9, open; the
         # import check after Collect reports it (see its TODO).
         run: |
           cd C:\LiteRT-LM

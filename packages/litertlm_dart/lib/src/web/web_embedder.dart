@@ -4,16 +4,18 @@
 // pass maps onto core (as natively its pass maps `LiteRtLmEmbedder`).
 //
 // Pure Dart: the runtime arrives in the config as a [LiteRtLmWebRuntime] (the
-// `dart:js_interop` one over the page's `window.EmbeddingEngine`,
+// `dart:js_interop` one over the `EmbeddingEngine` of the page's
+// `window.litertLm`,
 // embedding_runtime_js.dart, or a fake in the VM tests), so nothing here
 // imports `dart:js_interop`.
 //
 // What it decides, and why:
 // - The page exposes the runtime through the same module script as the LLM
-//   engine (`window.litertLmReady`), plus one line,
-//   `window.EmbeddingEngine = m.EmbeddingEngine;`. Without that line there is
-//   no engine to create; the load fails with an EmbedderLoadException that
-//   names the missing line instead of a JS `undefined` deep in the runtime.
+//   engine (`window.litertLmReady`, which hands over the whole module as
+//   `window.litertLm`). Without it, or with a module that has no
+//   `EmbeddingEngine`, there is no engine to create; the load fails with an
+//   EmbedderLoadException that names what is missing instead of a JS
+//   `undefined` deep in the runtime.
 // - One `EmbeddingEngine` per embedder, created at load and deleted at
 //   close. The runtime's WebAssembly module is page-global and shared with
 //   the `.litertlm` LLM engine, whose calls the runtime does not order
@@ -88,7 +90,7 @@ import '../embedder/embedder_types.dart';
 import '../embedder/litertlm_container.dart';
 import '../runtime/runtime_log.dart';
 import 'page_lock.dart';
-import 'web_backend_ids.dart';
+import 'web_module_shim.dart';
 import 'web_runtime_version.dart';
 
 /// The `@litert-lm/core` backends the pass can ask for (`Backend.CPU`,
@@ -212,18 +214,19 @@ typedef LiteRtLmWebEmbedding = ({
 
 /// What the page offers when the pass asks.
 enum LiteRtLmWebRuntimeState {
-  /// `window.EmbeddingEngine` is a constructor.
+  /// The page module's `EmbeddingEngine` is a constructor.
   ready,
 
   /// The page has no `@litert-lm/core` loader at all: neither
-  /// `window.litertLmReady` nor `window.EmbeddingEngine`.
+  /// `window.litertLmReady` nor `window.litertLm`.
   loaderMissing,
 
-  /// The loader ran, but `window.EmbeddingEngine` is not set: an index.html
-  /// written for the LLM engine only.
+  /// The loader ran, but the page's module has no `EmbeddingEngine` (the
+  /// page's runtime reports it by throwing [LiteRtLmWebModuleError] instead,
+  /// which names what the module holds there).
   embeddingEngineMissing,
 
-  /// `window.EmbeddingEngine` lacks a member this release calls
+  /// The module's `EmbeddingEngine` lacks a member this release calls
   /// ([LiteRtLmWebRuntime.missingMembers]): a `@litert-lm/core` this release
   /// cannot drive, whatever its version.
   runtimeIncomplete,
@@ -246,14 +249,15 @@ enum LiteRtLmWebGpuSupport {
 /// The page's `@litert-lm/core` embedding runtime, as the pass uses it.
 abstract interface class LiteRtLmWebRuntime {
   /// Waits for the page's loader (`window.litertLmReady`) when there is one,
-  /// then reports whether `window.EmbeddingEngine` exists. Throws
-  /// [LiteRtLmWebBackendEnumError] when it does but the page did not hand
-  /// over `@litert-lm/core`'s `Backend` enum ([liteRtLmWebBackendShimLine]),
+  /// then reports whether the module it handed over (`window.litertLm`) has an
+  /// `EmbeddingEngine` this release can drive. Throws
+  /// [LiteRtLmWebModuleError] when the page set no `window.litertLm`, or its
+  /// module lacks `EmbeddingEngine` or `@litert-lm/core`'s `Backend` enum,
   /// and anything else when the loader itself failed (the module could not
   /// be imported).
   Future<LiteRtLmWebRuntimeState> ensureReady();
 
-  /// What `window.EmbeddingEngine` lacks of what this release calls, after
+  /// What the module's `EmbeddingEngine` lacks of what this release calls, after
   /// [ensureReady] reported [LiteRtLmWebRuntimeState.runtimeIncomplete];
   /// empty otherwise.
   List<String> get missingMembers;
@@ -439,9 +443,6 @@ Future<String> _resolveModelUrl(LiteRtLmWebEmbedderConfig config) async {
     );
   }
 }
-
-/// The `index.html` line the page needs for EmbeddingGemma 2, word for word.
-const liteRtLmWebShimLine = 'window.EmbeddingEngine = m.EmbeddingEngine;';
 
 /// The words of the load probe: 9,000 of one word that the Gemma tokenizer
 /// reads as one token each — longer than the largest text signature of any
@@ -670,7 +671,7 @@ final class LiteRtLmWebEmbedder {
     final LiteRtLmWebRuntimeState state;
     try {
       state = await _config.runtime.ensureReady();
-    } on LiteRtLmWebBackendEnumError catch (e) {
+    } on LiteRtLmWebModuleError catch (e) {
       throw EmbedderLoadException(e.message, cause: e);
     } catch (e) {
       throw EmbedderLoadException(
@@ -687,15 +688,14 @@ final class LiteRtLmWebEmbedder {
           'web/index.html does not load @litert-lm/core, so there is no '
           'EmbeddingEngine for EmbeddingGemma 2. Add the module script from '
           "litertlm_dart's README (On the web): it imports "
-          '$liteRtLmWebModuleUrl, sets window.Engine = m.Engine;, '
-          '$liteRtLmWebBackendShimLine and $liteRtLmWebShimLine',
+          '$liteRtLmWebModuleUrl and sets $liteRtLmWebModuleShimLine',
         );
       case LiteRtLmWebRuntimeState.embeddingEngineMissing:
-        throw const EmbedderLoadException(
-          'window.EmbeddingEngine is not set: web/index.html loads '
-          '@litert-lm/core for the LLM engine only. Add '
-          '$liteRtLmWebShimLine next to window.Engine = m.Engine; in its '
-          'module script.',
+        throw EmbedderLoadException(
+          liteRtLmWebModuleMemberMessage(
+            'EmbeddingEngine',
+            'a value of type undefined',
+          ),
         );
       case LiteRtLmWebRuntimeState.runtimeIncomplete:
         throw EmbedderLoadException(

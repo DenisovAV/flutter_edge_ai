@@ -28,7 +28,7 @@ class _Resolver implements WebModelSourceResolver {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// A stand-in for `window.Engine`: a function (as the page's is) with the
+/// A stand-in for the module's `Engine`: a function (as the page's is) with the
 /// prototype members the runtime check looks for, whose `create` returns
 /// [engine].
 JSObject _engineConstructor(JSObject engine) =>
@@ -85,13 +85,10 @@ void main() {
       }).toJS;
     });
     globalContext['litertLmReady'] = Future<void>.value().toJS;
-    // The page's Backend enum, as @litert-lm/core 0.19.0 numbers it.
-    globalContext['LiteRtLmBackend'] = {
-      'GPU_ARTISAN': 2,
-      'CPU': 3,
-      'GPU': 4,
-    }.jsify();
-    globalContext['Engine'] = _engineConstructor(engine);
+    // The module's Backend enum, as @litert-lm/core 0.19.0 numbers it.
+    globalContext['litertLm'] = JSObject()
+      ..['Engine'] = _engineConstructor(engine)
+      ..['Backend'] = {'GPU_ARTISAN': 2, 'CPU': 3, 'GPU': 4}.jsify();
 
     final model = LiteRtLmWebInferenceModel(
       createEngine: () => createLiteRtLmWebEngine(_Resolver(), maxTokens: 1024),
@@ -143,13 +140,10 @@ void main() {
           .toJS,
     );
     globalContext['litertLmReady'] = Future<void>.value().toJS;
-    // The page's Backend enum, as @litert-lm/core 0.19.0 numbers it.
-    globalContext['LiteRtLmBackend'] = {
-      'GPU_ARTISAN': 2,
-      'CPU': 3,
-      'GPU': 4,
-    }.jsify();
-    globalContext['Engine'] = _engineConstructor(engine);
+    // The module's Backend enum, as @litert-lm/core 0.19.0 numbers it.
+    globalContext['litertLm'] = JSObject()
+      ..['Engine'] = _engineConstructor(engine)
+      ..['Backend'] = {'GPU_ARTISAN': 2, 'CPU': 3, 'GPU': 4}.jsify();
 
     final model = LiteRtLmWebInferenceModel(
       createEngine: () => createLiteRtLmWebEngine(_Resolver(), maxTokens: 1024),

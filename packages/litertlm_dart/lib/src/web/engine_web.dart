@@ -8,7 +8,7 @@
 // export, Chrome 157): the NPU, the cache directory, the activation type,
 // speculative decoding, the tokenizer and option scoring; an image by file
 // path, and an image past the conversation's maxNumImages. The page loads the
-// runtime itself (its module script sets `window.Engine` and
+// runtime itself (its module script sets `window.litertLm` and
 // `window.litertLmReady`; see litertlm_dart's README, "On the web").
 
 import 'dart:async';
@@ -430,10 +430,11 @@ Future<Engine> createWebEngine(
   @visibleForTesting LiteRtLmPageLock? pageLock,
 }) async {
   _refuseOnWeb(config);
-  final constructor = await _awaitRuntime();
+  final module = await _awaitRuntime();
+  final engineClass = _engineClassOf(module);
   // The page's own Backend ids: the same number is another backend on
   // another @litert-lm/core (0.20.0 renumbered them).
-  final ids = readLiteRtLmWebBackendIds();
+  final ids = module.backendIds;
   // Said before the create: an older runtime fails it ("Unsupported backend:
   // 2" on 0.18.0), and the reason is the version.
   noteOtherWebRuntimeVersion();
@@ -481,11 +482,7 @@ Future<Engine> createWebEngine(
   // EmbeddingGemma 2 engine shares: see page_lock.dart.
   final JsLiteRtLmEngine js;
   try {
-    js = await lock.run(
-      () => (constructor as JsLiteRtLmEngine)
-          .callMethod<JSPromise<JsLiteRtLmEngine>>('create'.toJS, settings)
-          .toDart,
-    );
+    js = await lock.run(() => engineClass.create(settings).toDart);
   } on LiteRtLmPagePoisonedError {
     rethrow;
   } catch (e) {
@@ -646,20 +643,17 @@ void _refuseOnWeb(EngineConfig config) {
 }
 
 /// Waits for the page's module script (`window.litertLmReady`) to have
-/// loaded `@litert-lm/core`, and returns its `Engine` constructor: module
-/// scripts are deferred, so Dart can reach here before `window.Engine` is
-/// set. A page whose loader failed, without `window.Engine`, or whose
-/// `Engine` lacks a member this release calls is refused with a
-/// [StateError]; another version that has them all is accepted, and said
-/// once ([noteOtherWebRuntimeVersion]).
-Future<JSObject> _awaitRuntime() async {
+/// loaded `@litert-lm/core`, and returns the module it handed over
+/// (`window.litertLm`): module scripts are deferred, so Dart can reach here
+/// before it is set. A page whose loader failed, or that sets no
+/// `window.litertLm`, is refused with a [StateError] that names the line to
+/// add (or, on a page with the old `window.Engine` line, the lines to
+/// replace).
+Future<LiteRtLmWebModule> _awaitRuntime() async {
   final ready = globalContext['litertLmReady'];
   if (ready == null || ready.isUndefinedOrNull) {
-    throw StateError(
-      'window.litertLmReady is not set: the page does not load '
-      '@litert-lm/core. Add the module script from litertlm_dart\'s README '
-      '("On the web"), which imports $liteRtLmWebModuleUrl.',
-    );
+    // No loader: only a page that set the module itself goes on.
+    return readLiteRtLmWebModule();
   }
   if (ready.isA<JSObject>() && (ready as JSObject).has('then')) {
     try {
@@ -672,19 +666,21 @@ Future<JSObject> _awaitRuntime() async {
       );
     }
   }
-  final constructor = globalContext['Engine'];
-  if (constructor == null || !constructor.typeofEquals('function')) {
-    throw StateError(
-      'window.Engine is not set: the page\'s module script must set '
-      'window.Engine = m.Engine; (litertlm_dart\'s README, "On the web").',
-    );
-  }
-  final missing = liteRtLmWebRuntimeMissing(constructor as JSObject, const [
+  return readLiteRtLmWebModule();
+}
+
+/// The module's `Engine` class, refused with a [StateError] when the module
+/// has none, or one that lacks a member this release calls; another version
+/// that has them all is accepted, and said once
+/// ([noteOtherWebRuntimeVersion]).
+JsLiteRtLmEngineClass _engineClassOf(LiteRtLmWebModule module) {
+  final engineClass = module.engineClass;
+  final missing = liteRtLmWebRuntimeMissing(engineClass, const [
     'createConversation',
     'delete',
   ]);
   if (missing.isNotEmpty) {
     throw StateError(_incompleteRuntime('Engine', missing));
   }
-  return constructor;
+  return engineClass;
 }

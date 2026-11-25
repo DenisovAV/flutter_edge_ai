@@ -64,13 +64,13 @@ void main() {
     addTearDown(removeRuntime);
     final engine = await webEngine();
     _eval('''window.__deleted = false; window.__finishDelete = null;
-      window.Engine.create = ((create) => async (s) => {
+      window.litertLm.Engine.create = ((create) => async (s) => {
         const e = await create(s);
         e.delete = () => new Promise((resolve) => {
           window.__finishDelete = () => { window.__deleted = true; resolve(); };
         });
         return e;
-      })(window.Engine.create);''');
+      })(window.litertLm.Engine.create);''');
     final waiting = await webEngine();
     var closed = false;
     final closing = waiting.close().then((_) => closed = true);

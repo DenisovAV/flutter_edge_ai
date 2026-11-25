@@ -372,7 +372,7 @@ void main() {
           _loadError(
             allOf(
               contains('web/index.html does not load @litert-lm/core'),
-              contains('window.EmbeddingEngine = m.EmbeddingEngine;'),
+              contains('window.litertLm = m;'),
             ),
           ),
         ),
@@ -382,8 +382,8 @@ void main() {
       await pass.close();
     });
 
-    test('a page set up for the LLM engine only (no window.EmbeddingEngine): '
-        'the error names the missing line', () async {
+    test('a module without EmbeddingEngine: the error names the member and '
+        'the runtime to import', () async {
       final runtime = _FakeRuntime()
         ..state = LiteRtLmWebRuntimeState.embeddingEngineMissing;
       final pass = _pass(runtime);
@@ -392,11 +392,11 @@ void main() {
         throwsA(
           _loadError(
             allOf(
-              startsWith('window.EmbeddingEngine is not set'),
-              contains(
-                'Add window.EmbeddingEngine = m.EmbeddingEngine; next to '
-                'window.Engine = m.Engine;',
+              startsWith(
+                'window.litertLm has no EmbeddingEngine (a value of type '
+                'undefined)',
               ),
+              contains('@litert-lm/core@'),
             ),
           ),
         ),
@@ -478,14 +478,16 @@ void main() {
       expect(runtime.created, isEmpty);
     });
 
-    test('a page without the shim line is named before WebGPU is '
+    test('a module without EmbeddingEngine is named before WebGPU is '
         'asked', () async {
       final runtime = _FakeRuntime()
         ..state = LiteRtLmWebRuntimeState.embeddingEngineMissing
         ..gpu = LiteRtLmWebGpuSupport.noWebGpu;
       await expectLater(
         _pass(runtime).load(),
-        throwsA(_loadError(startsWith('window.EmbeddingEngine is not set'))),
+        throwsA(
+          _loadError(startsWith('window.litertLm has no EmbeddingEngine')),
+        ),
       );
       expect(runtime.gpuChecks, 0);
     });

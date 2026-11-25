@@ -22,8 +22,8 @@
 ///   EmbeddingInputTooLongException(1024, 1025 / 3000) — counts from Python
 ///   sentencepiece 0.2.2 on the bundle's own tokenizer (sha256 e594c8a9…), the
 ///   measurement's `text_with_total` — and the model keeps working;
-/// - a page without `window.EmbeddingEngine = m.EmbeddingEngine;` fails the
-///   load with the EmbeddingLoadException that names the line;
+/// - a module without `EmbeddingEngine` fails the load with the
+///   EmbeddingLoadException that names it;
 /// - supportImage on the 270m is refused naming the 440m, from the bundle's
 ///   container header, and the runtime asked directly never embeds an image
 ///   there either;
@@ -590,13 +590,20 @@ void main() {
     report('w2', {'maxInputTokens': model.maxInputTokens, 'boundary': 1024});
   }, timeout: const Timeout(Duration(minutes: 30)));
 
-  testWidgets('a page without window.EmbeddingEngine fails the load with the '
-      'EmbeddingLoadException naming the line', (tester) async {
+  testWidgets('a module without EmbeddingEngine fails the load with the '
+      'EmbeddingLoadException naming it', (tester) async {
     _start('EG2 shim missing');
     await _ensureEg2();
     await _releaseActive();
-    final saved = globalContext['EmbeddingEngine'];
-    globalContext.delete('EmbeddingEngine'.toJS);
+    // A plain copy of the module without it: a module namespace is frozen.
+    final module = globalContext['litertLm']! as JSObject;
+    final copy = globalContext.callMethod<JSObject>(
+      'eval'.toJS,
+      '(() => { const {EmbeddingEngine, ...rest} = window.litertLm; '
+              'return rest; })()'
+          .toJS,
+    );
+    globalContext['litertLm'] = copy;
     try {
       await expectLater(
         FlutterEdgeAi.getActiveEmbedder(),
@@ -606,12 +613,12 @@ void main() {
               .having(
                 (e) => e.message,
                 'message',
-                contains('window.EmbeddingEngine = m.EmbeddingEngine;'),
+                contains('window.litertLm has no EmbeddingEngine'),
               ),
         ),
       );
     } finally {
-      globalContext['EmbeddingEngine'] = saved;
+      globalContext['litertLm'] = module;
     }
     expect((await _active()).dimension, 768);
   }, timeout: const Timeout(Duration(minutes: 30)));
@@ -1230,7 +1237,9 @@ void main() {
     final created = <String>[];
     // Hide navigator.gpu (an own property shadows the prototype's getter),
     // and count the engines the runtime is asked to create meanwhile.
-    final engine = globalContext['EmbeddingEngine']! as JSObject;
+    final engine =
+        (globalContext['litertLm']! as JSObject)['EmbeddingEngine']!
+            as JSObject;
     final create = engine['create'];
     engine['create'] = ((JSAny settings) {
       created.add('create');

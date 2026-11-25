@@ -1,11 +1,11 @@
 // The EmbeddingGemma 2 web pass over the REAL interop — `WindowLiteRtLmWebRuntime`
-// and the page's `window.litertLmReady` / `window.EmbeddingEngine` — with a
-// stub engine of `@litert-lm/core`'s shape defined in plain JS (`eval`),
+// and the page's `window.litertLmReady` / `window.litertLm` — with a stub
+// module of `@litert-lm/core`'s shape defined in plain JS (`eval`),
 // through the path an app takes: the web backend's describe(), the pass, and
 // core's inline host. What the VM suite cannot see: the JS objects themselves.
-// - the loader states: no loader, a loader without `EmbeddingEngine` (an
-//   index.html written for the LLM only), a loader still importing, a loader
-//   that failed;
+// - the loader states: no loader, a page with the old shim (`window.Engine`,
+//   no `window.litertLm`), a module without `EmbeddingEngine`, a loader still
+//   importing, a loader that failed;
 // - the WebGPU question, on a stubbed `navigator.gpu` (the test browser may
 //   have no GPU): an adapter, no adapter, no `navigator.gpu` — asked with the
 //   runtime's own `powerPreference: 'high-performance'` — and a page without
@@ -44,6 +44,7 @@ import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_backend_
 import 'package:litertlm_dart/internal_web.dart'
     show
         LiteRtLmWebGpuSupport,
+        LiteRtLmWebModuleError,
         LiteRtLmWebRuntimeState,
         WindowLiteRtLmWebRuntime;
 import 'package:flutter_test/flutter_test.dart';
@@ -58,9 +59,10 @@ T _eval<T extends JSAny?>(String source) =>
 /// Removes everything a test may have put on the page, the `navigator.gpu`
 /// stub included (the browser's own getter is on the prototype).
 void _clearPage() => _js('''
-  delete window.EmbeddingEngine;
+  delete window.litertLm;
   delete window.litertLmReady;
-  delete window.LiteRtLmBackend;
+  delete window.Engine;
+  delete window.EmbeddingEngine;
   delete window.__eg2;
   delete navigator.gpu;
   delete window.__gpuRequests;
@@ -84,7 +86,8 @@ void _stubGpu({bool present = true, bool adapter = true}) => _js('''
 
 int get _gpuRequests => (globalContext['__gpuRequests']! as JSArray).length;
 
-/// A stub `EmbeddingEngine` of the runtime's shape that records what it is given.
+/// A stub module (`window.litertLm`, nothing else on the page) whose
+/// `EmbeddingEngine` has the runtime's shape and records what it is given.
 /// A text "token" is a space-separated word, plus BOS and EOS; an image is
 /// 140 tokens, an audio clip one per byte; an array of parts is the sum.
 /// Inputs over `__eg2.maxSeq` under TRUNCATE come back with
@@ -92,13 +95,13 @@ int get _gpuRequests => (globalContext['__gpuRequests']! as JSArray).length;
 void _installEngine() => _js('''
   window.__eg2 = { settings: [], inputs: [], options: [], deletes: 0,
                    maxSeq: 1024, createError: null, computeError: null };
-  // The page's Backend enum, as @litert-lm/core 0.19.0 numbers it.
-  window.LiteRtLmBackend = {GPU_ARTISAN: 2, CPU: 3, GPU: 4};
-  window.EmbeddingEngine = function () {};
+  const EmbeddingEngine = function () {};
   // The members the release calls, which the runtime check looks for.
-  window.EmbeddingEngine.prototype.computeEmbedding = function () {};
-  window.EmbeddingEngine.prototype.delete = function () {};
-  window.EmbeddingEngine.create = async function (settings) {
+  EmbeddingEngine.prototype.computeEmbedding = function () {};
+  EmbeddingEngine.prototype.delete = function () {};
+  // The module's Backend enum, as @litert-lm/core 0.19.0 numbers it.
+  window.litertLm = {EmbeddingEngine, Backend: {GPU_ARTISAN: 2, CPU: 3, GPU: 4}};
+  EmbeddingEngine.create = async function (settings) {
     const s = window.__eg2;
     s.settings.push(settings);
     if (s.createError) throw new Error(s.createError);
@@ -237,33 +240,71 @@ void main() {
       );
     });
 
-    test(
-      'a loader that sets only window.Engine: embeddingEngineMissing',
-      () async {
-        _js('''
+    test('a loader with the old shim (window.Engine, no window.litertLm): '
+        'refused naming the lines to replace', () async {
+      _js('''
         window.litertLmReady = Promise.resolve().then(() => {
           window.Engine = function () {};
+          window.EmbeddingEngine = function () {};
           return window.Engine;
         });
       ''');
-        expect(
-          await runtime.ensureReady(),
-          LiteRtLmWebRuntimeState.embeddingEngineMissing,
-        );
-      },
-    );
+      await expectLater(
+        runtime.ensureReady(),
+        throwsA(
+          isA<LiteRtLmWebModuleError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('window.EmbeddingEngine = m.EmbeddingEngine;'),
+              contains('window.litertLm = m;'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('the old shim without the loader: refused the same way', () async {
+      _js('window.Engine = function () {};');
+      await expectLater(
+        runtime.ensureReady(),
+        throwsA(isA<LiteRtLmWebModuleError>()),
+      );
+    });
+
+    test('a module without EmbeddingEngine (the LLM\'s Engine only): '
+        'refused naming it', () async {
+      _js('''
+        window.litertLm = {Engine: function () {}, Backend: {GPU_ARTISAN: 2, CPU: 3, GPU: 4}};
+        window.litertLmReady = Promise.resolve(window.litertLm);
+      ''');
+      await expectLater(
+        runtime.ensureReady(),
+        throwsA(
+          isA<LiteRtLmWebModuleError>().having(
+            (e) => e.message,
+            'message',
+            contains(
+              'window.litertLm has no EmbeddingEngine (a value of type '
+              'undefined)',
+            ),
+          ),
+        ),
+      );
+    });
 
     test(
-      'a loader still importing: ready once it has set EmbeddingEngine',
+      'a loader still importing: ready once it has set window.litertLm',
       () async {
         _js('''
         window.litertLmReady = new Promise((resolve) => setTimeout(() => {
-          window.LiteRtLmBackend = {GPU_ARTISAN: 2, CPU: 3, GPU: 4};
-          window.EmbeddingEngine = function () {};
-          window.EmbeddingEngine.create = async function () {};
-          window.EmbeddingEngine.prototype.computeEmbedding = function () {};
-          window.EmbeddingEngine.prototype.delete = function () {};
-          resolve(null);
+          const EmbeddingEngine = function () {};
+          EmbeddingEngine.create = async function () {};
+          EmbeddingEngine.prototype.computeEmbedding = function () {};
+          EmbeddingEngine.prototype.delete = function () {};
+          window.litertLm = {EmbeddingEngine,
+                             Backend: {GPU_ARTISAN: 2, CPU: 3, GPU: 4}};
+          resolve(window.litertLm);
         }, 50));
       ''');
         expect(await runtime.ensureReady(), LiteRtLmWebRuntimeState.ready);
@@ -273,10 +314,12 @@ void main() {
     test('an EmbeddingEngine without computeEmbedding is incomplete, and '
         'names what it lacks', () async {
       _js('''
-        window.litertLmReady = Promise.resolve(null);
-        window.EmbeddingEngine = function () {};
-        window.EmbeddingEngine.create = async function () {};
-        window.EmbeddingEngine.prototype.delete = function () {};
+        const EmbeddingEngine = function () {};
+        EmbeddingEngine.create = async function () {};
+        EmbeddingEngine.prototype.delete = function () {};
+        window.litertLm = {EmbeddingEngine,
+                           Backend: {GPU_ARTISAN: 2, CPU: 3, GPU: 4}};
+        window.litertLmReady = Promise.resolve(window.litertLm);
       ''');
       expect(
         await runtime.ensureReady(),
@@ -324,8 +367,8 @@ void main() {
     });
   }
 
-  test('a page without the shim line: the app gets the named '
-      'EmbeddingLoadException', () async {
+  test('a page with the old shim: the app gets an EmbeddingLoadException '
+      'naming the lines to replace', () async {
     _js('''
       window.litertLmReady = Promise.resolve().then(() => {
         window.Engine = function () {};
@@ -340,18 +383,34 @@ void main() {
             .having(
               (e) => e.message,
               'message',
-              contains('window.EmbeddingEngine = m.EmbeddingEngine;'),
+              allOf(
+                contains('window.Engine = m.Engine;'),
+                contains('window.litertLm = m;'),
+              ),
             ),
       ),
     );
   });
 
-  test('a page without window.LiteRtLmBackend: the app gets an '
-      'EmbeddingLoadException naming the line, and create is never '
-      'called', () async {
+  test('a page with no window.litertLm and no loader: the app gets an '
+      'EmbeddingLoadException quoting the line', () async {
+    await expectLater(
+      _start(),
+      throwsA(
+        isA<EmbeddingLoadException>().having(
+          (e) => e.message,
+          'message',
+          contains('window.litertLm = m;'),
+        ),
+      ),
+    );
+  });
+
+  test('a module without Backend: the app gets an EmbeddingLoadException '
+      'naming it, and create is never called', () async {
     _installEngine();
     _stubGpu();
-    _js('delete window.LiteRtLmBackend;');
+    _js('delete window.litertLm.Backend;');
     await expectLater(
       _start(),
       throwsA(
@@ -360,9 +419,8 @@ void main() {
             .having(
               (e) => e.message,
               'message',
-              allOf(
-                contains('window.LiteRtLmBackend is not set'),
-                contains('window.LiteRtLmBackend = m.Backend;'),
+              contains(
+                'window.litertLm has no Backend (a value of type undefined)',
               ),
             ),
       ),
@@ -374,7 +432,7 @@ void main() {
     _installEngine();
     _stubGpu();
     _js(
-      'window.LiteRtLmBackend = '
+      'window.litertLm.Backend = '
       '{UNSPECIFIED: 0, GPU_ARTISAN: 1, CPU: 2, GPU: 3, '
       'GOOGLE_TENSOR_ARTISAN: 4, NPU: 5};',
     );

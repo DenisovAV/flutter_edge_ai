@@ -17,7 +17,7 @@ import 'package:test/test.dart';
 
 import 'web_runtime_stub.dart' show printsOf, settle;
 
-/// A shim whose import is still running: it defines `EmbeddingEngine`, and
+/// A shim whose import is still running: it hands over the module, and
 /// the page has fetched @litert-lm/core 0.18.0, only once `__importDone()`
 /// is called.
 const _pendingShim = r'''
@@ -32,11 +32,10 @@ const _pendingShim = r'''
         {name: 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm'},
       ],
     });
-    window.LiteRtLmBackend = {GPU_ARTISAN: 2, CPU: 3, GPU: 4};
-    window.EmbeddingEngine = function EmbeddingEngine() {};
-    window.EmbeddingEngine.prototype.computeEmbedding = function () {};
-    window.EmbeddingEngine.prototype.delete = function () {};
-    window.EmbeddingEngine.create = async () => {
+    const EmbeddingEngine = function EmbeddingEngine() {};
+    EmbeddingEngine.prototype.computeEmbedding = function () {};
+    EmbeddingEngine.prototype.delete = function () {};
+    EmbeddingEngine.create = async () => {
       if (window.__eg.createError) throw new Error(window.__eg.createError);
       return {
         computeEmbedding: async () => ({embedding: [1], inputLength: 1, numChunks: 1}),
@@ -45,7 +44,8 @@ const _pendingShim = r'''
         },
       };
     };
-    done(null);
+    window.litertLm = {EmbeddingEngine, Backend: {GPU_ARTISAN: 2, CPU: 3, GPU: 4}};
+    done(window.litertLm);
   };
 })();
 ''';

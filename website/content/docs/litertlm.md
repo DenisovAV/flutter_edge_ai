@@ -471,10 +471,8 @@ awaits `window.litertLmReady` (which resolves to the `Engine` constructor):
 <script type="module">
 window.litertLmReady = (async () => {
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
-  window.Engine = m.Engine;
-  window.LiteRtLmBackend = m.Backend;
-  window.EmbeddingEngine = m.EmbeddingEngine;
-  return m.Engine;
+  window.litertLm = m;
+  return m;
 })();
 </script>
 ```

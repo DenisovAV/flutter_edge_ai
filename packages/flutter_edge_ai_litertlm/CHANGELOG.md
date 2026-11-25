@@ -1,3 +1,6 @@
+## Unreleased
+- Web reads `@litert-lm/core` from `window.litertLm`; see MIGRATION.
+
 ## 1.21.3
 - Requires `litertlm_dart` 0.19.1+4.
 

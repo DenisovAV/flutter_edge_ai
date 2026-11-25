@@ -668,10 +668,8 @@ The same `Engine`, `Conversation` and `EmbeddingEngine` run in a browser over
 <script type="module">
 window.litertLmReady = (async () => {
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
-  window.Engine = m.Engine;
-  window.LiteRtLmBackend = m.Backend;
-  window.EmbeddingEngine = m.EmbeddingEngine;
-  return m.Engine;
+  window.litertLm = m;
+  return m;
 })();
 </script>
 ```
@@ -685,14 +683,23 @@ empty reply on 0.19.0. Import exactly the version above: this release is
 measured on it, and another is said once with `print`, before the engine is
 created, when the page fetched it by a versioned URL (0.18.0 refuses the GPU
 export: "Unsupported backend: 2", and the create failure names the page's
-version). A page that does not load the module, lacks
-`window.Engine`, or loads a runtime without a call this release makes is
-refused with a `StateError` naming what is missing and the version above.
-`window.LiteRtLmBackend` hands over the module's `Backend` enum: the backend
-ids sent and read back are the page's own (0.20.0 renumbered them), and an
-engine or embedding engine on a page without that line, or with something
-else there, is refused with a `StateError` (an `EmbedderLoadException` for an
-embedding engine) naming it.
+version). `window.litertLm = m;` hands over the whole module, once: each
+member this release calls is read from it when it is called (`Engine` when an
+engine is created, `EmbeddingEngine` when an embedding engine is, `Backend`
+for both), so all of them come from the one module the page loaded, and a
+later release that calls more of it needs no new line. The backend ids sent
+and read back are the module's own `Backend` (0.20.0 renumbered them). A page
+that does not set `window.litertLm` is refused with a `StateError` quoting the
+line to add (on a page that still sets `window.Engine` or
+`window.EmbeddingEngine`, the lines it replaces); a module without a member
+this release calls, or with a `Backend` it cannot read, is refused naming the
+member and the version above (an `EmbedderLoadException` for an embedding
+engine). A self-hosted or bundled runtime (`import * as m from
+'@litert-lm/core';` in the app's own module) is handed over with the same
+lines. Another library that loads its own copy of `@litert-lm/core` (from
+another URL) puts a second runtime in the page: this release reads only
+`window.litertLm`, but two runtimes sharing the GPU and the page's memory is
+not tested.
 
 What differs on the web, measured on `@litert-lm/core` 0.19.0 with Gemma 4
 E2B's GPU export in Chrome 157 (2026-11-23):

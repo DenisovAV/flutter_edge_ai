@@ -1,3 +1,6 @@
+## Unreleased
+- Web reads `@litert-lm/core` from `window.litertLm`, one shim line; see the README.
+
 ## 0.19.1+4
 - Plain Dart programs (`dart run`, `dart test`, `dart build cli`) on every backend; see the README.
 

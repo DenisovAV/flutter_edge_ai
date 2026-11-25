@@ -132,7 +132,7 @@ final vector = await embedder.embed(
   (flutter_edge_ai_litertlm 1.13.0 for text, 1.13.1 for images and audio),
   and the Web (1.13.1 for text and images, 1.13.2 for audio and combined
   inputs), where it runs through `@litert-lm/core`'s EmbeddingEngine on
-  WebGPU and needs **window.EmbeddingEngine = m.EmbeddingEngine;** in
+  WebGPU and needs the module script with **window.litertLm = m;** in
   `web/index.html` ([Installation](/docs/installation#web)).
 - **Text on every bundle, images on the 440m and the 740m, audio on the
   740m.** On the 270m, **getActiveEmbedder(supportImage: true)** throws

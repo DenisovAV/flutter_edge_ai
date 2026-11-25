@@ -434,9 +434,8 @@ Dart awaits it. Every step app from this one on carries it in `<head>`:
 <script type="module">
 window.litertLmReady = (async () => {
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
-  window.Engine = m.Engine;
-  window.LiteRtLmBackend = m.Backend;
-  return m.Engine;
+  window.litertLm = m;
+  return m;
 })();
 </script>
 

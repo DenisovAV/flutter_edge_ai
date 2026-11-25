@@ -1,14 +1,14 @@
 // JS interop for the `@litert-lm/core` LLM API ([liteRtLmWebRuntimeVersion]),
 // the surface the web `Engine` and its conversations drive.
 //
-// The page's module script must expose `Engine` on the global scope
-// (`window.Engine = m.Engine`): `dart:js_interop` static interop resolves
-// against the global, and the ESM export needs that explicit shim. It also
-// sets `window.litertLmReady`, a Promise that settles once the module loaded
-// (module scripts are deferred, so Dart can run first), and
-// `window.LiteRtLmBackend = m.Backend`, the module's `Backend` enum, whose
-// ids this release sends and reads back (web_backend_ids.dart: 0.20.0
-// renumbered them).
+// The page's module script hands over the whole module once, as
+// `window.litertLm` ([liteRtLmWebModuleShim]), and sets `window.litertLmReady`,
+// a Promise that settles once the module loaded (module scripts are deferred,
+// so Dart can run first). [readLiteRtLmWebModule] reads it; each member this
+// release calls (`Engine`, `EmbeddingEngine`, `Backend`) is read from it when
+// it is called and refused by name when missing. The classes are reached
+// through extension types over the objects read from the module, never
+// through global `@JS` names, so dart2js and dart2wasm resolve them alike.
 //
 // API surface mirrored, as published (`dist/engine.d.ts`, `conversation.d.ts`,
 // `conversation_config.d.ts`, `engine_settings.d.ts`):
@@ -31,21 +31,85 @@ import 'dart:js_interop_unsafe';
 
 import '../runtime/runtime_log.dart';
 import 'web_backend_ids.dart';
+import 'web_module_shim.dart';
 import 'web_runtime_version.dart';
 
 export 'web_backend_ids.dart'
+    show LiteRtLmWebBackendEnumError, LiteRtLmWebBackendIds;
+export 'web_module_shim.dart'
     show
-        LiteRtLmWebBackendEnumError,
-        LiteRtLmWebBackendIds,
-        liteRtLmWebBackendShimLine;
+        LiteRtLmWebModuleError,
+        liteRtLmWebModuleShim,
+        liteRtLmWebModuleShimLine;
 
-/// The page's `@litert-lm/core` `Backend` enum, as its module script hands it
-/// over (`window.LiteRtLmBackend = m.Backend;`): read at each engine and
-/// embedding engine create, before anything is sent. Throws
-/// [LiteRtLmWebBackendEnumError] (a [StateError] naming that line) when the
-/// page did not set it, or set something else.
-LiteRtLmWebBackendIds readLiteRtLmWebBackendIds() =>
-    LiteRtLmWebBackendIds.parse(_enumEntries(globalContext['LiteRtLmBackend']));
+/// Whether the page has a `window.litertLm` at all.
+bool get hasLiteRtLmWebModule =>
+    !(globalContext['litertLm']?.isUndefinedOrNull ?? true);
+
+/// The page's `@litert-lm/core` module, as its module script hands it over
+/// (`window.litertLm = m;`). Any object is accepted (a bundler may hand over
+/// a plain object instead of a module namespace); its members are checked
+/// when they are read. Throws [LiteRtLmWebModuleError] when it is not set,
+/// naming the old lines to replace on a page that still sets
+/// `window.Engine`, or when it is not an object.
+LiteRtLmWebModule readLiteRtLmWebModule() {
+  final module = globalContext['litertLm'];
+  if (module == null || module.isUndefinedOrNull) {
+    bool isFunction(String name) =>
+        globalContext[name]?.typeofEquals('function') ?? false;
+    throw LiteRtLmWebModuleError(
+      liteRtLmWebModuleMissingMessage(
+        legacyPage: isFunction('Engine') || isFunction('EmbeddingEngine'),
+      ),
+    );
+  }
+  if (!module.typeofEquals('object') && !module.typeofEquals('function')) {
+    throw LiteRtLmWebModuleError(
+      liteRtLmWebModuleMissingMessage(
+        legacyPage: false,
+        what: 'a value of type ${_typeOf(module)}',
+      ),
+    );
+  }
+  return module as LiteRtLmWebModule;
+}
+
+/// `window.litertLm`: the page's `@litert-lm/core` module.
+extension type LiteRtLmWebModule._(JSObject _) implements JSObject {
+  /// The module's `Engine` class. Throws [LiteRtLmWebModuleError] naming it
+  /// when the module has none.
+  JsLiteRtLmEngineClass get engineClass =>
+      classNamed('Engine') as JsLiteRtLmEngineClass;
+
+  /// The module's class [name] (`Engine`, `EmbeddingEngine`): a function.
+  /// Throws [LiteRtLmWebModuleError] naming it when the module has none, or
+  /// something else under that name.
+  JSObject classNamed(String name) {
+    final value = this[name];
+    if (value == null || !value.typeofEquals('function')) {
+      throw LiteRtLmWebModuleError(
+        liteRtLmWebModuleMemberMessage(name, _describeMember(this, name)),
+      );
+    }
+    return value as JSObject;
+  }
+
+  /// The module's `Backend` ids, read at each engine and embedding engine
+  /// create, before anything is sent. Throws [LiteRtLmWebBackendEnumError]
+  /// when the module has no `Backend`, or one that is not the enum.
+  LiteRtLmWebBackendIds get backendIds =>
+      LiteRtLmWebBackendIds.parse(_enumEntries(this['Backend']));
+}
+
+/// What [object]'s member [name] is, for a refusal: `a value of type
+/// undefined` when it has none.
+String _describeMember(JSObject object, String name) {
+  final value = object[name];
+  if (value == null) {
+    return object.has(name) ? 'null' : 'a value of type undefined';
+  }
+  return 'a value of type ${_typeOf(value)}';
+}
 
 /// [value]'s own enumerable entries, a number as a [num] and anything else
 /// as its `typeof`; a description of [value] when it is not a plain object,
@@ -191,16 +255,16 @@ Future<void> awaitIfThenable(JSAny? result) async {
   }
 }
 
-/// `@JS('Engine')` makes the static `create` resolve against
-/// `globalThis.Engine.create` (where the page's `window.Engine = m.Engine`
-/// shim puts it) instead of the Dart-side type name.
-@JS('Engine')
-extension type JsLiteRtLmEngine._(JSObject _) implements JSObject {
+/// The module's `Engine` class ([LiteRtLmWebModule.engineClass]).
+extension type JsLiteRtLmEngineClass._(JSObject _) implements JSObject {
   /// `Engine.create(engineSettings)`: `{model, backend?,
   /// mainExecutorSettings?: {maxNumTokens?}}`. `model` is a URL string, a
   /// `Blob` or a `ReadableStream<Uint8Array>`.
-  external static JSPromise<JsLiteRtLmEngine> create(JSObject settings);
+  external JSPromise<JsLiteRtLmEngine> create(JSObject settings);
+}
 
+/// An `Engine` the runtime created.
+extension type JsLiteRtLmEngine._(JSObject _) implements JSObject {
   /// What the engine resolved: `{backend, mainExecutorSettings: {maxNumTokens,
   /// ...}, ...}`.
   external JSObject? get settings;

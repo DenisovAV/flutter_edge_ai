@@ -935,7 +935,7 @@ final embedder = await FlutterEdgeAi.getActiveEmbedder(
 ## Embeddings on web
 
 EmbeddingGemma 2 (`.litertlm`) on the web needs no files from this package —
-only the `window.EmbeddingEngine` line in [Web setup](#web-setup-early-preview).
+only the module script in [Web setup](#web-setup-early-preview).
 The rest of this section is about EmbeddingGemma 1 and Gecko (`.tflite`).
 
 On web, `flutter_edge_ai_litertlm`'s `.tflite` embedding backend runs via LiteRT.js. Copy
@@ -1049,33 +1049,35 @@ The page must import `@litert-lm/core` 0.19.0: 0.18.0 refuses the GPU export
 ("Unsupported backend: 2"). Add the handshake below to your app's
 `web/index.html` `<head>` — the ESM doesn't
 assign window globals and module scripts are deferred, so Dart awaits
-`window.litertLmReady` (which resolves to the `Engine` constructor):
+`window.litertLmReady`, and reads the module from `window.litertLm`:
 
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
-  window.Engine = m.Engine;
-  window.LiteRtLmBackend = m.Backend;
-  window.EmbeddingEngine = m.EmbeddingEngine;
-  return m.Engine;
+  window.litertLm = m;
+  return m;
 })();
 </script>
 ```
 
-`window.LiteRtLmBackend` hands litertlm_dart the module's `Backend` enum, so
-the backend ids it sends are the page's own (the runtime's 0.20.0 release
-renumbered them); a page without it fails the model's or the embedder's load
-with an error that names the line.
-
-`window.EmbeddingEngine` (1.13.1) is what EmbeddingGemma 2 `.litertlm`
-embedders run on, on WebGPU: text and images, and from 1.13.2 audio and
-combined inputs (no further line). A page without that line fails
-the embedder's load with an `EmbeddingLoadException` that names it; so does a
-browser without WebGPU, which has no fallback here (the CPU path of
-`@litert-lm/core` cannot read these bundles' external weights). The LLM
-engine does not need the line. A page whose `@litert-lm/core` lacks the calls
-litertlm_dart makes is refused, naming 0.19.0.
+`window.litertLm = m;` hands over the whole module: the `Engine` the models
+run on, the `EmbeddingEngine` EmbeddingGemma 2 `.litertlm` embedders run on
+(WebGPU: text, images, audio and combined inputs) and the `Backend` enum, so
+the backend ids sent are the page's own (the runtime's 0.20.0 release
+renumbered them). Each is read when it is used, so a later release that calls
+more of the module needs no new line. A page without `window.litertLm` fails
+the model's or the embedder's load with an error that quotes the line (on a
+page that still sets the old `window.Engine` and `window.EmbeddingEngine`
+globals, the lines it replaces;
+see MIGRATION.md). A browser without WebGPU fails the embedder's load too,
+with no fallback here (the CPU path of `@litert-lm/core` cannot read these
+bundles' external weights). A page whose `@litert-lm/core` lacks a member or
+call litertlm_dart makes is refused, naming it and 0.19.0. Another library
+that loads its own copy of `@litert-lm/core` from another URL (llamadart's
+LiteRT-LM loader, for one) puts a second runtime in the page: only
+`window.litertLm` is read here, but two runtimes sharing the GPU and the
+page's memory is not tested.
 
 An LLM and an EmbeddingGemma 2 embedder on the same page share one WebAssembly
 module and one WebGPU device, so they take turns and their GPU memory adds up:

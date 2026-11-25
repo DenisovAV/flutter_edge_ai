@@ -54,22 +54,19 @@
   <!-- LiteRT-LM Web Inference for .litertlm models via WebGPU/WASM (early preview).
        The `@litert-lm/core` ESM does not assign to window globals by default, and
        module scripts are deferred — without an explicit handshake the Dart side
-       reaches `LiteRtLmEngine.create()` before `Engine` is bound. We expose a
-       promise (`window.litertLmReady`) that resolves to the Engine constructor
-       and that Dart awaits before calling any static interop. See
-       litertlm_dart's lib/src/web/litert_lm_js.dart and engine_web.dart.
-       `window.EmbeddingEngine` is the same module's embedding engine, for
-       EmbeddingGemma 2 `.litertlm` embedders (flutter_edge_ai_litertlm 1.13.1+,
-       on WebGPU); without that line they fail to load with an error naming it.
-       The version is litertlm_dart's `liteRtLmWebRuntimeVersion`; a test holds
-       this line to it. -->
+       reaches `LiteRtLmEngine.create()` before the module has loaded. The
+       script hands the whole module over as `window.litertLm` and exposes a
+       promise (`window.litertLmReady`) that Dart awaits first; Dart then reads
+       `Engine`, `EmbeddingEngine` (EmbeddingGemma 2 `.litertlm` embedders, on
+       WebGPU) and the `Backend` enum from that one module when it uses them.
+       See litertlm_dart's lib/src/web/litert_lm_js.dart and engine_web.dart.
+       The script is litertlm_dart's `liteRtLmWebModuleShim`, its version
+       `liteRtLmWebRuntimeVersion`; tests hold this copy to both. -->
   <script type="module">
   window.litertLmReady = (async () => {
     const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
-    window.Engine = m.Engine;
-    window.LiteRtLmBackend = m.Backend;
-    window.EmbeddingEngine = m.EmbeddingEngine;
-    return m.Engine;
+    window.litertLm = m;
+    return m;
   })();
   </script>
 

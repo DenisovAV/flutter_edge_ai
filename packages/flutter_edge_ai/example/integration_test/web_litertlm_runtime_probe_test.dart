@@ -24,8 +24,8 @@
 /// - a stop at the very end: every chunk read, `cancel()`, then the stream's
 ///   end, and whether the completed exchange is in `getHistory()`;
 /// - `backend: GPU` and `GPU_ARTISAN` named explicitly.
-/// Every backend id is read from the page's `window.LiteRtLmBackend` (the
-/// module's `Backend`, recorded as `backendEnum`), never written here:
+/// Every backend id is read from the module the page hands over
+/// (`window.litertLm.Backend`, recorded as `backendEnum`), never written here:
 /// 0.20.0 renumbered it.
 /// The model (2.34 GB) is fetched for every `Engine.create` and handed to it
 /// as the response's ReadableStream: a Blob of it would need a `blob:` fetch
@@ -64,16 +64,20 @@ const _modelUrl = String.fromEnvironment(
 const _probe = r'''
 window.__litertlmProbe = async (url, image, audio) => {
   await window.litertLmReady;
-  const Engine = window.Engine;
-  // The page's own Backend ids: 0.20.0 renumbered them (0.19.0: GPU_ARTISAN
-  // 2, CPU 3, GPU 4; 0.20.0: 1, 2, 3).
-  const B = window.LiteRtLmBackend;
-  if (!B || ![B.CPU, B.GPU, B.GPU_ARTISAN].every(Number.isInteger)) {
-    throw new Error('window.LiteRtLmBackend is not the module\'s Backend enum: '
-      + 'add window.LiteRtLmBackend = m.Backend; to web/index.html');
+  const m = window.litertLm;
+  if (!m) {
+    throw new Error('window.litertLm is not set: add window.litertLm = m; to '
+      + 'the module script of web/index.html');
   }
-  r.backendEnum = {...B};
+  const Engine = m.Engine;
+  // The module's own Backend ids: 0.20.0 renumbered them (0.19.0: GPU_ARTISAN
+  // 2, CPU 3, GPU 4; 0.20.0: 1, 2, 3).
+  const B = m.Backend;
+  if (!B || ![B.CPU, B.GPU, B.GPU_ARTISAN].every(Number.isInteger)) {
+    throw new Error('window.litertLm.Backend is not the module\'s Backend enum');
+  }
   const r = {};
+  r.backendEnum = {...B};
   const attempt = async (name, fn) => {
     try { r[name] = {ok: true, value: await fn()}; }
     catch (e) { r[name] = {ok: false, error: String((e && e.message) || e)}; }

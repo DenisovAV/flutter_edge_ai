@@ -1,12 +1,14 @@
-// The rules for the page's `@litert-lm/core` `Backend` enum
-// (`window.LiteRtLmBackend`), on the VM: both published layouts, and the
-// refusals of a page that did not hand it over or handed something else.
+// The rules for the page module's `@litert-lm/core` `Backend` enum
+// (`window.litertLm.Backend`), on the VM: both published layouts, and the
+// refusals of a module without it or with something else there.
 //
 // Run: dart test test/web/web_backend_ids_test.dart
 library;
 
 import 'package:litertlm_dart/internal.dart' show LiteRtLmWebBackend;
 import 'package:litertlm_dart/src/web/web_backend_ids.dart';
+import 'package:litertlm_dart/src/web/web_module_shim.dart';
+import 'package:litertlm_dart/src/web/web_runtime_version.dart';
 import 'package:test/test.dart';
 
 /// `Backend` in `wasm_binding_types.js` of 0.19.0 and 0.20.0, as the JS
@@ -31,19 +33,16 @@ const _v020 = <String, Object?>{
 
 Matcher _refused(String reason) => throwsA(
   isA<LiteRtLmWebBackendEnumError>()
+      .having((e) => e, 'a module error', isA<LiteRtLmWebModuleError>())
       .having((e) => e, 'a StateError', isA<StateError>())
       .having(
         (e) => e.message,
         'message',
-        allOf(contains(reason), contains(liteRtLmWebBackendShimLine)),
+        allOf(contains(reason), contains(liteRtLmWebModuleUrl)),
       ),
 );
 
 void main() {
-  test('the shim line is the one the pages carry', () {
-    expect(liteRtLmWebBackendShimLine, 'window.LiteRtLmBackend = m.Backend;');
-  });
-
   for (final (version, layout, cpu, gpu, artisan) in [
     ('0.19.0', _v019, 3, 4, 2),
     ('0.20.0', _v020, 2, 3, 1),
@@ -82,18 +81,18 @@ void main() {
     expect(current.backendOf(old.gpu), isNull);
   });
 
-  group('refused, naming the shim line', () {
-    test('no window.LiteRtLmBackend', () {
+  group('refused, naming the runtime to import', () {
+    test('no Backend in window.litertLm', () {
       expect(
         () => LiteRtLmWebBackendIds.parse(null),
-        _refused('window.LiteRtLmBackend is not set'),
+        _refused('window.litertLm has no Backend (a value of type undefined)'),
       );
     });
 
     test('not an object', () {
       expect(
         () => LiteRtLmWebBackendIds.parse('a value of type function'),
-        _refused('window.LiteRtLmBackend is a value of type function'),
+        _refused('window.litertLm.Backend is a value of type function'),
       );
     });
 

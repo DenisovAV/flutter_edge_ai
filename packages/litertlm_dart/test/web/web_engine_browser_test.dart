@@ -1,6 +1,6 @@
 // The web arm of the public API in a browser, over a stub `@litert-lm/core`
-// defined on the page in plain JS: `window.Engine` (with the prototype members
-// the release calls) and conversations whose `sendMessageStreaming` returns a
+// defined on the page in plain JS: `window.litertLm`, whose `Engine` has the
+// prototype members the release calls, and conversations whose `sendMessageStreaming` returns a
 // real `ReadableStream` the test feeds chunk by chunk. The stub does what
 // 0.19.0 was measured to do (2026-11-23, web_litertlm_runtime_probe_test.dart):
 // `cancel()` rejects the stream with "Task cancelled", and every later send on
@@ -202,40 +202,110 @@ void main() {
       await engine.close();
     });
 
-    test(
-      'a page without the loader is a StateError naming the module',
-      () async {
-        removeRuntime();
+    test('a page without the loader is a StateError naming the module and the '
+        'shim line', () async {
+      removeRuntime();
 
-        await expectLater(
-          Engine.create(webConfig()),
-          throwsA(
-            errorWith<StateError>('litertLmReady').having(
-              (e) => e.message,
-              'message',
-              contains(web.liteRtLmWebModuleUrl),
-            ),
-          ),
-        );
-      },
-    );
+      await expectLater(
+        Engine.create(webConfig()),
+        throwsA(
+          errorWith<web.LiteRtLmWebModuleError>('window.litertLm is not set')
+              .having(
+                (e) => e.message,
+                'message',
+                contains(web.liteRtLmWebModuleUrl),
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                contains(web.liteRtLmWebModuleShimLine),
+              ),
+        ),
+      );
+    });
 
     test(
-      'a page without window.Engine is a StateError naming the shim line',
+      'a loader that sets no window.litertLm is a StateError naming the shim '
+      'line',
       () async {
         removeRuntime();
         globalContext['litertLmReady'] = Future<void>.value().toJS;
 
         await expectLater(
           Engine.create(webConfig()),
-          throwsWith<StateError>('window.Engine = m.Engine;'),
+          throwsA(
+            errorWith<web.LiteRtLmWebModuleError>(
+              'window.litertLm is not set',
+            ).having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains(web.liteRtLmWebModuleShimLine),
+                isNot(contains('replace')),
+              ),
+            ),
+          ),
         );
       },
     );
 
+    test('a page with the old shim (window.Engine, no window.litertLm) is a '
+        'StateError naming the lines to replace', () async {
+      final engine = stubModule['Engine'];
+      removeRuntime();
+      globalContext['Engine'] = engine;
+      globalContext['litertLmReady'] = Future<JSAny?>.value(engine).toJS;
+      addTearDown(() => globalContext.delete('Engine'.toJS));
+
+      await expectLater(
+        Engine.create(webConfig()),
+        throwsA(
+          errorWith<web.LiteRtLmWebModuleError>('but window.Engine or').having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('window.Engine = m.Engine;'),
+              contains('window.EmbeddingEngine = m.EmbeddingEngine;'),
+              contains(web.liteRtLmWebModuleShimLine),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('a window.litertLm that is not an object is a StateError', () async {
+      globalContext['litertLm'] = 'module'.toJS;
+
+      await expectLater(
+        Engine.create(webConfig()),
+        throwsWith<web.LiteRtLmWebModuleError>(
+          'window.litertLm is a value of type string',
+        ),
+      );
+    });
+
+    test('a module without Engine is a StateError naming it, while the '
+        'module is otherwise whole', () async {
+      stubModule.delete('Engine'.toJS);
+
+      await expectLater(
+        Engine.create(webConfig()),
+        throwsA(
+          errorWith<web.LiteRtLmWebModuleError>(
+            'window.litertLm has no Engine (a value of type undefined)',
+          ).having(
+            (e) => e.message,
+            'message',
+            contains(web.liteRtLmWebModuleUrl),
+          ),
+        ),
+      );
+      expect(list('createSettings'), isEmpty);
+    });
+
     test('a runtime lacking a member the release calls is a StateError '
         'naming it and the pinned version', () async {
-      ((globalContext['Engine']! as JSObject)['prototype']! as JSObject).delete(
+      ((stubModule['Engine']! as JSObject)['prototype']! as JSObject).delete(
         'createConversation'.toJS,
       );
 
@@ -289,7 +359,7 @@ void main() {
       );
     });
 
-    group('the Backend ids are the page\'s own (window.LiteRtLmBackend)', () {
+    group('the Backend ids are the module\'s own (window.litertLm.Backend)', () {
       for (final (version, backends) in [
         ('0.19.0', backends019),
         ('0.20.0', backends020),
@@ -388,11 +458,15 @@ void main() {
       }
 
       for (final (what, backends, reason) in <(String, Object?, String)>[
-        ('missing', null, 'window.LiteRtLmBackend is not set'),
+        (
+          'missing',
+          null,
+          'window.litertLm has no Backend (a value of type undefined)',
+        ),
         (
           'not an object',
           'GPU',
-          'window.LiteRtLmBackend is a value of type string',
+          'window.litertLm.Backend is a value of type string',
         ),
         ('without CPU', {'GPU': 3, 'GPU_ARTISAN': 1}, 'it has no CPU'),
         (
@@ -401,20 +475,20 @@ void main() {
           'its GPU is 3.5, not an integer',
         ),
       ]) {
-        test('a page whose enum is $what is a StateError naming the shim '
-            'line, before Engine.create', () async {
+        test('a module whose enum is $what is a StateError naming the '
+            'runtime to import, before Engine.create', () async {
           if (backends == null) {
-            globalContext.delete('LiteRtLmBackend'.toJS);
+            stubModule.delete('Backend'.toJS);
           } else {
-            globalContext['LiteRtLmBackend'] = backends.jsify();
+            stubModule['Backend'] = backends.jsify();
           }
           await expectLater(
             Engine.create(webConfig()),
             throwsA(
-              errorWith<StateError>(reason).having(
+              errorWith<web.LiteRtLmWebBackendEnumError>(reason).having(
                 (e) => e.message,
                 'message',
-                contains('window.LiteRtLmBackend = m.Backend;'),
+                contains(web.liteRtLmWebModuleUrl),
               ),
             ),
           );

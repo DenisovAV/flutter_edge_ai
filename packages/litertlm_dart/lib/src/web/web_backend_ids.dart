@@ -8,29 +8,27 @@
 //   0.20.0: UNSPECIFIED 0, GPU_ARTISAN 1, CPU 2, GPU 3,
 //           GOOGLE_TENSOR_ARTISAN 4, NPU 5
 //
-// The page hands the enum over with one line of its module script
-// ([liteRtLmWebBackendShimLine]); a page without it, or whose value is not
-// that enum, is refused by name, never driven with guessed ids. Pure Dart,
-// so the rules are tested on the VM; litert_lm_js.dart reads the global.
+// The page hands over the whole module (`window.litertLm`,
+// web_module_shim.dart), and the enum is read from it as
+// `window.litertLm.Backend`; a module without it, or whose value is not that
+// enum, is refused by name, never driven with guessed ids. Pure Dart, so the
+// rules are tested on the VM; litert_lm_js.dart reads the global.
 library;
 
 import 'web_embedder.dart' show LiteRtLmWebBackend;
-
-/// The `index.html` line that hands this release `@litert-lm/core`'s
-/// `Backend` enum, word for word.
-const liteRtLmWebBackendShimLine = 'window.LiteRtLmBackend = m.Backend;';
+import 'web_module_shim.dart';
+import 'web_runtime_version.dart';
 
 /// The names of the `Backend` entries this release sends or reads back.
 const _cpu = 'CPU';
 const _gpu = 'GPU';
 const _gpuArtisan = 'GPU_ARTISAN';
 
-/// Why the page's `window.LiteRtLmBackend` cannot be used: missing, not an
-/// object, or without an integer `CPU`, `GPU` or `GPU_ARTISAN` (or with two
-/// of them equal). Its message names the line the page's module script
-/// needs. A [StateError], as every other refusal of a page that does not
-/// load the runtime this release calls.
-final class LiteRtLmWebBackendEnumError extends StateError {
+/// Why the page module's `Backend` (`window.litertLm.Backend`) cannot be
+/// used: missing, not an object, or without an integer `CPU`, `GPU` or
+/// `GPU_ARTISAN` (or with two of them equal). Its message names the runtime
+/// to import.
+final class LiteRtLmWebBackendEnumError extends LiteRtLmWebModuleError {
   LiteRtLmWebBackendEnumError(super.message);
 }
 
@@ -41,25 +39,22 @@ final class LiteRtLmWebBackendIds {
       gpu = entries[_gpu]!,
       gpuArtisan = entries[_gpuArtisan]!;
 
-  /// Reads [backendEnum]: the entries of `window.LiteRtLmBackend` (name →
+  /// Reads [backendEnum]: the entries of `window.litertLm.Backend` (name →
   /// value, a JS number as a Dart [num], anything else as the `typeof` of the
-  /// value, a [String]), a [String] naming what the global is when it is not
-  /// an object, or null when it is not set. Throws
+  /// value, a [String]), a [String] naming what the member is when it is not
+  /// an object, or null when the module has none. Throws
   /// [LiteRtLmWebBackendEnumError].
   factory LiteRtLmWebBackendIds.parse(Object? backendEnum) {
     if (backendEnum == null) {
       throw LiteRtLmWebBackendEnumError(
-        'window.LiteRtLmBackend is not set: the page\'s module script must '
-        'hand this release @litert-lm/core\'s Backend enum. Add '
-        '$liteRtLmWebBackendShimLine next to window.Engine = m.Engine; '
-        '(litertlm_dart\'s README, "On the web").',
+        liteRtLmWebModuleMemberMessage('Backend', 'a value of type undefined'),
       );
     }
     if (backendEnum is! Map<String, Object?>) {
       throw LiteRtLmWebBackendEnumError(
-        'window.LiteRtLmBackend is $backendEnum, not @litert-lm/core\'s '
-        'Backend enum: set it with $liteRtLmWebBackendShimLine in the page\'s '
-        'module script (litertlm_dart\'s README, "On the web").',
+        'window.litertLm.Backend is $backendEnum, not @litert-lm/core\'s '
+        'Backend enum: the page\'s @litert-lm/core is not one this release '
+        'calls. Import $liteRtLmWebModuleUrl in its module script.',
       );
     }
     final entries = <String, int>{
@@ -85,9 +80,9 @@ final class LiteRtLmWebBackendIds {
     }
     if (problems.isNotEmpty) {
       throw LiteRtLmWebBackendEnumError(
-        'window.LiteRtLmBackend is not @litert-lm/core\'s Backend enum: '
-        '${problems.join('; ')}. Set it with $liteRtLmWebBackendShimLine in '
-        'the page\'s module script (litertlm_dart\'s README, "On the web").',
+        'window.litertLm.Backend is not @litert-lm/core\'s Backend enum: '
+        '${problems.join('; ')}. The page\'s @litert-lm/core is not one this '
+        'release calls: import $liteRtLmWebModuleUrl in its module script.',
       );
     }
     return LiteRtLmWebBackendIds._(Map.unmodifiable(entries));

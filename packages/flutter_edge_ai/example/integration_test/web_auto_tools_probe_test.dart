@@ -46,8 +46,9 @@ const _capture = r'''
 window.__autoToolsInstall = async () => {
   await window.litertLmReady;
   const p = window.__autoTools = {conversations: [], options: []};
-  const create = window.Engine.create;
-  window.Engine.create = async (...args) => {
+  const Engine = window.litertLm.Engine;
+  const create = Engine.create;
+  Engine.create = async (...args) => {
     const engine = await create(...args);
     const createConversation = engine.createConversation.bind(engine);
     engine.createConversation = async (options) => {

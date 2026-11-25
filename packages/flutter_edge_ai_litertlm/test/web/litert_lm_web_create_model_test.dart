@@ -28,7 +28,7 @@ class _Resolver implements WebModelSourceResolver {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// A `window.Engine` that records its settings and resolves the encoders it
+/// A page module (`window.litertLm`) whose `Engine` records its settings and resolves the encoders it
 /// was asked for, with conversations that have every member called.
 List<Map<String, Object?>> _installEngine() {
   final settings = <Map<String, Object?>>[];
@@ -69,13 +69,10 @@ List<Map<String, Object?>> _installEngine() {
           ).toJS;
         }).toJS;
   globalContext['litertLmReady'] = Future<void>.value().toJS;
-  // The page's Backend enum, as @litert-lm/core 0.19.0 numbers it.
-  globalContext['LiteRtLmBackend'] = {
-    'GPU_ARTISAN': 2,
-    'CPU': 3,
-    'GPU': 4,
-  }.jsify();
-  globalContext['Engine'] = constructor;
+  // The module's Backend enum, as @litert-lm/core 0.19.0 numbers it.
+  globalContext['litertLm'] = JSObject()
+    ..['Engine'] = constructor
+    ..['Backend'] = {'GPU_ARTISAN': 2, 'CPU': 3, 'GPU': 4}.jsify();
   return settings;
 }
 

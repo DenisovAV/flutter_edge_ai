@@ -33,7 +33,7 @@ apps change nothing.
   is not recognised. Change the version in the handshake's import:
 
   ```
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
   ```
 - **Gemma 4 E2B on the web is `LiteRtLmModels.gemma4E2bIt.webGpu`.** The
   catalog no longer offers `gemma4E2bIt.web` or `gemma4E4bIt.web` (the

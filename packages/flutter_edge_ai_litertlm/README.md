@@ -708,7 +708,7 @@ page.
   do, so give an image store an id that names the budget: the text profile id
   plus `-vis140` (or `-vis70`).
 - **Next to an LLM on the web** the vision encoder loads beside Gemma 4 E2B's
-  GPU export on `@litert-lm/core` 0.19.0: see
+  GPU export on `@litert-lm/core` 0.20.0: see
   [Web setup](#web-setup-early-preview).
 - **Cost** (CPU, measured): a 388 MB bundle; at every load the engine writes a
   218 MB vision weight cache next to the 71 MB text cache in the app's cache
@@ -1022,7 +1022,7 @@ Native embeddings need no web files; the platform setup under
 
 ## Web setup (early preview)
 
-`.litertlm` web inference runs via `@litert-lm/core` 0.19.0 on WebGPU, through
+`.litertlm` web inference runs via `@litert-lm/core` 0.20.0 on WebGPU, through
 [litertlm_dart](https://pub.dev/packages/litertlm_dart)'s web arm (its README,
 "On the web", lists what differs). For Gemma 4 E2B install its GPU export,
 `LiteRtLmModels.gemma4E2bIt.webGpu` (`gemma-4-E2B-it-gpu.litertlm`, 2.34 GB),
@@ -1045,7 +1045,7 @@ shorter one can follow; once the history alone fills the window, every turn
 ends that way: open a new session, or raise `maxTokens`.
 `openSession(maxOutputTokens:)` is honoured here as it is on native, and
 `maxTokens` reaches the runtime (core's default context is 1024 tokens).
-The page must import `@litert-lm/core` 0.19.0: 0.18.0 refuses the GPU export
+The page must import `@litert-lm/core` 0.20.0: 0.18.0 refuses the GPU export
 ("Unsupported backend: 2"). Add the handshake below to your app's
 `web/index.html` `<head>` — the ESM doesn't
 assign window globals and module scripts are deferred, so Dart awaits
@@ -1054,7 +1054,7 @@ assign window globals and module scripts are deferred, so Dart awaits
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
   window.litertLm = m;
   return m;
 })();
@@ -1100,7 +1100,7 @@ Native platforms need no web setup.
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
-| Web      | ⚠️ early preview via `@litert-lm/core` 0.19.0 (CDN; LLM text, images and audio with Gemma 4 E2B's GPU export; EmbeddingGemma 2 text, images and audio on WebGPU) |
+| Web      | ⚠️ early preview via `@litert-lm/core` 0.20.0 (CDN; LLM text, images and audio with Gemma 4 E2B's GPU export; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
 The native library (`native-v0.19.1-c`, LiteRT-LM v0.19.1) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still

@@ -69,10 +69,10 @@ List<Map<String, Object?>> _installEngine() {
           ).toJS;
         }).toJS;
   globalContext['litertLmReady'] = Future<void>.value().toJS;
-  // The module's Backend enum, as @litert-lm/core 0.19.0 numbers it.
+  // The module's Backend enum, as @litert-lm/core 0.20.0 numbers it.
   globalContext['litertLm'] = JSObject()
     ..['Engine'] = constructor
-    ..['Backend'] = {'GPU_ARTISAN': 2, 'CPU': 3, 'GPU': 4}.jsify();
+    ..['Backend'] = {'GPU_ARTISAN': 1, 'CPU': 2, 'GPU': 3}.jsify();
   return settings;
 }
 
@@ -111,7 +111,7 @@ void main() {
       ),
     );
 
-    expect(settings['visionBackend'], 4);
+    expect(settings['visionBackend'], 3);
     expect(settings.containsKey('audioBackend'), isFalse);
     expect(_executor(settings)['maxNumImages'], 3);
     expect(_executor(settings)['maxNumTokens'], 2048);
@@ -128,7 +128,7 @@ void main() {
       ),
     );
 
-    expect(settings['audioBackend'], 3);
+    expect(settings['audioBackend'], 2);
     expect(settings.containsKey('visionBackend'), isFalse);
     expect(_executor(settings).containsKey('maxNumImages'), isFalse);
     expect(_executor(settings)['maxNumTokens'], 4096);

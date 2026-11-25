@@ -318,7 +318,7 @@ on Web, so a browser without WebGPU fails the embedder's load with an
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
   window.litertLm = m;
   return m;
 })();
@@ -349,7 +349,7 @@ GPU export, `LiteRtLmModels.gemma4E2bIt.webGpu`
 (`gemma-4-E2B-it-gpu.litertlm`, 2.34 GB, so install it with
 `WebStorageMode.streaming`), not `gemma-4-E2B-it.litertlm`. The older
 `gemma-4-E2B-it-web.litertlm` and the E4B web build are withheld: on
-`@litert-lm/core` 0.19.0 the E2B one answers a tool result with an empty
+the 0.19.0 runtime the E2B one answers a tool result with an empty
 reply. With `supportImage`/`supportAudio` it takes images and audio as
 natively; without them an image or audio message throws `UnsupportedError`.
 LoRA is not supported on any `.litertlm` path, native

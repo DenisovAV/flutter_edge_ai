@@ -90,8 +90,8 @@ void main() {
   );
 
   group('the resolved settings', () {
-    test('backend 4 (GPU) is Backend.gpu', () async {
-      setOnPage('resolvedBackend', 4);
+    test('the module\'s GPU is Backend.gpu', () async {
+      setOnPage('resolvedBackend', backendId('GPU'));
 
       final engine = await Engine.create(webConfig());
 

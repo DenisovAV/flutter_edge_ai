@@ -17,8 +17,8 @@
 //   the result of `sendMessageAsync`), the message kept at the end of the
 //   history with no reply.
 // The page sets no other global of the runtime: the module's `Backend` enum
-// (`window.litertLm.Backend`) is 0.19.0's unless a test installs another
-// layout ([backends019], [backends020]).
+// (`window.litertLm.Backend`) is the pinned release's ([pinnedBackends])
+// unless a test installs another layout ([backends019], [backends020]).
 library;
 
 import 'dart:async';
@@ -35,7 +35,7 @@ const _stub = r'''
     createSettings: [], conversationOptions: [], sent: [],
     cancels: 0, conversationDeletes: 0, engineDeletes: 0, streams: [],
     tokenCounts: 0, fences: [], histories: [], conversations: [],
-    resolvedBackend: 4, maxNumTokens: 4096,
+    resolvedBackend: 3, maxNumTokens: 4096,
     createError: null, conversationError: null, conversationErrorAfter: null,
     historyError: null, holdFence: false, holdHistory: false,
     stuckOnCancel: false, deleteError: null, missingMember: null,
@@ -293,9 +293,16 @@ const backends020 = {
   'NPU': 5,
 };
 
+/// `Backend` of the release litertlm_dart pins
+/// (`liteRtLmWebRuntimeVersion`), the stub's unless a test installs another.
+const pinnedBackends = backends020;
+
+/// The pinned release's id for [name] (`CPU`, `GPU`, `GPU_ARTISAN`, …).
+int backendId(String name) => pinnedBackends[name]!;
+
 /// Installs the stub with [backends] as the module's `Backend` (none when
 /// null); the engine resolves to its `GPU`.
-void installRuntime({Map<String, int>? backends = backends019}) {
+void installRuntime({Map<String, int>? backends = pinnedBackends}) {
   globalContext.callMethod('eval'.toJS, _stub.toJS);
   if (backends != null) {
     stubModule['Backend'] = backends.jsify();

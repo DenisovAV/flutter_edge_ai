@@ -85,10 +85,10 @@ void main() {
       }).toJS;
     });
     globalContext['litertLmReady'] = Future<void>.value().toJS;
-    // The module's Backend enum, as @litert-lm/core 0.19.0 numbers it.
+    // The module's Backend enum, as @litert-lm/core 0.20.0 numbers it.
     globalContext['litertLm'] = JSObject()
       ..['Engine'] = _engineConstructor(engine)
-      ..['Backend'] = {'GPU_ARTISAN': 2, 'CPU': 3, 'GPU': 4}.jsify();
+      ..['Backend'] = {'GPU_ARTISAN': 1, 'CPU': 2, 'GPU': 3}.jsify();
 
     final model = LiteRtLmWebInferenceModel(
       createEngine: () => createLiteRtLmWebEngine(_Resolver(), maxTokens: 1024),
@@ -140,10 +140,10 @@ void main() {
           .toJS,
     );
     globalContext['litertLmReady'] = Future<void>.value().toJS;
-    // The module's Backend enum, as @litert-lm/core 0.19.0 numbers it.
+    // The module's Backend enum, as @litert-lm/core 0.20.0 numbers it.
     globalContext['litertLm'] = JSObject()
       ..['Engine'] = _engineConstructor(engine)
-      ..['Backend'] = {'GPU_ARTISAN': 2, 'CPU': 3, 'GPU': 4}.jsify();
+      ..['Backend'] = {'GPU_ARTISAN': 1, 'CPU': 2, 'GPU': 3}.jsify();
 
     final model = LiteRtLmWebInferenceModel(
       createEngine: () => createLiteRtLmWebEngine(_Resolver(), maxTokens: 1024),

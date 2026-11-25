@@ -61,7 +61,7 @@ List<Object?> _list(String key) =>
 const _backends019 = {'GPU_ARTISAN': 2, 'CPU': 3, 'GPU': 4, 'NPU': 6};
 const _backends020 = {'GPU_ARTISAN': 1, 'CPU': 2, 'GPU': 3, 'NPU': 5};
 
-void _install(Uint8List header, {Object? backends = _backends019}) {
+void _install(Uint8List header, {Object? backends = _backends020}) {
   globalContext.callMethod('eval'.toJS, _stub.toJS);
   if (backends != null) _module['Backend'] = backends.jsify();
   globalContext['__header'] = header.toJS;
@@ -180,9 +180,9 @@ void main() {
       _config(vision: const Backend.gpu(), audio: const Backend.gpu()),
     );
     final settings = (_list('settings').single! as Map).cast<String, Object?>();
-    expect(settings['backend'], 4);
-    expect(settings['visionBackend'], 4);
-    expect(settings['audioBackend'], 4);
+    expect(settings['backend'], _backends020['GPU']);
+    expect(settings['visionBackend'], _backends020['GPU']);
+    expect(settings['audioBackend'], _backends020['GPU']);
     expect(settings['maxInputLength'], 1024);
     expect(engine.info.maxInputTokens, 1024);
     expect(engine.info.dimension, 4);

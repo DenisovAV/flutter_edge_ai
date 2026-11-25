@@ -10,10 +10,10 @@
 //   have no GPU): an adapter, no adapter, no `navigator.gpu` — asked with the
 //   runtime's own `powerPreference: 'high-performance'` — and a page without
 //   WebGPU refused before `EmbeddingEngine.create` is called;
-// - the settings object `EmbeddingEngine.create` receives: `backend: 4` (GPU),
+// - the settings object `EmbeddingEngine.create` receives: `backend: 3` (GPU),
 //   `maxInputLength: 1024`, and NO `visionBackend` key unless images are
 //   declared (the runtime tests `!== undefined`; a null would ask for a tower
-//   without a backend), then `visionBackend: 4`;
+//   without a backend), then `visionBackend: 3`;
 // - each request: a text part is the prefixed string, an image part is
 //   `{type: 'image', data: ArrayBuffer}` of exactly the file's bytes, options
 //   `{normalize: true, insertSpecialTokens: true, inputOverflowStrategy: 1}`;
@@ -21,7 +21,7 @@
 // - audio (1.13.2): describe() reads the bundle's container header through
 //   the page's own `fetch()` (`readPrefix`, over a `blob:` URL as the Cache
 //   API and OPFS copies are) and refuses a bundle without an audio encoder
-//   before anything is created; `audioBackend: 4` only when audio is
+//   before anything is created; `audioBackend: 3` only when audio is
 //   declared; an audio part is `{type: 'audio', data: ArrayBuffer}` of exactly
 //   the clip, and a combined input one JS array of its parts in order.
 //
@@ -99,8 +99,8 @@ void _installEngine() => _js('''
   // The members the release calls, which the runtime check looks for.
   EmbeddingEngine.prototype.computeEmbedding = function () {};
   EmbeddingEngine.prototype.delete = function () {};
-  // The module's Backend enum, as @litert-lm/core 0.19.0 numbers it.
-  window.litertLm = {EmbeddingEngine, Backend: {GPU_ARTISAN: 2, CPU: 3, GPU: 4}};
+  // The module's Backend enum, as @litert-lm/core 0.20.0 numbers it.
+  window.litertLm = {EmbeddingEngine, Backend: {GPU_ARTISAN: 1, CPU: 2, GPU: 3}};
   EmbeddingEngine.create = async function (settings) {
     const s = window.__eg2;
     s.settings.push(settings);
@@ -275,7 +275,7 @@ void main() {
     test('a module without EmbeddingEngine (the LLM\'s Engine only): '
         'refused naming it', () async {
       _js('''
-        window.litertLm = {Engine: function () {}, Backend: {GPU_ARTISAN: 2, CPU: 3, GPU: 4}};
+        window.litertLm = {Engine: function () {}, Backend: {GPU_ARTISAN: 1, CPU: 2, GPU: 3}};
         window.litertLmReady = Promise.resolve(window.litertLm);
       ''');
       await expectLater(
@@ -303,7 +303,7 @@ void main() {
           EmbeddingEngine.prototype.computeEmbedding = function () {};
           EmbeddingEngine.prototype.delete = function () {};
           window.litertLm = {EmbeddingEngine,
-                             Backend: {GPU_ARTISAN: 2, CPU: 3, GPU: 4}};
+                             Backend: {GPU_ARTISAN: 1, CPU: 2, GPU: 3}};
           resolve(window.litertLm);
         }, 50));
       ''');
@@ -318,7 +318,7 @@ void main() {
         EmbeddingEngine.create = async function () {};
         EmbeddingEngine.prototype.delete = function () {};
         window.litertLm = {EmbeddingEngine,
-                           Backend: {GPU_ARTISAN: 2, CPU: 3, GPU: 4}};
+                           Backend: {GPU_ARTISAN: 1, CPU: 2, GPU: 3}};
         window.litertLmReady = Promise.resolve(window.litertLm);
       ''');
       expect(
@@ -428,26 +428,26 @@ void main() {
     expect(_count('settings'), 0, reason: 'create was called');
   });
 
-  test('a 0.20.0 page: create gets its GPU id (3)', () async {
+  test('a 0.19.0 page: create gets its GPU id (4)', () async {
     _installEngine();
     _stubGpu();
     _js(
       'window.litertLm.Backend = '
-      '{UNSPECIFIED: 0, GPU_ARTISAN: 1, CPU: 2, GPU: 3, '
-      'GOOGLE_TENSOR_ARTISAN: 4, NPU: 5};',
+      '{UNSPECIFIED: 0, CPU_ARTISAN: 1, GPU_ARTISAN: 2, CPU: 3, GPU: 4, '
+      'GOOGLE_TENSOR_ARTISAN: 5, NPU: 6};',
     );
     final model = await _start();
     try {
       final settings =
           (globalContext['__eg2']! as JSObject)['settings']!.dartify()!
               as List<Object?>;
-      expect((settings.single! as Map)['backend'], 3);
+      expect((settings.single! as Map)['backend'], 4);
     } finally {
       await model.close();
     }
   });
 
-  test('text only: WebGPU asked once, then create gets GPU (4), '
+  test('text only: WebGPU asked once, then create gets GPU (3), '
       'maxInputLength 1024 and no vision keys; the probe and each text are '
       'strings; the options are normalize, special tokens and TRUNCATE '
       '(1)', () async {
@@ -465,7 +465,7 @@ void main() {
         (settings['model']! as JSString).toDart,
         'blob:https://example.com/eg2',
       );
-      expect((settings['backend']! as JSNumber).toDartInt, 4);
+      expect((settings['backend']! as JSNumber).toDartInt, 3);
       expect((settings['maxInputLength']! as JSNumber).toDartInt, 1024);
       for (final key in [
         'visionBackend',
@@ -505,8 +505,8 @@ void main() {
     final model = await _start(images: true);
     try {
       final settings = _recordedObject('settings', 0);
-      expect((settings['backend']! as JSNumber).toDartInt, 4);
-      expect((settings['visionBackend']! as JSNumber).toDartInt, 4);
+      expect((settings['backend']! as JSNumber).toDartInt, 3);
+      expect((settings['visionBackend']! as JSNumber).toDartInt, 3);
       expect((settings['visionTokensPerImage']! as JSNumber).toDartInt, 140);
       expect(model.modalities, {
         EmbeddingModality.text,
@@ -635,9 +635,9 @@ void main() {
     );
     try {
       final settings = _recordedObject('settings', 0);
-      expect((settings['backend']! as JSNumber).toDartInt, 4);
-      expect((settings['audioBackend']! as JSNumber).toDartInt, 4);
-      expect((settings['visionBackend']! as JSNumber).toDartInt, 4);
+      expect((settings['backend']! as JSNumber).toDartInt, 3);
+      expect((settings['audioBackend']! as JSNumber).toDartInt, 3);
+      expect((settings['visionBackend']! as JSNumber).toDartInt, 3);
       expect(model.modalities, EmbeddingModality.values.toSet());
 
       // A RIFF/WAVE header: core sniffs WAV before anything is sent.

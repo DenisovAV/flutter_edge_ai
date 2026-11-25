@@ -48,7 +48,7 @@ This release runs:
 | | |
 |---|---|
 | Native | LiteRT-LM 0.19.1, our build `native-v0.19.1-c` |
-| Web | `@litert-lm/core` 0.19.0 |
+| Web | `@litert-lm/core` 0.20.0 |
 
 `dart pub add litertlm_dart` writes `^0.19.1+4`, which for a 0.x
 version also takes later 0.19.x releases; those follow newer LiteRT-LM
@@ -732,13 +732,13 @@ fix (`native/litert_lm/patch_c_api.sh`).
 ## On the web
 
 The same `Engine`, `Conversation` and `EmbeddingEngine` run in a browser over
-`@litert-lm/core` 0.19.0, which the page loads itself. Add to
+`@litert-lm/core` 0.20.0, which the page loads itself. Add to
 `web/index.html`:
 
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
   window.litertLm = m;
   return m;
 })();
@@ -772,8 +772,9 @@ another URL) puts a second runtime in the page: this release reads only
 `window.litertLm`, but two runtimes sharing the GPU and the page's memory is
 not tested.
 
-What differs on the web, measured on `@litert-lm/core` 0.19.0 with Gemma 4
-E2B's GPU export in Chrome 157 (2026-11-23):
+What differs on the web, measured with Gemma 4 E2B's GPU export on
+`@litert-lm/core` 0.20.0 in Chrome 158 (2026-11-25), and on 0.19.0 in
+Chrome 157 before it (2026-11-23):
 
 - **Images and audio** run with a `visionBackend` (GPU or CPU) and an
   `audioBackend` (CPU or GPU). A part goes as its bytes (`Content.imageBytes`,
@@ -781,7 +782,8 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   it. `maxNumImages` counts the images of a whole conversation, not of a
   message as natively: the model reserves their space up front, unset is 1
   with a vision encoder, and an image past it is refused before it is sent
-  (the runtime fails it: "Image index 1 must be less than 1.").
+  (0.19.0 failed it: "Image index 1 must be less than 1."; 0.20.0 answers
+  it).
 - **A stop mid-reply is a rebuild.** After `cancel()` (or a cancelled
   subscription) stops a reply before its end, the runtime refuses every later
   send on that conversation ("Task cancelled"), so the next message goes to a
@@ -797,7 +799,7 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   `TurnFailedException` that says to open a new one.
 - **A message that does not fit.** When the runtime refuses a message for
   its size ("Input token ids are too long." or "Max number of tokens
-  reached, the context window is full.", 0.19.0), the turn fails with
+  reached, the context window is full.", 0.19.0 and 0.20.0), the turn fails with
   `ContextFullException`, as natively, and the message is left out: the next
   message goes to a conversation rebuilt without it, so a shorter one is
   answered. When the history alone fills the window (the conversation held
@@ -815,7 +817,7 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   room within that bound plus one token as none. The bound is low by the
   bytes a token spans, so a conversation one or two tokens from that point
   may be told to send a shorter message once more before it ends. A reply that fills the window ends normally (0.19.0
-  reports nothing), so the turn after it is the one refused. A stopped generation that
+  and 0.20.0 report nothing), so the turn after it is the one refused. A stopped generation that
   does not end within 30 s, after a stop or a close, makes the page unusable
   for LiteRT-LM (the module may still be suspended in it): the turn,
   `close()` and every later call fail and say so.
@@ -828,8 +830,8 @@ E2B's GPU export in Chrome 157 (2026-11-23):
 - **The context window** (`maxNumTokens`) is passed through as given (unset:
   the bundle's, 8192 for the GPU export); the 1024-token floor of the native
   CPU and GPU executors does not apply, nor does the native float32 rule for
-  Gemma 4 on the GPU above 2,048 tokens: the web runtime takes no activation
-  type and uses its own.
+  Gemma 4 on the GPU above 2,048 tokens: the web takes no activation type
+  (below), and the runtime uses the bundle's (FP16 for the GPU export).
 - **Refused:** the NPU, `cacheDir`, `activationDataType`, the tokenizer,
   option scoring, `benchmark()`, `Conversation.getBenchmarkInfo()`,
   `readBundleInfo`, `readBundleGenericData`. `Backend.cpu` (WebAssembly), the

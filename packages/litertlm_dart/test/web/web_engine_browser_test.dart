@@ -86,8 +86,8 @@ void main() {
 
     test('a vision encoder goes to the runtime with one image reserved per '
         'conversation by default, which a GPU_ARTISAN model needs', () async {
-      setOnPage('resolvedVisionBackend', 4);
-      setOnPage('resolvedAudioBackend', 3);
+      setOnPage('resolvedVisionBackend', backendId('GPU'));
+      setOnPage('resolvedAudioBackend', backendId('CPU'));
       final engine = await Engine.create(
         EngineConfig(
           modelPath: 'blob:x',
@@ -98,8 +98,8 @@ void main() {
       );
 
       final settings = asMap(list('createSettings').single);
-      expect(settings['visionBackend'], 4);
-      expect(settings['audioBackend'], 3);
+      expect(settings['visionBackend'], backendId('GPU'));
+      expect(settings['audioBackend'], backendId('CPU'));
       expect(asMap(settings['mainExecutorSettings'])['maxNumImages'], 1);
       await engine.close();
     });
@@ -107,7 +107,7 @@ void main() {
     test(
       'maxNumImages, when set, is the images a conversation reserves',
       () async {
-        setOnPage('resolvedVisionBackend', 4);
+        setOnPage('resolvedVisionBackend', backendId('GPU'));
         final engine = await Engine.create(
           EngineConfig(
             modelPath: 'blob:x',
@@ -187,8 +187,8 @@ void main() {
     });
 
     test('the encoders the runtime resolved are read back', () async {
-      setOnPage('resolvedVisionBackend', 4);
-      setOnPage('resolvedAudioBackend', 3);
+      setOnPage('resolvedVisionBackend', backendId('GPU'));
+      setOnPage('resolvedAudioBackend', backendId('CPU'));
 
       final engine = await Engine.create(
         EngineConfig(
@@ -326,12 +326,15 @@ void main() {
 
     test('hands Engine.create the model, the backend, the context and the '
         'thread count; reads back what the runtime resolved', () async {
-      setOnPage('resolvedBackend', 2); // GPU_ARTISAN: a web export on the GPU
+      setOnPage(
+        'resolvedBackend',
+        backendId('GPU_ARTISAN'),
+      ); // a web export on the GPU
       setOnPage('maxNumTokens', 2048);
       final engine = await Engine.create(webConfig(tokens: 2048));
       expect(asMap(list('createSettings').single), {
         'model': 'blob:https://example.com/model',
-        'backend': 4,
+        'backend': backendId('GPU'),
         'mainExecutorSettings': {'maxNumTokens': 2048},
       });
       expect(engine.backend, const Backend.gpu());
@@ -340,12 +343,12 @@ void main() {
       await engine.close();
 
       installRuntime();
-      setOnPage('resolvedBackend', 3);
+      setOnPage('resolvedBackend', backendId('CPU'));
       final cpu = await Engine.create(
         webConfig(backend: const Backend.cpu(threadCount: 2)),
       );
       final cpuSettings = asMap(list('createSettings').single);
-      expect(cpuSettings['backend'], 3);
+      expect(cpuSettings['backend'], backendId('CPU'));
       expect(cpuSettings['mainExecutorSettings'], {
         'backendConfig': {'number_of_threads': 2},
       });

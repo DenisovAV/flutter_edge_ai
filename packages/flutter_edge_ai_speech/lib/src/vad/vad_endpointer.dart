@@ -17,8 +17,8 @@
 // `maxUtterance`. A pause shorter than `minSilence` inside speech not yet
 // reported keeps it, and the pause counts towards `minSpeech`; such speech is
 // dropped once the silence has lasted `minSilence` on any frame, so a start
-// is reported less than `minSpeech + minSilence` plus one frame after the
-// onset.
+// is reported less than `minSpeech + minSilence` plus two frames after the
+// onset (both are counted in whole frames).
 library;
 
 import 'vad_event.dart';

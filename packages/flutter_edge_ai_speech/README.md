@@ -168,8 +168,8 @@ Positions are sample indices from the first sample of the stream (16 kHz),
 with `start`/`end` getters as `Duration`s. A start is reported once the
 speech has lasted `VadOptions.minSpeech` (250 ms), timed back to where it
 began. A pause shorter than `minSilence` before that counts towards it, so
-the start can come up to `minSpeech + minSilence` plus one 32 ms frame
-(882 ms by default) after the voice began: to hand the whole utterance to
+the start can come up to (less than) `minSpeech + minSilence` plus two
+32 ms frames (914 ms by default) after the voice began: to hand the whole utterance to
 speech-to-text, keep that much audio, plus `speechPad` and one input chunk.
 An utterance ends after `minSilence` (600 ms) of silence, at `maxUtterance`
 (30 s), or when the input ends. The thresholds, the hysteresis

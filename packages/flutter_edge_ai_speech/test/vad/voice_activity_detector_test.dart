@@ -195,6 +195,26 @@ void main() {
     expect(events.first, const VadSpeechStart(40 * 512 - 480));
   });
 
+  test('an input error after chunks already delivered comes after their '
+      'events', () async {
+    final vad = await create('/fake/stateful.tflite');
+    addTearDown(vad.close);
+    final frames = [for (var i = 0; i < 60; i++) Uint8List(1024)];
+    final events = <VadEvent>[];
+    Object? error;
+    final ended = Completer<void>();
+    vad
+        .detect(_EagerStream(frames, error: const FormatException('mic')))
+        .listen(
+          events.add,
+          onError: (Object e) => error = e,
+          onDone: ended.complete,
+        );
+    await ended.future;
+    expect(events, [const VadSpeechStart(40 * 512 - 480)]);
+    expect(error, isA<FormatException>());
+  });
+
   test('a worker that dies while the input is idle ends the stream with '
       'StateError', () async {
     final vad = await create('/fake/dies-idle.tflite');
@@ -447,8 +467,11 @@ void main() {
 /// A stream that delivers every chunk from inside [listen], before it
 /// returns the subscription, then ends: some platform streams do.
 final class _EagerStream extends Stream<Uint8List> {
-  _EagerStream(this._chunks);
+  _EagerStream(this._chunks, {this.error});
   final List<Uint8List> _chunks;
+
+  /// Delivered after the chunks, instead of done.
+  final Object? error;
 
   @override
   StreamSubscription<Uint8List> listen(
@@ -458,6 +481,14 @@ final class _EagerStream extends Stream<Uint8List> {
     bool? cancelOnError,
   }) {
     _chunks.forEach(onData ?? (_) {});
+    final error = this.error;
+    if (error != null) {
+      (onError as void Function(Object, StackTrace)?)?.call(
+        error,
+        StackTrace.current,
+      );
+      return const Stream<Uint8List>.empty().listen(null);
+    }
     return const Stream<Uint8List>.empty().listen(null, onDone: onDone);
   }
 }

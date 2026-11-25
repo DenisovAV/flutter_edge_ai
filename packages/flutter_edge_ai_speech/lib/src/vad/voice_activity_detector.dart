@@ -165,7 +165,11 @@ final class VoiceActivityDetector {
                     if (!done) input?.resume();
                   }, onError: finish);
             },
-            onError: finish,
+            // After the chunks received before it, so an error never
+            // overtakes audio already delivered.
+            onError: (Object e, StackTrace st) {
+              chain = chain.then((_) => finish(e, st));
+            },
             onDone: () {
               chain = chain.then((_) async {
                 if (done) return;

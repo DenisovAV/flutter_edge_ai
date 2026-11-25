@@ -10,7 +10,8 @@
 // [LiteRtStreamingSpeechRecognizer].
 //
 // The streaming contracts are @experimental in core (members may be added in
-// a minor release): this package implements them and pins core accordingly.
+// a minor release). This package implements them, so its core constraint
+// must stay below the next core minor whenever it is released.
 // ignore_for_file: experimental_member_use
 
 import 'dart:async';
@@ -91,10 +92,6 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
 
   final SttWorker _worker;
   final VoidCallback onClose;
-
-  /// Completes, with the reason, when the recognizer is closed or its worker
-  /// dies; a running stream ends on it.
-  final _closedSignal = Completer<String>();
 
   /// What every [close] after the first returns: completes, normally, once
   /// the one shared teardown is done — so a second caller waits for it
@@ -210,6 +207,10 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
         utf8.encode(tokenizer.decode(ids));
   }
 
+  /// Ends a running stream when the recognizer closes or its worker dies;
+  /// only [LiteRtStreamingSpeechRecognizer] runs streams.
+  void _endStreams(String reason) {}
+
   void _assertNotClosed() {
     if (_isClosed) {
       final death = _deathReason;
@@ -255,9 +256,7 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
 
   Future<void> _close() async {
     _isClosed = true;
-    if (!_closedSignal.isCompleted) {
-      _closedSignal.complete('the recognizer was closed');
-    }
+    _endStreams('the recognizer was closed');
     try {
       await _worker.close();
     } finally {
@@ -281,7 +280,7 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
   void _onWorkerDied(String reason) {
     _deathReason = reason;
     _isClosed = true;
-    if (!_closedSignal.isCompleted) _closedSignal.complete(reason);
+    _endStreams(reason);
     try {
       _notifyClosed();
     } catch (e, st) {
@@ -317,6 +316,10 @@ final class LiteRtStreamingSpeechRecognizer extends LiteRtSpeechRecognizer
 
   /// The running stream, or null.
   _SttStream? _active;
+
+  @override
+  void _endStreams(String reason) =>
+      _active?._fail(StateError('transcribeStream ended: $reason'));
 
   @override
   StreamingSttInfo get streaming => StreamingSttInfo(
@@ -377,14 +380,16 @@ final class _SttStream {
   /// Audio not handed to the transcriber yet, and flush marks, in order.
   final _queue = <Object>[];
 
-  /// Samples in [_queue].
-  int _queuedSamples = 0;
+  /// Samples received and not analysed yet: those in [_queue] and the chunk
+  /// the transcriber is working on.
+  int _pendingSamples = 0;
 
-  /// Samples handed to the transcriber in this stream.
-  int _analysedSamples = 0;
+  /// The flushes the transcriber is running now (taken off [_queue]).
+  List<Completer<void>> _flushing = const [];
 
-  /// Samples of the stream up to the last flush (its utterances' origin).
-  int _utteranceOrigin = 0;
+  /// What the last update said, so an unchanged one is not sent again.
+  String _lastUnconfirmed = '';
+  int _lastConfirmedUntil = 0;
 
   /// A trailing byte of the last chunk: half a 16-bit sample.
   int? _oddByte;
@@ -442,11 +447,6 @@ final class _SttStream {
       tokenIdsToUtf8: owner._tokenIdsToUtf8,
       runWindow: _runWindow,
     );
-    unawaited(
-      owner._closedSignal.future.then((reason) {
-        if (!_done) _fail(StateError('transcribeStream ended: $reason'));
-      }),
-    );
     try {
       _subscription = _input.listen(
         _onChunk,
@@ -496,12 +496,12 @@ final class _SttStream {
     if (bytes.isEmpty) return;
     final samples = pcm16LEToFloat32(bytes);
     _queue.add(samples);
-    _queuedSamples += samples.length;
+    _pendingSamples += samples.length;
     final limit = _options.maxBufferedAudio.inMicroseconds * _rate ~/ 1000000;
-    if (_queuedSamples > limit) {
+    if (_pendingSamples > limit) {
       _fail(
         SpeechStreamOverrunException(
-          buffered: _at(_queuedSamples),
+          buffered: _at(_pendingSamples),
           limit: _options.maxBufferedAudio,
         ),
       );
@@ -524,14 +524,14 @@ final class _SttStream {
   }
 
   Future<void> _drain() async {
-    final transcriber = _transcriber!;
+    final transcriber = _transcriber;
+    if (transcriber == null) return;
     try {
       while (!_done && _queue.isNotEmpty) {
         final item = _queue.removeAt(0);
         if (item is Float32List) {
-          _queuedSamples -= item.length;
           final result = await transcriber.add(item);
-          _analysedSamples += item.length;
+          _pendingSamples -= item.length;
           _emit(result, endpoint: false);
         } else if (item is Completer<void>) {
           final pending = <Completer<void>>[item];
@@ -539,9 +539,13 @@ final class _SttStream {
           while (_queue.isNotEmpty && _queue.first is Completer<void>) {
             pending.add(_queue.removeAt(0) as Completer<void>);
           }
+          // Reachable from _release while the flush runs, so a stream that
+          // ends meanwhile fails them instead of leaving them pending.
+          _flushing = pending;
           final result = await transcriber.flush();
+          if (_done) break;
           _emit(result, endpoint: true);
-          _utteranceOrigin = _analysedSamples;
+          _flushing = const [];
           for (final c in pending) {
             if (!c.isCompleted) c.complete();
           }
@@ -559,20 +563,21 @@ final class _SttStream {
 
   void _emit(WindowedResult result, {required bool endpoint}) {
     if (_done) return;
-    final windowSamples = _owner._profile.windowSamples;
-    // Words before the newest window's start are confirmed; at an endpoint,
-    // everything received.
-    final confirmedUntil = endpoint
-        ? _analysedSamples
-        : (_analysedSamples - windowSamples).clamp(
-            _utteranceOrigin,
-            _analysedSamples,
-          );
+    final unconfirmed = endpoint ? '' : result.unconfirmed;
+    // Nothing new: no update (a short chunk that completed no window).
+    if (!endpoint &&
+        result.confirmed.isEmpty &&
+        unconfirmed == _lastUnconfirmed &&
+        result.confirmedUntil == _lastConfirmedUntil) {
+      return;
+    }
+    _lastUnconfirmed = unconfirmed;
+    _lastConfirmedUntil = result.confirmedUntil;
     _out.add(
       TranscriptUpdate(
         confirmedDelta: result.confirmed.isEmpty ? '' : ' ${result.confirmed}',
-        unconfirmed: endpoint ? '' : result.unconfirmed,
-        confirmedUntil: _at(confirmedUntil),
+        unconfirmed: unconfirmed,
+        confirmedUntil: _at(result.confirmedUntil),
         endpoint: endpoint,
       ),
     );
@@ -581,12 +586,16 @@ final class _SttStream {
   void _release() {
     if (_claimed && identical(_owner._active, this)) _owner._active = null;
     _claimed = false;
-    for (final item in _queue) {
+    for (final item in [..._flushing, ..._queue]) {
       if (item is Completer<void> && !item.isCompleted) {
         item.completeError(StateError('the stream ended before this flush'));
       }
     }
+    _flushing = const [];
     _queue.clear();
+    // Let go of the windows and the merger state now: a finished stream may
+    // stay referenced by its listener for a while.
+    _transcriber = null;
   }
 
   void _finish() {
@@ -613,9 +622,13 @@ final class _SttStream {
   Future<void> _cancel() async {
     if (_done) return;
     _done = true;
-    await _subscription?.cancel();
-    final draining = _draining;
-    if (draining != null) await draining;
-    _release();
+    _transcriber?.stop();
+    try {
+      await _subscription?.cancel();
+      final draining = _draining;
+      if (draining != null) await draining;
+    } finally {
+      _release();
+    }
   }
 }

@@ -720,6 +720,17 @@ final class TimestampTextMerger implements TextMerger {
   @visibleForTesting
   double get streamTimestampOffsetForTesting => _streamTimestampOffsetMs;
 
+  /// Not in Omni: the timestamp of the first word not confirmed yet, in the
+  /// merger's clock (the windows' timestamp unit, from the stream start);
+  /// null when every word heard is confirmed; -1 when the unconfirmed words
+  /// carry no usable timestamps (a word-count merge).
+  int? get firstUnconfirmedTimestamp {
+    final prefix = math.min(_confirmedPrefixSize, _prevWords.length);
+    if (prefix >= _prevWords.length) return null;
+    if (_prevTimestamps.length != _prevWords.length) return -1;
+    return _prevTimestamps[prefix];
+  }
+
   @override
   void reset() {
     _prevWords = [];

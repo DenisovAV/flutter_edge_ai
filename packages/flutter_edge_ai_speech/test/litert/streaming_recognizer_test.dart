@@ -182,6 +182,79 @@ void main() {
     },
   );
 
+  test('confirmedUntil is a lower bound: every word that starts before it '
+      'is already confirmed', () async {
+    final recognizer = (await create()).asStreaming!;
+    addTearDown(recognizer.close);
+    const spacing = 8000;
+    final words = [for (var i = 0; i < 30; i++) 1 + i % 9];
+    final updates = await recognizer
+        .transcribeStream(
+          _chunks(_speech(words, spacing: spacing), 1600),
+          options: const TranscribeStreamOptions(
+            maxBufferedAudio: Duration(minutes: 10),
+          ),
+        )
+        .toList();
+    var confirmedWords = 0;
+    var sawBound = false;
+    for (final u in updates) {
+      confirmedWords += u.confirmedDelta.trim().isEmpty
+          ? 0
+          : u.confirmedDelta.trim().split(' ').length;
+      final until = u.confirmedUntil.inMicroseconds * 16000 ~/ 1000000;
+      if (!u.endpoint && until > 0) sawBound = true;
+      for (var w = 0; w < words.length; w++) {
+        if (w * spacing + 4000 < until) {
+          expect(
+            w < confirmedWords,
+            isTrue,
+            reason:
+                'word $w starts before ${u.confirmedUntil} but only '
+                '$confirmedWords words are confirmed',
+          );
+        }
+      }
+    }
+    expect(sawBound, isTrue, reason: 'the bound moves before the end');
+  });
+
+  test('a small chunk that changes nothing sends no update', () async {
+    final recognizer = (await create()).asStreaming!;
+    addTearDown(recognizer.close);
+    final words = [for (var i = 0; i < 12; i++) 1 + i % 9];
+    // 20 ms chunks: most complete no window.
+    final pcm = _speech(words);
+    final updates = await recognizer
+        .transcribeStream(
+          _chunks(pcm, 640),
+          options: const TranscribeStreamOptions(
+            maxBufferedAudio: Duration(minutes: 10),
+          ),
+        )
+        .toList();
+    expect(updates.length, lessThan(pcm.length ~/ 640 ~/ 4));
+    for (var k = 1; k < updates.length; k++) {
+      expect(updates[k], isNot(updates[k - 1]), reason: 'update $k repeats');
+    }
+    expect(_transcript(updates), [for (final w in words) 'w$w'].join(' '));
+  });
+
+  test('odd-sized chunks carry the half sample to the next chunk', () async {
+    final recognizer = (await create()).asStreaming!;
+    addTearDown(recognizer.close);
+    final words = [1, 2, 3, 4];
+    final updates = await recognizer
+        .transcribeStream(
+          _chunks(_speech(words), 1001),
+          options: const TranscribeStreamOptions(
+            maxBufferedAudio: Duration(minutes: 10),
+          ),
+        )
+        .toList();
+    expect(_transcript(updates), 'w1 w2 w3 w4');
+  });
+
   test('balanced latency gives the same text', () async {
     final recognizer = (await create()).asStreaming!;
     addTearDown(recognizer.close);
@@ -290,6 +363,24 @@ void main() {
     final ended = expectLater(stream, throwsStateError);
     await recognizer.close();
     await ended;
+    await input.close();
+  });
+
+  test('closing the recognizer during a flush fails the flush', () async {
+    final log = gatedLog(dir, 'gate');
+    final recognizer = (await create(config: 'gate@${log.path}')).asStreaming!;
+    final input = StreamController<Uint8List>();
+    final stream = recognizer.transcribeStream(input.stream).toList();
+    final ended = expectLater(stream, throwsStateError);
+    input.add(_speech([1], seconds: 5));
+    // The first window blocks; the flush waits behind it.
+    await waitForLine(log, 'window');
+    final flushed = expectLater(recognizer.flush(), throwsStateError);
+    final closing = recognizer.close();
+    release(log);
+    await flushed;
+    await ended;
+    await closing;
     await input.close();
   });
 

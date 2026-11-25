@@ -1,7 +1,8 @@
 // Streaming speech-to-text through the public API: Parakeet CTC int8 as a
 // StreamingSpeechRecognizer (getActiveStt().asStreaming), fed the bundled
-// clip in 100 ms chunks as a microphone would, then the same clip twice with
-// a flush between them, and a batch transcription while a stream runs.
+// clip three times over (8.8 s, so full windows and the shift back run) in
+// 100 ms chunks as a microphone would, then the clip twice with a flush
+// between them, and a batch transcription while a stream runs.
 //
 // Run: flutter test integration_test/stt_streaming_test.dart -d <device>
 //        [--dart-define=STT_MODEL_FILE=<path>/parakeet_ctc_0.6b_5s_i8.tflite
@@ -64,18 +65,30 @@ void main() {
       _wavHeaderBytes,
     );
 
-    // 1. The clip, 100 ms at a time.
+    // 1. The clip three times, 100 ms at a time.
+    final long = Uint8List(pcm.length * 3)
+      ..setAll(0, pcm)
+      ..setAll(pcm.length, pcm)
+      ..setAll(pcm.length * 2, pcm);
     final watch = Stopwatch()..start();
-    final updates = await streaming.transcribeStream(_chunks(pcm)).toList();
+    final updates = await streaming.transcribeStream(_chunks(long)).toList();
     watch.stop();
     final text = _transcript(updates);
     debugPrint(
       'STT-STREAM-TRANSCRIPT<<<$text>>> ${updates.length} updates, '
-      '${watch.elapsedMilliseconds} ms for 2.9 s of audio',
+      '${watch.elapsedMilliseconds} ms for 8.8 s of audio',
     );
     final low = text.toLowerCase();
-    for (final word in ['she', 'suit', 'greasy', 'wash', 'water', 'year']) {
-      expect(low, contains(word), reason: 'got: "$text"');
+    expect(
+      RegExp('greasy wash water').allMatches(low),
+      hasLength(3),
+      reason: 'each repetition once, none dropped or doubled: "$text"',
+    );
+    for (var k = 1; k < updates.length; k++) {
+      expect(
+        updates[k].confirmedUntil >= updates[k - 1].confirmedUntil,
+        isTrue,
+      );
     }
     expect(updates.last.endpoint, isTrue);
     expect(updates.where((u) => u.endpoint), hasLength(1));

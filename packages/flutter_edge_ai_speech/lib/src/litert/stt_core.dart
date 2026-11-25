@@ -630,6 +630,11 @@ class SttCore {
         startFraction: startFraction,
         blankId: _profile.blankId,
       );
+      if (tokens.isEmpty || !tokens.last.isEndOfChunk) {
+        throw StateError(
+          'SttCore.ctcWindow: the encoder returned no frames for the window',
+        );
+      }
       final emitted = tokens.where((t) => !t.isEndOfChunk).toList();
       return CtcWindowTokens(
         Int32List.fromList([for (final t in emitted) t.tokenId]),

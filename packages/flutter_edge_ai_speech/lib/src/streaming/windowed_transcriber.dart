@@ -36,15 +36,28 @@ typedef WindowRunner =
     });
 
 /// What a step of the transcriber produced: [confirmed] text (already joined,
-/// possibly empty) and the current [unconfirmed] tail.
+/// possibly empty), the current [unconfirmed] tail, and [confirmedUntil]:
+/// a sample index, from the first sample given to the transcriber, before
+/// which every word heard is in the confirmed text.
 final class WindowedResult {
-  const WindowedResult(this.confirmed, this.unconfirmed);
+  const WindowedResult(
+    this.confirmed,
+    this.unconfirmed,
+    this.confirmedUntil, {
+    this.ranWindow = false,
+  });
 
   final String confirmed;
   final String unconfirmed;
+  final int confirmedUntil;
+
+  /// Whether the step ran the model at all (adding a little audio often does
+  /// not).
+  final bool ranWindow;
 
   @override
-  String toString() => 'WindowedResult(+"$confirmed", ~"$unconfirmed")';
+  String toString() =>
+      'WindowedResult(+"$confirmed", ~"$unconfirmed", until $confirmedUntil)';
 }
 
 /// Turns 16 kHz float audio, arriving in pieces, into confirmed and
@@ -76,9 +89,31 @@ final class WindowedTranscriber {
 
   String _unconfirmed = '';
 
+  /// Samples given to the transcriber before the current utterance (the
+  /// last flush).
+  int _origin = 0;
+
+  /// Samples of the current utterance given to the windower.
+  int _received = 0;
+
+  /// Full windows run in the current utterance.
+  int _fullWindows = 0;
+
+  /// Encoder frames per window, from the last window's end-of-chunk time.
+  int? _windowFrames;
+
+  int _confirmedUntil = 0;
+
+  bool _stopped = false;
+
+  /// Stops at the next window boundary: windows not started yet are not run.
+  void stop() => _stopped = true;
+
   /// Adds [samples] and runs every window they complete, in order.
-  Future<WindowedResult> add(Float32List samples) =>
-      _run(_windower.add(samples), flushMerger: false);
+  Future<WindowedResult> add(Float32List samples) {
+    _received += samples.length;
+    return _run(_windower.add(samples), flushMerger: false);
+  }
 
   /// Ends an utterance without ending the stream: the remainder is run, the
   /// merger confirms everything, and the next audio starts a new utterance.
@@ -87,6 +122,10 @@ final class WindowedTranscriber {
     _windower.reset();
     _merger.reset();
     _previousWindow = null;
+    _origin += _received;
+    _received = 0;
+    _fullWindows = 0;
+    _confirmedUntil = _origin;
     return result;
   }
 
@@ -99,27 +138,65 @@ final class WindowedTranscriber {
     required bool flushMerger,
   }) async {
     final confirmed = <String>[];
+    var ran = false;
     for (final window in windows) {
+      if (_stopped) break;
       final tokens = await _runPrepared(window);
+      ran = true;
+      if (window.kind == AudioWindowKind.full) _fullWindows++;
+      final end = tokens.isEmpty ? null : tokens.last;
+      if (end != null && end.isEndOfChunk && end.timestampMs != null) {
+        _windowFrames ??= end.timestampMs;
+      }
       final result = _merger.add(_detokenizer.detokenize(tokens));
       if (result.confirmed.isNotEmpty) confirmed.add(result.confirmed);
       _unconfirmed = result.unconfirmed;
     }
-    if (flushMerger) {
+    if (flushMerger && !_stopped) {
       final MergeResult? result = _merger.flush();
       if (result != null) {
         if (result.confirmed.isNotEmpty) confirmed.add(result.confirmed);
         _unconfirmed = result.unconfirmed;
       }
+      _confirmedUntil = _origin + _received;
+    } else if (ran) {
+      _advanceConfirmedUntil();
     }
-    return WindowedResult(confirmed.join(' '), _unconfirmed);
+    return WindowedResult(
+      confirmed.join(' '),
+      _unconfirmed,
+      _confirmedUntil,
+      ranWindow: ran,
+    );
+  }
+
+  /// Every word before the newest full window's start is confirmed by the
+  /// merger, and so is every word before the first one still unconfirmed;
+  /// the bound is the smaller of the two, and never goes back. When the
+  /// merger cannot place its unconfirmed words in time, the bound stays.
+  void _advanceConfirmedUntil() {
+    if (_fullWindows == 0) return;
+    final step = _windower.samplesPerInterval - _windower.overlapSamples;
+    var bound = (_fullWindows - 1) * step;
+    final first = _merger.firstUnconfirmedTimestamp;
+    if (first == -1) return;
+    final frames = _windowFrames;
+    if (first != null && frames != null && frames > 0) {
+      // The merger rounds a window's start to whole frames, so a stored
+      // timestamp can be up to a frame later than the word: go back a frame.
+      final atSample = (first - 1) * windowSamples ~/ frames;
+      if (atSample < bound) bound = atSample;
+    }
+    final absolute = _origin + (bound < 0 ? 0 : bound);
+    if (absolute > _confirmedUntil) _confirmedUntil = absolute;
   }
 
   Future<List<DecodedToken>> _runPrepared(AudioWindow window) async {
     final samples = window.samples;
     switch (window.kind) {
       case AudioWindowKind.full:
-        _previousWindow = Float32List.fromList(samples);
+        // The windower hands out a fresh list per window: keep it as is.
+        _previousWindow = samples;
         return _runWindow(
           samples,
           validSamples: windowSamples,

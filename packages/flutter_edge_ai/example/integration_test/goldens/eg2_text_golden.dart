@@ -7,7 +7,7 @@ library;
 
 const eg2TextGoldenJson = r'''
 {
-  "description": "Generated from eg2_text_golden.json by test/eg2_text_golden_test.dart. vector: native-v0.19.0-a final build (build_macos.sh), macOS arm64 libLiteRtLm (CPU); vector_st_fp32: Sentence Transformers fp32. Both base64 little-endian float32.",
+  "description": "Generated from eg2_text_golden.json by test/eg2_text_golden_test.dart. vector: local build of feat/litertlm-0.20 (LiteRT-LM v0.20.0, build_macos.sh), macOS arm64 libLiteRtLm (CPU); vector_st_fp32: Sentence Transformers fp32. Both base64 little-endian float32.",
   "model": {
     "bundle": "litert-community/embeddinggemma-2-text-270m-litert-lm/embeddinggemma-2-text-270m.litertlm",
     "bundle_revision": "9be6e8b90982095dc05c2bd162e4b954ee4dbac7",
@@ -16,10 +16,10 @@ const eg2TextGoldenJson = r'''
     "reference_revision": "914f7f89142e33e77833254d9c9b90c3cef7303b"
   },
   "native_library": {
-    "tag": "native-v0.19.0-a",
-    "build": "native-v0.19.0-a final build (build_macos.sh), macOS arm64",
+    "tag": "local build of feat/litertlm-0.20 (LiteRT-LM v0.20.0, build_macos.sh), macOS arm64",
+    "build": "local build of feat/litertlm-0.20 (LiteRT-LM v0.20.0, build_macos.sh), macOS arm64",
     "file": "libLiteRtLm.dylib",
-    "dylib_sha256": "44dffbb9cb94fd34928356e8d5c151d67639db7a3d184e08b2b68152adb3110c",
+    "dylib_sha256": "368a4d1a49b6b8da7f5a877cb61c59899990f96b4a8933b45378549b5cc433c4",
     "cache_dir": "a fresh temporary directory"
   },
   "prefixes": {

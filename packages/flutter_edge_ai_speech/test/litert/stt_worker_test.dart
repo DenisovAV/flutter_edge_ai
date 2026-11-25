@@ -17,6 +17,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 import 'package:flutter_edge_ai_speech/src/litert/litert_speech_recognizer.dart';
+import 'package:flutter_edge_ai_speech/src/litert/stt_core.dart'
+    show CtcWindowTokens;
 import 'package:flutter_edge_ai_speech/src/litert/stt_worker.dart';
 import 'package:flutter_edge_ai_speech/src/model/stt_model_profile.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -97,6 +99,31 @@ class _FakeSttEngine implements SttWorkerEngine {
       case _Mode.unprintableOnRun:
         break;
     }
+  }
+
+  // Windows: one token per sample whose value is a whole number in 1..9,
+  // its frame the sample's index; enough to see the reply cross the port.
+  @override
+  CtcWindowTokens ctcWindow(
+    Float32List window, {
+    required int validSamples,
+    required double startFraction,
+  }) {
+    _log('window');
+    final ids = <int>[];
+    final frames = <int>[];
+    for (var i = 0; i < validSamples; i++) {
+      final v = window[i];
+      if (v >= 1 && v <= 9 && v == v.roundToDouble()) {
+        ids.add(v.toInt());
+        frames.add(i);
+      }
+    }
+    return CtcWindowTokens(
+      Int32List.fromList(ids),
+      Int32List.fromList(frames),
+      window.length,
+    );
   }
 
   @override
@@ -211,6 +238,38 @@ void main() {
   });
 
   group('SttWorker serving', () {
+    test(
+      'streaming windows and transcriptions share one queue, in order',
+      () async {
+        final log = logFor('windows');
+        final worker = await spawn(_Mode.fast, log);
+        try {
+          final window = Float32List(8)
+            ..[1] = 3
+            ..[5] = 7
+            ..[7] = 9; // past validSamples: not decoded
+          final results = await Future.wait<Object>([
+            worker.ctcWindow(window, validSamples: 6, startFraction: 0),
+            worker.transcribe(Float32List(2)),
+            worker.ctcWindow(Float32List(8), validSamples: 8, startFraction: 0),
+          ]);
+          final first = results[0] as CtcWindowTokens;
+          expect(first.tokenIds, [3, 7]);
+          expect(first.frames, [1, 5]);
+          expect(first.windowFrames, 8);
+          expect(results[1], 'transcript of 2');
+          expect((results[2] as CtcWindowTokens).tokenIds, isEmpty);
+          expect(linesOf(log).where((l) => l == 'window' || l == 'run'), [
+            'window',
+            'run',
+            'window',
+          ]);
+        } finally {
+          await worker.close();
+        }
+      },
+    );
+
     test('serves concurrent requests correlated by id', () async {
       final worker = await spawn(_Mode.fast, logFor('serve'));
       try {

@@ -38,6 +38,7 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -49,6 +50,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:litertlm_dart/litert_bindings.dart';
 
 import '../model/stt_model_profile.dart';
+import '../streaming/ctc_window_decoder.dart' show ctcWindowTokens;
 import '../tokenizer/stt_special_tokens.dart'
     show ResolvedSuppression, SttSpecialTokenResolver;
 import '../tokenizer/stt_tokenizer.dart' show SttTokenizer;
@@ -56,6 +58,18 @@ import 'litert_graph.dart'
     show acceleratorFor, configureSpeechAccelerator, takeCompiledModel;
 import 'log_mel_frontend.dart' show computeLogMelSpectrogram, computeNemoLogMel;
 import 'mel_filter_assets.dart' show loadMelFilterAsset;
+
+/// The CTC tokens of one streaming window, as they cross the worker port:
+/// each emitted (non-blank) token with its encoder frame, counted from the
+/// first frame the window reports, and the window's frame count from that same
+/// origin (the end-of-chunk sentinel's time).
+final class CtcWindowTokens {
+  CtcWindowTokens(this.tokenIds, this.frames, this.windowFrames);
+
+  final Int32List tokenIds;
+  final Int32List frames;
+  final int windowFrames;
+}
 
 /// Decoder start token (`<s>`), verified working on the first try — see the
 /// recipe's "Mask convention that worked" section.
@@ -564,6 +578,64 @@ class SttCore {
         SttDecodeType.ctc => _ctcDecode(hidden),
       };
       return _tokenizer.decode(ids);
+    } finally {
+      calloc.free(hidden.alloc.raw);
+    }
+  }
+
+  /// The CTC tokens of one streaming [window] (exactly the profile's window
+  /// length): [validSamples] of it are audio and the rest zero padding,
+  /// [startFraction] of it was reported by an earlier window. Only the frames
+  /// of audio are decoded, and nothing before [startFraction] is reported, as
+  /// LiteRT-LM Omni's `CtcDecoder` does with its decode range. The features
+  /// are those of [transcribe] for the same window.
+  ///
+  /// CTC profiles only (Parakeet); throws [StateError] otherwise.
+  CtcWindowTokens ctcWindow(
+    Float32List window, {
+    required int validSamples,
+    required double startFraction,
+  }) {
+    if (_disposed) {
+      throw StateError('SttCore is disposed');
+    }
+    if (_profile.decodeType != SttDecodeType.ctc) {
+      throw StateError(
+        'SttCore.ctcWindow: ${_profile.decodeType.name} profiles do not stream '
+        'through CTC windows',
+      );
+    }
+    if (window.length != _profile.windowSamples) {
+      throw ArgumentError.value(
+        window.length,
+        'window.length',
+        'must be the window, ${_profile.windowSamples} samples',
+      );
+    }
+    final hidden = _encode(window);
+    try {
+      final logits = hidden.alloc.aligned.cast<Float>().asTypedList(
+        hidden.frames * hidden.dim,
+      );
+      final melFrames = _profile.melFrames!;
+      final validMelFrames = math.min(
+        validSamples ~/ _profile.hopLength!,
+        melFrames,
+      );
+      final tokens = ctcWindowTokens(
+        logits,
+        numFrames: hidden.frames,
+        vocabSize: hidden.dim,
+        validFraction: validMelFrames / melFrames,
+        startFraction: startFraction,
+        blankId: _profile.blankId,
+      );
+      final emitted = tokens.where((t) => !t.isEndOfChunk).toList();
+      return CtcWindowTokens(
+        Int32List.fromList([for (final t in emitted) t.tokenId]),
+        Int32List.fromList([for (final t in emitted) t.timestampMs!]),
+        tokens.last.timestampMs!,
+      );
     } finally {
       calloc.free(hidden.alloc.raw);
     }

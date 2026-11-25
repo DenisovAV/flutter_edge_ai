@@ -34,11 +34,13 @@ enum SttDecodeType {
   ctc,
 }
 
-/// Batch (whole-utterance) vs streaming (incremental) transcription.
+/// Batch (one window per call) vs streaming (audio as it arrives)
+/// transcription.
 ///
-/// A property of the exported artifact, NOT the algorithm family: parakeet's
-/// `_stateful` CTC export streams, its stateless export does not — same
-/// [SttDecodeType], different [SttModelProfile.modes]. (Design spec §5.)
+/// A property of the profile's pipeline: `streaming` means the recognizer
+/// transcribes through overlapping windows with a timestamp merger
+/// (`WindowedTranscriber`), which needs a decoder that gives each token's
+/// frame — CTC today (Parakeet). The model files are the batch ones.
 enum SttMode { batch, streaming }
 
 /// Row-major layout of a log-mel frontend's output. `melFirst` = `[nMels,
@@ -188,7 +190,7 @@ class SttModelProfile {
       melFilterAsset = 'nemo_mel_80',
       decodeType = SttDecodeType.ctc,
       maxDecodeTokens = 0, // unused by ctc -- no per-step decode loop
-      modes = const {SttMode.batch},
+      modes = const {SttMode.batch, SttMode.streaming},
       decoderPromptTokens = const [], // ctc has no seed prompt
       eosToken = null, // ctc has no stop token -- single-pass, not a loop
       suppressTokens = null, // no logit suppression

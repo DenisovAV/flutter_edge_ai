@@ -107,7 +107,8 @@ void main() {
       expect(p.melNormalization, SttMelNormalization.nemo);
       expect(p.melFilterAsset, 'nemo_mel_80');
       expect(p.decodeType, SttDecodeType.ctc);
-      expect(p.modes, {SttMode.batch});
+      expect(p.modes, {SttMode.batch, SttMode.streaming});
+      expect(p.supportsStreaming, isTrue);
       expect(p.tokenizerKind, SttTokenizerKind.parakeetBpe);
       expect(p.blankId, 1024);
       // ctc reads no decoder mask, but pin the declared value so a refactor

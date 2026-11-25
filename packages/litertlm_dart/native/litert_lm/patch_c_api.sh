@@ -14,6 +14,7 @@
 #     size (Windows: the Gemma provider's vector is libc++, the runtime MSVC)
 #
 # 28. Apple: Metal argument buffers stay on (Gemma 4 kernels exceed 31 slots)
+# 29. Tool-call constraints from LLGuidance (every tool_choice), not FST
 #
 # v0.20.0 migration: sections 15, 22, 24 and 27 are anchors only now (upstream
 # a48771d2, 9738e180, e0dcad4e and 3db1cfd0ab ship what they patched); section
@@ -1119,5 +1120,26 @@ fi
   exit 1
 }
 echo "  OK: section 28: Metal argument buffers on (Apple)"
+
+# ── 29. Tool-call constraints from LLGuidance, not the prebuilt FST provider ──
+# LiteRT-LM builds the Gemma 3, Gemma 4 and FunctionGemma tool-call
+# constraints with Google's prebuilt libGemmaModelConstraintProvider (FST) by
+# default. Its constraints know only "call a tool or not": every tool_choice
+# but auto (none, required, a forced function, allowed tools; C API 1.1)
+# fails the send with FailedPrecondition. With enable_fst_constraints=false the
+# processors build them with LLGuidance, compiled from source here, which
+# implements every tool_choice (0.20 migration decision D8). The flag goes into
+# the tree's .bazelrc so every build of it gets it: the scripts here and both
+# CI workflows. Upstream keeps FST the default pending its own validation
+# (b/574011343); ours is the tool-call accuracy matrix of the migration.
+grep -q 'name = "enable_fst_constraints"' "$DIR/build_config/BUILD" &&
+  grep -q 'litert_lm_fst_constraints_disabled' "$DIR/runtime/conversation/model_data_processor/BUILD" || {
+  echo "  ERROR: section 29: build_config:enable_fst_constraints is gone" >&2
+  exit 1
+}
+if ! grep -q 'flutter_edge_ai section 29' "$DIR/.bazelrc"; then
+  printf '\n# flutter_edge_ai section 29: tool-call constraints from LLGuidance\nbuild --//build_config:enable_fst_constraints=false\n' >> "$DIR/.bazelrc"
+fi
+echo "  OK: section 29: tool-call constraints from LLGuidance (enable_fst_constraints=false)"
 
 echo "Patch complete."

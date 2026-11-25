@@ -99,6 +99,16 @@ MacOSCodeAssets macOSCodeAssets({
   if (linksConstraintProviderCodeAsset(linked)) {
     return MacOSPlainDartAssets(dir);
   }
+  // From native-v0.20.0-a LiteRtLm builds its tool-call constraints with
+  // LLGuidance (patch_c_api.sh section 29) and links no constraint provider
+  // at all: there is no companion to tell the build by, and none to load.
+  if (!linked.any(
+    (d) =>
+        d.contains('GemmaModelConstraintProvider') ||
+        d.endsWith('/$macOSConstraintProviderAssetFile'),
+  )) {
+    return MacOSPlainDartAssets(dir);
+  }
   // The framework form the hook writes for a Flutter app.
   if (linked.any(
     (d) => d.contains('/GemmaModelConstraintProvider.framework/'),

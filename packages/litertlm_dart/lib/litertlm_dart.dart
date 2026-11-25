@@ -14,7 +14,13 @@
 library;
 
 export 'src/api/backend.dart'
-    show Backend, CpuBackend, GpuBackend, NpuBackend, SpeculativeDecodingMode;
+    show
+        Backend,
+        CpuBackend,
+        GpuBackend,
+        NpuBackend,
+        SpeculativeDecodingConfig,
+        SpeculativeDecodingMode;
 export 'src/api/benchmark.dart'
     if (dart.library.js_interop) 'src/web/native_only_web.dart'
     show benchmark;
@@ -31,6 +37,12 @@ export 'src/api/config.dart'
         ResponseFormat,
         SamplerConfig,
         ThinkingConfig,
+        ToolChoice,
+        ToolChoiceAllowedTools,
+        ToolChoiceAuto,
+        ToolChoiceForcedFunction,
+        ToolChoiceNone,
+        ToolChoiceRequired,
         maxThinkingTokenBudget;
 export 'src/api/conversation.dart'
     show

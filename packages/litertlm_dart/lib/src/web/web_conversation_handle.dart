@@ -782,6 +782,7 @@ final class WebConversationHandle implements ConversationHandle {
       if (options.noRepeatNgram != null) 'noRepeatNgramConfig',
       if (options.suppressTokens != null) 'suppressTokens',
       if (options.thinkingTokenBudget != null) 'a thinking token budget',
+      if (options.toolChoiceJson != null) 'tool choice (toolChoice)',
     ];
     if (perMessage.isNotEmpty) {
       return UnsupportedError(

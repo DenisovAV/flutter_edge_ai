@@ -1,5 +1,6 @@
 ## Unreleased
 - Web reads `@litert-lm/core` from `window.litertLm`; see MIGRATION.
+- Core's `ToolChoice.required` and `ToolChoice.none` take effect on Gemma 4 and FunctionGemma `.litertlm`.
 
 ## 1.21.3
 - Requires `litertlm_dart` 0.19.1+4.

@@ -1,5 +1,8 @@
 ## Unreleased
 - Web reads `@litert-lm/core` from `window.litertLm`, one shim line; see the README.
+- `ToolChoice` per message on `sendMessage`/`sendMessageStream` (native).
+- `SpeculativeDecodingConfig` (mode, lenience) replaces `SpeculativeDecodingMode` in the configs; `benchmark()` takes it.
+- `EngineConfig.selectedSignatures`.
 
 ## 0.19.1+4
 - Plain Dart programs (`dart run`, `dart test`, `dart build cli`) on every backend; see the README.

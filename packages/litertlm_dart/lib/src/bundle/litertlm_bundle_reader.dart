@@ -10,6 +10,7 @@ import 'litertlm_npu_target.dart'
     show
         readLiteRtLmLinearAttentionState,
         readLiteRtLmPrefillLengths,
+        readLiteRtLmSignatureKeys,
         readLiteRtLmSectionStamps;
 import 'litertlm_bundle_sampler.dart' show executorMetadataHasLinearAttention;
 import 'litertlm_bundle_info.dart';
@@ -96,6 +97,37 @@ Future<BundleInfo> readBundleInfo(String path) async {
       version: version,
       fileLength: length,
       npuTargets: stamps,
+      path: path,
+    );
+  } finally {
+    await file.close();
+  }
+}
+
+/// The signature keys of the main model section (`tf_lite_prefill_decode`)
+/// of the `.litertlm` LLM at [path], what `EngineConfig.selectedSignatures`
+/// may name; empty when the bundle has no main section.
+///
+/// Throws as [readBundleInfo] for a file that is not a `.litertlm`
+/// container, and [LiteRtLmBundleException] ([LiteRtLmBundleProblem.malformed])
+/// for a main model it cannot walk.
+Future<List<String>> readLiteRtLmMainSignatureKeys(String path) async {
+  final info = await readBundleInfo(path);
+  final main = info.textModel;
+  if (main == null) return const [];
+  final file = await File(path).open();
+  try {
+    return await readLiteRtLmSignatureKeys(
+      file,
+      await file.length(),
+      main.begin,
+      main.end,
+    );
+  } on Object catch (e) {
+    if (e is! FormatException && e is! RangeError) rethrow;
+    throw LiteRtLmBundleException(
+      LiteRtLmBundleProblem.malformed,
+      '$path: the signatures of its main model could not be read ($e)',
       path: path,
     );
   } finally {

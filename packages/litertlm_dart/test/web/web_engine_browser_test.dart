@@ -67,7 +67,9 @@ void main() {
           'speculative decoding',
           EngineConfig(
             modelPath: 'blob:x',
-            speculativeDecoding: SpeculativeDecodingMode.on,
+            speculativeDecoding: SpeculativeDecodingConfig(
+              mode: SpeculativeDecodingMode.on,
+            ),
           ),
           'speculative decoding',
         ),
@@ -639,7 +641,11 @@ void main() {
       test('speculative decoding', () async {
         await expectLater(
           engine.createConversation(
-            ConversationConfig(speculativeDecoding: SpeculativeDecodingMode.on),
+            ConversationConfig(
+              speculativeDecoding: SpeculativeDecodingConfig(
+                mode: SpeculativeDecodingMode.on,
+              ),
+            ),
           ),
           refusal('no speculative decoding'),
         );

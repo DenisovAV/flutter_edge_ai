@@ -44,7 +44,7 @@ import 'stderr_redirect.dart';
 import 'windows_std_handles.dart';
 import 'thinking_context.dart';
 import 'send_options.dart';
-import '../api/backend.dart' show SpeculativeDecodingMode;
+import '../api/backend.dart' show SpeculativeDecodingConfig;
 import '../runtime/load_errors.dart';
 import '../runtime/litert_lm_log_level.dart';
 
@@ -1018,6 +1018,8 @@ class EngineCreateRequest {
     this.maxNumImages = 0,
     this.enableSpeculativeDecoding,
     this.speculativeDecodingMode,
+    this.speculativeDecodingLenience,
+    this.selectedSignatures,
     this.numThreads,
     this.activationDataType,
     this.nativeLogLevel,
@@ -1061,6 +1063,13 @@ class EngineCreateRequest {
   /// `LiteRtLmSpeculativeDecodingMode` set through a speculative decoding
   /// config (adaptive has no boolean); null sets none.
   final int? speculativeDecodingMode;
+
+  /// The speculative decoding config's lenience, set with
+  /// [speculativeDecodingMode]; null leaves LiteRT-LM's.
+  final double? speculativeDecodingLenience;
+
+  /// `engine_settings_set_selected_signatures`; null runs every signature.
+  final List<String>? selectedSignatures;
 
   /// The CPU executor's threads; null leaves LiteRT-LM's default.
   final int? numThreads;
@@ -1299,6 +1308,16 @@ EngineCreateResult createEngineWith(
               LiteRtLmSpeculativeDecodingMode.fromValue(speculativeMode),
             ),
           );
+          final lenience = r.speculativeDecodingLenience;
+          if (lenience != null) {
+            setter(
+              'litert_lm_speculative_decoding_config_set_lenience',
+              b.litert_lm_speculative_decoding_config_set_lenience(
+                config,
+                lenience,
+              ),
+            );
+          }
           setter(
             'litert_lm_engine_settings_set_speculative_decoding_config',
             b.litert_lm_engine_settings_set_speculative_decoding_config(
@@ -1308,6 +1327,28 @@ EngineCreateResult createEngineWith(
           );
         } finally {
           b.litert_lm_speculative_decoding_config_delete(config);
+        }
+      }
+      final selected = r.selectedSignatures;
+      if (selected != null && selected.isNotEmpty) {
+        final names = calloc<Pointer<Char>>(selected.length);
+        try {
+          for (var i = 0; i < selected.length; i++) {
+            names[i] = selected[i].toNativeUtf8(allocator: calloc).cast();
+          }
+          setter(
+            'litert_lm_engine_settings_set_selected_signatures',
+            b.litert_lm_engine_settings_set_selected_signatures(
+              settings,
+              names,
+              selected.length,
+            ),
+          );
+        } finally {
+          for (var i = 0; i < selected.length; i++) {
+            if (names[i] != nullptr) calloc.free(names[i]);
+          }
+          calloc.free(names);
         }
       }
       final numThreads = r.numThreads;
@@ -2480,6 +2521,8 @@ class LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? speculativeDecodingMode,
+    double? speculativeDecodingLenience,
+    List<String>? selectedSignatures,
     int? numThreads,
     int? activationDataType,
     GpuActivationReason? gpuActivationReason,
@@ -2619,6 +2662,8 @@ class LiteRtLmFfiClient {
         maxNumImages: maxNumImages,
         enableSpeculativeDecoding: enableSpeculativeDecoding,
         speculativeDecodingMode: speculativeDecodingMode,
+        speculativeDecodingLenience: speculativeDecodingLenience,
+        selectedSignatures: selectedSignatures,
         numThreads: numThreads,
         activationDataType: activationDataType,
         nativeLogLevel: nativeLogLevel,
@@ -3158,7 +3203,7 @@ class LiteRtLmFfiClient {
   /// Sets [mode] on a session config through a speculative decoding config.
   void _setSessionSpeculativeDecoding(
     Pointer<LiteRtLmSessionConfig> sessionConfig,
-    SpeculativeDecodingMode mode,
+    SpeculativeDecodingConfig speculative,
     void Function(String name, int code) check,
   ) {
     final b = _bindings!;
@@ -3172,9 +3217,19 @@ class LiteRtLmFfiClient {
         'litert_lm_speculative_decoding_config_set_mode',
         b.litert_lm_speculative_decoding_config_set_mode(
           config,
-          LiteRtLmSpeculativeDecodingMode.fromValue(mode.index),
+          LiteRtLmSpeculativeDecodingMode.fromValue(speculative.mode.index),
         ),
       );
+      final lenience = speculative.lenience;
+      if (lenience != null) {
+        check(
+          'litert_lm_speculative_decoding_config_set_lenience',
+          b.litert_lm_speculative_decoding_config_set_lenience(
+            config,
+            lenience,
+          ),
+        );
+      }
       check(
         'litert_lm_session_config_set_speculative_decoding_config',
         b.litert_lm_session_config_set_speculative_decoding_config(

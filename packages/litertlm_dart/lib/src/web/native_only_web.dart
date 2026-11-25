@@ -43,6 +43,7 @@ Future<LlmBenchmarkResult> benchmark({
   int? maxNumTokens,
   String? cacheDir,
   SamplerConfig? samplerConfig,
+  SpeculativeDecodingConfig? speculativeDecoding,
 }) async => throw UnsupportedError(
   'benchmark() runs exactly the prefill and decode token counts asked for; '
   '$liteRtLmWebRuntime\'s benchmark mode (benchmarkEnabled) takes no token '

@@ -12,6 +12,7 @@ import '../ffi/native_turns.dart'
 import '../runtime/conversation_handle.dart'
     show ConversationHandle, NativeBenchmark, NativeLastTurnEnd;
 import '../runtime/send_options.dart';
+import '../runtime/tool_choice_json.dart';
 import '../runtime/errors.dart';
 import '../runtime/types.dart' show BenchmarkInfo;
 import 'config.dart';
@@ -151,6 +152,7 @@ final class Conversation {
     NoRepeatNgramConfig? noRepeatNgramConfig,
     List<int>? suppressTokens,
     ThinkingConfig? thinkingConfig,
+    ToolChoice? toolChoice,
   }) => _send(
     message,
     extraContext: extraContext,
@@ -158,6 +160,7 @@ final class Conversation {
     noRepeatNgramConfig: noRepeatNgramConfig,
     suppressTokens: suppressTokens,
     thinkingConfig: thinkingConfig,
+    toolChoice: toolChoice,
   );
 
   /// [sendMessageStream], telling [onNextRound] each time an automatic round
@@ -169,6 +172,7 @@ final class Conversation {
     NoRepeatNgramConfig? noRepeatNgramConfig,
     List<int>? suppressTokens,
     ThinkingConfig? thinkingConfig,
+    ToolChoice? toolChoice,
     void Function()? onNextRound,
   }) {
     if (_closed) throw StateError('The conversation is closed.');
@@ -187,6 +191,11 @@ final class Conversation {
         'holds a value that is not JSON: ${e.unsupportedObject}',
       );
     }
+    final choiceJson = toolChoiceJson(
+      toolChoice,
+      toolNames: [for (final tool in _config.tools) tool.name],
+      hasResponseFormat: _config.responseFormat != null,
+    );
     final json = jsonEncode(messageJson(message));
     if (budget != null && _config.responseFormat != null) {
       return Stream.error(
@@ -198,7 +207,10 @@ final class Conversation {
     }
     if (budget != null) _budgetCapsNothing();
     final automaticTools = _automaticTools;
-    SendOptions optionsFor({required bool unconstrained}) => SendOptions(
+    SendOptions optionsFor({
+      required bool unconstrained,
+      String? toolChoiceJson,
+    }) => SendOptions(
       extraContext: merged,
       repetitionPenalty: repetitionPenaltyConfig,
       noRepeatNgram: noRepeatNgramConfig,
@@ -207,15 +219,20 @@ final class Conversation {
           : List.unmodifiable(suppressTokens),
       thinkingTokenBudget: budget,
       unconstrained: unconstrained,
+      toolChoiceJson: toolChoiceJson,
     );
     // Kotlin's and Swift's rule: while automatic tools are pending, a
     // message that is not a tool response goes without the response format,
     // so that the model can call them; tool responses keep it.
+    // The tool choice goes with the message's own send only, as in Kotlin
+    // and Swift: the rounds that answer tool results run the default, so
+    // `required` cannot loop.
     final options = optionsFor(
       unconstrained:
           automaticTools != null &&
           _config.responseFormat != null &&
           message.role != Role.tool,
+      toolChoiceJson: choiceJson,
     );
     late final StreamController<Message> controller;
     // The native send of the current round; null while tools run.
@@ -606,6 +623,7 @@ final class Conversation {
     NoRepeatNgramConfig? noRepeatNgramConfig,
     List<int>? suppressTokens,
     ThinkingConfig? thinkingConfig,
+    ToolChoice? toolChoice,
   }) async {
     final text = StringBuffer();
     final thought = StringBuffer();
@@ -617,6 +635,7 @@ final class Conversation {
       noRepeatNgramConfig: noRepeatNgramConfig,
       suppressTokens: suppressTokens,
       thinkingConfig: thinkingConfig,
+      toolChoice: toolChoice,
       onNextRound: () {
         text.clear();
         thought.clear();

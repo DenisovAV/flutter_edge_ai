@@ -634,6 +634,7 @@ void _refuseOnWeb(EngineConfig config) {
     if (config.cacheDir != null) 'a cache directory (cacheDir)',
     if (config.activationDataType != null) 'an activationDataType',
     if (config.speculativeDecoding != null) 'speculative decoding',
+    if (config.selectedSignatures != null) 'selected signatures',
   ];
   if (refused.isEmpty) return;
   throw UnsupportedError(

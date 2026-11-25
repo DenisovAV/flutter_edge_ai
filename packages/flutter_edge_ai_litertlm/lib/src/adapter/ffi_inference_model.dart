@@ -527,8 +527,23 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       :tools,
       :maxOutputTokens,
       :responseFormat,
+      :toolChoice,
     ) = request;
     final jsonSchema = responseFormat?.schemaJson;
+    // Core's tool choice on a model whose tool calls LiteRT-LM runs: none
+    // opens the conversation without the tools, so the model never sees them
+    // (with them declared, LiteRT-LM's none only keeps the call out of the
+    // reply, and the model may write it as text); required goes with each
+    // user turn (litertlm_dart's per-message ToolChoice, never with the turn
+    // answering tool results, so it cannot loop). Other models get core's
+    // own tools prompt, which already follows the choice.
+    final sessionTools = toolChoice == ToolChoice.none ? const <Tool>[] : tools;
+    final userTurnToolChoice =
+        toolChoice == ToolChoice.required &&
+            jsonSchema == null &&
+            _nativeTools(tools).isNotEmpty
+        ? lm.ToolChoice.required
+        : null;
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
@@ -571,7 +586,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           explicit: explicit,
           sampling: sampling,
           systemInstruction: systemInstruction,
-          tools: tools,
+          tools: sessionTools,
           maxOutputTokens: maxOutputTokens,
           jsonSchema: jsonSchema,
         ),
@@ -606,6 +621,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       supportAudio: enableAudioModality ?? supportAudio,
       enableThinking: enableThinking,
       maxOutputTokens: maxOutputTokens,
+      userTurnToolChoice: userTurnToolChoice,
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);
@@ -764,8 +780,14 @@ class FfiInferenceModelSession extends InferenceModelSession
     this.enableThinking = false,
     this.thinkingTokenBudget,
     this.maxOutputTokens,
+    this.userTurnToolChoice,
     required this.onClose,
   });
+
+  /// The tool choice each user turn is sent with (core's
+  /// [ToolChoice.required] on a model whose tool calls LiteRT-LM runs); null
+  /// sends none. The turn answering tool results never carries it.
+  final lm.ToolChoice? userTurnToolChoice;
 
   /// The session's conversation.
   final lm.Conversation conversation;
@@ -934,6 +956,7 @@ class FfiInferenceModelSession extends InferenceModelSession
           enableThinking: enableThinking,
           thinkingTokenBudget: thinkingTokenBudget,
         ),
+        toolChoice: message.role == lm.Role.tool ? null : userTurnToolChoice,
       )
       .handleError((Object error, StackTrace stack) {
         if (error is lm.ConstraintUnsupportedException) {

@@ -207,6 +207,84 @@ final class RegexResponseFormat extends ResponseFormat {
   final String pattern;
 }
 
+/// Which tools the model may or must call for one message: Kotlin's and
+/// Swift's `ToolChoice`, OpenAI's `tool_choice`. Passed to
+/// `Conversation.sendMessage`/`sendMessageStream`, it applies to that
+/// message's first round only; the rounds that answer tool results run
+/// [auto], so [required] cannot loop.
+@immutable
+sealed class ToolChoice {
+  const ToolChoice();
+
+  /// The model decides whether to call a tool (the default).
+  static const ToolChoice auto = ToolChoiceAuto();
+
+  /// The model answers without calling a tool.
+  static const ToolChoice none = ToolChoiceNone();
+
+  /// The model calls at least one tool.
+  static const ToolChoice required = ToolChoiceRequired();
+
+  /// The model calls the tool [name].
+  const factory ToolChoice.forcedFunction(String name) =
+      ToolChoiceForcedFunction;
+
+  /// The model may call only the tools [names]; with [required] it must call
+  /// one of them.
+  const factory ToolChoice.allowedTools(List<String> names, {bool required}) =
+      ToolChoiceAllowedTools;
+}
+
+/// [ToolChoice.auto].
+final class ToolChoiceAuto extends ToolChoice {
+  const ToolChoiceAuto();
+
+  @override
+  String toString() => 'ToolChoice.auto';
+}
+
+/// [ToolChoice.none].
+final class ToolChoiceNone extends ToolChoice {
+  const ToolChoiceNone();
+
+  @override
+  String toString() => 'ToolChoice.none';
+}
+
+/// [ToolChoice.required].
+final class ToolChoiceRequired extends ToolChoice {
+  const ToolChoiceRequired();
+
+  @override
+  String toString() => 'ToolChoice.required';
+}
+
+/// [ToolChoice.forcedFunction].
+final class ToolChoiceForcedFunction extends ToolChoice {
+  const ToolChoiceForcedFunction(this.name);
+
+  /// The tool the model calls.
+  final String name;
+
+  @override
+  String toString() => 'ToolChoice.forcedFunction($name)';
+}
+
+/// [ToolChoice.allowedTools].
+final class ToolChoiceAllowedTools extends ToolChoice {
+  const ToolChoiceAllowedTools(this.names, {this.required = false});
+
+  /// The tools the model may call.
+  final List<String> names;
+
+  /// Whether it must call one of them; false lets it answer without a tool.
+  final bool required;
+
+  @override
+  String toString() =>
+      'ToolChoice.allowedTools($names${required ? ', required: true' : ''})';
+}
+
 /// What an `Engine` loads, and on what: LiteRT-LM's `EngineConfig`.
 @immutable
 final class EngineConfig {
@@ -220,7 +298,21 @@ final class EngineConfig {
     this.cacheDir,
     this.activationDataType,
     this.speculativeDecoding,
-  }) : backend = backend ?? const Backend.cpu();
+    List<String>? selectedSignatures,
+  }) : backend = backend ?? const Backend.cpu(),
+       selectedSignatures = selectedSignatures == null
+           ? null
+           : List.unmodifiable(selectedSignatures) {
+    final selected = this.selectedSignatures;
+    if (selected != null &&
+        (selected.isEmpty || selected.any((name) => name.isEmpty))) {
+      throw ArgumentError.value(
+        selectedSignatures,
+        'selectedSignatures',
+        'must name at least one signature, none of them empty',
+      );
+    }
+  }
 
   /// The `.litertlm` file. On the web: a URL the page can fetch (`blob:`,
   /// `https:`) of a build the web runtime loads, such as Gemma 4's GPU
@@ -263,7 +355,15 @@ final class EngineConfig {
   final ActivationDataType? activationDataType;
 
   /// Speculative decoding (MTP); null is LiteRT-LM's default (off).
-  final SpeculativeDecodingMode? speculativeDecoding;
+  final SpeculativeDecodingConfig? speculativeDecoding;
+
+  /// The main model's signatures to compile and run, for example
+  /// `['prefill_1024', 'decode']`; null runs every signature. Keep at least
+  /// one prefill signature and `decode`, and `verify` with speculative
+  /// decoding. Each name is checked against the model before the engine is
+  /// created: one the model does not have is an [ArgumentError]. Refused on
+  /// the web, whose runtime takes none.
+  final List<String>? selectedSignatures;
 }
 
 /// One conversation's setup: LiteRT-LM's `ConversationConfig`.
@@ -319,7 +419,7 @@ final class ConversationConfig {
   final ResponseFormat? responseFormat;
 
   /// Speculative decoding for this conversation; null is the engine's.
-  final SpeculativeDecodingMode? speculativeDecoding;
+  final SpeculativeDecodingConfig? speculativeDecoding;
 
   /// Variables for the model's prompt template.
   final Map<String, Object?> extraContext;

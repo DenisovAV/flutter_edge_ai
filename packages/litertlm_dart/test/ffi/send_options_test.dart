@@ -127,7 +127,9 @@ void main() {
       'suppress_tokens',
       'speculative_decoding_config',
       'engine_settings_set_num_threads',
+      'engine_settings_set_selected_signatures',
       'conversation_config_set_extra_context',
+      'optional_args_set_tool_choice',
     };
     final called = {
       for (final m in RegExp(r'b\.(litert_lm_[a-z_]+)\b').allMatches(sources))

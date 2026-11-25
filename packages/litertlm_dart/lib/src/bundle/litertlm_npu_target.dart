@@ -179,6 +179,34 @@ Future<NpuStamp?> _stampOf(_FileReader file, int begin, int end) async {
   return null;
 }
 
+/// The signature keys of the TFLite model in `[begin, end)` of the open
+/// [file] of [length] bytes, in the model's order (`prefill_1024`, `decode`,
+/// ...). Throws [FormatException] or [RangeError] for a model it cannot walk.
+Future<List<String>> readLiteRtLmSignatureKeys(
+  RandomAccessFile file,
+  int length,
+  int begin,
+  int end,
+) async {
+  if (end <= begin || end > length) {
+    throw RangeError('TFLiteModel section $begin..$end');
+  }
+  final model = _AsyncTable(_FileReader(file, length), begin, end);
+  final root = await model.ref(0);
+  final signatures = await model.table(root, 7); // Model.signature_defs
+  if (signatures == null) return const [];
+  final count = await model.length(signatures);
+  if (count > _maxMetadataEntries) {
+    throw RangeError.range(count, 0, _maxMetadataEntries, 'signatures');
+  }
+  return [
+    for (var i = 0; i < count; i++)
+      if (await model.string(await model.element(signatures, i), 2)
+          case final key?) // SignatureDef.signature_key
+        key,
+  ];
+}
+
 /// The prefill lengths of the TFLite model in `[begin, end)` of the open
 /// [file] of [length] bytes, as LiteRT-LM's CPU/GPU executor derives them
 /// (`GetPrefillRunnerSetFromSignatures`, v0.19.0): for each signature whose

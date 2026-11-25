@@ -249,6 +249,8 @@ class EngineHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? speculativeDecodingMode,
+    double? speculativeDecodingLenience,
+    List<String>? selectedSignatures,
     required int? numThreads,
     required int? activationDataType,
     required GpuActivationReason? gpuActivationReason,
@@ -268,6 +270,8 @@ class EngineHost {
     audioBackend: audioBackend,
     enableSpeculativeDecoding: enableSpeculativeDecoding,
     speculativeDecodingMode: speculativeDecodingMode,
+    speculativeDecodingLenience: speculativeDecodingLenience,
+    selectedSignatures: selectedSignatures,
     numThreads: numThreads,
     activationDataType: activationDataType,
     gpuActivationReason: gpuActivationReason,
@@ -602,6 +606,22 @@ final class Engine {
             null => throw StateError('an NPU load without an NPU vendor'),
           };
 
+    final selected = config.selectedSignatures;
+    if (selected != null) {
+      final keys = await readLiteRtLmMainSignatureKeys(path);
+      final unknown = [
+        for (final name in selected)
+          if (!keys.contains(name)) name,
+      ];
+      if (unknown.isNotEmpty) {
+        throw ArgumentError.value(
+          selected,
+          'selectedSignatures',
+          'names ${unknown.join(', ')}, which the model does not have '
+              '(it has ${keys.isEmpty ? 'none' : keys.join(', ')})',
+        );
+      }
+    }
     final speculative = config.speculativeDecoding;
     final client = host.createClient();
     try {
@@ -630,16 +650,30 @@ final class Engine {
                 null => null,
               },
         ),
-        // Off and on keep the boolean setter they always used; adaptive has
-        // none and goes through a speculative decoding config.
+        // Off and on without a lenience keep the boolean setter they always
+        // used; adaptive, or any lenience, goes through a speculative
+        // decoding config.
         enableSpeculativeDecoding: switch (speculative) {
-          SpeculativeDecodingMode.off => false,
-          SpeculativeDecodingMode.on => true,
+          SpeculativeDecodingConfig(
+            mode: SpeculativeDecodingMode.off,
+            lenience: null,
+          ) =>
+            false,
+          SpeculativeDecodingConfig(
+            mode: SpeculativeDecodingMode.on,
+            lenience: null,
+          ) =>
+            true,
           _ => null,
         },
-        speculativeDecodingMode: speculative == SpeculativeDecodingMode.adaptive
-            ? speculative!.index
+        speculativeDecodingMode:
+            speculative != null &&
+                (speculative.mode == SpeculativeDecodingMode.adaptive ||
+                    speculative.lenience != null)
+            ? speculative.mode.index
             : null,
+        speculativeDecodingLenience: speculative?.lenience,
+        selectedSignatures: selected,
         numThreads: switch (config.backend) {
           CpuBackend(:final threadCount) => threadCount,
           _ => null,

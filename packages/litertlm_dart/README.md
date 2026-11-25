@@ -209,13 +209,25 @@ final engine = await Engine.create(
   EngineConfig(
     modelPath: modelPath,
     backend: const Backend.gpu(),
-    speculativeDecoding: SpeculativeDecodingMode.on, // or .adaptive, .off
+    speculativeDecoding: SpeculativeDecodingConfig(
+      mode: SpeculativeDecodingMode.on, // or .adaptive, .off
+      lenience: 0.1, // optional, in [0, 1]; null is LiteRT-LM's (exact)
+    ),
   ),
 );
 ```
 
-A conversation can override it with `ConversationConfig.speculativeDecoding`.
-Unset, it is LiteRT-LM's default (off).
+A conversation can override it with `ConversationConfig.speculativeDecoding`,
+and `benchmark()` takes one too. Unset, it is LiteRT-LM's default (off). The
+NPU executor ignores the lenience and stays exact.
+
+## Selected signatures
+
+`EngineConfig.selectedSignatures` compiles and runs only the main model's
+signatures named, for example `['prefill_128', 'decode']` (keep a prefill
+signature and `decode`, and `verify` with speculative decoding). Each name is
+checked against the model before the engine is created; one it does not have
+is an `ArgumentError`. Refused on the web.
 
 ## Multimodality
 
@@ -347,6 +359,31 @@ while (reply.toolCalls.isNotEmpty) {
 }
 print(reply.text);
 ```
+
+### Tool choice
+
+`sendMessage` and `sendMessageStream` take a `toolChoice` for one message, as
+Kotlin's and Swift's `ToolChoice`: `ToolChoice.auto` (the default),
+`ToolChoice.none`, `ToolChoice.required`, `ToolChoice.forcedFunction(name)` and
+`ToolChoice.allowedTools(names, required: ...)`. It applies to that message's
+first round only; the rounds that answer tool results run `auto`, so
+`required` cannot loop.
+
+```dart
+import 'package:litertlm_dart/litertlm_dart.dart';
+
+Future<Message> askWeather(Conversation conversation) =>
+    conversation.sendMessage(
+      Message.user("What's the weather like in London?"),
+      toolChoice: const ToolChoice.forcedFunction('get_weather'),
+    );
+```
+
+A choice other than `auto` needs a conversation with tools and no response
+format, and must name tools the conversation has; otherwise it is an
+`ArgumentError`. With `ToolChoice.none` the model cannot call a tool, but may
+still write what a call would look like as text. Refused on the web, whose
+runtime has no tool choice.
 
 ## Thinking
 

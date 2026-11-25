@@ -104,7 +104,9 @@ void main() {
         maxOutputTokens: 64,
         responseFormat: ResponseFormat.regex('[0-9]+'),
         extraContext: const {'k': 'v'},
-        speculativeDecoding: SpeculativeDecodingMode.adaptive,
+        speculativeDecoding: SpeculativeDecodingConfig(
+          mode: SpeculativeDecodingMode.adaptive,
+        ),
       ),
     );
     await engine.createConversation(
@@ -132,7 +134,10 @@ void main() {
     expect(first.maxOutputTokens, 64);
     expect(first.constraint, const Constraint.regex('[0-9]+'));
     expect(first.extras.extraContext, {'k': 'v'});
-    expect(first.extras.speculativeDecoding, SpeculativeDecodingMode.adaptive);
+    expect(
+      first.extras.speculativeDecoding,
+      SpeculativeDecodingConfig(mode: SpeculativeDecodingMode.adaptive),
+    );
     expect(
       client.creates.last.constraint,
       const Constraint.jsonSchema('{"type":"string"}'),

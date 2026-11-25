@@ -130,7 +130,8 @@ else
 fi
 
 # 1. Clone or update LiteRT
-if [ -d "$LITERT_DIR/.git" ]; then
+# -e, not -d: in a git worktree of a LiteRT clone .git is a file.
+if [ -e "$LITERT_DIR/.git" ]; then
   echo ""
   echo "Updating $LITERT_DIR..."
   git -C "$LITERT_DIR" fetch origin

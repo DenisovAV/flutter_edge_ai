@@ -9,8 +9,8 @@
 // recognizer subclass, except that a streaming profile gets
 // [LiteRtStreamingSpeechRecognizer].
 //
-// Core may add members to SpeechRecognizer in a minor release; this package
-// implements it, so its core constraint stays within one core minor.
+// The base class keeps core's non-streaming defaults (streaming null);
+// LiteRtStreamingSpeechRecognizer overrides them for Parakeet.
 
 import 'dart:async';
 import 'dart:convert';

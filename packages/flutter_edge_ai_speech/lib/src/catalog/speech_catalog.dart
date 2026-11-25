@@ -143,7 +143,8 @@ final class LiteRtSttVariant extends SttVariant {
       _backendsHere(compiledForNpu: npuTarget != null).difference(_withheld);
 
   /// Parakeet's CTC builds stream (their recognizer's `streaming` is not
-  /// null on every backend it loads on); moonshine and Whisper do not yet. A build compiled for an NPU does not load at all.
+  /// null on every backend it loads on); moonshine and Whisper do not yet.
+  /// A build compiled for an NPU does not load at all.
   @override
   bool get supportsStreaming =>
       type == SttModelType.parakeet && npuTarget == null;

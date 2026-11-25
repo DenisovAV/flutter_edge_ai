@@ -125,6 +125,38 @@ window, steady state over repeated transcriptions
   text. Run Matcha on the CPU: 6.9–8.0 s for a sentence of 3.4 s over three
   runs.
 
+### Streaming speech-to-text (Parakeet)
+
+Parakeet CTC also transcribes audio as it arrives. `getActiveStt()` then
+returns a recognizer whose `asStreaming` is not null:
+
+```dart
+// ignore_for_file: experimental_member_use
+final recognizer = await FlutterEdgeAi.getActiveStt();
+final streaming = recognizer.asStreaming!; // null for moonshine and Whisper
+
+await for (final update in streaming.transcribeStream(microphonePcm16kMono)) {
+  transcript.write(update.confirmedDelta); // final from here on
+  showTail(update.unconfirmed);            // may still change
+  if (update.endpoint) { /* the utterance is complete */ }
+}
+// At a voice activity detector's end of utterance: await streaming.flush();
+```
+
+It runs the batch model over 5 s windows that overlap
+(`StreamingLatency.lowLatency`: a window every 1.25 s; `balanced`: every
+2.5 s) and merges their words by time, with the windowing and merging of
+LiteRT-LM Omni (`third_party/litert_lm_omni/`). On 87 LibriSpeech test-clean
+streams of about 60 s (93 min), fed in 100 ms chunks on a Mac CPU with
+`parakeet_ctc_0.6b_5s_i8.tflite`: 2.85% WER at `lowLatency` (0.13 s of
+compute per second of audio), 2.80% at `balanced` (0.08 s), against 5.33%
+for plain 5 s chunks. One stream runs at a time; `transcribe` calls made
+meanwhile wait their turn. Audio that arrives faster than the model keeps up
+with is held up to `TranscribeStreamOptions.maxBufferedAudio` (10 s), then
+the stream fails with `SpeechStreamOverrunException`; raise it to stream a
+file faster than real time. The streaming contracts are `@experimental` in
+`flutter_edge_ai`.
+
 ### Speech-to-text output language (Whisper)
 
 Whisper's shipped checkpoints are multilingual. The output language is one token

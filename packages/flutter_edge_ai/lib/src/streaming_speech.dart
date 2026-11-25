@@ -2,10 +2,10 @@
 // `SpeechSynthesizer.synthesizeStream` and `SpeechSynthesizer.openTextStream`
 // (those members are in interface.dart, on the two classes themselves).
 //
-// Core may add members to the speech classes and fields to these types in a
-// minor release; backends that implement them move with core, pinned to its
-// minor. A value added to one of the enums breaks an app's `switch` over it
-// that has no default arm.
+// Core may add members to the speech classes in a minor release, each with a
+// default body (a class that extends them inherits it; one that implements
+// them adds it), and fields to these types. A value added to one of the
+// enums breaks an app's `switch` over it that has no default arm.
 library;
 
 import 'dart:typed_data';

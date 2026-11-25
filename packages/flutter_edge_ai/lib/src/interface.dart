@@ -1503,7 +1503,8 @@ abstract class SpeechRecognizer {
   /// stream is listened to), when the running stream's input has ended (it
   /// keeps the recognizer until its last update is out, but has nothing
   /// left to flush), and when the stream ends or fails before the flush is
-  /// done.
+  /// done. Await it or handle its error: an error nobody handles is
+  /// reported as uncaught.
   Future<void> flush() => Future.error(
     StateError('flush: no transcribeStream is running on this recognizer'),
   );

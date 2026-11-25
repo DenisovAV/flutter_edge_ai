@@ -514,7 +514,8 @@ bool _startsWithDigit(String word) {
 // the output. They take part in the alignment, so the current chunk's copies
 // of them pair or count as covered instead of being merged again; the return
 // value is how many of them lead [mergedWords], which the caller keeps as the
-// confirmed prefix. Omni drops them from `prevOvWords` instead, and the
+// confirmed prefix. A current-only word aligned before the last of them is
+// dropped: it lies in text already confirmed. Omni drops them from `prevOvWords` instead, and the
 // current chunk's copies come out a second time (`overlap_ratio >= 0.7`).
 int _mergeAlignedOverlap({
   required List<Uint8List> canonPrevWords,
@@ -595,7 +596,12 @@ int _mergeAlignedOverlap({
         }
         ++i;
       case _AlignOp.currOnly:
-        if (currTimes[j] >= pivot) {
+        if (i < alreadyEmitted) {
+          // Deviation from Omni: a current-only word aligned before a previous
+          // word that is already out lies in text already confirmed; keeping
+          // it would put it after that text and repeat the confirmed words
+          // that follow (a fragment cut at the window start, mostly).
+        } else if (currTimes[j] >= pivot) {
           _appendMergedWord(
             mergedWords,
             mergedTimestamps,

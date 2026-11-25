@@ -508,7 +508,15 @@ bool _startsWithDigit(String word) {
 // - Unpaired `curr` words (`currOnly`) are kept after `pivot`, or before
 //   `pivot` when `prev` neither covered that time nor cut a word at the window
 //   start.
-void _mergeAlignedOverlap({
+//
+// Deviation from Omni (flutter_edge_ai_speech): the first [alreadyEmitted]
+// `prevOvWords` were confirmed early by the previous merge and are already in
+// the output. They take part in the alignment, so the current chunk's copies
+// of them pair or count as covered instead of being merged again; the return
+// value is how many of them lead [mergedWords], which the caller keeps as the
+// confirmed prefix. Omni drops them from `prevOvWords` instead, and the
+// current chunk's copies come out a second time (`overlap_ratio >= 0.7`).
+int _mergeAlignedOverlap({
   required List<Uint8List> canonPrevWords,
   required List<int> prevTimestamps,
   required List<String> prevOvWords,
@@ -525,8 +533,26 @@ void _mergeAlignedOverlap({
   required _Tolerances tol,
   required List<String> mergedWords,
   required List<int> mergedTimestamps,
+  int alreadyEmitted = 0,
 }) {
   final prevOvMatched = _findMatchedPrevOverlapWords(closeMatrix, ops);
+  // How many already-emitted previous words lead `mergedWords` so far.
+  var emittedPrefix = 0;
+  void appendPrev(int i) {
+    final before = mergedWords.length;
+    _appendMergedWord(
+      mergedWords,
+      mergedTimestamps,
+      prevOvWords[i],
+      prevOvTs[i],
+      tol.matchLate,
+    );
+    if (i < alreadyEmitted &&
+        mergedWords.length == before + 1 &&
+        before == emittedPrefix) {
+      ++emittedPrefix;
+    }
+  }
 
   var i = 0;
   var j = 0;
@@ -540,13 +566,7 @@ void _mergeAlignedOverlap({
             prevOvTs[i] <= pivot + tol.substitution &&
             _startsWithDigit(prevOvWords[i]);
         if (prevOvTs[i] < pivot - 1e-4 || preferPrevNumeric) {
-          _appendMergedWord(
-            mergedWords,
-            mergedTimestamps,
-            prevOvWords[i],
-            prevOvTs[i],
-            tol.matchLate,
-          );
+          appendPrev(i);
         } else {
           _appendMergedWord(
             mergedWords,
@@ -571,13 +591,7 @@ void _mergeAlignedOverlap({
                   prevOvTs[i].toDouble(),
                   tol.substitution,
                 ))) {
-          _appendMergedWord(
-            mergedWords,
-            mergedTimestamps,
-            prevOvWords[i],
-            prevOvTs[i],
-            tol.matchLate,
-          );
+          appendPrev(i);
         }
         ++i;
       case _AlignOp.currOnly:
@@ -624,6 +638,7 @@ void _mergeAlignedOverlap({
       tol.matchLate,
     );
   }
+  return emittedPrefix;
 }
 
 List<Uint8List> _canonicalizeWordsUtf8(List<String> words) => [
@@ -901,8 +916,14 @@ final class TimestampTextMerger implements TextMerger {
       ++numConfirmed;
     }
     final alreadyConfirmed = math.min(_confirmedPrefixSize, _prevWords.length);
-    numConfirmed = math.max(numConfirmed, alreadyConfirmed);
-    _lastConfirmedWords = _prevWords.sublist(alreadyConfirmed, numConfirmed);
+    // Deviation from Omni: words confirmed early by the previous merge but
+    // still inside this chunk stay in the overlap (see _mergeAlignedOverlap);
+    // Omni moves numConfirmed past them (`std::max(num_confirmed,
+    // already_confirmed)`).
+    _lastConfirmedWords = numConfirmed > alreadyConfirmed
+        ? _prevWords.sublist(alreadyConfirmed, numConfirmed)
+        : <String>[];
+    final alreadyEmitted = math.max(0, alreadyConfirmed - numConfirmed);
     _confirmedPrefixSize = 0;
     final prevOvWords = _prevWords.sublist(numConfirmed);
     final canonPrevOvWords = canonPrevWords.sublist(numConfirmed);
@@ -929,7 +950,7 @@ final class TimestampTextMerger implements TextMerger {
 
     final mergedWords = <String>[];
     final mergedTimestamps = <int>[];
-    _mergeAlignedOverlap(
+    final emittedPrefix = _mergeAlignedOverlap(
       canonPrevWords: canonPrevWords,
       prevTimestamps: _prevTimestamps,
       prevOvWords: prevOvWords,
@@ -946,10 +967,12 @@ final class TimestampTextMerger implements TextMerger {
       tol: tol,
       mergedWords: mergedWords,
       mergedTimestamps: mergedTimestamps,
+      alreadyEmitted: alreadyEmitted,
     );
 
     _prevWords = mergedWords;
     _prevTimestamps = mergedTimestamps;
+    _confirmedPrefixSize = emittedPrefix;
     if (overlapRatio >= _f32(0.7)) {
       final earlyConfirmLimit = pivot - tol.substitution;
       while (_confirmedPrefixSize < _prevTimestamps.length &&

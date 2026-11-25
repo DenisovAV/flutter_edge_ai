@@ -637,6 +637,13 @@ jobs:
         # features = ["-static_link_msvcrt"] on that target (litert/c/BUILD;
         # D9). The import check after Collect holds all of them to it.
         run: |
+          # TF repository rules run patch_cmds as ctx.execute(["bash", "-c", ...])
+          # (third_party/repo.bzl), so `bash` is looked up on PATH; on a GitHub
+          # Windows runner that finds System32's WSL launcher first, with no
+          # distribution, and the fetch fails. Git's bin\ holds only bash, sh and
+          # git, and its bash puts usr\bin (sed) on its own PATH. usr\bin itself
+          # is not prepended: it has a link.exe and a find.exe.
+          $env:PATH = "C:\Program Files\Git\bin;$env:PATH"
           cd C:\LiteRT-LM
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build -c opt `
@@ -665,6 +672,13 @@ jobs:
         # The OpenVino SDK is fetched by Bazel (configurable_repo), so this
         # needs no preinstalled toolkit on the runner.
         run: |
+          # TF repository rules run patch_cmds as ctx.execute(["bash", "-c", ...])
+          # (third_party/repo.bzl), so `bash` is looked up on PATH; on a GitHub
+          # Windows runner that finds System32's WSL launcher first, with no
+          # distribution, and the fetch fails. Git's bin\ holds only bash, sh and
+          # git, and its bash puts usr\bin (sed) on its own PATH. usr\bin itself
+          # is not prepended: it has a link.exe and a find.exe.
+          $env:PATH = "C:\Program Files\Git\bin;$env:PATH"
           cd C:\LiteRT-LM
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build -c opt `

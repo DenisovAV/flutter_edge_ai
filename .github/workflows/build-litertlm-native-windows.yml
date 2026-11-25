@@ -104,6 +104,13 @@ jobs:
         # libLiteRt.dll and the WebGPU accelerator are built from LiteRT's
         # source from v0.20.0: upstream's prebuilt/ no longer has them.
         run: |
+          # TF repository rules run patch_cmds as ctx.execute(["bash", "-c", ...])
+          # (third_party/repo.bzl), so `bash` is looked up on PATH; on a GitHub
+          # Windows runner that finds System32's WSL launcher first, with no
+          # distribution, and the fetch fails. Git's bin\ holds only bash, sh and
+          # git, and its bash puts usr\bin (sed) on its own PATH. usr\bin itself
+          # is not prepended: it has a link.exe and a find.exe.
+          $env:PATH = "C:\Program Files\Git\bin;$env:PATH"
           cd C:\LiteRT-LM
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build -c opt `
@@ -124,6 +131,13 @@ jobs:
         # previously carried-forward prebuilt (OpenVino 2026.2.0 against a
         # runtime pinned to 2026.3.0) is what broke backend=npu (#3217).
         run: |
+          # TF repository rules run patch_cmds as ctx.execute(["bash", "-c", ...])
+          # (third_party/repo.bzl), so `bash` is looked up on PATH; on a GitHub
+          # Windows runner that finds System32's WSL launcher first, with no
+          # distribution, and the fetch fails. Git's bin\ holds only bash, sh and
+          # git, and its bash puts usr\bin (sed) on its own PATH. usr\bin itself
+          # is not prepended: it has a link.exe and a find.exe.
+          $env:PATH = "C:\Program Files\Git\bin;$env:PATH"
           cd C:\LiteRT-LM
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build -c opt `

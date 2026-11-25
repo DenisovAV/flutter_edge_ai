@@ -3,8 +3,8 @@
 // desktop CPU), so it never runs on the UI isolate.
 //
 // The model is the 16 kHz Silero VAD exported to LiteRT with its state as an
-// explicit tensor (anira-project/silero-vad, exported from silero-vad
-// v6.2.3): one signature, inputs `audio [1,1,512]` and `state [1,320]`,
+// explicit tensor (silero-vad v6.3, exported with anira-project's scripts,
+// see assets/vad/README.md): one signature, inputs `audio [1,1,512]` and `state [1,320]`,
 // outputs `probability [1,1,1]` and `state [1,320]`, in that order. The state
 // is the LSTM's h and c (128 each) plus the last 64 samples of the previous
 // frame, which upstream's wrapper keeps outside the model; a stream starts

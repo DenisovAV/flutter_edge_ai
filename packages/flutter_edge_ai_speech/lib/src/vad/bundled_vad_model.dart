@@ -17,12 +17,11 @@ import 'package:path_provider/path_provider.dart'
 import 'vad_worker.dart' show VadWorkerEngineFactory;
 
 /// The Silero VAD model this package ships, as a Flutter asset of this
-/// package: the 16 kHz model of silero-vad v6.2.3 (MIT, Silero Team),
-/// exported to LiteRT by anira-project (huggingface.co/anira-project/
-/// silero-vad at c302618523e14ea1a7a919df1b796096186513bb,
-/// `litert/silero_vad_16k.tflite`).
+/// package: the 16 kHz model of silero-vad v6.3 (MIT, Silero Team), exported
+/// to LiteRT for this package with anira-project's explicit-state export
+/// scripts; provenance and checks in `assets/vad/README.md`.
 const String bundledVadModelAsset =
-    'packages/flutter_edge_ai_speech/assets/vad/silero_vad_16k_v6.2.3.tflite';
+    'packages/flutter_edge_ai_speech/assets/vad/silero_vad_16k_v6.3.tflite';
 
 /// Size in bytes of [bundledVadModelAsset].
 const int bundledVadModelBytes = 1254896;
@@ -30,7 +29,7 @@ const int bundledVadModelBytes = 1254896;
 /// SHA-256 of [bundledVadModelAsset]. The copy LiteRT opens is checked
 /// against it, and a test holds the asset to it.
 const String bundledVadModelSha256 =
-    'dfb2e98438dede7718e33cb3a63863b333b82e486ba122ebb803551094d488e9';
+    '01efcddffbff805ec147dba7983fc07cfd54464fbacfaf021877e991ae52b3b9';
 
 /// Replaces the native engine in tests. Must be a top-level or static
 /// function: it crosses into the worker isolate. Read by the detector, so
@@ -67,7 +66,7 @@ Future<String> _writeBundledModel() async {
   try {
     final base = _debugCacheDir ?? await getApplicationSupportDirectory();
     final dir = Directory('${base.path}/flutter_edge_ai_speech/vad');
-    final file = File('${dir.path}/silero_vad_16k_v6.2.3.tflite');
+    final file = File('${dir.path}/silero_vad_16k_v6.3.tflite');
     if (await _isBundledModel(file)) return file.path;
 
     final bytes = await (debugBundledModelBytes ?? _assetBytes)();

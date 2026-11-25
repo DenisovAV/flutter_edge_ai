@@ -90,7 +90,7 @@ Stream<Uint8List> chunked(Uint8List bytes, int size) async* {
   }
 }
 
-final _bundledFile = File('assets/vad/silero_vad_16k_v6.2.3.tflite');
+final _bundledFile = File('assets/vad/silero_vad_16k_v6.3.tflite');
 
 void main() {
   setUp(() => debugVadEngineFactory = _peakEngine);
@@ -292,7 +292,7 @@ void main() {
       dir = Directory.systemTemp.createTempSync('vad_cache_');
       debugVadModelCacheDir = dir;
       cached = File(
-        '${dir.path}/flutter_edge_ai_speech/vad/silero_vad_16k_v6.2.3.tflite',
+        '${dir.path}/flutter_edge_ai_speech/vad/silero_vad_16k_v6.3.tflite',
       );
       reads = 0;
       debugBundledModelBytes = () async {

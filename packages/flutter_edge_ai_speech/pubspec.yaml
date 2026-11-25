@@ -61,4 +61,4 @@ dev_dependencies:
 # assets/vad/README.md).
 flutter:
   assets:
-    - assets/vad/silero_vad_16k_v6.2.3.tflite
+    - assets/vad/silero_vad_16k_v6.3.tflite

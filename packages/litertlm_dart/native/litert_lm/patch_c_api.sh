@@ -15,6 +15,7 @@
 #
 # 28. Apple: Metal argument buffers stay on (Gemma 4 kernels exceed 31 slots)
 # 29. Tool-call constraints from LLGuidance (every tool_choice), not FST
+# 30. Windows: c/engine.cc builds with MSVC (no #if inside a macro's arguments)
 #
 # v0.20.0 migration: sections 15, 22, 24 and 27 are anchors only now (upstream
 # a48771d2, 9738e180, e0dcad4e and 3db1cfd0ab ship what they patched); section
@@ -1158,5 +1159,24 @@ if ! grep -q 'flutter_edge_ai section 29' "$DIR/.bazelrc"; then
   printf '\n# flutter_edge_ai section 29: tool-call constraints from LLGuidance\nbuild --//build_config:enable_fst_constraints=false\n' >> "$DIR/.bazelrc"
 fi
 echo "  OK: section 29: tool-call constraints from LLGuidance (enable_fst_constraints=false)"
+
+# ── 30. Windows: no preprocessor directive inside a C API macro's arguments ──
+# c/engine.cc (v0.20.0) has an #if/#else/#endif inside the arguments of
+# LITERT_LM_C_ASSIGN_OR_RETURN, which MSVC's traditional preprocessor rejects
+# (C2143/C1019): //c:libLiteRtLm.dylib does not build on Windows. Upstream's
+# Windows CI never compiles c/engine.cc. patches/c_engine_msvc_macro_directive.patch
+# hoists the directive into a local; drop it once upstream does the same.
+MSVC_MACRO_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/c_engine_msvc_macro_directive.patch"
+if git -C "$DIR" apply --check "$MSVC_MACRO_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$MSVC_MACRO_PATCH"
+  echo "  OK: section 30: c/engine.cc builds with MSVC (no directive in macro arguments)"
+elif git -C "$DIR" apply --reverse --check "$MSVC_MACRO_PATCH" 2>/dev/null; then
+  echo "  SKIP: section 30 already applied"
+elif ! grep -q '_get_osfhandle(fd))))));' "$DIR/c/engine.cc"; then
+  echo "  OK: section 30: upstream no longer has the directive inside the macro; drop the section"
+else
+  echo "  ERROR: $MSVC_MACRO_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
 
 echo "Patch complete."

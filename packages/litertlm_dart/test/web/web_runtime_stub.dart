@@ -11,7 +11,11 @@
 //   user message sent as a string comes back with that string as content;
 // - `getTokenCount()` runs on the engine's executor mutex: a test can hold
 //   it, as a generation that rejected but has not left the module does;
-// - an engine's `delete()` is a Promise, a conversation's returns nothing.
+// - an engine's `delete()` is a Promise, a conversation's returns nothing;
+// - a send the runtime refuses before it generates ([refuseNextSend]) closes
+//   its stream with no chunk, as 0.20.0 does (`sendMessageStreaming` drops
+//   the result of `sendMessageAsync`), the message kept at the end of the
+//   history with no reply.
 // The page's `Backend` enum (`window.LiteRtLmBackend`) is 0.19.0's unless a
 // test installs another layout ([backends019], [backends020]).
 library;
@@ -50,6 +54,14 @@ const _stub = r'''
                images: preface.reduce((n, m) => n + images(m), 0)};
     c.sendMessageStreaming = (message) => {
       p.sent.push(message);
+      // As 0.20.0 for a send `sendMessageAsync` refuses synchronously: the
+      // message stays in the history, nothing is generated, the stream
+      // closes empty.
+      if (p.refuseNextSend) {
+        p.refuseNextSend = false;
+        if (!p.refusedBeforeHistory) c.history.push(asHistory(message));
+        return new ReadableStream({start(ctl) { queueMicrotask(() => ctl.close()); }});
+      }
       // A bare iterator (no Symbol.asyncIterator) whose step has no `done`.
       if (p.malformed) return {next: async () => ({value: 1})};
       // A stream whose iterator cannot be read.
@@ -143,6 +155,17 @@ const _stub = r'''
     const reply = {role: 'assistant', content: [{type: 'text', text: s.text}]};
     if (s.toolCalls) reply.tool_calls = s.toolCalls;
     s.conversation.history.push(asHistory(s.message), reply);
+  };
+  // A reply that ends with no chunk: the model answered nothing, and the
+  // history holds the message and an empty assistant entry.
+  window.__emptyReply = () => {
+    const s = open();
+    s.generated = true;
+    s.conversation.prefilled = true;
+    s.conversation.history.push(asHistory(s.message),
+      {role: 'assistant', content: [{type: 'text', text: ''}]});
+    s.closed = true;
+    s.controller.close();
   };
   window.__step = (text) => {
     const s = open();

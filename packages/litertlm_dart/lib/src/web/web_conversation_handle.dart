@@ -26,6 +26,15 @@
 //   runs the JSPI build, where that is harmless; the Asyncify builds (no
 //   JSPI) hold one suspended call per module, and another call entering then
 //   would corrupt it.
+// - A stream that ends with no chunk on a turn nobody stopped is either an
+//   empty reply or a send the runtime refused before it generated anything:
+//   0.20.0's `sendMessageStreaming` drops the result of `sendMessageAsync`,
+//   so such a refusal closes the stream empty instead of rejecting it, and
+//   leaves the message at the end of the runtime's history with no reply.
+//   `getHistory()` tells them apart, still under the turn's page lease: an
+//   empty assistant entry after the message is an empty reply; anything else
+//   is a refused send, which fails the turn with a [LiteRtLmNativeException]
+//   and is left out of the conversation by the rebuild the next turn runs.
 // - A generation stopped before its end leaves the runtime conversation
 //   refusing every later send ("Task cancelled"); the next turn replaces it
 //   by one built from the preface, the exchanges kept so far and
@@ -139,7 +148,8 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// The message of the last turn the runtime failed (not a stop): the
   /// runtime keeps it at the end of its history with no reply (M1, N1,
-  /// 0.19.0), and the rebuild leaves it out.
+  /// 0.19.0; a send 0.20.0 refuses before it generates, whose stream closes
+  /// empty), and the rebuild leaves it out.
   Map<String, Object?>? _failed;
 
   /// Why the conversation must be rebuilt, for the errors of a rebuild.
@@ -441,6 +451,10 @@ final class WebConversationHandle implements ConversationHandle {
             // after a stop that came after the last chunk).
             if (turn.asked || turn.fault != null) {
               finishAsked(StackTrace.current);
+            } else if (!turn.chunked) {
+              // An empty reply, or a send the runtime refused: its history
+              // says which.
+              _settleEmptyTurn(turn, finish, finishAsked);
             } else {
               finish();
             }
@@ -448,6 +462,7 @@ final class WebConversationHandle implements ConversationHandle {
           }
           try {
             final value = step.getProperty<JSAny?>('value'.toJS);
+            if (value != null) turn.chunked = true;
             if (value != null && turn.fault == null) {
               final json = _stringify(value);
               // Bookkeeping for a stop only: a chunk it cannot read keeps
@@ -609,6 +624,105 @@ final class WebConversationHandle implements ConversationHandle {
       listenerGone = true;
     };
     return controller.stream;
+  }
+
+  /// Ends [turn], whose stream ended with no chunk and no stop, as an empty
+  /// reply or as a refused send, from the runtime's history: an empty
+  /// assistant entry right after the message is an empty reply ([finish]
+  /// with nothing); anything else means the runtime generated nothing for it
+  /// (0.20.0 closes a refused send's stream empty, the message kept at the
+  /// end of its history), and the turn fails with a
+  /// [LiteRtLmNativeException]; the next turn rebuilds the conversation
+  /// without it. Runs while [turn] still holds the page; a history read that
+  /// never ends poisons it, as a stopped generation does. A stop or close
+  /// asked meanwhile ends the turn as asked ([finishAsked]).
+  void _settleEmptyTurn(
+    _Turn turn,
+    void Function({Object? error, StackTrace? stack}) finish,
+    void Function(StackTrace stack) finishAsked,
+  ) {
+    _armDrain(turn, 'its reply ended with no chunk');
+    Future<List<Object?>> read() async => [
+      for (final entry in (await _conversation.getHistory().toDart).toDart)
+        entry.dartify(),
+    ];
+    read().then(
+      (history) {
+        if (turn.finished) return;
+        if (_isEmptyReply(history, turn.message)) {
+          if (turn.asked) {
+            finishAsked(StackTrace.current);
+          } else {
+            finish();
+          }
+          return;
+        }
+        // The runtime refused the send: the conversation is rebuilt without
+        // the message, which it may keep at the end of its history.
+        _mustRebuild = true;
+        _failed = turn.message;
+        _rebuildCause = 'a message the runtime refused';
+        if (turn.asked) {
+          finishAsked(StackTrace.current);
+          return;
+        }
+        finish(
+          error: LiteRtLmNativeException(
+            '$liteRtLmWebRuntime refused the message without a reason: its '
+            'reply ended before any chunk, and the conversation\'s history '
+            'holds no reply to it. The message is left out of the '
+            'conversation.',
+          ),
+          stack: StackTrace.current,
+        );
+      },
+      onError: (Object e, StackTrace st) {
+        if (turn.finished) return;
+        if (turn.asked) {
+          finishAsked(st);
+          return;
+        }
+        finish(
+          error: LiteRtLmNativeException(
+            'The reply of $liteRtLmWebRuntime ended before any chunk, and the '
+            'conversation\'s history, which tells an empty reply from a '
+            'refused message, could not be read: $e',
+          ),
+          stack: st,
+        );
+      },
+    );
+  }
+
+  /// Whether [history] ends with [message] answered by an empty assistant
+  /// entry (no text, no tool call): the model's own empty reply.
+  static bool _isEmptyReply(
+    List<Object?> history,
+    Map<String, Object?> message,
+  ) {
+    if (history.length < 2) return false;
+    final reply = history.last;
+    if (reply is! Map || reply['role'] != 'assistant') return false;
+    if (reply['tool_calls'] case final List<Object?> calls
+        when calls.isNotEmpty) {
+      return false;
+    }
+    final empty = switch (reply['content']) {
+      null => true,
+      final String text => text.isEmpty,
+      final List<Object?> parts => parts.every(
+        (part) => part is Map && part['type'] == 'text' && part['text'] == '',
+      ),
+      _ => false,
+    };
+    if (!empty) return false;
+    final Object? sent;
+    try {
+      sent = _replayable(history[history.length - 2]);
+    } on FormatException {
+      return false;
+    }
+    return _jsonEquals(_asSent(sent), _asSent(message));
   }
 
   /// A runtime error as the typed exception the shared `Conversation` maps;
@@ -1015,6 +1129,9 @@ final class _Turn {
 
   /// A chunk with text, a thought or a tool call has arrived.
   bool streamed = false;
+
+  /// Any chunk has arrived, empty or not.
+  bool chunked = false;
 
   /// `sendMessageStreaming` was called for it.
   bool sent = false;

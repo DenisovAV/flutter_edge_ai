@@ -5,21 +5,21 @@
 
 abstract class SpeechRecognizer
   field String? language
-  getter StreamingSttInfo? streaming abstract
+  getter StreamingSttInfo? streaming
   method void addCloseListener(void Function() listener) abstract
   method Future<void> close() abstract
-  method Future<void> flush() abstract
+  method Future<void> flush()
   method Future<String> transcribe(Uint8List pcm16kMono, {String? language}) abstract
-  method Stream<TranscriptUpdate> transcribeStream(Stream<Uint8List> pcm16kMono, {String? language, TranscribeStreamOptions options = const TranscribeStreamOptions()}) abstract
+  method Stream<TranscriptUpdate> transcribeStream(Stream<Uint8List> pcm16kMono, {String? language, TranscribeStreamOptions options = const TranscribeStreamOptions()})
 
 abstract class SpeechSynthesizer
   getter int sampleRate abstract
-  getter bool supportsStreaming abstract
+  getter bool supportsStreaming
   method void addCloseListener(void Function() listener) abstract
   method Future<void> close() abstract
-  method SpeechTextStream openTextStream() abstract
+  method SpeechTextStream openTextStream()
   method Future<Uint8List> synthesize(String text) abstract
-  method Stream<SpeechChunk> synthesizeStream(String text) abstract
+  method Stream<SpeechChunk> synthesizeStream(String text)
 
 abstract interface class SpeechTextStream
   getter Stream<SpeechChunk> audio abstract

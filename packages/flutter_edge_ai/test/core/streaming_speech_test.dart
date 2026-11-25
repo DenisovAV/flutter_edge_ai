@@ -50,7 +50,48 @@ class _PlainSynth implements SpeechSynthesizer {
   Future<void> close() async {}
 }
 
+/// A recognizer written before streaming, as speech 0.6.x's are: it
+/// extends the class and declares none of the streaming members.
+class _OldRecognizer extends SpeechRecognizer {
+  @override
+  String? language;
+  @override
+  Future<String> transcribe(Uint8List pcm16kMono, {String? language}) async =>
+      '';
+  @override
+  void addCloseListener(void Function() listener) {}
+  @override
+  Future<void> close() async {}
+}
+
+/// A synthesizer written before streaming.
+class _OldSynth extends SpeechSynthesizer {
+  @override
+  int get sampleRate => 24000;
+  @override
+  Future<Uint8List> synthesize(String text) async => Uint8List(0);
+  @override
+  void addCloseListener(void Function() listener) {}
+  @override
+  Future<void> close() async {}
+}
+
 void main() {
+  test('a subclass written before streaming compiles and inherits '
+      'non-streaming defaults', () async {
+    final recognizer = _OldRecognizer();
+    expect(recognizer.streaming, isNull);
+    // Returned, not thrown: the error arrives on listen and in the future.
+    final stream = recognizer.transcribeStream(const Stream.empty());
+    await expectLater(stream, emitsError(isA<UnsupportedError>()));
+    await expectLater(recognizer.flush(), throwsStateError);
+    final synth = _OldSynth();
+    expect(synth.supportsStreaming, isFalse);
+    final audio = synth.synthesizeStream('hi');
+    await expectLater(audio, emitsError(isA<UnsupportedError>()));
+    expect(synth.openTextStream, throwsUnsupportedError);
+  });
+
   test(
     'a recognizer that cannot stream says so and refuses on listen',
     () async {

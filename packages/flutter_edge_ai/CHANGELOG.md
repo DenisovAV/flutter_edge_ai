@@ -1,5 +1,5 @@
 ## Unreleased
-- **Breaking for implementers:** `SpeechRecognizer`/`SpeechSynthesizer` gain streaming members (`transcribeStream`, `synthesizeStream`, `openTextStream`).
+- **Breaking for `implements SpeechRecognizer`/`SpeechSynthesizer`:** add streaming members; `extends` inherits non-streaming defaults.
 
 ## 2.7.2
 - `DeciderAnswer.confidence` docs: it equals Jev's confidence for Choice answers only.

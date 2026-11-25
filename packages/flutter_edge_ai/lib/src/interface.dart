@@ -1384,9 +1384,10 @@ mixin RawSdkResponseSession on InferenceModelSession {
 
 /// Represents a speech-to-text model instance.
 ///
-/// Core may add members in a minor release: anything that implements or
-/// extends this (a backend, a test fake) pins core to its minor and moves
-/// with it.
+/// Core may add members in a minor release, each with a default body: a
+/// class that extends this keeps compiling and inherits the default; one
+/// that implements it (a test fake, say) adds the member when it moves to
+/// that release.
 abstract class SpeechRecognizer {
   /// Transcribe 16 kHz mono 16-bit little-endian PCM in one fixed window.
   /// [transcribeStream] transcribes audio as it arrives, when [streaming]
@@ -1433,7 +1434,7 @@ abstract class SpeechRecognizer {
 
   /// How this model streams, or null when it cannot: [transcribeStream] then
   /// fails.
-  StreamingSttInfo? get streaming;
+  StreamingSttInfo? get streaming => null;
 
   /// Transcribes [pcm16kMono], 16 kHz mono 16-bit little-endian PCM in chunks
   /// of any size, as it arrives. The returned stream is single-subscription.
@@ -1480,7 +1481,9 @@ abstract class SpeechRecognizer {
     Stream<Uint8List> pcm16kMono, {
     String? language,
     TranscribeStreamOptions options = const TranscribeStreamOptions(),
-  });
+  }) => Stream.error(
+    UnsupportedError('This speech-to-text model does not stream.'),
+  );
 
   /// Finalises what the running stream has received so far, without ending
   /// its input; for a voice activity detector's end of utterance.
@@ -1501,7 +1504,9 @@ abstract class SpeechRecognizer {
   /// keeps the recognizer until its last update is out, but has nothing
   /// left to flush), and when the stream ends or fails before the flush is
   /// done.
-  Future<void> flush();
+  Future<void> flush() => Future.error(
+    StateError('flush: no transcribeStream is running on this recognizer'),
+  );
 
   /// See [InferenceModel.addCloseListener].
   void addCloseListener(void Function() listener);
@@ -1516,9 +1521,10 @@ abstract class SpeechRecognizer {
 /// divergence: STT consumes caller-supplied audio, TTS produces it, so the
 /// caller must be told the rate to play it or wrap it in WAV.
 ///
-/// Core may add members in a minor release: anything that implements or
-/// extends this (a backend, a test fake) pins core to its minor and moves
-/// with it.
+/// Core may add members in a minor release, each with a default body: a
+/// class that extends this keeps compiling and inherits the default; one
+/// that implements it (a test fake, say) adds the member when it moves to
+/// that release.
 abstract class SpeechSynthesizer {
   /// Synthesize [text] to 16-bit little-endian mono PCM at [sampleRate], all
   /// of it at once. [synthesizeStream] and [openTextStream] produce it chunk
@@ -1530,7 +1536,7 @@ abstract class SpeechSynthesizer {
 
   /// Whether this model can stream: [synthesizeStream] and [openTextStream]
   /// fail when it cannot.
-  bool get supportsStreaming;
+  bool get supportsStreaming => false;
 
   /// The audio for [text], one [SpeechChunk] at a time as each is
   /// synthesized.
@@ -1551,7 +1557,9 @@ abstract class SpeechSynthesizer {
   /// the next step boundary; the cancel future completes when it has
   /// stopped. A synthesis failure ends the stream with its error; closing the
   /// synthesizer ends it with a [StateError].
-  Stream<SpeechChunk> synthesizeStream(String text);
+  Stream<SpeechChunk> synthesizeStream(String text) => Stream.error(
+    UnsupportedError('This text-to-speech model does not stream.'),
+  );
 
   /// A stream that takes its text in pieces, such as a language model's
   /// tokens, and speaks each phrase as soon as it is complete.
@@ -1565,7 +1573,8 @@ abstract class SpeechSynthesizer {
   /// dropped without [SpeechTextStream.close] or [SpeechTextStream.cancel]
   /// holds the synthesizer until it is closed.** `synthesize` calls wait
   /// only for the step in flight, as with [synthesizeStream].
-  SpeechTextStream openTextStream();
+  SpeechTextStream openTextStream() =>
+      throw UnsupportedError('This text-to-speech model does not stream.');
 
   /// See [InferenceModel.addCloseListener].
   void addCloseListener(void Function() listener);

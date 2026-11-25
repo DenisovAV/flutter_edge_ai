@@ -1,4 +1,5 @@
 ## Unreleased
+- Web runs on `@litert-lm/core` 0.20.0: the page imports 0.20.0.
 - Web reads `@litert-lm/core` from `window.litertLm`, one shim line; see the README.
 - `ToolChoice` per message on `sendMessage`/`sendMessageStream` (native).
 - `SpeculativeDecodingConfig` (mode, lenience) replaces `SpeculativeDecodingMode` in the configs; `benchmark()` takes it.

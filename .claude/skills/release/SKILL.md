@@ -408,11 +408,12 @@ done
 ```
 | `AGENTS.md` | `Current Version:` line | match plugin version |
 
-Every `litertlm_dart` release, whatever changed (`+N` is litertlm_dart's own
-release number within one upstream LiteRT-LM version, not the native build's):
+Every `litertlm_dart` release, whatever changed (the first release on an
+upstream LiteRT-LM version is that version as is, `0.20.0`; `+N` numbers the
+later ones on it, not the native build):
 | File | Field |
 |------|-------|
-| `packages/litertlm_dart/pubspec.yaml` | the build number (`0.19.1+1` → `0.19.1+2`; a new upstream LiteRT-LM version resets it: `0.19.2+1`). |
+| `packages/litertlm_dart/pubspec.yaml` | the build number (`0.20.0` → `0.20.0+1` → `0.20.0+2`; a new upstream LiteRT-LM version starts bare: `0.20.1`). |
 | `packages/flutter_edge_ai_litertlm/pubspec.yaml` | the exact `litertlm_dart` pin, to that version: the adapter imports litertlm_dart's internal libraries (`internal.dart`, `internal_web.dart`), which carry no compatibility promise, so an adapter never publishes against an older litertlm_dart (one built on `0.19.1+2` does not compile against `0.19.1+1`, which has no `internal_web.dart`). |
 | `packages/litertlm_dart/README.md` | the `>=` version in its install line. |
 

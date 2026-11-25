@@ -37,9 +37,10 @@ dependencies:
   litertlm_dart: '>=0.19.1+4 <0.19.2'
 ```
 
-The version is the upstream LiteRT-LM version this package is built from,
-plus the number of our release on it: `0.19.1+1` is the first release on
-LiteRT-LM 0.19.1. Within one upstream version the Dart API stays compatible,
+The version is the upstream LiteRT-LM version this package is built from:
+the first release on an upstream version carries it as is (`0.20.0`), and
+each later one adds its number (`0.20.0+1`, `0.20.0+2`). The releases on
+LiteRT-LM 0.19.1 started at `0.19.1+1`. Within one upstream version the Dart API stays compatible,
 with one exception: `EmbeddingEngineConfig.cacheDir` became a `String?` in
 0.19.1+2 (it was a `String`).
 This release runs:

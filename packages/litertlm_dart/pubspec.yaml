@@ -1,7 +1,8 @@
 name: litertlm_dart
 description: "LiteRT-LM in pure Dart for Flutter apps and plain Dart programs (CLI, servers): dart:ffi bindings, a build hook, NPU stacks, EmbeddingGemma 2, and web via @litert-lm/core."
-# The upstream LiteRT-LM version this is built from, plus the number of our
-# release on it: 0.19.1+1 is the first release on LiteRT-LM 0.19.1. The native
+# The upstream LiteRT-LM version this is built from: the first release on an
+# upstream version carries it as is (0.20.0), each later one adds its number
+# (0.20.0+1, 0.20.0+2); the releases on 0.19.1 started at 0.19.1+1. The native
 # build (native-v0.19.1-c) and the web runtime (@litert-lm/core 0.19.0) each
 # release carries are in the README. Breaking Dart API changes ride an
 # upstream version change, except EmbeddingEngineConfig.cacheDir (String? in

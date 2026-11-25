@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:litertlm_dart/internal_io.dart'
     show
@@ -46,6 +47,22 @@ const int kMinLitertlmContextTokens = minCpuGpuContextTokens;
 /// A [MultiModelEngine]: the models it builds are independent, so
 /// `FlutterEdgeAi.openModel` can keep several open at once. Engine
 /// creations run one at a time across all of them.
+/// The LoRA rank a `.litertlm` engine is created with, from core's
+/// `RuntimeConfig.loraRanks`: LiteRT-LM takes one rank (Swift's
+/// `EngineConfig.loraRank`), so one entry is that rank, none is none, and
+/// several are refused by name instead of keeping one of them silently.
+@visibleForTesting
+int? liteRtLmLoraRank(List<int>? loraRanks) => switch (loraRanks) {
+  null || [] => null,
+  [final rank] => rank,
+  _ => throw ArgumentError.value(
+    loraRanks,
+    'loraRanks',
+    'a .litertlm engine takes one LoRA rank (LiteRT-LM\'s set_lora_rank); '
+        'pass one',
+  ),
+};
+
 class LiteRtLmEngine
     implements
         InferenceEngineProvider,
@@ -219,6 +236,7 @@ class LiteRtLmEngine
         ? await _declaredTypeActivation(spec, config, abi: host.abi)
         : null;
 
+    final loraRank = liteRtLmLoraRank(config.loraRanks);
     final attempt = await initializeFfiRuntime<_EngineAttempt>(
       preferredBackend: config.preferredBackend,
       logTag: '[LiteRtLmEngine]',
@@ -248,6 +266,7 @@ class LiteRtLmEngine
               ),
               null => null,
             },
+            loraRank: loraRank,
           ),
           read,
           toolCallsOf: liteRtLmToolCallsOf,

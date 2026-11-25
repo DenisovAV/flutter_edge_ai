@@ -299,6 +299,8 @@ final class EngineConfig {
     this.activationDataType,
     this.speculativeDecoding,
     List<String>? selectedSignatures,
+    this.loraRank,
+    this.audioLoraRank,
   }) : backend = backend ?? const Backend.cpu(),
        selectedSignatures = selectedSignatures == null
            ? null
@@ -311,6 +313,14 @@ final class EngineConfig {
         'selectedSignatures',
         'must name at least one signature, none of them empty',
       );
+    }
+    for (final (name, rank) in [
+      ('loraRank', loraRank),
+      ('audioLoraRank', audioLoraRank),
+    ]) {
+      if (rank != null && rank < 0) {
+        throw ArgumentError.value(rank, name, 'must be 0 or more');
+      }
     }
   }
 
@@ -364,6 +374,71 @@ final class EngineConfig {
   /// created: one the model does not have is an [ArgumentError]. Refused on
   /// the web, whose runtime takes none.
   final List<String>? selectedSignatures;
+
+  /// The rank of the text LoRA weights, as Swift's `EngineConfig.loraRank`;
+  /// null or 0 sets none. LoRA itself needs no rank: a conversation's
+  /// [ConversationConfig.loraConfig] works without one on the CPU and the GPU,
+  /// whose LoRA rank is read from the model's LoRA inputs. Above 0 it is
+  /// passed as Swift passes it, with `set_lora_rank` and
+  /// `set_supported_lora_ranks([rank])`; LiteRT-LM keeps the supported ranks
+  /// only for its GPU_ARTISAN backend, which this package does not offer, and
+  /// logs an ERROR line ("supported_lora_ranks is only supported for
+  /// GpuArtisanConfig. The provided lora ranks will be ignored.") on every
+  /// other backend each time an engine is created with a rank. Refused on the
+  /// web.
+  final int? loraRank;
+
+  /// The rank of the audio encoder's LoRA weights, as Swift's
+  /// `EngineConfig.audioLoraRank`; null or 0 sets none. Passed like
+  /// [loraRank], with the audio setters. Refused on the web.
+  final int? audioLoraRank;
+}
+
+/// A conversation's LoRA adapters, as Kotlin's `LoraConfig`: `.tflite` LoRA
+/// weights for the text model ([loraPath]) and for the audio encoder
+/// ([audioLoraPath]) of a bundle that has one.
+///
+/// The model must be exported with LoRA input signatures (LiteRT-LM's LoRA
+/// Colab, step 3): a bundle whose `decode` signature has no LoRA inputs is
+/// refused, because LiteRT-LM would take the adapter and leave it without
+/// effect. A conversation without a [LoraConfig] on such a model runs the base
+/// weights (its LoRA inputs bound to zeros). Native only: refused on the web
+/// and on an NPU.
+@immutable
+final class LoraConfig {
+  /// At least one of the two paths; an empty path is refused.
+  LoraConfig({this.loraPath, this.audioLoraPath}) {
+    if (loraPath == null && audioLoraPath == null) {
+      throw ArgumentError('A LoraConfig needs loraPath or audioLoraPath.');
+    }
+    for (final (name, path) in [
+      ('loraPath', loraPath),
+      ('audioLoraPath', audioLoraPath),
+    ]) {
+      if (path != null && path.isEmpty) {
+        throw ArgumentError.value(path, name, 'must not be empty');
+      }
+    }
+  }
+
+  /// The text model's LoRA weights (`.tflite`).
+  final String? loraPath;
+
+  /// The audio encoder's LoRA weights (`.tflite`).
+  final String? audioLoraPath;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LoraConfig &&
+      other.loraPath == loraPath &&
+      other.audioLoraPath == audioLoraPath;
+
+  @override
+  int get hashCode => Object.hash(loraPath, audioLoraPath);
+
+  @override
+  String toString() =>
+      'LoraConfig(loraPath: $loraPath, audioLoraPath: $audioLoraPath)';
 }
 
 /// One conversation's setup: LiteRT-LM's `ConversationConfig`.
@@ -380,6 +455,7 @@ final class ConversationConfig {
     this.speculativeDecoding,
     Map<String, Object?> extraContext = const {},
     this.automaticToolCalling = true,
+    this.loraConfig,
   }) : initialMessages = List.unmodifiable(initialMessages),
        tools = List.unmodifiable(tools),
        extraContext = Map.unmodifiable(extraContext) {
@@ -420,6 +496,14 @@ final class ConversationConfig {
 
   /// Speculative decoding for this conversation; null is the engine's.
   final SpeculativeDecodingConfig? speculativeDecoding;
+
+  /// This conversation's LoRA adapters, as Kotlin's
+  /// `ConversationConfig.loraConfig`; null runs the base weights. Checked
+  /// before the conversation is created: a file that does not exist, a model
+  /// without LoRA inputs, an NPU engine and the web are refused. A
+  /// conversation with an adapter always has its own native conversation,
+  /// also where conversations otherwise share one.
+  final LoraConfig? loraConfig;
 
   /// Variables for the model's prompt template.
   final Map<String, Object?> extraContext;

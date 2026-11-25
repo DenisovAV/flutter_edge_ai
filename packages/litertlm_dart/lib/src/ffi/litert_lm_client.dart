@@ -1020,6 +1020,8 @@ class EngineCreateRequest {
     this.speculativeDecodingMode,
     this.speculativeDecodingLenience,
     this.selectedSignatures,
+    this.loraRank,
+    this.audioLoraRank,
     this.numThreads,
     this.activationDataType,
     this.nativeLogLevel,
@@ -1070,6 +1072,13 @@ class EngineCreateRequest {
 
   /// `engine_settings_set_selected_signatures`; null runs every signature.
   final List<String>? selectedSignatures;
+
+  /// `engine_settings_set_lora_rank`, with `set_supported_lora_ranks([rank])`
+  /// when above 0, as Swift does; null sets none.
+  final int? loraRank;
+
+  /// The audio setters' counterpart of [loraRank].
+  final int? audioLoraRank;
 
   /// The CPU executor's threads; null leaves LiteRT-LM's default.
   final int? numThreads;
@@ -1349,6 +1358,37 @@ EngineCreateResult createEngineWith(
             if (names[i] != nullptr) calloc.free(names[i]);
           }
           calloc.free(names);
+        }
+      }
+      // LoRA ranks as Swift sets them (Engine.swift): the rank, and above 0
+      // the one-rank supported list. LiteRT-LM keeps that list only for
+      // GPU_ARTISAN and logs an ERROR line on every other backend.
+      for (final (rank, setRank, rankName, setSupported, supportedName) in [
+        (
+          r.loraRank,
+          b.litert_lm_engine_settings_set_lora_rank,
+          'litert_lm_engine_settings_set_lora_rank',
+          b.litert_lm_engine_settings_set_supported_lora_ranks,
+          'litert_lm_engine_settings_set_supported_lora_ranks',
+        ),
+        (
+          r.audioLoraRank,
+          b.litert_lm_engine_settings_set_audio_lora_rank,
+          'litert_lm_engine_settings_set_audio_lora_rank',
+          b.litert_lm_engine_settings_set_supported_audio_lora_ranks,
+          'litert_lm_engine_settings_set_supported_audio_lora_ranks',
+        ),
+      ]) {
+        if (rank == null) continue;
+        setter(rankName, setRank(settings, rank));
+        if (rank > 0) {
+          final ranks = calloc<Int>(1);
+          try {
+            ranks[0] = rank;
+            setter(supportedName, setSupported(settings, ranks, 1));
+          } finally {
+            calloc.free(ranks);
+          }
         }
       }
       final numThreads = r.numThreads;
@@ -2523,6 +2563,8 @@ class LiteRtLmFfiClient {
     int? speculativeDecodingMode,
     double? speculativeDecodingLenience,
     List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     int? numThreads,
     int? activationDataType,
     GpuActivationReason? gpuActivationReason,
@@ -2664,6 +2706,8 @@ class LiteRtLmFfiClient {
         speculativeDecodingMode: speculativeDecodingMode,
         speculativeDecodingLenience: speculativeDecodingLenience,
         selectedSignatures: selectedSignatures,
+        loraRank: loraRank,
+        audioLoraRank: audioLoraRank,
         numThreads: numThreads,
         activationDataType: activationDataType,
         nativeLogLevel: nativeLogLevel,
@@ -3042,6 +3086,26 @@ class LiteRtLmFfiClient {
         final speculative = extras.speculativeDecoding;
         if (speculative != null) {
           _setSessionSpeculativeDecoding(sessionConfig, speculative, check);
+        }
+        for (final (name, path, set) in [
+          (
+            'litert_lm_session_config_set_lora_path',
+            extras.loraPath,
+            b.litert_lm_session_config_set_lora_path,
+          ),
+          (
+            'litert_lm_session_config_set_audio_lora_path',
+            extras.audioLoraPath,
+            b.litert_lm_session_config_set_audio_lora_path,
+          ),
+        ]) {
+          if (path == null) continue;
+          final pathPtr = path.toNativeUtf8();
+          try {
+            check(name, set(sessionConfig, pathPtr.cast()));
+          } finally {
+            malloc.free(pathPtr);
+          }
         }
 
         // No-argument create + setter chain: the session config carries

@@ -251,6 +251,8 @@ class EngineHost {
     required int? speculativeDecodingMode,
     double? speculativeDecodingLenience,
     List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     required int? numThreads,
     required int? activationDataType,
     required GpuActivationReason? gpuActivationReason,
@@ -272,6 +274,8 @@ class EngineHost {
     speculativeDecodingMode: speculativeDecodingMode,
     speculativeDecodingLenience: speculativeDecodingLenience,
     selectedSignatures: selectedSignatures,
+    loraRank: loraRank,
+    audioLoraRank: audioLoraRank,
     numThreads: numThreads,
     activationDataType: activationDataType,
     gpuActivationReason: gpuActivationReason,
@@ -329,7 +333,15 @@ final class Engine {
     required this._linearAttentionState,
     this._toolCallsOf = nativeToolCalls,
     this._constraintRefusal,
+    this._modelPath,
   });
+
+  /// The model file; null for a test engine without one.
+  final String? _modelPath;
+
+  /// How many LoRA inputs the model's `decode` signature has, read from the
+  /// file once, on the first conversation with a [LoraConfig].
+  Future<int>? _loraInputCount;
 
   /// Why a response format is refused on this engine's host and backend
   /// ([liteRtLmConstrainedDecodingRefusal]), or null where it was qualified.
@@ -674,6 +686,8 @@ final class Engine {
             : null,
         speculativeDecodingLenience: speculative?.lenience,
         selectedSignatures: selected,
+        loraRank: config.loraRank,
+        audioLoraRank: config.audioLoraRank,
         numThreads: switch (config.backend) {
           CpuBackend(:final threadCount) => threadCount,
           _ => null,
@@ -745,6 +759,7 @@ final class Engine {
           androidGpu: androidGpu,
           npuVendor: kind == BackendKind.npu ? vendor : null,
         ),
+        modelPath: path,
       );
     } catch (_) {
       // The engine exists: it is deleted before the failure reaches the
@@ -882,6 +897,11 @@ final class Engine {
   }) async {
     if (_closed) throw StateError('The engine is closed.');
     final c = config ?? ConversationConfig();
+    final lora = c.loraConfig;
+    if (lora != null) await _checkLora(lora);
+    // An adapter belongs to one native session: a conversation with one never
+    // shares a native conversation by replay.
+    final ownConversation = own || lora != null;
     final format = c.responseFormat;
     final refusal = _constraintRefusal;
     if (format != null && refusal != null) {
@@ -904,23 +924,28 @@ final class Engine {
     final extras = ConversationExtras(
       extraContext: c.extraContext,
       speculativeDecoding: c.speculativeDecoding,
+      loraPath: lora?.loraPath,
+      audioLoraPath: lora?.audioLoraPath,
     );
     final filter = _filtersChannelContent;
     final ConversationHandle handle;
-    switch (own) {
+    switch (ownConversation) {
       case true:
         Future<LiteRtLmConversationHandle> open(String? historyJson) =>
-            _client.createConversationHandle(
-              systemMessage: c.systemInstruction,
-              toolsJson: tools,
-              messagesJson: _withInitial(initial, historyJson),
-              sampling: sampling,
-              samplingExplicit: explicit,
-              maxOutputTokens: c.maxOutputTokens,
-              multimodalOrder: MediaOrder.imagesAudioText,
-              constraint: constraint,
-              filterChannelContent: filter,
-              extras: extras,
+            _withLoraRefusal(
+              lora,
+              () => _client.createConversationHandle(
+                systemMessage: c.systemInstruction,
+                toolsJson: tools,
+                messagesJson: _withInitial(initial, historyJson),
+                sampling: sampling,
+                samplingExplicit: explicit,
+                maxOutputTokens: c.maxOutputTokens,
+                multimodalOrder: MediaOrder.imagesAudioText,
+                constraint: constraint,
+                filterChannelContent: filter,
+                extras: extras,
+              ),
             );
         final first = await open(null);
         if (_closed) {
@@ -960,6 +985,59 @@ final class Engine {
       engineClosed: () => _closed,
       engineCloseListeners: _closeListeners,
     );
+  }
+
+  /// Refuses [lora] before any native call: on an NPU (LiteRT-LM's NPU
+  /// executor takes no adapter), for a file that is not there, and on a model
+  /// whose `decode` signature has no LoRA inputs (LiteRT-LM would take the
+  /// adapter and leave it without effect).
+  Future<void> _checkLora(LoraConfig lora) async {
+    if (backendKindOf(backend) == BackendKind.npu) {
+      throw UnsupportedError(
+        'LoRA adapters are not supported on the NPU: LiteRT-LM\'s NPU '
+        'executor refuses them. Load the model on the CPU or the GPU.',
+      );
+    }
+    for (final (name, path) in [
+      ('loraPath', lora.loraPath),
+      ('audioLoraPath', lora.audioLoraPath),
+    ]) {
+      if (path != null && !File(path).existsSync()) {
+        throw ArgumentError.value(path, name, 'is not a file');
+      }
+    }
+    final model = _modelPath;
+    if (lora.loraPath == null || model == null) return;
+    final inputs = await (_loraInputCount ??= readLiteRtLmMainLoraInputCount(
+      model,
+    ));
+    if (inputs == 0) {
+      throw ArgumentError.value(
+        lora.loraPath,
+        'loraPath',
+        'cannot apply: $model has no LoRA inputs. Export the model with LoRA '
+            'input signatures (LiteRT-LM\'s LoRA Colab, step 3)',
+      );
+    }
+  }
+
+  /// Runs [open], and turns the refusal of a libLiteRtLm built without text
+  /// LoRA (LiteRT-LM's public source: "Lora is not supported.") into an
+  /// [UnsupportedError] that says so.
+  static Future<T> _withLoraRefusal<T>(
+    LoraConfig? lora,
+    Future<T> Function() open,
+  ) async {
+    try {
+      return await open();
+    } on Object catch (e) {
+      if (lora == null || !'$e'.contains('Lora is not supported')) rethrow;
+      throw UnsupportedError(
+        'This libLiteRtLm cannot load a text LoRA ("Lora is not supported."): '
+        'it is built from LiteRT-LM\'s public source without the text LoRA '
+        'backport (litertlm_dart native/litert_lm/patch_c_api.sh section 33).',
+      );
+    }
   }
 
   /// Said once per engine: a thinking budget on a bundle that declares no
@@ -1176,6 +1254,7 @@ Engine engineForTest(
   bool? linearAttentionState = false,
   NpuStack? npuVendor,
   String? constraintRefusal,
+  String? modelPath,
 }) => Engine._(
   client: client,
   backend: backend,
@@ -1188,6 +1267,7 @@ Engine engineForTest(
   backing: backing,
   linearAttentionState: linearAttentionState,
   constraintRefusal: constraintRefusal,
+  modelPath: modelPath,
 );
 
 /// The client under [engine].

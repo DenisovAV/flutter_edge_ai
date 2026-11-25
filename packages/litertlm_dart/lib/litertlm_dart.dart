@@ -31,6 +31,7 @@ export 'src/api/config.dart'
         ConversationConfig,
         EngineConfig,
         JsonResponseFormat,
+        LoraConfig,
         NoRepeatNgramConfig,
         RegexResponseFormat,
         RepetitionPenaltyConfig,

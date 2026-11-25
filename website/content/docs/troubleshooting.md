@@ -134,8 +134,9 @@ models via OPFS streaming.
 
 - ❌ **Images or audio without `supportImage`/`supportAudio`** — such a
   message throws `UnsupportedError` instead of being dropped.
-- ❌ **LoRA weights** — `loraPath` throws `UnsupportedError`, as it does on
-  native `.litertlm`; LoRA works only with MediaPipe `.task` models.
+- ❌ **LoRA weights** — `loraPath` throws `UnsupportedError` on the web; there
+  LoRA works only with MediaPipe `.task` models (natively `.litertlm` takes
+  one, see [LiteRT-LM](/docs/litertlm)).
 
 <Info>
 

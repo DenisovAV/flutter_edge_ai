@@ -105,8 +105,9 @@ the exception: its generic `.litertlm` bundles embed text and images on web
 through WebGPU, and the 740m audio from litertlm 1.13.2 (see
 [Embedding models](#embedding-models)). See the feature matrix in
 [Troubleshooting](/docs/troubleshooting). For image input to a chat model on
-web use Gemma 4 E2B's GPU export or a MediaPipe `-web.task` build. LoRA works
-only on MediaPipe `.task`.
+web use Gemma 4 E2B's GPU export or a MediaPipe `-web.task` build. On the web
+LoRA works only on MediaPipe `.task`; natively also on a `.litertlm` exported
+with LoRA input signatures.
 
 ³ On desktop the OS model exists on **macOS** (Apple Foundation Models) and
 **Windows** (AI Foundry; Windows 11 25H2+ on Copilot+-class hardware, packaged

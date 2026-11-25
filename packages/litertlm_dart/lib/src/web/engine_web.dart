@@ -166,6 +166,13 @@ final class Engine {
         'The web runtime ($liteRtLmWebRuntime) has no speculative decoding.',
       );
     }
+    if (c.loraConfig != null) {
+      throw UnsupportedError(
+        'The web runtime ($liteRtLmWebRuntime) takes no LoRA adapter: its '
+        'engine settings have LoRA ranks for GPU_ARTISAN only, and no '
+        'adapter path.',
+      );
+    }
     final enableThinking = c.thinkingConfig?.enableThinking ?? false;
     if (enableThinking && c.thinkingConfig?.thinkingTokenBudget != null) {
       throw UnsupportedError(
@@ -635,6 +642,8 @@ void _refuseOnWeb(EngineConfig config) {
     if (config.activationDataType != null) 'an activationDataType',
     if (config.speculativeDecoding != null) 'speculative decoding',
     if (config.selectedSignatures != null) 'selected signatures',
+    if (config.loraRank != null) 'a LoRA rank (loraRank)',
+    if (config.audioLoraRank != null) 'an audio LoRA rank (audioLoraRank)',
   ];
   if (refused.isEmpty) return;
   throw UnsupportedError(

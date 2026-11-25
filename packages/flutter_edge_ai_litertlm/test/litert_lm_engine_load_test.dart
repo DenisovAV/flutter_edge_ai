@@ -65,6 +65,7 @@ class _FakeHost extends EngineHost implements LiteRtLmNpuHost {
 
   /// The activation type (wire value) handed to each attempt.
   final activationDataTypes = <int?>[];
+  final loraRanks = <int?>[];
   final gpuActivationReasons = <GpuActivationReason?>[];
 
   /// Creates running at this moment, and the most there ever were.
@@ -128,6 +129,8 @@ class _FakeHost extends EngineHost implements LiteRtLmNpuHost {
     required int? speculativeDecodingMode,
     double? speculativeDecodingLenience,
     List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     required int? numThreads,
     required int? activationDataType,
     required GpuActivationReason? gpuActivationReason,
@@ -138,6 +141,7 @@ class _FakeHost extends EngineHost implements LiteRtLmNpuHost {
     gpuActivationReasons.add(gpuActivationReason);
     nativeLogLevels.add(nativeLogLevel);
     activationDataTypes.add(activationDataType);
+    loraRanks.add(loraRank);
     mostCreatingAtOnce = max(mostCreatingAtOnce, ++creating);
     // A create takes time; another one started meanwhile would overlap it.
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -197,6 +201,8 @@ class _InitCapturingClient extends LiteRtLmFfiClient {
     int? speculativeDecodingMode,
     double? speculativeDecodingLenience,
     List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     int? numThreads,
     int? activationDataType,
     GpuActivationReason? gpuActivationReason,
@@ -308,6 +314,7 @@ void main() {
     ModelType modelType = ModelType.gemmaIt,
     int maxTokens = 1024,
     ActivationDataType? activationDataType,
+    List<int>? loraRanks,
   }) =>
       LiteRtLmEngine(
         backendFallback: backendFallback,
@@ -327,6 +334,7 @@ void main() {
           preferredBackend: preferredBackend,
           supportImage: supportImage,
           supportAudio: supportAudio,
+          loraRanks: loraRanks,
         ),
       );
 
@@ -385,6 +393,21 @@ void main() {
       await model.close();
     },
   );
+
+  test('one RuntimeConfig.loraRanks entry is the engine\'s LoRA rank; several '
+      'are refused before any engine', () async {
+    final path = write('cpu.litertlm', _bundle(text: 'cpu'));
+    final ranked = await load(path, loraRanks: const [16]);
+    final plain = await load(path);
+    expect(host.loraRanks, [16, null]);
+    await expectLater(
+      load(path, loraRanks: const [4, 8]),
+      throwsA(isA<ArgumentError>()),
+    );
+    expect(host.loraRanks, hasLength(2));
+    await ranked.close();
+    await plain.close();
+  });
 
   test('nativeLogLevel reaches every attempt; unset stays null', () async {
     final path = write('gpu.litertlm', _bundle(text: 'gpu,cpu'));

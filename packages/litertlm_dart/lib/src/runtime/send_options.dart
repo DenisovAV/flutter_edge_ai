@@ -72,6 +72,8 @@ final class ConversationExtras {
   const ConversationExtras({
     this.extraContext = const {},
     this.speculativeDecoding,
+    this.loraPath,
+    this.audioLoraPath,
   });
 
   /// `conversation_config_set_extra_context`; empty sets nothing.
@@ -79,6 +81,13 @@ final class ConversationExtras {
 
   /// The session's speculative decoding; null leaves the engine's.
   final SpeculativeDecodingConfig? speculativeDecoding;
+
+  /// `session_config_set_lora_path`: the text LoRA weights; null sets none.
+  final String? loraPath;
+
+  /// `session_config_set_audio_lora_path`: the audio encoder's LoRA weights;
+  /// null sets none.
+  final String? audioLoraPath;
 
   static const none = ConversationExtras();
 }

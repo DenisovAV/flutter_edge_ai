@@ -229,6 +229,39 @@ signature and `decode`, and `verify` with speculative decoding). Each name is
 checked against the model before the engine is created; one it does not have
 is an `ArgumentError`. Refused on the web.
 
+## LoRA
+
+A conversation takes LoRA adapters, as Kotlin's `LoraConfig`: `.tflite` LoRA
+weights for the text model and, on a bundle with an audio encoder, for the
+audio encoder. The model must be exported with LoRA input signatures
+(LiteRT-LM's LoRA Colab, step 3); a conversation without an adapter on such a
+model runs the base weights.
+
+```dart
+final engine = await Engine.create(
+  EngineConfig(modelPath: '/path/functiongemma_270m_dynamic_lora.litertlm'),
+);
+final tuned = await engine.createConversation(
+  ConversationConfig(loraConfig: LoraConfig(loraPath: '/path/task_lora.tflite')),
+);
+final base = await engine.createConversation(); // the same engine, no adapter
+```
+
+Before the conversation is created, a file that is not there, a model whose
+`decode` signature has no LoRA inputs (LiteRT-LM would take the adapter and
+leave it without effect) and an NPU engine are refused; the web takes no
+adapter. A conversation with an adapter always has its own native
+conversation. `EngineConfig.loraRank` / `audioLoraRank` are Swift's: LoRA on
+the CPU and the GPU needs no rank, and a rank above 0 is passed with
+`set_supported_lora_ranks`, which LiteRT-LM keeps for GPU_ARTISAN only and
+reports with an ERROR log line elsewhere.
+
+LiteRT-LM's public source refuses every text LoRA ("Lora is not supported.");
+the native libraries this package fetches carry a backport of LiteRT-LM PR
+#2508 that loads it (`native/litert_lm/patch_c_api.sh` section 33). A
+libLiteRtLm built without it is refused with an `UnsupportedError` that says
+so.
+
 ## Multimodality
 
 A multimodal model (Gemma 4, Gemma 3n) takes images and audio once their
@@ -579,7 +612,8 @@ so compare runs with the same `run.maxNumTokens`.
 | Constrained decoding | C++ API | `ResponseFormat.json`, `.regex` |
 | `benchmark()` | `BenchmarkInfo` with mark durations | `LlmBenchmarkResult`, plus the whole create's time, the backend and the GPU activation type; no media contents |
 | EmbeddingGemma 2 | text, images, audio | the same, text with images and audio in one vector, per-SoC NPU bundles |
-| LoRA, `tool_choice`, the LiteRT-LM 0.20 additions | | not yet |
+| LoRA | `LoraConfig` on the conversation and the session (Kotlin), `loraPath` and `loraRank` (Swift) | `ConversationConfig.loraConfig` (`LoraConfig`), `EngineConfig.loraRank`; the native libraries carry a text LoRA backport (LiteRT-LM PR #2508) |
+| Tool choice | per message (Kotlin; Swift has none) | per message, `ToolChoice` |
 
 ## Where it runs today
 

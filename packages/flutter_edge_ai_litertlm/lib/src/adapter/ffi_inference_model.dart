@@ -353,6 +353,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     required List<Tool> tools,
     required int? maxOutputTokens,
     String? jsonSchema,
+    String? loraPath,
   }) {
     return lm.ConversationConfig(
       systemInstruction: systemInstruction,
@@ -366,6 +367,10 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           : lm.ResponseFormat.json(
               (jsonDecode(jsonSchema) as Map).cast<String, Object?>(),
             ),
+      // The session's adapter, as Kotlin's LoraConfig; litertlm_dart refuses
+      // it by name where it cannot work (the NPU, a model without LoRA
+      // inputs, a file that is not there).
+      loraConfig: loraPath == null ? null : lm.LoraConfig(loraPath: loraPath),
     );
   }
 
@@ -386,14 +391,6 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
-      );
-    }
-
-    if (loraPath != null) {
-      throw UnsupportedError(
-        'LoRA weights are not supported on the .litertlm FFI path '
-        '(loraPath=$loraPath). Track upstream LiteRT-LM C API support; '
-        'remove loraPath or use a MediaPipe .task model on Android/iOS.',
       );
     }
 
@@ -447,6 +444,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
             systemInstruction: systemInstruction,
             tools: tools,
             maxOutputTokens: maxOutputTokens,
+            loraPath: loraPath,
           ),
           _defaultSampler(explicit, sampling),
         );
@@ -549,13 +547,6 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         'Model is closed. Create a new instance to use it again',
       );
     }
-    if (loraPath != null) {
-      throw UnsupportedError(
-        'LoRA weights are not supported on the .litertlm FFI path '
-        '(loraPath=$loraPath). Remove loraPath or use a MediaPipe .task '
-        'model on Android/iOS.',
-      );
-    }
     final cap = maxConcurrentSessions;
     if (cap != null && _openSessions.length + _openSessionsPending >= cap) {
       throw StateError(
@@ -589,6 +580,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           tools: sessionTools,
           maxOutputTokens: maxOutputTokens,
           jsonSchema: jsonSchema,
+          loraPath: loraPath,
         ),
         _defaultSampler(explicit, sampling),
       );

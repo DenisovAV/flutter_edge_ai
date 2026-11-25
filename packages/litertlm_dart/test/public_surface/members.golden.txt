@@ -103,10 +103,11 @@ final class ConversationClosedException extends LiteRtLmException
   constructor const ConversationClosedException(String message)
 
 final class ConversationConfig
-  constructor ConversationConfig({String? systemInstruction, List<Message> initialMessages = const [], List<Tool> tools = const [], SamplerConfig? samplerConfig, int? maxOutputTokens, ThinkingConfig? thinkingConfig, ResponseFormat? responseFormat, SpeculativeDecodingConfig? speculativeDecoding, Map<String, Object?> extraContext = const {}, bool automaticToolCalling = true})
+  constructor ConversationConfig({String? systemInstruction, List<Message> initialMessages = const [], List<Tool> tools = const [], SamplerConfig? samplerConfig, int? maxOutputTokens, ThinkingConfig? thinkingConfig, ResponseFormat? responseFormat, SpeculativeDecodingConfig? speculativeDecoding, Map<String, Object?> extraContext = const {}, bool automaticToolCalling = true, LoraConfig? loraConfig})
   field final bool automaticToolCalling
   field final Map<String, Object?> extraContext
   field final List<Message> initialMessages
+  field final LoraConfig? loraConfig
   field final int? maxOutputTokens
   field final ResponseFormat? responseFormat
   field final SamplerConfig? samplerConfig
@@ -185,11 +186,13 @@ final class Engine
   method Future<List<int>> tokenize(String text)
 
 final class EngineConfig
-  constructor EngineConfig({required String modelPath, Backend? backend, Backend? visionBackend, Backend? audioBackend, int? maxNumTokens, int? maxNumImages, String? cacheDir, ActivationDataType? activationDataType, SpeculativeDecodingConfig? speculativeDecoding, List<String>? selectedSignatures})
+  constructor EngineConfig({required String modelPath, Backend? backend, Backend? visionBackend, Backend? audioBackend, int? maxNumTokens, int? maxNumImages, String? cacheDir, ActivationDataType? activationDataType, SpeculativeDecodingConfig? speculativeDecoding, List<String>? selectedSignatures, int? loraRank, int? audioLoraRank})
   field final ActivationDataType? activationDataType
   field final Backend? audioBackend
+  field final int? audioLoraRank
   field final Backend backend
   field final String? cacheDir
+  field final int? loraRank
   field final int? maxNumImages
   field final int? maxNumTokens
   field final String modelPath
@@ -282,6 +285,14 @@ final class LlmBenchmarkResult
   field final int prefillTokenCount
   field final double prefillTokensPerSecond
   field final Duration timeToFirstToken
+  method String toString()
+
+final class LoraConfig
+  constructor LoraConfig({String? loraPath, String? audioLoraPath})
+  field final String? audioLoraPath
+  field final String? loraPath
+  getter int hashCode
+  method bool ==(Object other)
   method String toString()
 
 final class Message

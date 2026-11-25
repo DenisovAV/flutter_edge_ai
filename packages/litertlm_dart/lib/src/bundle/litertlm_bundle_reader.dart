@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'litertlm_npu_target.dart'
     show
         readLiteRtLmLinearAttentionState,
+        readLiteRtLmLoraInputCount,
         readLiteRtLmPrefillLengths,
         readLiteRtLmSignatureKeys,
         readLiteRtLmSectionStamps;
@@ -128,6 +129,38 @@ Future<List<String>> readLiteRtLmMainSignatureKeys(String path) async {
     throw LiteRtLmBundleException(
       LiteRtLmBundleProblem.malformed,
       '$path: the signatures of its main model could not be read ($e)',
+      path: path,
+    );
+  } finally {
+    await file.close();
+  }
+}
+
+/// How many LoRA weight inputs the `decode` signature of the `.litertlm`
+/// LLM at [path] has: its main model section's ([readLiteRtLmLoraInputCount]).
+/// Zero for a model exported without LoRA input signatures, and for a bundle
+/// without a main section.
+///
+/// Throws as [readBundleInfo] for a file that is not a `.litertlm`
+/// container, and [LiteRtLmBundleException] ([LiteRtLmBundleProblem.malformed])
+/// for a main model it cannot walk.
+Future<int> readLiteRtLmMainLoraInputCount(String path) async {
+  final info = await readBundleInfo(path);
+  final main = info.textModel;
+  if (main == null) return 0;
+  final file = await File(path).open();
+  try {
+    return await readLiteRtLmLoraInputCount(
+      file,
+      await file.length(),
+      main.begin,
+      main.end,
+    );
+  } on Object catch (e) {
+    if (e is! FormatException && e is! RangeError) rethrow;
+    throw LiteRtLmBundleException(
+      LiteRtLmBundleProblem.malformed,
+      '$path: the LoRA inputs of its main model could not be read ($e)',
       path: path,
     );
   } finally {

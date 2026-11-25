@@ -3,6 +3,7 @@
 - `ToolChoice` per message on `sendMessage`/`sendMessageStream` (native).
 - `SpeculativeDecodingConfig` (mode, lenience) replaces `SpeculativeDecodingMode` in the configs; `benchmark()` takes it.
 - `EngineConfig.selectedSignatures`.
+- Text and audio LoRA: `ConversationConfig.loraConfig` (`LoraConfig`), `EngineConfig.loraRank`/`audioLoraRank`.
 
 ## 0.19.1+4
 - Plain Dart programs (`dart run`, `dart test`, `dart build cli`) on every backend; see the README.

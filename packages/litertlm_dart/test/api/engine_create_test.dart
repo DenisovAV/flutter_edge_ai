@@ -30,6 +30,8 @@ typedef _Create = ({
   int? speculativeDecodingMode,
   double? speculativeDecodingLenience,
   List<String>? selectedSignatures,
+  int? loraRank,
+  int? audioLoraRank,
   int? numThreads,
   int? activationDataType,
   GpuActivationReason? gpuActivationReason,
@@ -135,6 +137,8 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     required int? speculativeDecodingMode,
     double? speculativeDecodingLenience,
     List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     required int? numThreads,
     required int? activationDataType,
     required GpuActivationReason? gpuActivationReason,
@@ -159,6 +163,8 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
       speculativeDecodingMode: speculativeDecodingMode,
       speculativeDecodingLenience: speculativeDecodingLenience,
       selectedSignatures: selectedSignatures,
+      loraRank: loraRank,
+      audioLoraRank: audioLoraRank,
       numThreads: numThreads,
       activationDataType: activationDataType,
       gpuActivationReason: gpuActivationReason,
@@ -816,6 +822,23 @@ void main() {
     await withReader.close();
     await plain.close();
   });
+
+  test(
+    'the LoRA ranks reach the engine settings as given; null sends none',
+    () async {
+      final path = write('g.litertlm', _bundle());
+      final engine = await Engine.create(
+        EngineConfig(modelPath: path, loraRank: 32, audioLoraRank: 8),
+      );
+      expect(host.creates.last.loraRank, 32);
+      expect(host.creates.last.audioLoraRank, 8);
+      await engine.close();
+      final plain = await Engine.create(EngineConfig(modelPath: path));
+      expect(host.creates.last.loraRank, isNull);
+      expect(host.creates.last.audioLoraRank, isNull);
+      await plain.close();
+    },
+  );
 
   test('a CPU thread count below 1 is refused before any engine', () async {
     final path = write('g.litertlm', _bundle());

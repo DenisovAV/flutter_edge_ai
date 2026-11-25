@@ -37,6 +37,7 @@ LiteRtLmLog
 LiteRtLmLogLevel
 LiteRtLmNativeException
 LlmBenchmarkResult
+LoraConfig
 Message
 NoRepeatNgramConfig
 NpuBackend

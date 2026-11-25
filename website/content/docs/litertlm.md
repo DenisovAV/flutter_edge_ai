@@ -45,10 +45,12 @@ EmbeddingGemma 1 / Gecko
 > `supportImage`/`supportAudio`; `maxNumImages` counts a whole conversation's
 > images there. Gemma 4's older `-web.litertlm` exports are withheld (the E2B
 > one answers a tool result with an empty reply on 0.19.0). A native
-> `.litertlm` installs on web and then fails at the first generation. LoRA is not supported on any `.litertlm` path: a session
-> `loraPath` throws `UnsupportedError`, and an adapter installed with
-> `withLora…` is not applied. Use a MediaPipe `.task` model, or natively a
-> `.gguf` through [llama.cpp](/docs/llama). On web you
+> `.litertlm` installs on web and then fails at the first generation. Natively
+> a session's `loraPath` applies a `.tflite` LoRA adapter to a `.litertlm`
+> exported with LoRA input signatures (LiteRT-LM's LoRA Colab, step 3); a
+> model without them is refused, and so are the NPU and the web, where
+> `loraPath` throws `UnsupportedError`. An adapter installed with `withLora…`
+> is not applied by itself. On web you
 > also need the JS handshake in `web/index.html` (see [Web setup](#web-setup)).
 
 ## Setup

@@ -1,0 +1,19 @@
+diff --git a/runtime/executor/BUILD b/runtime/executor/BUILD
+index 63584922..c49c930d 100644
+--- a/runtime/executor/BUILD
++++ b/runtime/executor/BUILD
+@@ -369,8 +369,13 @@ cc_library(
+         ":android_webgpu": [
+             "@litert//litert/runtime/accelerators/gpu:ml_drift_gpu_accelerator",
+         ],
++        # flutter_edge_ai (patch_c_api.sh section 19): OpenCL only. The
++        # upstream default, ml_drift_cl_gl_accelerator (6cf79561), moves to
++        # OpenGL when OpenCL does not load, logs it at INFO only and still
++        # reports "GPU"; OpenGL is experimental in LiteRT and unmeasured here.
++        # Without OpenCL the GPU load must fail, not change API silently.
+         "@platforms//os:android": [
+-            "@litert//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",
++            "@litert//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",
+         ],
+         ":ios_webgpu": [
+             "@litert//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator",

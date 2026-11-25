@@ -862,22 +862,33 @@ else
   exit 1
 fi
 
-# ── 19. Android: the statically linked GPU accelerator ──
-# Up to v0.19.1 this section swapped Android's combined ML Drift accelerator
-# (whose WebGPU delegate made libLiteRtLm NEED libwebgpu_dawn.so) for the
-# OpenCL-only one. v0.20.0 (upstream 6cf79561) links ml_drift_cl_gl_accelerator
-# instead: OpenCL and OpenGL, no WebGPU. We take it as is (0.20 migration
-# decision D2); build_android.sh's NEEDED lint and verify_tarball_manifest.sh
-# keep a Dawn dependency or a stray accelerator library out. Anchor only: a
-# default that brings WebGPU back must fail here, not in an app.
-awk '/name = "default_static_gpu_accelerator"/,/^\)/' "$DIR/runtime/executor/BUILD" \
-  | grep -A1 '"@platforms//os:android"' \
-  | grep -q 'gpu:ml_drift_cl_gl_accelerator"' || {
-  echo "  ERROR: section 19: Android's static GPU accelerator is no longer" \
-    "ml_drift_cl_gl_accelerator; re-check what it links (Dawn?)" >&2
+# ── 19. Android: the statically linked GPU accelerator is OpenCL only ──
+# libLiteRtLm links runtime/executor:default_static_gpu_accelerator on Apple
+# and Android. Up to v0.19.1 Android's was LiteRT's combined ML Drift
+# accelerator (its WebGPU delegate made libLiteRtLm NEED libwebgpu_dawn.so).
+# v0.20.0 (6cf79561) uses ml_drift_cl_gl_accelerator, as Google's own
+# litertlm-android does: when OpenCL does not load it switches to OpenGL with
+# one INFO log line and still reports "LiteRT GPU", and nothing tells the app
+# which API runs (OpenGL is "Experimental, do not use" in LiteRT). That is a
+# silent backend change, so Android stays on ml_drift_cl_accelerator ("GPU
+# OpenCL"), the accelerator every Android build carried so far: without
+# OpenCL the GPU load fails and says so (0.20 migration decision D2; an
+# explicit OpenGL backend is research for later). build_android.sh checks the
+# built library carries "GPU OpenCL" and not "Using OpenGL instead".
+ANDROID_CL_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/android_static_gpu_opencl.patch"
+grep -q 'name = "default_static_gpu_accelerator"' "$DIR/runtime/executor/BUILD" || {
+  echo "  ERROR: section 19: runtime/executor:default_static_gpu_accelerator is gone" >&2
   exit 1
 }
-echo "  OK: section 19: Android links the OpenCL + OpenGL accelerator (upstream 6cf79561)"
+if git -C "$DIR" apply --check "$ANDROID_CL_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$ANDROID_CL_PATCH"
+  echo "  OK: section 19: Android links the OpenCL-only GPU accelerator"
+elif git -C "$DIR" apply --reverse --check "$ANDROID_CL_PATCH" 2>/dev/null; then
+  echo "  SKIP: Android OpenCL-only accelerator already applied"
+else
+  echo "  ERROR: $ANDROID_CL_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
 
 # ── 20. Linux and Windows: no fused GPU sampler ──
 # From v0.19.0 the TopK GPU samplers are compiled from ML Drift source and

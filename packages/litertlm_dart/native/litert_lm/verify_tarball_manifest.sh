@@ -503,6 +503,30 @@ for d in "$align_tmp"/litertlm-android_*; do
   fi
 done
 
+# Android's libLiteRtLm.so must link the OpenCL-only GPU accelerator
+# (patch_c_api.sh section 19, decision D2): its name "GPU OpenCL", never the
+# OpenCL + OpenGL one ("LiteRT GPU", which switches to OpenGL silently when
+# OpenCL does not load). Read from the bytes, as build_android.sh does.
+for d in "$align_tmp"/litertlm-android_*; do
+  [[ -d "$d" ]] || continue
+  lib="$d/libLiteRtLm.so"
+  [[ -f "$lib" ]] || continue
+  if ! python3 - "$lib" <<'PYANDROIDGPU'
+import sys
+data = open(sys.argv[1], "rb").read()
+cl = b"\0GPU OpenCL\0" in data
+clgl = b"\0LiteRT GPU\0" in data or b"Using OpenGL instead" in data
+if not cl or clgl:
+    print(f"  FAIL: {sys.argv[1]}: GPU accelerator is not the OpenCL-only one "
+          f"(GPU OpenCL: {cl}, OpenCL+OpenGL markers: {clgl})")
+    sys.exit(1)
+print(f"  ok: {sys.argv[1]}: OpenCL-only GPU accelerator")
+PYANDROIDGPU
+  then
+    fail=1
+  fi
+done
+
 echo
 echo "==> Checking the Linux LiteRT runtime and accelerator are this build's"
 # From native-v0.20.0-a both are built by the Linux jobs from LiteRT's source,

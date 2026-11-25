@@ -186,6 +186,19 @@ mkdir -p "$PREBUILT_DIR"
 cp bazel-bin/c/libLiteRtLm.dylib "$PREBUILT_DIR/libLiteRtLm.so"
 chmod +w "$PREBUILT_DIR/libLiteRtLm.so"
 echo "  libLiteRtLm.so → $PREBUILT_DIR/"
+# The GPU accelerator linked in must be the OpenCL-only one (patch_c_api.sh
+# section 19): upstream's OpenCL + OpenGL accelerator would switch to OpenGL
+# silently on a phone without OpenCL. Read the names, not a NEEDED list: both
+# accelerators NEED the same EGL/GLES libraries. No `grep -q` (SIGPIPE under
+# pipefail reads as "not found").
+gpu_names="$(strings "$PREBUILT_DIR/libLiteRtLm.so" | grep -xE 'GPU OpenCL|LiteRT GPU' || true)"
+gl_switch="$(strings "$PREBUILT_DIR/libLiteRtLm.so" | grep -F 'Using OpenGL instead' || true)"
+if [ "$gpu_names" != "GPU OpenCL" ] || [ -n "$gl_switch" ]; then
+  echo "ERROR: libLiteRtLm.so links a GPU accelerator other than the OpenCL-only one" \
+    "(names: ${gpu_names:-none}; OpenGL switch: ${gl_switch:-none})" >&2
+  exit 1
+fi
+echo "  GPU accelerator: OpenCL only"
 
 # Google Tensor NPU dispatch bridge. The target's sources and BUILD file in the
 # pinned LiteRT tree carry Apache-2.0 headers. It is built from the exact LiteRT
@@ -254,8 +267,7 @@ echo "  libLiteRtDispatch_MediaTek.so → $PREBUILT_DIR/"
 
 # 8. Copy companion libs from upstream prebuilt (we don't rebuild these).
 #
-#    Android GPU is the accelerator linked into libLiteRtLm.so (OpenCL +
-#    OpenGL from native-v0.20.0-a, OpenCL only before). No Dawn ships on
+#    Android GPU is the OpenCL accelerator linked into libLiteRtLm.so. No Dawn ships on
 #    Android: from native-v0.14.0 through v0.17.x upstream's WebGPU accelerator
 #    and sampler sat in every APK (~18 MB), NEEDED libwebgpu_dawn.so and could
 #    not be dlopen'ed. Google's own Android SDKs ship no Dawn either. Only the
@@ -263,9 +275,9 @@ echo "  libLiteRtDispatch_MediaTek.so → $PREBUILT_DIR/"
 echo ""
 echo "=== Copying companion libs from upstream prebuilt ==="
 # From native-v0.19.0-a only the constraint provider: libLiteRtLm.so links the
-# GPU accelerator and the OpenCL sampler in. From native-v0.20.0-a that
-# accelerator is upstream's OpenCL + OpenGL one (6cf79561, patch_c_api.sh
-# section 19); upstream's prebuilt/ holds no accelerator at all any more.
+# GPU accelerator and the OpenCL sampler in: OpenCL only (patch_c_api.sh
+# section 19 keeps upstream's OpenCL + OpenGL accelerator out); upstream's
+# prebuilt/ holds no accelerator at all any more from v0.20.0.
 for lib in libGemmaModelConstraintProvider.so; do
   if [ -f "prebuilt/android_arm64/$lib" ]; then
     cp "prebuilt/android_arm64/$lib" "$PREBUILT_DIR/$lib"

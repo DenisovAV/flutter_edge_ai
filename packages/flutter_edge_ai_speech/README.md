@@ -127,20 +127,19 @@ window, steady state over repeated transcriptions
 
 ### Streaming speech-to-text (Parakeet)
 
-Parakeet CTC also transcribes audio as it arrives. `getActiveStt()` then
-returns a recognizer whose `asStreaming` is not null:
+Parakeet CTC also transcribes audio as it arrives: its recognizer's
+`streaming` is not null (it is null for moonshine and Whisper, whose
+`transcribeStream` fails with `UnsupportedError`).
 
 ```dart
-// ignore_for_file: experimental_member_use
 final recognizer = await FlutterEdgeAi.getActiveStt();
-final streaming = recognizer.asStreaming!; // null for moonshine and Whisper
 
-await for (final update in streaming.transcribeStream(microphonePcm16kMono)) {
+await for (final update in recognizer.transcribeStream(microphonePcm16kMono)) {
   transcript.write(update.confirmedDelta); // final from here on
   showTail(update.unconfirmed);            // may still change
   if (update.endpoint) { /* the utterance is complete */ }
 }
-// At a voice activity detector's end of utterance: await streaming.flush();
+// At a voice activity detector's end of utterance: await recognizer.flush();
 ```
 
 It runs the batch model over 5 s windows that overlap
@@ -157,8 +156,7 @@ and 2.31%. One stream runs at a time; `transcribe` calls made
 meanwhile wait their turn. Audio that arrives faster than the model keeps up
 with is held up to `TranscribeStreamOptions.maxBufferedAudio` (10 s), then
 the stream fails with `SpeechStreamOverrunException`; raise it to stream a
-file faster than real time. The streaming contracts are `@experimental` in
-`flutter_edge_ai`.
+file faster than real time.
 
 ### Speech-to-text output language (Whisper)
 

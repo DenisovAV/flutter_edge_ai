@@ -9,10 +9,8 @@
 // recognizer subclass, except that a streaming profile gets
 // [LiteRtStreamingSpeechRecognizer].
 //
-// The streaming contracts are @experimental in core (members may be added in
-// a minor release). This package implements them, so its core constraint
-// must stay below the next core minor whenever it is released.
-// ignore_for_file: experimental_member_use
+// Core may add members to SpeechRecognizer in a minor release; this package
+// implements it, so its core constraint stays within one core minor.
 
 import 'dart:async';
 import 'dart:convert';
@@ -301,8 +299,7 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
 /// ([WindowedTranscriber]). Every window is a request on the recognizer's
 /// worker, in the same queue as `transcribe`, so a transcription made during
 /// a stream runs between two of its windows.
-final class LiteRtStreamingSpeechRecognizer extends LiteRtSpeechRecognizer
-    implements StreamingSpeechRecognizer {
+final class LiteRtStreamingSpeechRecognizer extends LiteRtSpeechRecognizer {
   LiteRtStreamingSpeechRecognizer._(
     SttWorker worker,
     VoidCallback onClose,

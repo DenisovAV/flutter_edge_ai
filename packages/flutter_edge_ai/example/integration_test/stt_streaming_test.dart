@@ -1,5 +1,5 @@
-// Streaming speech-to-text through the public API: Parakeet CTC int8 as a
-// StreamingSpeechRecognizer (getActiveStt().asStreaming), fed the bundled
+// Streaming speech-to-text through the public API: Parakeet CTC int8's
+// recognizer (getActiveStt(), streaming not null), fed the bundled
 // clip three times over (8.8 s, so full windows and the shift back run) in
 // 100 ms chunks as a microphone would, then the clip twice with a flush
 // between them, and a batch transcription while a stream runs.
@@ -9,7 +9,6 @@
 //         --dart-define=STT_TOKENIZER_FILE=<path>/tokenizer.json]
 // Without the two files it installs the registry's Parakeet int8 build
 // (596 MB).
-// ignore_for_file: experimental_member_use
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -55,9 +54,9 @@ void main() {
       await FlutterEdgeAi.installStt().fromCatalog(variant).install();
     }
     final recognizer = await FlutterEdgeAi.getActiveStt();
-    final streaming = recognizer.asStreaming;
-    expect(streaming, isNotNull, reason: 'Parakeet CTC streams');
-    expect(streaming!.streaming.window, const Duration(seconds: 5));
+    expect(recognizer.streaming, isNotNull, reason: 'Parakeet CTC streams');
+    expect(recognizer.streaming!.window, const Duration(seconds: 5));
+    final streaming = recognizer;
 
     final wav = await rootBundle.load('assets/test/test_audio.wav');
     final pcm = Uint8List.sublistView(

@@ -2,7 +2,6 @@
 // worker: the stream's claim, input, queue, flush, close and overrun rules,
 // and that windowed text comes out once and in order. No model; the windows
 // and the merger are the real ones.
-// ignore_for_file: experimental_member_use
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -135,19 +134,23 @@ void main() {
     engineFactory: _fake,
   );
 
-  test('asStreaming: Parakeet streams, Whisper does not', () async {
+  test('Parakeet streams, Whisper does not', () async {
     final parakeet = await create();
     addTearDown(parakeet.close);
-    expect(parakeet.asStreaming, isNotNull);
-    expect(parakeet.asStreaming!.streaming.kind, StreamingKind.windowed);
-    expect(parakeet.asStreaming!.streaming.window, const Duration(seconds: 5));
+    expect(parakeet.streaming, isNotNull);
+    expect(parakeet.streaming!.kind, StreamingKind.windowed);
+    expect(parakeet.streaming!.window, const Duration(seconds: 5));
     final whisper = await create(profile: const SttModelProfile.whisper());
     addTearDown(whisper.close);
-    expect(whisper.asStreaming, isNull);
+    expect(whisper.streaming, isNull);
+    await expectLater(
+      whisper.transcribeStream(const Stream.empty()),
+      emitsError(isA<UnsupportedError>()),
+    );
   });
 
   test('the catalog says a build streams exactly when the recognizer it '
-      'loads into is a StreamingSpeechRecognizer', () async {
+      'loads into streams', () async {
     var checked = 0;
     for (final model in LiteRtSpeechModels.stt) {
       for (final variant in model.variants) {
@@ -159,7 +162,7 @@ void main() {
           profile: SttModelProfile.forType(variant.type),
         );
         expect(
-          recognizer.asStreaming != null,
+          recognizer.streaming != null,
           variant.supportsStreaming,
           reason: variant.id,
         );
@@ -178,7 +181,7 @@ void main() {
   test(
     'a long stream comes out once, in order, whatever the chunking',
     () async {
-      final recognizer = (await create()).asStreaming!;
+      final recognizer = (await create());
       addTearDown(recognizer.close);
       final words = [for (var i = 0; i < 40; i++) 1 + i % 9];
       final expected = [for (final w in words) 'w$w'].join(' ');
@@ -215,7 +218,7 @@ void main() {
 
   test('confirmedUntil is a lower bound: every word that starts before it '
       'is already confirmed', () async {
-    final recognizer = (await create()).asStreaming!;
+    final recognizer = (await create());
     addTearDown(recognizer.close);
     const spacing = 8000;
     final words = [for (var i = 0; i < 30; i++) 1 + i % 9];
@@ -251,7 +254,7 @@ void main() {
   });
 
   test('a small chunk that changes nothing sends no update', () async {
-    final recognizer = (await create()).asStreaming!;
+    final recognizer = (await create());
     addTearDown(recognizer.close);
     final words = [for (var i = 0; i < 12; i++) 1 + i % 9];
     // 20 ms chunks: most complete no window.
@@ -272,7 +275,7 @@ void main() {
   });
 
   test('odd-sized chunks carry the half sample to the next chunk', () async {
-    final recognizer = (await create()).asStreaming!;
+    final recognizer = (await create());
     addTearDown(recognizer.close);
     final words = [1, 2, 3, 4];
     final updates = await recognizer
@@ -287,7 +290,7 @@ void main() {
   });
 
   test('balanced latency gives the same text', () async {
-    final recognizer = (await create()).asStreaming!;
+    final recognizer = (await create());
     addTearDown(recognizer.close);
     final words = [for (var i = 0; i < 25; i++) 9 - i % 9];
     final updates = await recognizer
@@ -303,7 +306,7 @@ void main() {
   });
 
   test('one stream at a time; one never listened to holds nothing', () async {
-    final recognizer = (await create()).asStreaming!;
+    final recognizer = (await create());
     addTearDown(recognizer.close);
     recognizer.transcribeStream(const Stream.empty()); // never listened
     final input = StreamController<Uint8List>();
@@ -324,7 +327,7 @@ void main() {
   test(
     'a language on a model without one ends the stream with ArgumentError',
     () async {
-      final recognizer = (await create()).asStreaming!;
+      final recognizer = (await create());
       addTearDown(recognizer.close);
       await expectLater(
         recognizer
@@ -336,7 +339,7 @@ void main() {
   );
 
   test('maxBufferedAudio below the window throws at the call', () async {
-    final recognizer = (await create()).asStreaming!;
+    final recognizer = (await create());
     addTearDown(recognizer.close);
     expect(
       () => recognizer.transcribeStream(
@@ -350,7 +353,7 @@ void main() {
   });
 
   test('flush closes an utterance and the stream goes on', () async {
-    final recognizer = (await create()).asStreaming!;
+    final recognizer = (await create());
     addTearDown(recognizer.close);
     final input = StreamController<Uint8List>();
     final updates = <TranscriptUpdate>[];
@@ -376,9 +379,7 @@ void main() {
     final recognizer = await create();
     addTearDown(recognizer.close);
     final input = StreamController<Uint8List>();
-    final stream = recognizer.asStreaming!
-        .transcribeStream(input.stream)
-        .toList();
+    final stream = recognizer.transcribeStream(input.stream).toList();
     input.add(_speech([1, 2], seconds: 6));
     expect(await recognizer.transcribe(Uint8List(200)), 'batch 100');
     await input.close();
@@ -386,7 +387,7 @@ void main() {
   });
 
   test('close ends a running stream with a StateError', () async {
-    final recognizer = (await create()).asStreaming!;
+    final recognizer = (await create());
     final input = StreamController<Uint8List>();
     final stream = recognizer.transcribeStream(input.stream).toList();
     input.add(_speech([1], seconds: 1));
@@ -399,7 +400,7 @@ void main() {
 
   test('closing the recognizer during a flush fails the flush', () async {
     final log = gatedLog(dir, 'gate');
-    final recognizer = (await create(config: 'gate@${log.path}')).asStreaming!;
+    final recognizer = (await create(config: 'gate@${log.path}'));
     final input = StreamController<Uint8List>();
     final stream = recognizer.transcribeStream(input.stream).toList();
     final ended = expectLater(stream, throwsStateError);
@@ -417,7 +418,7 @@ void main() {
 
   test('audio piling up behind a slow model fails with an overrun', () async {
     final log = gatedLog(dir, 'gate');
-    final recognizer = (await create(config: 'gate@${log.path}')).asStreaming!;
+    final recognizer = (await create(config: 'gate@${log.path}'));
     addTearDown(recognizer.close);
     final input = StreamController<Uint8List>();
     final stream = recognizer
@@ -440,7 +441,7 @@ void main() {
   test('cancelling stops the input; the recognizer is free after the window '
       'in flight', () async {
     final log = gatedLog(dir, 'gate');
-    final recognizer = (await create(config: 'gate@${log.path}')).asStreaming!;
+    final recognizer = (await create(config: 'gate@${log.path}'));
     addTearDown(recognizer.close);
     final cancelled = Completer<void>();
     final input = StreamController<Uint8List>(onCancel: cancelled.complete);

@@ -146,11 +146,14 @@ await for (final update in streaming.transcribeStream(microphonePcm16kMono)) {
 It runs the batch model over 5 s windows that overlap
 (`StreamingLatency.lowLatency`: a window every 1.25 s; `balanced`: every
 2.5 s) and merges their words by time, with the windowing and merging of
-LiteRT-LM Omni (`third_party/litert_lm_omni/`). On 87 LibriSpeech test-clean
-streams of about 60 s (93 min), fed in 100 ms chunks on a Mac CPU with
-`parakeet_ctc_0.6b_5s_i8.tflite`: 2.85% WER at `lowLatency` (0.13 s of
-compute per second of audio), 2.80% at `balanced` (0.08 s), against 5.33%
-for plain 5 s chunks. One stream runs at a time; `transcribe` calls made
+LiteRT-LM Omni (`third_party/litert_lm_omni/`), with three changes to the
+merge measured on LibriSpeech. On 87 test-clean streams of about 60 s
+(93 min), fed in 100 ms chunks on a Mac CPU with
+`parakeet_ctc_0.6b_5s_i8.tflite`: 2.65% WER at `lowLatency` (0.13 s of
+compute per second of audio), 2.63% at `balanced` (0.08 s), against 5.33%
+for plain 5 s chunks. Those streams were used to tune the merge; on the
+next minute of each chapter (80 streams, 85 min), held out from it: 2.52%
+and 2.31%. One stream runs at a time; `transcribe` calls made
 meanwhile wait their turn. Audio that arrives faster than the model keeps up
 with is held up to `TranscribeStreamOptions.maxBufferedAudio` (10 s), then
 the stream fails with `SpeechStreamOverrunException`; raise it to stream a

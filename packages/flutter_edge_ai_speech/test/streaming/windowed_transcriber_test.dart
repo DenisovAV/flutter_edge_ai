@@ -2,6 +2,7 @@
 // how a short final chunk is padded or shifted back, and that the shift back
 // splices the samples before the kept overlap instead of repeating it.
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_speech/src/streaming/detokenizer.dart';
@@ -109,5 +110,63 @@ void main() {
       expect(last.validSamples, lessThan(100));
       expect(last.window.sublist(last.validSamples), everyElement(0));
     });
+  });
+
+  test('confirmedUntil is a lower bound over many word layouts, windows '
+      'starting between two frames', () async {
+    // 100-sample windows of 10 frames (10 samples each), overlap 0.75: the
+    // windows start every 25 samples, 2.5 frames, which the merger rounds.
+    // Samples carry their own position (sample i is i + 1), so the runner
+    // knows where each window starts; a word is a token at its frame. Many
+    // seeded layouts, as a word just before a window start is what breaks
+    // an unrounded bound.
+    final random = Random(3);
+    for (var layout = 0; layout < 300; layout++) {
+      final wordsAt = <int>[];
+      for (
+        var at = random.nextInt(12);
+        at < 290;
+        at += 11 + random.nextInt(30)
+      ) {
+        wordsAt.add(at);
+      }
+      final transcriber = WindowedTranscriber(
+        windowSamples: 100,
+        overlapRatio: 0.75,
+        tokenIdsToUtf8: (ids, {required skipSpecialTokens}) =>
+            utf8.encode(ids.map((i) => ' w$i').join()),
+        runWindow: (window, {required validSamples, required startFraction}) {
+          final origin = window[0].round() - 1;
+          final first = (startFraction * 10).floor();
+          return Future.value([
+            for (var k = 0; k < wordsAt.length; k++)
+              if (wordsAt[k] >= origin &&
+                  wordsAt[k] < origin + validSamples &&
+                  (wordsAt[k] - origin) ~/ 10 >= first)
+                DecodedToken(
+                  k + 1,
+                  timestampMs: (wordsAt[k] - origin) ~/ 10 - first,
+                ),
+            DecodedToken.endOfChunk(timestampMs: 10 - first),
+          ]);
+        },
+      );
+      var confirmed = 0;
+      for (var i = 0; i < 300; i += 25) {
+        final result = await transcriber.add(_ramp(i + 1, 25));
+        if (result.confirmed.isNotEmpty) {
+          confirmed += result.confirmed.trim().split(RegExp(r'\s+')).length;
+        }
+        for (var k = 0; k < wordsAt.length; k++) {
+          if (wordsAt[k] < result.confirmedUntil && k >= confirmed) {
+            fail(
+              'layout $layout $wordsAt: w${k + 1} at ${wordsAt[k]} is before '
+              'confirmedUntil ${result.confirmedUntil}, but only $confirmed '
+              'words are confirmed',
+            );
+          }
+        }
+      }
+    }
   });
 }

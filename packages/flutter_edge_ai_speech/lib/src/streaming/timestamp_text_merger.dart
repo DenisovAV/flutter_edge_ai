@@ -439,6 +439,14 @@ bool _isPartialOrMatchingBoundaryWord(
 // window start, and only when `canonCurrWord` looks like a partial
 // suffix/fragment or repeat of that word, so genuinely new words missed by the
 // previous chunk are preserved.
+//
+// Deviation from Omni (flutter_edge_ai_speech): Parakeet through this
+// package's frontend emits the tail of a cut word 5-7 encoder frames into the
+// window, past `tol.substitution` (about 4.7 frames), so "satisfaction" came
+// out "satisfaction faction". Up to `tol.matchLate` the word is still dropped,
+// but only when it is a strict suffix of the cut word or a prefix of 3 bytes
+// or more of it ends that word; the looser rules keep their narrow band.
+// Measured on LibriSpeech test-clean streams in the package README.
 bool _isCutAtWindowStart(
   List<Uint8List> canonPrevWords,
   List<int> prevTimestamps,
@@ -447,14 +455,31 @@ bool _isCutAtWindowStart(
   double time,
   _Tolerances tol,
 ) {
-  if (time > chunkStart + tol.substitution) return false;
+  if (time > chunkStart + tol.matchLate) return false;
+  final narrow = time <= chunkStart + tol.substitution;
   for (var idx = 0; idx < prevTimestamps.length; ++idx) {
     final ts = prevTimestamps[idx];
-    if (ts >= chunkStart - tol.matchEarly &&
-        ts < chunkStart + tol.substitution &&
-        ts < time &&
-        _isPartialOrMatchingBoundaryWord(canonPrevWords[idx], canonCurrWord)) {
+    if (ts < chunkStart - tol.matchEarly ||
+        ts >= chunkStart + tol.substitution ||
+        ts >= time) {
+      continue;
+    }
+    final prev = canonPrevWords[idx];
+    if (narrow) {
+      if (_isPartialOrMatchingBoundaryWord(prev, canonCurrWord)) return true;
+      continue;
+    }
+    if (canonCurrWord.length < prev.length && _endsWith(prev, canonCurrWord)) {
       return true;
+    }
+    for (
+      var len = math.min(prev.length, canonCurrWord.length);
+      len >= 3;
+      --len
+    ) {
+      if (_endsWith(prev, Uint8List.sublistView(canonCurrWord, 0, len))) {
+        return true;
+      }
     }
   }
   return false;

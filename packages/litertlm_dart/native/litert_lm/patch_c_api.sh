@@ -13,6 +13,8 @@
 # 26. ThinkingBudgetConstraint copies a user bitmap by data() and vocabulary
 #     size (Windows: the Gemma provider's vector is libc++, the runtime MSVC)
 #
+# 28. Apple: Metal argument buffers stay on (Gemma 4 kernels exceed 31 slots)
+#
 # v0.20.0 migration: sections 15, 22, 24 and 27 are anchors only now (upstream
 # a48771d2, 9738e180, e0dcad4e and 3db1cfd0ab ship what they patched); section
 # 10b drops the Google Tensor dispatch and Intel GlobalGraph v3 backports (in
@@ -1095,5 +1097,27 @@ if ! grep -q 'IsUserCustomBuffer' \
   exit 1
 fi
 echo "  OK: section 27: NPU KV caches in custom tensor buffers are aliased (upstream 3db1cfd0ab)"
+
+# ── 28. Apple: Metal argument buffers on, as up to v0.19.1 ──
+# v0.20.0 (upstream 08ec69e6) turns Metal argument buffers off in
+# SetCommonGpuOptions for speed. Without them every buffer a kernel binds is a
+# [[buffer(n)]] slot, and Apple GPUs have 31 (0-30): Gemma 4 E2B on Metal then
+# failed engine_create with "'buffer' attribute parameter is out of bounds:
+# must be between 0 and 30" (a kernel binding buffer(31) and buffer(32); FP32
+# at 4096 tokens and FP16 at 2048, our v0.20.0 build on an M5 Pro,
+# 2026-11-25). With them on, as every release up to v0.19.1 ran, the same
+# build answers text, image, audio, tools, thinking and a stopped turn at
+# ~120 tok/s. Drop this section once upstream's kernels fit the slot limit.
+GPU_UTILS="$DIR/runtime/executor/litert_compiled_model_executor_utils.cc"
+if grep -q 'gpu_options.SetUseMetalArgumentBuffers(false);' "$GPU_UTILS"; then
+  sed -i.bak 's/gpu_options\.SetUseMetalArgumentBuffers(false);/gpu_options.SetUseMetalArgumentBuffers(true);  \/\/ flutter_edge_ai section 28/' "$GPU_UTILS"
+  rm -f "$GPU_UTILS.bak"
+fi
+[ "$(grep -c 'SetUseMetalArgumentBuffers(true);  // flutter_edge_ai section 28' "$GPU_UTILS")" = 1 ] &&
+  ! grep -q 'SetUseMetalArgumentBuffers(false)' "$GPU_UTILS" || {
+  echo "  ERROR: section 28: SetCommonGpuOptions' Metal argument-buffer line moved" >&2
+  exit 1
+}
+echo "  OK: section 28: Metal argument buffers on (Apple)"
 
 echo "Patch complete."

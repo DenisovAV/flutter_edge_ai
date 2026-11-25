@@ -93,7 +93,52 @@ final _optionScoringGolden = File(
   'test/public_surface/option_scoring_spi_members.golden.txt',
 );
 
+/// The speech contracts: what an STT or TTS backend implements, and the
+/// streaming capability interfaces with their value types. Backends and test
+/// fakes implement these member by member, so a member change is reviewed.
+const _speechTypes = [
+  'SpeechRecognizer',
+  'SpeechSynthesizer',
+  'StreamingSpeechRecognizer',
+  'StreamingSpeechSynthesizer',
+  'SpeechTextStream',
+  'TranscriptUpdate',
+  'TranscribeStreamOptions',
+  'StreamingLatency',
+  'StreamingKind',
+  'StreamingSttInfo',
+  'SpeechStreamOverrunException',
+  'SpeechChunk',
+  'WordTiming',
+  'SttBackendProvider',
+  'TtsBackendProvider',
+  'SttVariant',
+  'TtsVariant',
+];
+
+final _speechGolden = File('test/public_surface/speech_spi_members.golden.txt');
+
 void main() {
+  test('the speech SPI members match their golden', () async {
+    final namespace = await exportNamespace('flutter_edge_ai.dart');
+    expectGolden(
+      _speechGolden,
+      _render(
+        namespace,
+        types: _speechTypes,
+        functions: const [],
+        library: 'flutter_edge_ai.dart',
+        title: 'the speech SPI',
+      ),
+      (expected, actual) => describeLineDrift(
+        'The members of the speech SPI in '
+        'package:flutter_edge_ai/flutter_edge_ai.dart',
+        expected,
+        actual,
+      ),
+    );
+  }, timeout: const Timeout(Duration(minutes: 5)));
+
   test('the Decider API members match their golden', () async {
     final namespace = await exportNamespace('flutter_edge_ai.dart');
     expectGolden(

@@ -1376,8 +1376,9 @@ mixin RawSdkResponseSession on InferenceModelSession {
 
 /// Represents a speech-to-text model instance.
 abstract class SpeechRecognizer {
-  /// Transcribe 16 kHz mono 16-bit little-endian PCM. Batch (fixed-window)
-  /// for now; streaming is a follow-on.
+  /// Transcribe 16 kHz mono 16-bit little-endian PCM in one fixed window.
+  /// A recognizer whose model can stream also implements
+  /// `StreamingSpeechRecognizer` (find it with `asStreaming`).
   ///
   /// [language] selects the OUTPUT language for this call (Whisper only): a
   /// bare lowercase code such as `'en'`, `'de'`, `'uk'`, any of Whisper's 99.
@@ -1431,8 +1432,9 @@ abstract class SpeechRecognizer {
 /// divergence: STT consumes caller-supplied audio, TTS produces it, so the
 /// caller must be told the rate to play it or wrap it in WAV.
 abstract class SpeechSynthesizer {
-  /// Synthesize [text] to 16-bit little-endian mono PCM at [sampleRate].
-  /// Batch (full text → full audio) for now; streaming is a follow-on.
+  /// Synthesize [text] to 16-bit little-endian mono PCM at [sampleRate], all
+  /// of it at once. A synthesizer whose model can stream also implements
+  /// `StreamingSpeechSynthesizer` (find it with `asStreaming`).
   Future<Uint8List> synthesize(String text);
 
   /// Output sample rate, Hz.

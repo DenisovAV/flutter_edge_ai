@@ -25,6 +25,24 @@ export 'src/interface.dart'
 export 'src/model_file_manager_interface.dart'
     show ModelFileManager, ModelReplacePolicy;
 
+// Streaming speech: what a recognizer or synthesizer implements when its
+// model can work on audio or text as it arrives.
+export 'src/streaming_speech.dart'
+    show
+        SpeechChunk,
+        SpeechRecognizerStreaming,
+        SpeechStreamOverrunException,
+        SpeechSynthesizerStreaming,
+        SpeechTextStream,
+        StreamingKind,
+        StreamingLatency,
+        StreamingSpeechRecognizer,
+        StreamingSpeechSynthesizer,
+        StreamingSttInfo,
+        TranscribeStreamOptions,
+        TranscriptUpdate,
+        WordTiming;
+
 // Typed responses: openSession/openChat(responseFormat:) and what they throw.
 export 'src/structured/response_format.dart'
     show JsonSchemaResponseFormat, ResponseFormat;

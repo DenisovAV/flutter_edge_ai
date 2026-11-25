@@ -119,6 +119,27 @@ void main() {
     ]);
   });
 
+  test('a new word that only shares letters with the cut word is kept', () {
+    // "another" straddles the window start; "therapist" begins with its
+    // last letters but is a word of its own, which the previous window
+    // missed. Six frames in: past the narrow band, inside the wide one.
+    final merger = TimestampTextMerger(overlapRatio: 0.75);
+    DetokenizedWord w(String text, int at) =>
+        DetokenizedWord(text, timestampMs: at);
+    const end = DetokenizedWord.endOfChunk(timestampMs: 63);
+    final out = <String>[];
+    void take(MergeResult? r) {
+      if (r != null && r.confirmed.isNotEmpty) out.add(r.confirmed);
+    }
+
+    take(merger.add([w('saw', 30), w('another', 44), end]));
+    take(merger.add([w('saw', 14), w('another', 28), end]));
+    take(merger.add([w('saw', 0), w('another', 12), end]));
+    take(merger.add([w('therapist', 6), w('today', 20), end]));
+    take(merger.flush());
+    expect(out.join(' ').split(' '), contains('therapist'));
+  });
+
   for (final overlap in [0.75, 0.5]) {
     // The merger's own errors on this text with no cut word heard at all
     // (repeated words in a row, merged by the timing tolerance).

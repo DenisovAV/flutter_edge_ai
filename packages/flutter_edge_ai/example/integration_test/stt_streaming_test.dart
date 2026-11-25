@@ -79,10 +79,20 @@ void main() {
       '${watch.elapsedMilliseconds} ms for 8.8 s of audio',
     );
     final low = text.toLowerCase();
+    // Each repetition whole, once: the batch model reads the clip as "she had
+    // your duck suit in/and greasy wash water all year" (11 words).
+    final sentence = RegExp(
+      r'she had your duck suit (?:in|and) greasy wash water all year',
+    );
     expect(
-      RegExp('greasy wash water').allMatches(low),
+      sentence.allMatches(low),
       hasLength(3),
       reason: 'each repetition once, none dropped or doubled: "$text"',
+    );
+    expect(
+      low.split(RegExp(r'\s+')),
+      hasLength(33),
+      reason: 'no word outside the three sentences: "$text"',
     );
     for (var k = 1; k < updates.length; k++) {
       expect(

@@ -444,9 +444,10 @@ bool _isPartialOrMatchingBoundaryWord(
 // package's frontend emits the tail of a cut word 5-7 encoder frames into the
 // window, past `tol.substitution` (about 4.7 frames), so "satisfaction" came
 // out "satisfaction faction". Up to `tol.matchLate` the word is still dropped,
-// but only when it is a strict suffix of the cut word or a prefix of 3 bytes
-// or more of it ends that word; the looser rules keep their narrow band.
-// Measured on LibriSpeech test-clean streams in the package README.
+// but only when it is a strict suffix of the cut word; the looser rules keep
+// their narrow band. Measured on LibriSpeech test-clean streams in the
+// package README (a rule that also dropped a word whose prefix ends the cut
+// word changed no word there, and could drop "therapist" after "another").
 bool _isCutAtWindowStart(
   List<Uint8List> canonPrevWords,
   List<int> prevTimestamps,
@@ -471,15 +472,6 @@ bool _isCutAtWindowStart(
     }
     if (canonCurrWord.length < prev.length && _endsWith(prev, canonCurrWord)) {
       return true;
-    }
-    for (
-      var len = math.min(prev.length, canonCurrWord.length);
-      len >= 3;
-      --len
-    ) {
-      if (_endsWith(prev, Uint8List.sublistView(canonCurrWord, 0, len))) {
-        return true;
-      }
     }
   }
   return false;

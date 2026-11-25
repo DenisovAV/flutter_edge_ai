@@ -1,0 +1,581 @@
+flutter_edge_ai (patch_c_api.sh section 33): text LoRA sessions, a backport of
+LiteRT-LM PR #2508 (leehack, "Support text LoRA sessions through
+ResourceManager", head f51fe329, Apache-2.0) onto v0.20.0.
+
+At v0.20.0 (and on main be6ce453) ResourceManager::CreateContextHandler builds
+the ModelAssets of a not yet loaded text LoRA and then returns
+InvalidArgumentError("Lora is not supported."); the LLM executor has no
+LoadLoRA/UseLoRA and binds no LoRA buffers, although the scaffolding is there
+(LoraManager, lora_id in the context, AssignLoraIdLocked).
+
+From #2508: LoadLoRA/UseLoRA on LlmExecutorBase, implemented on the
+compiled-model executor through LoraManager; forwarding in LockedLlmExecutor;
+the context's lora_id kept through CloneContext and re-selected by
+RestoreContext; SessionConfig keeps the LoRA paths; ResourceManager loads a
+text LoRA once per id. Rebased onto v0.20.0's ResourceManager (scoped-file
+keys, lora_mutex_ before executor_mutex_), mirroring its audio branch.
+
+Not in #2508, added here: the LoRA inputs of every signature are bound, prefill
+as well as decode (LoRA::GetLoRABuffers(signature), new in v0.20.0); a session
+without an adapter on a model with LoRA inputs binds a LoRA whose every
+tensor is zero, sized from the model's own LoRA inputs (the base weights;
+LoRA::Create refuses data that matches no input, so an empty one cannot do); an active LoRA on a signature without LoRA inputs is an error
+instead of being ignored. The NPU executor keeps the base LoadLoRA, which
+returns Unimplemented. #2508's ResourceManager tests are not ported yet.
+
+diff --git a/c/engine.cc b/c/engine.cc
+index 4e216335..f5ba4a90 100644
+--- a/c/engine.cc
++++ b/c/engine.cc
+@@ -544,6 +544,7 @@ LiteRtLmStatusCode litert_lm_session_config_set_lora_path(
+   LITERT_LM_C_ASSIGN_OR_RETURN(std::shared_ptr<ScopedFile> lora_file,
+                                OpenScopedLoraFile(lora_path, "LoRA"));
+   config->config->SetScopedLoraFile(std::move(lora_file));
++  config->config->SetLoraPath(std::string(lora_path));
+   return kLiteRtLmStatusOk;
+ }
+ 
+@@ -556,6 +557,7 @@ LiteRtLmStatusCode litert_lm_session_config_set_audio_lora_path(
+       std::shared_ptr<ScopedFile> lora_file,
+       OpenScopedLoraFile(audio_lora_path, "Audio LoRA"));
+   config->config->SetAudioScopedLoraFile(std::move(lora_file));
++  config->config->SetAudioLoraPath(std::string(audio_lora_path));
+   return kLiteRtLmStatusOk;
+ }
+ 
+diff --git a/c/engine_test.cc b/c/engine_test.cc
+index a1b10b7b..66172920 100644
+--- a/c/engine_test.cc
++++ b/c/engine_test.cc
+@@ -20,6 +20,7 @@
+ #include <cstddef>
+ #include <cstring>
+ #include <filesystem>  // NOLINT: Required for test directories.
++#include <fstream>
+ #include <functional>
+ #include <limits>
+ #include <memory>
+@@ -992,6 +993,42 @@ TEST(EngineCTest, CreateSessionConfigWithSpeculativeDecodingConfig) {
+                 nullptr, empty_config),
+             kLiteRtLmStatusInvalidArgument);
+   litert_lm_speculative_decoding_config_delete(empty_config);
++TEST(EngineCTest, SetSessionConfigLoraPathStoresFileAndPath) {
++  SessionConfigPtr config(CreateSessionConfig(),
++                          &litert_lm_session_config_delete);
++  ASSERT_NE(config, nullptr);
++  const std::string lora_path =
++      ::testing::TempDir() + "/set_session_config_lora_path.tflite";
++  {
++    std::ofstream ofs(lora_path);
++    ofs << "lora";
++  }
++
++  EXPECT_EQ(
++      litert_lm_session_config_set_lora_path(config.get(), lora_path.c_str()),
++      kLiteRtLmStatusOk);
++  EXPECT_NE(config->config->GetScopedLoraFile(), nullptr);
++  ASSERT_TRUE(config->config->GetLoraPath().has_value());
++  EXPECT_EQ(*config->config->GetLoraPath(), lora_path);
++}
++
++TEST(EngineCTest, SetSessionConfigAudioLoraPathStoresFileAndPath) {
++  SessionConfigPtr config(CreateSessionConfig(),
++                          &litert_lm_session_config_delete);
++  ASSERT_NE(config, nullptr);
++  const std::string lora_path =
++      ::testing::TempDir() + "/set_session_config_audio_lora_path.tflite";
++  {
++    std::ofstream ofs(lora_path);
++    ofs << "audio lora";
++  }
++
++  EXPECT_EQ(litert_lm_session_config_set_audio_lora_path(config.get(),
++                                                         lora_path.c_str()),
++            kLiteRtLmStatusOk);
++  EXPECT_NE(config->config->GetAudioScopedLoraFile(), nullptr);
++  ASSERT_TRUE(config->config->GetAudioLoraPath().has_value());
++  EXPECT_EQ(*config->config->GetAudioLoraPath(), lora_path);
+ }
+ 
+ TEST(EngineCTest, CreateConversationConfig) {
+diff --git a/runtime/engine/engine_settings.cc b/runtime/engine/engine_settings.cc
+index 02a1a0e9..23fd114a 100644
+--- a/runtime/engine/engine_settings.cc
++++ b/runtime/engine/engine_settings.cc
+@@ -1063,6 +1063,14 @@ void SessionConfig::SetScopedLoraFile(
+   scoped_lora_file_ = std::move(scoped_lora_file);
+ }
+ 
++const std::optional<std::string>& SessionConfig::GetLoraPath() const {
++  return lora_path_;
++}
++
++void SessionConfig::SetLoraPath(std::optional<std::string> lora_path) {
++  lora_path_ = std::move(lora_path);
++}
++
+ std::shared_ptr<ScopedFile> SessionConfig::GetAudioScopedLoraFile() const {
+   return scoped_audio_lora_file_;
+ }
+@@ -1072,6 +1080,15 @@ void SessionConfig::SetAudioScopedLoraFile(
+   scoped_audio_lora_file_ = std::move(scoped_audio_lora_file);
+ }
+ 
++const std::optional<std::string>& SessionConfig::GetAudioLoraPath() const {
++  return audio_lora_path_;
++}
++
++void SessionConfig::SetAudioLoraPath(
++    std::optional<std::string> audio_lora_path) {
++  audio_lora_path_ = std::move(audio_lora_path);
++}
++
+ std::ostream& operator<<(std::ostream& os, const SessionConfig& config) {
+   os << "SessionConfig: " << std::endl;
+   os << "  AudioModalityEnabled: " << config.AudioModalityEnabled()
+@@ -1099,9 +1116,12 @@ std::ostream& operator<<(std::ostream& os, const SessionConfig& config) {
+   os << "  ScopedLoraFile: "
+      << (config.GetScopedLoraFile() != nullptr ? "Present" : "Not present")
+      << std::endl;
++  os << "  LoraPath: " << config.GetLoraPath().value_or("Not set") << std::endl;
+   os << "  ScopedAudioLoraFile: "
+      << (config.GetAudioScopedLoraFile() != nullptr ? "Present" : "Not present")
+      << std::endl;
++  os << "  AudioLoraPath: " << config.GetAudioLoraPath().value_or("Not set")
++     << std::endl;
+   os << "  SpeculativeDecodingConfig: " << config.GetSpeculativeDecodingConfig()
+      << std::endl;
+   return os;
+diff --git a/runtime/engine/engine_settings.h b/runtime/engine/engine_settings.h
+index b4b8b2d4..06edc046 100644
+--- a/runtime/engine/engine_settings.h
++++ b/runtime/engine/engine_settings.h
+@@ -324,12 +324,22 @@ class SessionConfig {
+   std::shared_ptr<ScopedFile> GetScopedLoraFile() const;
+   void SetScopedLoraFile(std::shared_ptr<ScopedFile> scoped_lora_file);
+ 
++  // LoRA path:
++  // Getters for the LoRA path.
++  const std::optional<std::string>& GetLoraPath() const;
++  void SetLoraPath(std::optional<std::string> lora_path);
++
+   // Scoped Audio LoRA file:
+   // Getters for the scoped audio LoRA file.
+   std::shared_ptr<ScopedFile> GetAudioScopedLoraFile() const;
+   void SetAudioScopedLoraFile(
+       std::shared_ptr<ScopedFile> scoped_audio_lora_file);
+ 
++  // Audio LoRA path:
++  // Getters for the audio LoRA path.
++  const std::optional<std::string>& GetAudioLoraPath() const;
++  void SetAudioLoraPath(std::optional<std::string> audio_lora_path);
++
+   // The maximum number of tokens to generate in a single request. For thinking
+   // models, both thinking (reasoning) tokens and the final response tokens
+   // count towards this limit:
+@@ -434,9 +444,15 @@ class SessionConfig {
+   // Scoped file for the LoRA weights.
+   std::shared_ptr<ScopedFile> scoped_lora_file_;
+ 
++  // Path for the LoRA weights.
++  std::optional<std::string> lora_path_;
++
+   // Scoped file for the Audio LoRA weights.
+   std::shared_ptr<ScopedFile> scoped_audio_lora_file_;
+ 
++  // Path for the Audio LoRA weights.
++  std::optional<std::string> audio_lora_path_;
++
+   // The maximum number of tokens to generate in a single request. This limits
+   // the number of decoding steps for a request, as opposed to
+   // LlmExecutorSettings::GetMaxNumTokens(), which limits the total number of
+diff --git a/runtime/engine/engine_settings_test.cc b/runtime/engine/engine_settings_test.cc
+index 84e99b73..e9c8be4b 100644
+--- a/runtime/engine/engine_settings_test.cc
++++ b/runtime/engine/engine_settings_test.cc
+@@ -1332,6 +1332,16 @@ TEST(SessionConfigTest, SetAndGetScopedLoraFile) {
+   EXPECT_EQ(session_config.GetScopedLoraFile(), nullptr);
+ }
+ 
++TEST(SessionConfigTest, SetAndGetLoraPath) {
++  SessionConfig session_config = SessionConfig::CreateDefault();
++  EXPECT_FALSE(session_config.GetLoraPath().has_value());
++  session_config.SetLoraPath("lora_model.tflite");
++  ASSERT_TRUE(session_config.GetLoraPath().has_value());
++  EXPECT_EQ(*session_config.GetLoraPath(), "lora_model.tflite");
++  session_config.SetLoraPath(std::nullopt);
++  EXPECT_FALSE(session_config.GetLoraPath().has_value());
++}
++
+ TEST(SessionConfigTest, SetAndGetAudioScopedLoraFile) {
+   SessionConfig session_config = SessionConfig::CreateDefault();
+   EXPECT_EQ(session_config.GetAudioScopedLoraFile(), nullptr);
+@@ -1351,6 +1361,16 @@ TEST(SessionConfigTest, SetAndGetAudioScopedLoraFile) {
+   EXPECT_EQ(session_config.GetAudioScopedLoraFile(), nullptr);
+ }
+ 
++TEST(SessionConfigTest, SetAndGetAudioLoraPath) {
++  SessionConfig session_config = SessionConfig::CreateDefault();
++  EXPECT_FALSE(session_config.GetAudioLoraPath().has_value());
++  session_config.SetAudioLoraPath("audio_lora_model.tflite");
++  ASSERT_TRUE(session_config.GetAudioLoraPath().has_value());
++  EXPECT_EQ(*session_config.GetAudioLoraPath(), "audio_lora_model.tflite");
++  session_config.SetAudioLoraPath(std::nullopt);
++  EXPECT_FALSE(session_config.GetAudioLoraPath().has_value());
++}
++
+ TEST(SessionConfigTest, MaybeUpdateAndValidate) {
+   auto model_assets = ModelAssets::Create("test_model_path_1");
+   ASSERT_OK(model_assets);
+diff --git a/runtime/executor/llm_executor_base.h b/runtime/executor/llm_executor_base.h
+index 2e3e7ed6..df203935 100644
+--- a/runtime/executor/llm_executor_base.h
++++ b/runtime/executor/llm_executor_base.h
+@@ -36,6 +36,8 @@
+ 
+ namespace litert::lm {
+ 
++class ModelAssets;
++
+ // The LLM Executor serves as a lightweight and portable wrapper around various
+ // converted LLM model formats, i.e. LiteRT. It aims to provide a general,
+ // minimal-dependency interface for the users, abstracting the complexities of
+@@ -225,6 +227,23 @@ class LlmExecutorBase {
+         "Reset not implemented for backend: ", ExecutorBackendName()));
+   };
+ 
++  // Loads the LoRA model into the executor without activating it.
++  virtual absl::Status LoadLoRA(uint32_t lora_id,
++                                const ModelAssets& model_assets) {
++    return absl::UnimplementedError(absl::StrCat(
++        "LoadLoRA not implemented for backend: ", ExecutorBackendName()));
++  }
++
++  // Sets the current LoRA ID to use. Passing std::nullopt clears the active
++  // LoRA selection for executors that support LoRA.
++  virtual absl::Status UseLoRA(std::optional<uint32_t> lora_id) {
++    if (!lora_id.has_value()) {
++      return absl::OkStatus();
++    }
++    return absl::UnimplementedError(absl::StrCat(
++        "UseLoRA not implemented for backend: ", ExecutorBackendName()));
++  }
++
+   // ------------State/context management APIs------------:
+   // Creates a new context with the given configs.
+   virtual absl::StatusOr<std::unique_ptr<LlmContext>> CreateNewContext(
+diff --git a/runtime/executor/llm_litert_compiled_model_executor.cc b/runtime/executor/llm_litert_compiled_model_executor.cc
+index eb57d957..544a649b 100644
+--- a/runtime/executor/llm_litert_compiled_model_executor.cc
++++ b/runtime/executor/llm_litert_compiled_model_executor.cc
+@@ -54,6 +54,7 @@
+ #include "litert/cc/litert_options.h"  // from @litert
+ #include "litert/cc/litert_profiler.h"  // from @litert
+ #include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
++#include "litert/cc/litert_buffer_ref.h"  // from @litert
+ #include "litert/cc/litert_tensor_buffer.h"  // from @litert
+ #include "litert/cc/litert_tensor_buffer_types.h"  // from @litert
+ #if defined(__APPLE__)
+@@ -61,6 +62,7 @@
+ #endif  // defined(__APPLE__)
+ #include "runtime/components/constrained_decoding/constrained_decoder.h"
+ #include "runtime/components/embedding_lookup/embedding_lookup_manager.h"
++#include "runtime/components/lora_manager.h"
+ #include "runtime/components/model_resources.h"
+ #include "runtime/components/sampler_params_util.h"
+ #include "runtime/components/sampling_uniforms.h"
+@@ -93,6 +95,42 @@ namespace litert::lm {
+ 
+ namespace {
+ 
++// LoRA data whose every tensor is zero, sized from the model's own LoRA inputs:
++// bound for a session without an adapter on a model exported with LoRA inputs,
++// it leaves the base weights unchanged (W + 0). LoRA::Create refuses data that
++// matches none of the inputs, so the zeros are real tensors, not missing ones
++// (flutter_edge_ai section 33).
++class ZeroLoraData : public LoraData {
++ public:
++  explicit ZeroLoraData(absl::flat_hash_map<std::string, size_t> sizes)
++      : sizes_(std::move(sizes)) {}
++  absl::StatusOr<int> GetLoRARank() override {
++    return absl::UnimplementedError("The zero LoRA has no rank.");
++  }
++  absl::StatusOr<std::unique_ptr<BufferRef<uint8_t>>> ReadTensor(
++      absl::string_view name) override {
++    auto it = sizes_.find(name);
++    if (it == sizes_.end()) {
++      return absl::NotFoundError(absl::StrCat("No LoRA tensor ", name));
++    }
++    auto buffer = std::make_unique<OwningBufferRef<uint8_t>>(it->second);
++    std::memset(buffer->Data(), 0, it->second);
++    return buffer;
++  }
++  bool HasTensor(absl::string_view name) const override {
++    return sizes_.contains(name);
++  }
++  std::vector<std::string> GetAllTensorNames() const override {
++    std::vector<std::string> names;
++    names.reserve(sizes_.size());
++    for (const auto& [name, size] : sizes_) names.push_back(name);
++    return names;
++  }
++
++ private:
++  absl::flat_hash_map<std::string, size_t> sizes_;
++};
++
+ using ::absl::Span;
+ 
+ // Names of the signature runners, used to get the signature runners from the
+@@ -920,6 +958,7 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::BindTensorsAndRunPrefill(
+     output_buffers.insert_or_assign(output_name, std::move(output_buffer_dup));
+   }
+ 
++  ABSL_RETURN_IF_ERROR(AppendLoraInputBuffers(prefill_signature, input_buffers));
+   return RunSignature(prefill_signature, input_buffers, output_buffers, async);
+ }
+ 
+@@ -1226,6 +1265,8 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::BindTensorsAndRunDecode(
+   auto* litert_state = dynamic_cast<LitertState*>(active_state);
+   RET_CHECK(litert_state != nullptr);
+ 
++  ABSL_RETURN_IF_ERROR(
++      AppendLoraInputBuffers(kDecodeSignatureRunner, decode_input_buffers));
+   absl::flat_hash_map<absl::string_view, TensorBuffer> decode_output_buffers;
+   for (const auto& [output_name, output_buffer] : decode_output_buffers_) {
+     // LITERT_ASSIGN_OR_RETURN() causes a compilation error on windows.
+@@ -1254,6 +1295,72 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::BindTensorsAndRunDecode(
+                       decode_output_buffers, /*async=*/true);
+ }
+ 
++absl::StatusOr<bool> LlmLiteRtCompiledModelExecutorBase::SignatureHasLoraInputs(
++    absl::string_view signature) {
++  auto it = signature_has_lora_inputs_.find(signature);
++  if (it != signature_has_lora_inputs_.end()) return it->second;
++  LITERT_ASSIGN_OR_RETURN(auto input_names,
++                          compiled_model_->GetSignatureInputNames(signature));
++  bool has_lora = false;
++  for (const auto& input_name : input_names) {
++    if (IsLoRAInputName(input_name)) {
++      has_lora = true;
++      break;
++    }
++  }
++  signature_has_lora_inputs_.emplace(std::string(signature), has_lora);
++  return has_lora;
++}
++
++absl::Status LlmLiteRtCompiledModelExecutorBase::AppendLoraInputBuffers(
++    absl::string_view signature,
++    absl::flat_hash_map<absl::string_view, TensorBuffer>& input_buffers) {
++  ABSL_ASSIGN_OR_RETURN(const bool has_lora, SignatureHasLoraInputs(signature));
++  if (!has_lora) {
++    if (active_lora_id_.has_value()) {
++      return absl::FailedPreconditionError(absl::StrCat(
++          "A LoRA is active, but signature '", signature,
++          "' has no LoRA inputs: the model was not exported with LoRA "
++          "input signatures."));
++    }
++    return absl::OkStatus();
++  }
++  absl::flat_hash_map<absl::string_view, TensorBuffer> lora_buffers;
++  if (active_lora_id_.has_value()) {
++    RET_CHECK(lora_manager_ != nullptr)
++        << "LoRA manager is not initialized. Please load LoRA first.";
++    ABSL_ASSIGN_OR_RETURN(lora_buffers,
++                          lora_manager_->GetLoRABuffers(signature));
++  } else {
++    // A session without an adapter on a model with LoRA inputs: bind zeros,
++    // i.e. the base weights (W + 0).
++    if (zero_lora_ == nullptr) {
++      LITERT_ASSIGN_OR_RETURN(
++          auto decode_inputs,
++          compiled_model_->GetSignatureInputNames(kDecodeSignatureRunner));
++      absl::flat_hash_map<std::string, size_t> sizes;
++      for (const auto& input_name : decode_inputs) {
++        if (!IsLoRAInputName(input_name)) continue;
++        LITERT_ASSIGN_OR_RETURN(
++            TensorBuffer buffer,
++            compiled_model_->CreateInputBuffer(kDecodeSignatureRunner,
++                                               input_name));
++        LITERT_ASSIGN_OR_RETURN(size_t size, buffer.PackedSize());
++        sizes.emplace(std::string(input_name), size);
++      }
++      ABSL_ASSIGN_OR_RETURN(
++          zero_lora_,
++          LoRA::Create(std::make_unique<ZeroLoraData>(std::move(sizes)),
++                       *compiled_model_, kDecodeSignatureRunner));
++    }
++    ABSL_ASSIGN_OR_RETURN(lora_buffers, zero_lora_->GetLoRABuffers(signature));
++  }
++  for (auto& [name, buffer] : lora_buffers) {
++    input_buffers.insert_or_assign(name, std::move(buffer));
++  }
++  return absl::OkStatus();
++}
++
+ int LlmLiteRtCompiledModelExecutorBase::BindTensorsAndRunDecodeStatic(
+     void* arg) {
+   auto self = static_cast<LlmLiteRtCompiledModelExecutorBase*>(arg);
+@@ -1792,6 +1899,31 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::RestoreLocalOrRecurrentState(
+   return target->RestoreLocalOrRecurrentState(*state);
+ }
+ 
++absl::Status LlmLiteRtCompiledModelExecutorBase::LoadLoRA(
++    uint32_t lora_id, const ModelAssets& model_assets) {
++  if (lora_manager_ == nullptr) {
++    ABSL_ASSIGN_OR_RETURN(
++        lora_manager_,
++        LoraManager::Create(*compiled_model_, kDecodeSignatureRunner));
++  }
++  return lora_manager_->LoadLoRA(lora_id, model_assets);
++}
++
++absl::Status LlmLiteRtCompiledModelExecutorBase::UseLoRA(
++    std::optional<uint32_t> lora_id) {
++  if (!lora_id.has_value()) {
++    active_lora_id_ = std::nullopt;
++    return absl::OkStatus();
++  }
++  if (lora_manager_ == nullptr) {
++    return absl::FailedPreconditionError(
++        "LoRA manager is not initialized. Please load LoRA first.");
++  }
++  ABSL_RETURN_IF_ERROR(lora_manager_->UseLoRA(*lora_id));
++  active_lora_id_ = lora_id;
++  return absl::OkStatus();
++}
++
+ absl::StatusOr<std::unique_ptr<LlmContext>>
+ LlmLiteRtCompiledModelExecutorBase::CreateNewContext(
+     std::optional<uint32_t> lora_id, RuntimeConfig runtime_config) const {
+@@ -1814,7 +1946,7 @@ LlmLiteRtCompiledModelExecutorBase::CreateNewContext(
+ 
+ absl::StatusOr<std::unique_ptr<LlmContext>>
+ LlmLiteRtCompiledModelExecutorBase::CloneContext() const {
+-  std::optional<uint32_t> lora_id;
++  std::optional<uint32_t> lora_id = llm_context_->processed_context().lora_id();
+   ABSL_ASSIGN_OR_RETURN(auto state, CloneState());
+   ProcessedTokens new_processed_tokens =
+       llm_context_->processed_context().processed_tokens();
+@@ -1836,6 +1968,7 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::RestoreContext(
+   if (sampler_ != nullptr && sampler_->HandlesInput()) {
+     ABSL_RETURN_IF_ERROR(SetSamplerInputHandling(/*reset=*/true));
+   }
++  ABSL_RETURN_IF_ERROR(UseLoRA(llm_context_->processed_context().lora_id()));
+ 
+   // A context at step 0 has no state of its own: reset the state buffers
+   // instead of restoring them.
+diff --git a/runtime/executor/llm_litert_compiled_model_executor.h b/runtime/executor/llm_litert_compiled_model_executor.h
+index 229a0135..928141d9 100644
+--- a/runtime/executor/llm_litert_compiled_model_executor.h
++++ b/runtime/executor/llm_litert_compiled_model_executor.h
+@@ -38,6 +38,8 @@
+ #include "litert/cc/litert_profiler.h"  // from @litert
+ #include "litert/cc/litert_tensor_buffer.h"  // from @litert
+ #include "runtime/components/embedding_lookup/embedding_lookup_manager.h"
++#include "runtime/components/lora.h"
++#include "runtime/components/lora_manager.h"
+ #include "runtime/components/model_resources.h"
+ #include "runtime/components/sampler.h"
+ #include "runtime/executor/executor_settings_base.h"
+@@ -173,6 +175,11 @@ class LlmLiteRtCompiledModelExecutorBase : public LlmExecutor {
+   // Resets all of the internal states.
+   absl::Status Reset() override;
+ 
++  absl::Status LoadLoRA(uint32_t lora_id,
++                        const ModelAssets& model_assets) override;
++
++  absl::Status UseLoRA(std::optional<uint32_t> lora_id) override;
++
+   absl::StatusOr<int> GetVocabSize() override;
+ 
+   // Initializes the sampler.
+@@ -408,6 +415,12 @@ class LlmLiteRtCompiledModelExecutorBase : public LlmExecutor {
+   // Helper function of DecodeInternal to bind input/output tensors for decode
+   // and run decode signature.
+   absl::Status BindTensorsAndRunDecode(TensorBuffer* output_logits);
++  // Binds the LoRA inputs of `signature`: the active LoRA's, or zeros when no
++  // LoRA is active and the signature has LoRA inputs.
++  absl::Status AppendLoraInputBuffers(
++      absl::string_view signature,
++      absl::flat_hash_map<absl::string_view, TensorBuffer>& input_buffers);
++  absl::StatusOr<bool> SignatureHasLoraInputs(absl::string_view signature);
+   // Static version of BindTensorsAndRunDecode to be used as a callback for
+   // sampler.
+   static int BindTensorsAndRunDecodeStatic(void* arg);
+@@ -533,6 +546,12 @@ class LlmLiteRtCompiledModelExecutorBase : public LlmExecutor {
+   std::atomic<bool> gpu_enable_metal_residency_set_ = false;
+   Environment& env_;
+   std::unique_ptr<CompiledModel> compiled_model_;
++  std::unique_ptr<LoraManager> lora_manager_;
++  std::optional<uint32_t> active_lora_id_;
++  // All-zero LoRA bound for sessions without an adapter on a model with LoRA
++  // inputs; created on first use.
++  std::unique_ptr<LoRA> zero_lora_;
++  absl::flat_hash_map<std::string, bool> signature_has_lora_inputs_;
+ 
+   absl::flat_hash_map<absl::string_view, TensorBuffer> decode_input_buffers_;
+   absl::flat_hash_map<absl::string_view, TensorBuffer> decode_output_buffers_;
+diff --git a/runtime/framework/resource_management/BUILD b/runtime/framework/resource_management/BUILD
+index a94ec714..22078e3a 100644
+--- a/runtime/framework/resource_management/BUILD
++++ b/runtime/framework/resource_management/BUILD
+@@ -222,6 +222,7 @@ RESOURCE_MANAGER_DEPS = [
+     "@com_google_absl//absl/base:core_headers",
+     "@com_google_absl//absl/base:nullability",
+     "@com_google_absl//absl/container:flat_hash_map",
++    "@com_google_absl//absl/container:flat_hash_set",
+     "@com_google_absl//absl/log:absl_log",
+     "@com_google_absl//absl/status",
+     "@com_google_absl//absl/status:statusor",
+diff --git a/runtime/framework/resource_management/resource_manager.cc b/runtime/framework/resource_management/resource_manager.cc
+index df97ff6b..4a3d8b58 100644
+--- a/runtime/framework/resource_management/resource_manager.cc
++++ b/runtime/framework/resource_management/resource_manager.cc
+@@ -466,6 +466,15 @@ class LockedLlmExecutor : public LlmExecutor {
+ 
+   absl::Status Reset() override { return llm_executor_->Reset(); }
+ 
++  absl::Status LoadLoRA(uint32_t lora_id,
++                        const ModelAssets& model_assets) override {
++    return llm_executor_->LoadLoRA(lora_id, model_assets);
++  }
++
++  absl::Status UseLoRA(std::optional<uint32_t> lora_id) override {
++    return llm_executor_->UseLoRA(lora_id);
++  }
++
+   absl::StatusOr<int> GetVocabSize() override {
+     return llm_executor_->GetVocabSize();
+   }
+@@ -623,11 +632,16 @@ ResourceManager::CreateContextHandler(const SessionConfig& session_config) {
+                                            ? lora_hash_to_id_.at(lora_key)
+                                            : lora_hash_to_id_.size();
+     if (!lora_is_loaded) {
++      // flutter_edge_ai section 33 (backport of LiteRT-LM PR #2508): load the
++      // text LoRA into the LLM executor, as the audio branch below does for
++      // the audio executor, instead of refusing it.
+       ABSL_ASSIGN_OR_RETURN(
+           ModelAssets model_assets,
+           ModelAssets::Create(session_config.GetScopedLoraFile(),
+                               /*model_path=*/""));
+-      return absl::InvalidArgumentError("Lora is not supported.");
++      MovableMutexLock lock(&executor_mutex_);
++      ABSL_RETURN_IF_ERROR(
++          llm_executor_->LoadLoRA(candidate_lora_id, model_assets));
+     }
+     lora_id = AssignLoraIdLocked(
+         /*lora_path=*/lora_key,
+diff --git a/runtime/framework/resource_management/resource_manager.h b/runtime/framework/resource_management/resource_manager.h
+index 5cf3115d..2d90b97e 100644
+--- a/runtime/framework/resource_management/resource_manager.h
++++ b/runtime/framework/resource_management/resource_manager.h
+@@ -24,6 +24,7 @@
+ #include "absl/base/nullability.h"  // from @com_google_absl
+ #include "absl/base/thread_annotations.h"  // from @com_google_absl
+ #include "absl/container/flat_hash_map.h"  // from @com_google_absl
++#include "absl/container/flat_hash_set.h"  // from @com_google_absl
+ #include "absl/status/status.h"  // from @com_google_absl
+ #include "absl/status/statusor.h"  // from @com_google_absl
+ #include "absl/synchronization/mutex.h"  // from @com_google_absl

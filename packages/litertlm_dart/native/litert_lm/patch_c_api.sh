@@ -1251,4 +1251,29 @@ else
   exit 1
 fi
 
+# ── 33. Text LoRA sessions (backport of LiteRT-LM PR #2508) ──
+# The public v0.20.0 source refuses every text LoRA: ResourceManager returns
+# "Lora is not supported." where the audio branch loads its adapter, and the
+# LLM executor binds no LoRA inputs. patches/text_lora_sessions.patch is
+# LiteRT-LM PR #2508 (open upstream) rebased onto v0.20.0, plus the binding of
+# every signature's LoRA inputs (prefill and decode) and an all-zero LoRA for
+# sessions without an adapter on a model exported with LoRA inputs. Its header
+# says what differs from #2508. Comes last: it patches c/engine.cc and the
+# executor after sections 1-31.
+LORA_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/text_lora_sessions.patch"
+if git -C "$DIR" apply --check "$LORA_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$LORA_PATCH"
+  echo "  OK: section 33: text LoRA sessions (LiteRT-LM PR #2508 backport)"
+elif git -C "$DIR" apply --reverse --check "$LORA_PATCH" 2>/dev/null; then
+  echo "  SKIP: section 33 already applied"
+elif ! grep -q 'return absl::InvalidArgumentError("Lora is not supported.");' \
+    "$DIR/runtime/framework/resource_management/resource_manager.cc"; then
+  echo "  ERROR: section 33: upstream no longer refuses text LoRA; check whether" >&2
+  echo "         it now loads it itself and drop this section" >&2
+  exit 1
+else
+  echo "  ERROR: $LORA_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
 echo "Patch complete."

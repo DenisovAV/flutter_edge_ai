@@ -16,6 +16,7 @@
 # 28. Apple: Metal argument buffers stay on (Gemma 4 kernels exceed 31 slots)
 # 29. Tool-call constraints from LLGuidance (every tool_choice), not FST
 # 30. Windows: c/engine.cc builds with MSVC (no #if inside a macro's arguments)
+# 31. FunctionGemma: tool-call arguments in the declared order under LLGuidance
 #
 # v0.20.0 migration: sections 15, 22, 24 and 27 are anchors only now (upstream
 # a48771d2, 9738e180, e0dcad4e and 3db1cfd0ab ship what they patched); section
@@ -1176,6 +1177,27 @@ elif ! grep -q '_get_osfhandle(fd))))));' "$DIR/c/engine.cc"; then
   echo "  OK: section 30: upstream no longer has the directive inside the macro; drop the section"
 else
   echo "  ERROR: $MSVC_MACRO_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
+# ── 31. FunctionGemma: tool-call arguments in the declared order (LLGuidance) ──
+# With section 29 the tool-call grammar is LLGuidance's, which (upstream
+# 9235f915) puts a tool call's arguments in alphabetical order, as Gemma 4's
+# template renders them. FunctionGemma's templates render them in the order
+# the tool declares them, and FunctionGemma 270M writes that order: forced into
+# alphabetical order it chose worse argument values than under the FST provider
+# (the D8 tool-call matrix, macOS CPU and Metal, 2026-11-25).
+# patches/llg_fc_declared_argument_order.patch adds a declared-order mode to the
+# FC grammar and turns it on for FunctionGemma only. It patches the same
+# function_gemma_data_processor.cc as section 12, so it comes after it.
+LLG_ORDER_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/llg_fc_declared_argument_order.patch"
+if git -C "$DIR" apply --check "$LLG_ORDER_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$LLG_ORDER_PATCH"
+  echo "  OK: section 31: FunctionGemma's tool-call arguments in the declared order"
+elif git -C "$DIR" apply --reverse --check "$LLG_ORDER_PATCH" 2>/dev/null; then
+  echo "  SKIP: section 31 already applied"
+else
+  echo "  ERROR: $LLG_ORDER_PATCH does not apply to this LiteRT-LM revision" >&2
   exit 1
 fi
 

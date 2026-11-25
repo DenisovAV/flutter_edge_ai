@@ -693,14 +693,16 @@ grep -qF 'last_task_ids_ = it->second.last_task_ids;' \
   rewind_fail "SessionAdvanced::RewindToCheckpoint no longer restores last_task_ids_"
 # The wait must not open before the callbacks have run: Conversation's
 # WaitUntilDone is the session's, which waits for its active-task list to
-# empty, and a task leaves it at its end state, which is set after its
-# callback.
+# empty and, since v0.20.0 (4b63acd7), for its callbacks still queued
+# (pending_callback_sessions_); a task's end state is now set before its
+# callback runs, so the second condition is the one that matters.
 grep -qF 'return execution_manager_lock->WaitUntilSessionDone(' \
   "$DIR/runtime/core/session_advanced.h" ||
   rewind_fail "SessionAdvanced::WaitUntilDone no longer waits for the session's tasks"
-grep -qF 'session_lookup_.at(session_id)->active_tasks.empty();' \
-  "$DIR/runtime/framework/resource_management/threaded_execution_manager.cc" ||
-  rewind_fail "WaitUntilSessionDone no longer waits for the session's active tasks"
+TEM="$DIR/runtime/framework/resource_management/threaded_execution_manager.cc"
+grep -qF 'it->second->active_tasks.empty() &&' "$TEM" &&
+  grep -qF '!pending_callback_sessions_.contains(session_id));' "$TEM" ||
+  rewind_fail "WaitUntilSessionDone no longer waits for the session's tasks and queued callbacks"
 # The CPU/GPU executor moves its step back by any number of tokens (the NPU
 # one does not, and is never asked to).
 grep -qF 'absl::Status LlmLiteRtCompiledModelExecutorBase::SetCurrentStep(int new_step) {' \
@@ -832,11 +834,18 @@ echo "  OK: section 17 test target in support/tokenizer"
 # (Gemma 4 E2B) the next prefill writes its id into the embedding input: one
 # KV cell is wrong after every section 16 rewind (measured 2026-10-28,
 # -1.152 vs -0.792). The same PR restores last_prefill_token_id on rewind
-# (#4195). Upstream's diff verbatim; drop it once the pin contains it.
+# (#4195). v0.20.0 fixes the embedding half itself (0101cf3b,
+# LookupPendingTokenEmbeddings), so the patch keeps only the #4195 half: both
+# execution managers' SetCurrentStep restore last_prefill_token_id. Drop it
+# once the pin has that too (LiteRT-LM #4195, #4197 still open).
+grep -qF 'LookupPendingTokenEmbeddings(' "$DIR/runtime/executor/llm_litert_compiled_model_executor.cc" || {
+  echo "  ERROR: section 18: upstream's pending-token embedding lookup (0101cf3b) is gone" >&2
+  exit 1
+}
 REWIND4197_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/rewind_bookkeeping_4197.patch"
 if git -C "$DIR" apply --check "$REWIND4197_PATCH" 2>/dev/null; then
   git -C "$DIR" apply "$REWIND4197_PATCH"
-  echo "  OK: rewind restores embeddings and the last prefill token (#4197)"
+  echo "  OK: rewind restores the last prefill token (#4195)"
 elif git -C "$DIR" apply --reverse --check "$REWIND4197_PATCH" 2>/dev/null; then
   echo "  SKIP: rewind bookkeeping (#4197) already applied"
 else

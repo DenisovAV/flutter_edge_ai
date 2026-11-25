@@ -270,7 +270,8 @@ abstract interface class StreamingSpeechSynthesizer
   /// The returned stream claims the synthesizer at once: this throws
   /// [StateError] if another stream holds it or the synthesizer is closed.
   /// The claim is released when [SpeechTextStream.audio] is done or ends
-  /// with an error, or when [SpeechTextStream.cancel] completes.
+  /// with an error, or when [SpeechTextStream.cancel] (or the cancel of
+  /// [SpeechTextStream.audio]'s subscription) completes.
   SpeechTextStream openTextStream();
 }
 
@@ -313,7 +314,10 @@ abstract interface class SpeechTextStream {
 
   /// The audio, single-subscription, a few chunks ahead of its listener at
   /// most. A synthesis failure ends it with that error; closing the
-  /// synthesizer ends it with a [StateError].
+  /// synthesizer ends it with a [StateError]. Cancelling its subscription
+  /// is a [cancel]: the text not yet spoken is dropped, the claim is
+  /// released, and the subscription's cancel future completes when
+  /// synthesis has stopped.
   Stream<SpeechChunk> get audio;
 
   /// Drops the text not yet spoken and the audio not yet delivered (a

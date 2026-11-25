@@ -183,9 +183,10 @@ final class TranscriptUpdate {
 enum StreamingLatency {
   /// Windows overlap by three quarters: a window runs every quarter window
   /// of audio (1.25 s for a 5 s window), four times the work of a batch
-  /// transcription. The default: Parakeet CTC int8 transcribed LibriSpeech
-  /// test-clean as accurately either way (2.85% and 2.80% WER over 93
-  /// minutes), and this confirms text twice as often.
+  /// transcription. The default: it confirms text twice as often as
+  /// [balanced], and Parakeet CTC int8 transcribed LibriSpeech test-clean
+  /// about as accurately either way (the speech package's README has the
+  /// numbers).
   lowLatency,
 
   /// Windows overlap by half: a window runs every half window, twice the

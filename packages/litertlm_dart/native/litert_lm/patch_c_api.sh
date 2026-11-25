@@ -979,6 +979,44 @@ cp "$XNN_SRC_DIR/patches/tensorflow_xnnpack_patch_file.patch" \
 cp "$XNN_SRC_DIR/patches/xnnpack_pf32_sme2_apple.patch" \
   "$DIR/flutter_gemma_xnnpack_pf32_sme2_apple.patch"
 
+# ── 32. TensorFlow patch_cmds run BAZEL_SH's bash (Windows) ──
+# TensorFlow's tf_http_archive (third_party/repo.bzl, and XLA's copy) runs
+# patch_cmds as ctx.execute(["bash", "-c", cmd]). On Windows CreateProcess
+# searches System32 before PATH, so a GitHub runner starts the WSL launcher,
+# which has no distribution, and the fetch of build_bazel_rules_android fails
+# with an empty stderr; a machine without that launcher (the Panther Lake box)
+# never sees it. From v0.20.0 libLiteRt and the WebGPU accelerator build from
+# LiteRT's source, which fetches it. patches/tensorflow_repo_bazel_sh.patch
+# runs BAZEL_SH when it is set (the Windows workflows set Git's bash) and plain
+# bash otherwise, so Linux and macOS are unchanged. Hooked in after section
+# 21's patch, the same way.
+TF_SH_SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+if ! grep -q "flutter_gemma_tensorflow_repo_bazel_sh.patch" "$WORKSPACE_FILE"; then
+  python3 << 'PYEOF' || exit 1
+import os
+ws = os.environ['WORKSPACE_FILE']
+content = open(ws).read()
+anchor = '    name = "org_tensorflow",\n'
+start = content.index(anchor)
+end = content.find('\n)', start)
+block = content[start:end]
+after21 = ('patches = ["@//third_party/tensorflow:tensorflow.patch", '
+           '"//:flutter_gemma_tensorflow_xnnpack_patch_file.patch"]')
+if block.count(after21) != 1:
+    raise SystemExit("  ERROR: section 32: org_tensorflow's patches are not upstream's "
+                     "tensorflow.patch plus section 21's; re-check the hook")
+new_block = block.replace(
+    after21,
+    after21[:-1] + ', "//:flutter_gemma_tensorflow_repo_bazel_sh.patch"]', 1)
+open(ws, 'w').write(content[:start] + new_block + content[end:])
+print("  OK: section 32: TensorFlow patch_cmds run BAZEL_SH (patches/tensorflow_repo_bazel_sh.patch)")
+PYEOF
+else
+  echo "  SKIP: section 32 already hooked into org_tensorflow"
+fi
+cp "$TF_SH_SRC_DIR/patches/tensorflow_repo_bazel_sh.patch" \
+  "$DIR/flutter_gemma_tensorflow_repo_bazel_sh.patch"
+
 # ── 22. NPU executor: save every KV cache buffer of a conversation ──
 # The NPU executor's CloneContext saved only the KV buffers its prefill
 # signature takes, so a layer only decode reads kept the previous

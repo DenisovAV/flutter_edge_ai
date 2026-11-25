@@ -637,13 +637,12 @@ jobs:
         # features = ["-static_link_msvcrt"] on that target (litert/c/BUILD;
         # D9). The import check after Collect holds all of them to it.
         run: |
-          # TF repository rules run patch_cmds as ctx.execute(["bash", "-c", ...])
-          # (third_party/repo.bzl): `bash` and the `sed` it runs come from PATH.
-          # On the runner neither resolved (System32's WSL launcher, then Git's
-          # bin\ wrapper both failed the fetch of build_bazel_rules_android). Git's
-          # usr\bin first, as on the Panther Lake box where this build passed;
-          # its link.exe does not shadow MSVC: Bazel calls the linker by the
-          # absolute path it resolves from Visual Studio.
+          # TensorFlow's repository rules run patch_cmds through BAZEL_SH
+          # (patch_c_api.sh section 32): a bare `bash` is found in System32 before
+          # PATH, and on this runner that is the WSL launcher with no distribution
+          # (measured 2026-11-25). Its sed comes from usr\bin, put first as on the
+          # Panther Lake box where this build passed; its link.exe does not shadow
+          # MSVC: Bazel calls the linker by the path it resolves from Visual Studio.
           $env:PATH = "C:\Program Files\Git\usr\bin;$env:PATH"
           $env:BAZEL_SH = "C:\Program Files\Git\usr\bin\bash.exe"
           cd C:\LiteRT-LM
@@ -674,13 +673,12 @@ jobs:
         # The OpenVino SDK is fetched by Bazel (configurable_repo), so this
         # needs no preinstalled toolkit on the runner.
         run: |
-          # TF repository rules run patch_cmds as ctx.execute(["bash", "-c", ...])
-          # (third_party/repo.bzl): `bash` and the `sed` it runs come from PATH.
-          # On the runner neither resolved (System32's WSL launcher, then Git's
-          # bin\ wrapper both failed the fetch of build_bazel_rules_android). Git's
-          # usr\bin first, as on the Panther Lake box where this build passed;
-          # its link.exe does not shadow MSVC: Bazel calls the linker by the
-          # absolute path it resolves from Visual Studio.
+          # TensorFlow's repository rules run patch_cmds through BAZEL_SH
+          # (patch_c_api.sh section 32): a bare `bash` is found in System32 before
+          # PATH, and on this runner that is the WSL launcher with no distribution
+          # (measured 2026-11-25). Its sed comes from usr\bin, put first as on the
+          # Panther Lake box where this build passed; its link.exe does not shadow
+          # MSVC: Bazel calls the linker by the path it resolves from Visual Studio.
           $env:PATH = "C:\Program Files\Git\usr\bin;$env:PATH"
           $env:BAZEL_SH = "C:\Program Files\Git\usr\bin\bash.exe"
           cd C:\LiteRT-LM

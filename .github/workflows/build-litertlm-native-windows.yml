@@ -33,7 +33,7 @@ jobs:
         shell: pwsh
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '7a03724cece417f1724c923b3d527b4319730841' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '95df4c2a932b4917ace66fcfef6c154e8d2a6699' }}
       # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: from
       # v0.20.0 the accelerator is built from LiteRT at the tag's pin, which
       # contains #11120 (dp4a off on Intel GPUs).

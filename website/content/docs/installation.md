@@ -468,10 +468,10 @@ window.LlmInference = LlmInference;
 ```
 
 **`flutter_edge_ai_litertlm`** (`.litertlm` web models — early preview, on
-`@litert-lm/core` 0.19.0). Only builds made for the web load: Gemma 4 E2B's GPU
+`@litert-lm/core` 0.20.0). Only builds made for the web load: Gemma 4 E2B's GPU
 export (`LiteRtLmModels.gemma4E2bIt.webGpu`, text, images and audio; 2.34 GB,
 so install it with `WebStorageMode.streaming`) and Gemma 3n's `-web.litertlm`
-exports (documented on 0.18.0, not measured on 0.19.0); a native `.litertlm`
+exports (documented on 0.18.0, not measured since); a native `.litertlm`
 installs on web and then fails at the first generation. The
 `@litert-lm/core` ESM doesn't assign window globals and module scripts are
 deferred, so Dart must await `window.litertLmReady` before any static interop:

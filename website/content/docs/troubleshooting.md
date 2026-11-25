@@ -141,9 +141,9 @@ models via OPFS streaming.
 <Info>
 
 On Web, `.litertlm` images and audio need Gemma 4 E2B's GPU export on
-`@litert-lm/core` 0.19.0, loaded with `supportImage`/`supportAudio`; a
+`@litert-lm/core` 0.20.0, loaded with `supportImage`/`supportAudio`; a
 compatible MediaPipe `.task` build also takes images. A page on 0.18.0 fails
-the GPU export at load ("Unsupported backend: 2"): import 0.19.0.
+the GPU export at load ("Unsupported backend: 2"): import 0.20.0.
 
 </Info>
 

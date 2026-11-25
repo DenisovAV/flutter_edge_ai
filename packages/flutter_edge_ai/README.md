@@ -63,7 +63,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 | llama.cpp (`.gguf`) ³ | ✅ | ✅ ⁴ | ✅ | ✅ ⁴ | ✅ | ✅ |
 | Built-in AI | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 
-¹ Web `.litertlm` runs on `@litert-lm/core` 0.19.0: text, function calling and thinking, and images and audio with Gemma 4 E2B's GPU export loaded with `supportImage`/`supportAudio` (without them an image or audio message throws `UnsupportedError`).
+¹ Web `.litertlm` runs on `@litert-lm/core` 0.20.0: text, function calling and thinking, and images and audio with Gemma 4 E2B's GPU export loaded with `supportImage`/`supportAudio` (without them an image or audio message throws `UnsupportedError`).
 
 ² CPU only: a GPU `.task` does not load on iOS; use a `.litertlm` for the iOS GPU.
 

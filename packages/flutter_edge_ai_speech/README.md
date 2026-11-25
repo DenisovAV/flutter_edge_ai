@@ -156,21 +156,28 @@ speech-to-text or blocks the UI isolate. Native platforms only.
 final vad = await VoiceActivityDetector.create();
 await for (final event in vad.detect(microphonePcm16kMono)) {
   switch (event) {
-    case VadSpeechStart(:final start): /* speech began at `start` */
-    case VadSpeechEnd(:final start, :final end, :final reason): /* utterance */
+    case VadSpeechStart(:final startSample): /* speech began */
+    case VadSpeechEnd(:final startSample, :final endSample, :final reason):
+      /* the utterance is pcm[2 * startSample, 2 * endSample) */
   }
 }
 await vad.close();
 ```
 
-Times count from the first sample of the stream. A start is reported once the
+Positions are sample indices from the first sample of the stream (16 kHz),
+with `start`/`end` getters as `Duration`s. A start is reported once the
 speech has lasted `VadOptions.minSpeech` (250 ms), timed back to where it
 began, so keep that much audio buffered to hand the whole utterance to
 speech-to-text. An utterance ends after `minSilence` (600 ms) of silence, at
 `maxUtterance` (30 s), or when the input ends. The thresholds, the hysteresis
 and the padding follow Silero's reference iterator; all of them are
 `VadOptions` fields. `probabilities(pcm)` returns the raw speech probability
-of every 32 ms frame for a policy of your own.
+of every 32 ms frame for a policy of your own. One `detect` stream or
+`probabilities` call holds the model at a time (a stream from when it is
+listened to); `close()` ends a running stream with a `StateError`.
+
+The model is copied once into the app's support directory, because LiteRT
+opens models by path, and checked against its SHA-256 there.
 
 ## Voice loop
 

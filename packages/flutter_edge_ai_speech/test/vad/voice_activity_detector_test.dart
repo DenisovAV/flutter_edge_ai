@@ -1,10 +1,11 @@
 // VoiceActivityDetector over a fake engine inside the real worker isolate: the
 // stream, its input handling and its lifecycle, without a model. The native
-// path is example/integration_test/vad_test.dart.
+// path is packages/flutter_edge_ai/example/integration_test/vad_test.dart.
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
     hide VoiceActivityDetector;
 import 'package:flutter_edge_ai_speech/src/vad/vad_worker.dart';
@@ -13,24 +14,36 @@ import 'package:flutter_edge_ai_speech/src/vad/vad_worker.dart';
 import 'package:flutter_edge_ai_speech/src/vad/voice_activity_detector.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../litert/worker_test_support.dart';
+
 /// Speech when the frame's peak is above 0.1: loud frames are speech.
+///
+/// A model path `<anything>@<log>` logs `frame` per call to the log and
+/// blocks on the log's gate before answering, as a native call that has not
+/// returned yet; one ending in `broken.tflite` fails to load.
 final class _PeakEngine implements VadWorkerEngine {
   _PeakEngine(this.modelPath);
   final String modelPath;
+
+  String? get _log {
+    final at = modelPath.indexOf('@');
+    return at < 0 ? null : modelPath.substring(at + 1);
+  }
 
   @override
   void load() {
     if (modelPath.endsWith('broken.tflite')) {
       throw StateError('fake load failure');
     }
-    if (modelPath.contains('flutter_edge_ai_speech') &&
-        File(modelPath).lengthSync() != bundledVadModelBytes) {
-      throw StateError('the bundled model was not written whole');
-    }
   }
 
   @override
   double probability(Float32List frame) {
+    final log = _log;
+    if (log != null) {
+      appendLogLine(log, 'frame');
+      blockUntilReleased(log);
+    }
     var peak = 0.0;
     for (final s in frame) {
       if (s.abs() > peak) peak = s.abs();
@@ -76,6 +89,8 @@ Stream<Uint8List> chunked(Uint8List bytes, int size) async* {
   }
 }
 
+final _bundledFile = File('assets/vad/silero_vad_16k_v6.2.3.tflite');
+
 void main() {
   setUp(() => VoiceActivityDetector.debugVadEngineFactory = _peakEngine);
   tearDown(() {
@@ -84,8 +99,8 @@ void main() {
     VoiceActivityDetector.debugModelCacheDir = null;
   });
 
-  Future<VoiceActivityDetector> create() =>
-      VoiceActivityDetector.create(modelPath: '/fake/silero.tflite');
+  Future<VoiceActivityDetector> create([String path = '/fake/silero.tflite']) =>
+      VoiceActivityDetector.create(modelPath: path);
 
   final speech = concat([
     audio(0.5, loud: false),
@@ -98,27 +113,27 @@ void main() {
     addTearDown(vad.close);
     for (final size in [1, 333, 1024, 6000, speech.length]) {
       final events = await vad.detect(chunked(speech, size)).toList();
-      expect(events, hasLength(2), reason: 'chunk size $size');
-      final start = events[0] as VadSpeechStart;
-      final end = events[1] as VadSpeechEnd;
-      // Speech begins in the frame holding sample 8000 (frame 15, 480 ms).
-      expect(start.start, const Duration(milliseconds: 450));
-      expect(end.reason, VadEndReason.silence);
-      expect(end.start, start.start);
-      // The last loud frame is 46 (ends at 1504 ms); silence from 1504 ms.
-      expect(end.end, const Duration(milliseconds: 1534));
+      // Speech begins in frame 15 (480 ms) and its last loud frame is 46;
+      // silence from frame 47 (1504 ms).
+      expect(events, [
+        const VadSpeechStart(480 * 16 - 480),
+        const VadSpeechEnd(
+          480 * 16 - 480,
+          1504 * 16 + 480,
+          VadEndReason.silence,
+        ),
+      ], reason: 'chunk size $size');
     }
   });
 
-  test('speech at the end of input ends with inputEnded', () async {
+  test('speech at the end of input ends at the last sample received', () async {
     final vad = await create();
     addTearDown(vad.close);
+    // 16,100 samples: the last frame holds 228 real samples and is padded.
     final events = await vad
-        .detect(chunked(audio(1.0, loud: true), 4000))
+        .detect(chunked(audio(16100 / 16000, loud: true), 4000))
         .toList();
-    final end = events.last as VadSpeechEnd;
-    expect(end.reason, VadEndReason.inputEnded);
-    expect(end.end, const Duration(seconds: 1));
+    expect(events.last, const VadSpeechEnd(0, 16100, VadEndReason.inputEnded));
   });
 
   test('probabilities gives one value per frame, the tail padded', () async {
@@ -131,33 +146,82 @@ void main() {
     expect(await vad.probabilities(Uint8List(0)), isEmpty);
   });
 
-  test('one call at a time', () async {
-    final vad = await create();
-    addTearDown(vad.close);
-    final input = StreamController<Uint8List>();
-    final events = vad.detect(input.stream).toList();
-    expect(() => vad.detect(const Stream.empty()), throwsStateError);
-    expect(() => vad.probabilities(Uint8List(2)), throwsStateError);
-    await input.close();
-    await events;
-    expect(await vad.detect(const Stream.empty()).toList(), isEmpty);
-  });
+  group('one call at a time', () {
+    test(
+      'a second stream listened to while one runs ends with StateError',
+      () async {
+        final vad = await create();
+        addTearDown(vad.close);
+        final input = StreamController<Uint8List>();
+        final first = vad.detect(input.stream).toList();
+        await Future<void>.delayed(Duration.zero);
+        await expectLater(
+          vad.detect(const Stream.empty()).toList(),
+          throwsStateError,
+        );
+        expect(() => vad.probabilities(Uint8List(2)), throwsStateError);
+        await input.close();
+        await first;
+        expect(await vad.detect(const Stream.empty()).toList(), isEmpty);
+      },
+    );
 
-  test(
-    'cancelling the subscription cancels the input and frees the detector',
-    () async {
+    test('a stream that is never listened to holds nothing', () async {
       final vad = await create();
       addTearDown(vad.close);
-      final cancelled = Completer<void>();
-      final input = StreamController<Uint8List>(onCancel: cancelled.complete);
-      final sub = vad.detect(input.stream).listen((_) {});
-      input.add(audio(0.1, loud: true));
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      await sub.cancel();
-      await cancelled.future;
+      vad.detect(const Stream.empty());
       expect(await vad.probabilities(Uint8List(1024)), hasLength(1));
-    },
-  );
+    });
+
+    test(
+      'a finished stream cannot release the claim of the next call',
+      () async {
+        final vad = await create();
+        addTearDown(vad.close);
+        final next = StreamController<Uint8List>();
+        final nextDone = Completer<void>();
+        // The next detect starts from the finished stream's last event, before
+        // that stream's done is delivered (its cancel runs after).
+        vad.detect(chunked(audio(0.6, loud: true), 4000)).listen((event) {
+          if (event is VadSpeechEnd) {
+            vad
+                .detect(next.stream)
+                .listen((_) {}, onDone: nextDone.complete, onError: (_) {});
+          }
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(
+          () => vad.probabilities(Uint8List(2)),
+          throwsStateError,
+          reason: 'the second stream still holds the model',
+        );
+        await next.close();
+        await nextDone.future;
+      },
+    );
+  });
+
+  test('cancelling during a model call cancels the input, drops the late '
+      'events and frees the detector', () async {
+    final dir = Directory.systemTemp.createTempSync('vad_gate_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final log = gatedLog(dir, 'engine');
+    final vad = await create('/fake/silero.tflite@${log.path}');
+    addTearDown(vad.close);
+    final cancelled = Completer<void>();
+    final input = StreamController<Uint8List>(onCancel: cancelled.complete);
+    final events = <VadEvent>[];
+    final sub = vad.detect(input.stream).listen(events.add);
+    input.add(audio(0.5, loud: true));
+    await waitForLine(log, 'frame');
+    await sub.cancel();
+    await cancelled.future;
+    release(log);
+    // The model call in flight finishes; its events go nowhere.
+    final p = await vad.probabilities(Uint8List(1024));
+    expect(p, hasLength(1));
+    expect(events, isEmpty);
+  });
 
   test('an input error ends the stream with that error', () async {
     final vad = await create();
@@ -166,26 +230,39 @@ void main() {
     final events = vad.detect(input.stream).toList();
     input.addError(const FormatException('mic failed'));
     await expectLater(events, throwsFormatException);
-    // The detector is free again.
     expect(await vad.detect(const Stream.empty()).toList(), isEmpty);
   });
 
-  test('close during detect ends the stream with a StateError', () async {
+  test('an input already listened to ends the stream with its error', () async {
+    final vad = await create();
+    addTearDown(vad.close);
+    final input = StreamController<Uint8List>();
+    input.stream.listen((_) {});
+    await expectLater(vad.detect(input.stream).toList(), throwsStateError);
+    expect(await vad.detect(const Stream.empty()).toList(), isEmpty);
+    await input.close();
+  });
+
+  test('close ends a stream whose input is idle with a StateError', () async {
     final vad = await create();
     final input = StreamController<Uint8List>();
     final events = vad.detect(input.stream).toList();
-    input.add(audio(0.1, loud: false));
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await Future<void>.delayed(Duration.zero);
+    final ended = expectLater(events, throwsStateError);
     await vad.close();
-    input.add(audio(0.1, loud: false));
-    await expectLater(events, throwsStateError);
-    expect(() => vad.detect(const Stream.empty()), throwsStateError);
+    await ended;
+    expect(() => vad.probabilities(Uint8List(2)), throwsStateError);
+    await expectLater(
+      vad.detect(const Stream.empty()).toList(),
+      throwsStateError,
+    );
     await vad.close(); // idempotent
+    await input.close();
   });
 
   test('a model that fails to load fails create with its message', () async {
     await expectLater(
-      VoiceActivityDetector.create(modelPath: '/fake/broken.tflite'),
+      create('/fake/broken.tflite'),
       throwsA(
         isA<StateError>().having(
           (e) => e.message,
@@ -208,41 +285,63 @@ void main() {
 
   group('the bundled model', () {
     late Directory dir;
+    late File cached;
+    var reads = 0;
     setUp(() {
       dir = Directory.systemTemp.createTempSync('vad_cache_');
       VoiceActivityDetector.debugModelCacheDir = dir;
+      cached = File(
+        '${dir.path}/flutter_edge_ai_speech/vad/silero_vad_16k_v6.2.3.tflite',
+      );
+      reads = 0;
+      VoiceActivityDetector.debugBundledModelBytes = () async {
+        reads++;
+        return _bundledFile.readAsBytes();
+      };
     });
     tearDown(() => dir.deleteSync(recursive: true));
 
+    String digest(File f) => sha256.convert(f.readAsBytesSync()).toString();
+
+    test('is copied once, even by concurrent creates', () async {
+      final both = await Future.wait([
+        VoiceActivityDetector.create(),
+        VoiceActivityDetector.create(),
+      ]);
+      for (final vad in both) {
+        await vad.close();
+      }
+      await (await VoiceActivityDetector.create()).close();
+      expect(reads, 1);
+      expect(digest(cached), bundledVadModelSha256);
+      expect(
+        dir.listSync(recursive: true).where((e) => e.path.endsWith('.partial')),
+        isEmpty,
+      );
+    });
+
     test(
-      'is written once to the cache directory and loaded from there',
+      'a copy of the right size with the wrong bytes is written again',
       () async {
-        var reads = 0;
-        VoiceActivityDetector.debugBundledModelBytes = () async {
-          reads++;
-          return Uint8List(bundledVadModelBytes);
-        };
-        final a = await VoiceActivityDetector.create();
-        await a.close();
-        final b = await VoiceActivityDetector.create();
-        await b.close();
+        cached
+          ..parent.createSync(recursive: true)
+          ..writeAsBytesSync(Uint8List(bundledVadModelBytes));
+        await (await VoiceActivityDetector.create()).close();
         expect(reads, 1);
-        final cached = File(
-          '${dir.path}/flutter_edge_ai_speech/silero_vad_16k_v6.2.3.tflite',
-        );
-        expect(cached.lengthSync(), bundledVadModelBytes);
-        expect(
-          dir
-              .listSync(recursive: true)
-              .where((e) => e.path.endsWith('.partial')),
-          isEmpty,
-        );
+        expect(digest(cached), bundledVadModelSha256);
       },
     );
 
-    test('of the wrong size is refused', () async {
-      VoiceActivityDetector.debugBundledModelBytes = () async => Uint8List(10);
+    test('an asset that does not match its SHA-256 is refused', () async {
+      VoiceActivityDetector.debugBundledModelBytes = () async =>
+          Uint8List(bundledVadModelBytes);
       await expectLater(VoiceActivityDetector.create(), throwsStateError);
+      expect(cached.existsSync(), isFalse);
+      // A later create tries again instead of repeating the failure.
+      VoiceActivityDetector.debugBundledModelBytes = () async =>
+          _bundledFile.readAsBytes();
+      await (await VoiceActivityDetector.create()).close();
+      expect(digest(cached), bundledVadModelSha256);
     });
   });
 }

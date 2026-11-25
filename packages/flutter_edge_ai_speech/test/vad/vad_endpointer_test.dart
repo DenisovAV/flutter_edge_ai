@@ -12,16 +12,19 @@ List<(int, VadEvent)> run(
   VadEndpointer endpointer,
   List<double> probabilities, {
   bool finish = true,
-  int? totalSamples,
+  int? lastValid,
 }) {
   final out = <(int, VadEvent)>[];
   for (var i = 0; i < probabilities.length; i++) {
-    for (final e in endpointer.add(probabilities[i])) {
+    final valid = i == probabilities.length - 1 && lastValid != null
+        ? lastValid
+        : vadFrameSamples;
+    for (final e in endpointer.add(probabilities[i], validSamples: valid)) {
       out.add((i, e));
     }
   }
   if (finish) {
-    for (final e in endpointer.finish(totalSamples: totalSamples)) {
+    for (final e in endpointer.finish()) {
       out.add((probabilities.length, e));
     }
   }
@@ -127,8 +130,10 @@ void main() {
     final starts = events.map((e) => e.$2).whereType<VadSpeechStart>();
     // Onset 0, cut at the first frame end >= 1 s: frame 31 ends at 1024 ms.
     // The next onset is frame 32 (1024 ms), cut after frame 63 (2048 ms);
-    // the third runs from frame 64 to the end of input (2560 ms).
-    expect(starts.map((s) => s.start), [ms(0), ms(1024 - 30), ms(2048 - 30)]);
+    // the third runs from frame 64 to the end of input (2560 ms). A start
+    // after a cut is not padded back into the previous utterance: no audio
+    // belongs to two.
+    expect(starts.map((s) => s.start), [ms(0), ms(1024), ms(2048)]);
     expect(ends.map((e) => e.reason), [
       VadEndReason.maxUtterance,
       VadEndReason.maxUtterance,
@@ -138,14 +143,64 @@ void main() {
   });
 
   test('the end of input ends speech at the audio received', () {
-    final events = run(
-      VadEndpointer(options),
-      frames(20, 0.9),
-      totalSamples: 19 * 512 + 100,
-    );
+    final events = run(VadEndpointer(options), frames(20, 0.9), lastValid: 100);
     final end = events.last.$2 as VadSpeechEnd;
     expect(end.reason, VadEndReason.inputEnded);
-    expect(end.end, vadSamplesToDuration(19 * 512 + 100));
+    expect(end.endSample, 19 * 512 + 100);
+  });
+
+  test(
+    'the zeros padding the last frame count as neither speech nor silence',
+    () {
+      // Silence starts at frame 30 and the last of its 19 frames holds 10 real
+      // samples: 18 * 512 + 10 samples of silence is under minSilence (600 ms =
+      // 9,600 samples), so the input end, not the silence, ends the utterance.
+      final events = run(VadEndpointer(options), [
+        ...frames(30, 0.9),
+        ...frames(19, 0.02),
+      ], lastValid: 10);
+      final end = events.map((e) => e.$2).whereType<VadSpeechEnd>().single;
+      expect(end.reason, VadEndReason.inputEnded);
+      expect(end.endSample, 30 * 512 + 480);
+      // 31 frames and 7 samples of speech is 15,879 samples, under a 1 s
+      // (16,000-sample) cap: no cut.
+      const short = VadOptions(maxUtterance: Duration(seconds: 1));
+      final cut = run(VadEndpointer(short), frames(32, 0.9), lastValid: 7);
+      final cutEnd = cut.map((e) => e.$2).whereType<VadSpeechEnd>().single;
+      expect(cutEnd.reason, VadEndReason.inputEnded);
+      expect(cutEnd.endSample, 31 * 512 + 7);
+      // 7 frames and 15 samples (3,599) is under minSpeech (250 ms = 4,000):
+      // nothing is reported.
+      expect(
+        run(VadEndpointer(options), frames(8, 0.9), lastValid: 15),
+        isEmpty,
+      );
+      // A whole 512-sample last frame still counts in full.
+      expect(
+        run(VadEndpointer(options), frames(8, 0.9), lastValid: 512),
+        hasLength(2),
+      );
+    },
+  );
+
+  test('validSamples outside [1, 512] throws', () {
+    expect(
+      () => VadEndpointer(options).add(0.5, validSamples: 0),
+      throwsArgumentError,
+    );
+    expect(
+      () => VadEndpointer(options).add(0.5, validSamples: 513),
+      throwsArgumentError,
+    );
+  });
+
+  test('events compare by value', () {
+    expect(const VadSpeechStart(5), const VadSpeechStart(5));
+    expect(
+      const VadSpeechEnd(1, 2, VadEndReason.silence),
+      isNot(const VadSpeechEnd(1, 2, VadEndReason.inputEnded)),
+    );
+    expect(const VadSpeechEnd(0, 16000, VadEndReason.silence).end, ms(1000));
   });
 
   test(
@@ -212,5 +267,17 @@ void main() {
       }
       const VadOptions().validate();
     });
+
+    test(
+      'a threshold below the default negative threshold names threshold',
+      () {
+        expect(
+          const VadOptions(threshold: 0.005).validate,
+          throwsA(
+            isA<ArgumentError>().having((e) => e.name, 'name', 'threshold'),
+          ),
+        );
+      },
+    );
   });
 }

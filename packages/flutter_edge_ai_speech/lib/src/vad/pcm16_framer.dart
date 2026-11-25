@@ -19,6 +19,10 @@ final class Pcm16Framer {
   /// Samples received so far, whole samples only.
   int get totalSamples => _totalSamples;
 
+  /// Samples waiting for a whole frame: what [flushPadded] would return
+  /// before its zero padding.
+  int get pendingSamples => _pendingCount;
+
   /// Adds [chunk]; returns the whole frames it completes, back to back
   /// (possibly none).
   Float32List add(Uint8List chunk) {

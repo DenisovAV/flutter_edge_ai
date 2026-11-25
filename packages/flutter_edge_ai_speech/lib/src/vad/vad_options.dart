@@ -60,11 +60,20 @@ final class VadOptions {
     }
     final negative = effectiveNegativeThreshold;
     if (!(negative > 0 && negative <= threshold)) {
-      throw ArgumentError.value(
-        negativeThreshold,
-        'negativeThreshold',
-        'must be in (0, threshold]',
-      );
+      // With no explicit value, only a threshold below 0.01 fails here: the
+      // default is at least 0.01. Name the value the caller actually set.
+      throw negativeThreshold == null
+          ? ArgumentError.value(
+              threshold,
+              'threshold',
+              'is below the default negativeThreshold ($negative); set '
+                  'negativeThreshold explicitly',
+            )
+          : ArgumentError.value(
+              negativeThreshold,
+              'negativeThreshold',
+              'must be in (0, threshold]',
+            );
     }
     for (final (name, value) in [
       ('minSpeech', minSpeech),

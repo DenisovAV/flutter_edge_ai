@@ -63,6 +63,14 @@ final class VadEndpointer {
   /// The reported (padded) start of the utterance in progress.
   int _reportedStart = 0;
 
+  /// Where the last utterance ended; the next one never starts before it, so
+  /// no audio belongs to two utterances.
+  int _lastEnd = 0;
+
+  /// Samples of real audio seen so far: [samplesSeen] less the zeros that
+  /// padded a final partial frame.
+  int _received = 0;
+
   bool _finished = false;
 
   /// Whether an utterance has been reported as started and not yet ended.
@@ -72,9 +80,20 @@ final class VadEndpointer {
   int get samplesSeen => _frames * vadFrameSamples;
 
   /// Feeds the probability of the next frame; returns the events it caused,
-  /// in order (at most an end and a start).
-  List<VadEvent> add(double probability) {
+  /// in order (a start, an end, or a start then an end).
+  ///
+  /// [validSamples] is how much of the frame is real audio: less than 512
+  /// only for a last frame padded with zeros, and then no event is placed
+  /// past the real audio.
+  List<VadEvent> add(double probability, {int validSamples = vadFrameSamples}) {
     if (_finished) throw StateError('VadEndpointer.add after finish');
+    if (validSamples < 1 || validSamples > vadFrameSamples) {
+      throw ArgumentError.value(
+        validSamples,
+        'validSamples',
+        'must be in [1, $vadFrameSamples]',
+      );
+    }
     if (probability.isNaN || probability < 0 || probability > 1) {
       throw ArgumentError.value(
         probability,
@@ -84,7 +103,11 @@ final class VadEndpointer {
     }
     final frameStart = _frames * vadFrameSamples;
     _frames++;
-    final frameEnd = _frames * vadFrameSamples;
+    // Every duration below is measured to the end of the real audio in this
+    // frame, so the zeros padding a last partial frame never count as speech
+    // or silence.
+    final frameEnd = frameStart + validSamples;
+    _received = frameEnd;
     final events = <VadEvent>[];
 
     switch (_phase) {
@@ -107,30 +130,26 @@ final class VadEndpointer {
       case _Phase.speaking:
         _track(probability, frameStart);
         if (_silenceLongEnough(frameEnd)) {
-          _end(_silenceFrom! + _pad, frameEnd, VadEndReason.silence, events);
+          _end(_silenceFrom! + _pad, VadEndReason.silence, events);
         }
     }
 
     if (_phase == _Phase.speaking && frameEnd - _onset >= _maxUtterance) {
-      _end(frameEnd, frameEnd, VadEndReason.maxUtterance, events);
+      _end(frameEnd, VadEndReason.maxUtterance, events);
     }
     return events;
   }
 
-  /// Ends the stream. [totalSamples] is the length of the audio actually
-  /// received (the last frame may have been padded with zeros to 512); an
-  /// utterance in progress ends there at the latest. Returns the events this
-  /// causes. No [add] may follow.
-  List<VadEvent> finish({int? totalSamples}) {
+  /// Ends the stream; an utterance in progress ends at the last real sample
+  /// at the latest. Returns the events this causes. No [add] may follow.
+  List<VadEvent> finish() {
     if (_finished) return const [];
     _finished = true;
-    final total = totalSamples ?? samplesSeen;
     final events = <VadEvent>[];
     if (_phase == _Phase.speaking) {
       final silence = _silenceFrom;
       _end(
-        silence == null ? total : silence + _pad,
-        total,
+        silence == null ? _received : silence + _pad,
         VadEndReason.inputEnded,
         events,
       );
@@ -156,20 +175,16 @@ final class VadEndpointer {
     final speechEnd = _silenceFrom ?? frameEnd;
     if (speechEnd - _onset >= _minSpeech) {
       _phase = _Phase.speaking;
-      _reportedStart = _onset - _pad < 0 ? 0 : _onset - _pad;
-      events.add(VadSpeechStart(vadSamplesToDuration(_reportedStart)));
+      final padded = _onset - _pad;
+      _reportedStart = padded < _lastEnd ? _lastEnd : padded;
+      events.add(VadSpeechStart(_reportedStart));
     }
   }
 
-  void _end(int end, int limit, VadEndReason reason, List<VadEvent> events) {
-    final capped = end > limit ? limit : end;
-    events.add(
-      VadSpeechEnd(
-        vadSamplesToDuration(_reportedStart),
-        vadSamplesToDuration(capped),
-        reason,
-      ),
-    );
+  void _end(int end, VadEndReason reason, List<VadEvent> events) {
+    final capped = end > _received ? _received : end;
+    events.add(VadSpeechEnd(_reportedStart, capped, reason));
+    _lastEnd = capped;
     _phase = _Phase.idle;
     _silenceFrom = null;
   }

@@ -373,6 +373,13 @@ fi
 #     Metal framework ships). Up to native-v0.19.1 this section also rewrote
 #     the dlopen name to our framework path with a sed in patch_cmds; there is
 #     nothing to dlopen now, so that is gone.
+#   - patches/litert_libLiteRt_static_crt.patch (ours, Windows only in
+#     effect): drops `features = ["-static_link_msvcrt"]` from libLiteRt's
+#     cc_binary, so our --features=static_link_msvcrt builds libLiteRt.dll /MT
+#     like LiteRtLm.dll and it imports no VC++ runtime. Upstream's /MD
+#     libLiteRt.dll imports VCRUNTIME140_THREADS.dll (C11 threads, VC++ 14.38+),
+#     the #456 failure on a machine without a recent redistributable and in
+#     every plain Dart program, which ships none (D9).
 #   - patches/litert_webgpu_stage_spatial_bindings.patch: LiteRT aa9e40cd5
 #     (LiteRT-LM #4460, WebGPU prefill_8 on Windows D3D12 and Linux Vulkan).
 #   - patches/litert_adreno_flash_decode_keys.patch: LiteRT 95d3d567b
@@ -387,6 +394,7 @@ fi
 # this list carried up to native-v0.19.1.
 LITERT_PATCHES=(
   litert_gpu_registry_apple
+  litert_libLiteRt_static_crt
   litert_webgpu_stage_spatial_bindings
   litert_adreno_flash_decode_keys
   litert_adreno_gen8_fp32_watchdog
@@ -525,7 +533,11 @@ PYEOF
 # external_weights_by_path.{h,cc} rename the group to an absolute path of the
 # bundle and shift the offsets, so the runtime maps the same bytes through its
 # own path branch; GetWeightsSectionOffset reports no section, so no map is
-# handed over. Apple and Android compile it out (one standard library there);
+# handed over. Apple and Android compile it out (one standard library there),
+# and since v0.20.0 Windows too: libLiteRt.dll is built from source with /MT
+# (patches/litert_libLiteRt_static_crt.patch), both DLLs allocate from the
+# process heap, and the scoped-file map passed full page heap on Panther Lake
+# (D9). Linux keeps it until a skip_path_weights run there shows it unneeded.
 # -DLITERT_LM_FORCE_PATH_WEIGHTS turns it on for a test build.
 #
 # A real diff, applied like section 11, plus anchors on the assumptions the

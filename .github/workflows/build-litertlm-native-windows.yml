@@ -99,8 +99,8 @@ jobs:
         run: bash packages/litertlm_dart/native/litert_lm/patch_c_api.sh C:/LiteRT-LM
 
       - name: Build LiteRtLm.dll
-        # static_link_msvcrt: see build-litertlm-native.yml (#456); it does not
-        # reach libLiteRt.dll, which LiteRT builds /MD (decision D9, open).
+        # static_link_msvcrt: see build-litertlm-native.yml (#456); it reaches
+        # libLiteRt.dll through patches/litert_libLiteRt_static_crt.patch (D9).
         # libLiteRt.dll and the WebGPU accelerator are built from LiteRT's
         # source from v0.20.0: upstream's prebuilt/ no longer has them.
         run: |
@@ -508,16 +508,12 @@ jobs:
           }
           $allowedCrt = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
           $crtPattern = '^(msvcp|vcruntime|concrt|vcomp|msvcr|vccorlib)\d|^ucrtbased\.dll$'
-          # TODO(D8, maintainer decision pending): the C++ runtime of the DLLs
-          # built from LiteRT's source. libLiteRt.dll is /MD: litert/c/BUILD
-          # declares features = ["-static_link_msvcrt"] on the target, which our
-          # --features=static_link_msvcrt cannot override; the accelerator gets
-          # our /MT. Until D8 is decided this gate REPORTS their runtime imports
-          # and lets the allow-list pass them. Then either add libLiteRt.dll,
-          # LiteRt.dll and the accelerator here (a LiteRT BUILD patch to /MT,
-          # review-windows B1) or keep them allowed and say so in the docs that
-          # verify_tarball_manifest.sh holds to the bundle.
-          $mustBeStatic = @('LiteRtLm.dll', 'StreamProxy.dll')
+          # Every DLL built from source carries its own C++ runtime (/MT):
+          # libLiteRt.dll through patches/litert_libLiteRt_static_crt.patch,
+          # which drops LiteRT's features = ["-static_link_msvcrt"] (D9;
+          # upstream's /MD build imports vcruntime140_threads.dll, #456).
+          $mustBeStatic = @('LiteRtLm.dll', 'StreamProxy.dll', 'libLiteRt.dll', 'LiteRt.dll',
+                            'libLiteRtWebGpuAccelerator.dll')
           # Windows system DLLs and API sets this bundle may import by name.
           # ze_loader.dll is Intel's Level Zero loader, installed with the
           # Intel GPU/NPU driver (OpenVINO's NPU plugin, loaded only on

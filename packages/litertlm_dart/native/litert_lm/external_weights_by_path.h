@@ -47,10 +47,15 @@
 #include "litert/cc/litert_buffer_ref.h"  // from @litert
 #include "runtime/util/scoped_file.h"
 
-// Platforms whose libLiteRtLm loads Google's prebuilt runtime with another
-// standard library. LITERT_LM_FORCE_PATH_WEIGHTS turns the path on elsewhere,
-// for testing it against the scoped path on a platform where both work.
-#if (defined(__linux__) && !defined(__ANDROID__)) || defined(_WIN32) || \
+// Linux only: there libLiteRtLm (libstdc++) and the libLiteRt it loads were
+// built against different standard libraries up to v0.19. Windows read the
+// weights by path from native-v0.18.0-e until v0.20.0; on v0.20.0 both
+// Windows DLLs allocate from the process heap (UCRT), and the scoped-file map
+// passed Application Verifier's full page heap with either CRT for libLiteRt
+// (D9, Panther Lake, 2026-11-25), so Windows takes the upstream path.
+// LITERT_LM_FORCE_PATH_WEIGHTS turns the path on elsewhere, for testing it
+// against the scoped path on a platform where both work.
+#if (defined(__linux__) && !defined(__ANDROID__)) || \
     defined(LITERT_LM_FORCE_PATH_WEIGHTS)
 #define LITERT_LM_PATH_WEIGHTS 1
 #else

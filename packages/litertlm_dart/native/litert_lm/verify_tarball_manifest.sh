@@ -829,13 +829,18 @@ for path in dlls:
 clean = len(dlls) - len(crt)
 print(f"    {len(dlls)} DLL(s): {clean} import no C++ runtime, {len(crt)} do")
 
-# 1. The library we build must carry its own runtime. Windows filenames are
+# 1. The libraries we build must carry their own runtime: LiteRtLm.dll, and
+#    from v0.20.0 libLiteRt.dll (and its LiteRt.dll copy) and the WebGPU
+#    accelerator, built from LiteRT's source /MT
+#    (patches/litert_libLiteRt_static_crt.patch, D9). Windows filenames are
 #    case-insensitive, so match that way.
-litertlm = [n for n in crt if os.path.basename(n).lower() == "litertlm.dll"]
-if litertlm:
-    print(f"  [FAIL] {litertlm[0]} imports {', '.join(crt[litertlm[0]])} —"
-          " static_link_msvcrt did not apply")
-    fail = True
+STATIC = {"litertlm.dll", "liblitert.dll", "litert.dll",
+          "liblitertwebgpuaccelerator.dll"}
+for n in sorted(crt):
+    if os.path.basename(n).lower() in STATIC:
+        print(f"  [FAIL] {n} imports {', '.join(crt[n])} —"
+              " static_link_msvcrt did not apply")
+        fail = True
 if not any(os.path.basename(p).lower() == "litertlm.dll" for p in dlls):
     print("  [FAIL] no LiteRtLm.dll in the Windows tarball — the assertion about"
           " it cannot have been checked")

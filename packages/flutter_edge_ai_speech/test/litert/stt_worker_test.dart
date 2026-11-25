@@ -199,6 +199,17 @@ void main() {
     engineFactory: _buildFake,
   );
 
+  test('a recognizer that cannot stream says so; its stream fails on listen '
+      'and flush in its future', () async {
+    final stt = await recognizer(_Mode.fast, logFor('nostream'));
+    addTearDown(stt.close);
+    expect(stt.streaming, isNull);
+    // Returned, not thrown: the errors arrive on listen and in the future.
+    final stream = stt.transcribeStream(const Stream.empty());
+    await expectLater(stream, emitsError(isA<UnsupportedError>()));
+    await expectLater(stt.flush(), throwsStateError);
+  });
+
   group('SttWorker serving', () {
     test('serves concurrent requests correlated by id', () async {
       final worker = await spawn(_Mode.fast, logFor('serve'));

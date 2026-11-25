@@ -1384,8 +1384,9 @@ mixin RawSdkResponseSession on InferenceModelSession {
 
 /// Represents a speech-to-text model instance.
 ///
-/// Core may add members in a minor release; a backend that implements this
-/// pins core to its minor and moves with it.
+/// Core may add members in a minor release: anything that implements or
+/// extends this (a backend, a test fake) pins core to its minor and moves
+/// with it.
 abstract class SpeechRecognizer {
   /// Transcribe 16 kHz mono 16-bit little-endian PCM in one fixed window.
   /// [transcribeStream] transcribes audio as it arrives, when [streaming]
@@ -1438,7 +1439,8 @@ abstract class SpeechRecognizer {
   /// of any size, as it arrives. The returned stream is single-subscription.
   ///
   /// - When [streaming] is null (the model cannot stream), the stream ends
-  ///   with an [UnsupportedError] when it is listened to.
+  ///   with an [UnsupportedError] when it is listened to, before any other
+  ///   check: no [ArgumentError] for [options], no [StateError].
   /// - One stream runs at a time per recognizer. The stream claims the
   ///   recognizer when it is listened to, not when this is called, so a
   ///   stream nobody listens to holds nothing. If another stream holds it
@@ -1514,8 +1516,9 @@ abstract class SpeechRecognizer {
 /// divergence: STT consumes caller-supplied audio, TTS produces it, so the
 /// caller must be told the rate to play it or wrap it in WAV.
 ///
-/// Core may add members in a minor release; a backend that implements this
-/// pins core to its minor and moves with it.
+/// Core may add members in a minor release: anything that implements or
+/// extends this (a backend, a test fake) pins core to its minor and moves
+/// with it.
 abstract class SpeechSynthesizer {
   /// Synthesize [text] to 16-bit little-endian mono PCM at [sampleRate], all
   /// of it at once. [synthesizeStream] and [openTextStream] produce it chunk
@@ -1533,7 +1536,7 @@ abstract class SpeechSynthesizer {
   /// synthesized.
   ///
   /// When ![supportsStreaming], the stream ends with an [UnsupportedError]
-  /// when it is listened to.
+  /// when it is listened to, before any other check.
   ///
   /// One stream ([synthesizeStream] or [openTextStream]) holds the
   /// synthesizer at a time. This stream claims it when it is listened to; if

@@ -144,6 +144,34 @@ default `'en'`. The setting changes what the model WRITES, not what it hears —
 and Parakeet have no language token and throw `ArgumentError` rather than
 ignoring the value.
 
+## Voice activity detection
+
+`VoiceActivityDetector` finds speech in 16 kHz mono 16-bit PCM with
+[Silero VAD](https://github.com/snakers4/silero-vad) (v6.2.3, MIT), which ships
+with this package as a 1.25 MB asset: nothing to install or download. It runs
+on the CPU in a worker isolate of its own, so it never waits behind
+speech-to-text or blocks the UI isolate. Native platforms only.
+
+```dart
+final vad = await VoiceActivityDetector.create();
+await for (final event in vad.detect(microphonePcm16kMono)) {
+  switch (event) {
+    case VadSpeechStart(:final start): /* speech began at `start` */
+    case VadSpeechEnd(:final start, :final end, :final reason): /* utterance */
+  }
+}
+await vad.close();
+```
+
+Times count from the first sample of the stream. A start is reported once the
+speech has lasted `VadOptions.minSpeech` (250 ms), timed back to where it
+began, so keep that much audio buffered to hand the whole utterance to
+speech-to-text. An utterance ends after `minSilence` (600 ms) of silence, at
+`maxUtterance` (30 s), or when the input ends. The thresholds, the hysteresis
+and the padding follow Silero's reference iterator; all of them are
+`VadOptions` fields. `probabilities(pcm)` returns the raw speech probability
+of every 32 ms frame for a policy of your own.
+
 ## Voice loop
 
 `VoiceSession` chains STT → LLM → TTS into one push-to-talk turn with barge-in.

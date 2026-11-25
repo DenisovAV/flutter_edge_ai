@@ -27,6 +27,15 @@ export 'src/litert_tts_backend_stub.dart'
 export 'src/catalog/speech_catalog.dart'
     hide debugSpeechCatalogAbi, debugSpeechCatalogOnWeb;
 
+// Voice activity detection: Silero VAD on its own worker isolate. The policy
+// and event types are plain Dart; the detector is native-only, and its web arm
+// throws at create.
+export 'src/vad/vad_event.dart';
+export 'src/vad/vad_options.dart';
+export 'src/vad/voice_activity_detector_stub.dart'
+    if (dart.library.ffi) 'src/vad/voice_activity_detector.dart'
+    show VoiceActivityDetector;
+
 // Voice loop — pure-Dart orchestration (no ffi), exported unconditionally.
 export 'src/voice/voice_event.dart';
 export 'src/voice/voice_responder.dart';

@@ -49,7 +49,14 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   fake_async: ^1.3.0
+  # Holds the bundled VAD model to its SHA-256 (test/vad/vad_model_asset_test.dart).
+  crypto: ^3.0.6
 
-# No flutter: plugin/asset block, no hook/build.dart of its own. The LiteRt
+# No flutter: plugin block and no hook/build.dart of its own. The LiteRt
 # interpreter FFI (LiteRtBindings) and the shared libLiteRtLm native bundle
-# come from litertlm_dart, which owns the sole hook.
+# come from litertlm_dart, which owns the sole hook. The one asset is the
+# Silero VAD model VoiceActivityDetector uses by default (1.25 MB, MIT; see
+# assets/vad/README.md).
+flutter:
+  assets:
+    - assets/vad/silero_vad_16k_v6.2.3.tflite

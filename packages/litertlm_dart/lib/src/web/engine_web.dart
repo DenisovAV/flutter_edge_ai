@@ -116,7 +116,8 @@ final class Engine {
   /// [Backend.cpu] (whose `threadCount` becomes the runtime's
   /// `number_of_threads`). One attempt, no fallback. Pass [Backend.gpu] for
   /// Gemma 4's GPU export: the default [Backend.cpu] fails it at the first
-  /// send (0.19.0: "Environment was not initialized during streaming.").
+  /// send (0.19.0 and 0.20.0: "Environment was not initialized during
+  /// streaming.").
   ///
   /// Throws [UnsupportedError] for what does not run on the web (see the
   /// library comment), [StateError] when the page did not load
@@ -232,8 +233,9 @@ final class Engine {
       // Constrained decoding stays off, unlike natively. 0.17.0 and 0.18.0
       // aborted the decode round after a tool-call block with it on
       // (`Invalid token at state N`, google-ai-edge/LiteRT-LM#2434); 0.19.0
-      // with Gemma 4 E2B's GPU export completes that round trip with it on
-      // (web_litertlm_runtime_probe_test.dart, 2026-11-23), but every web
+      // and 0.20.0 with Gemma 4 E2B's GPU export complete that round trip
+      // with it on (web_litertlm_runtime_probe_test.dart, 2026-11-23 and
+      // 2026-11-25), but every web
       // suite runs with it off, and Gemma 4 writes well-formed tool-call
       // blocks without the grammar.
       return js;
@@ -457,7 +459,8 @@ Future<Engine> createWebEngine(
   // A GPU_ARTISAN model (Gemma 4's web exports) reserves its images' space
   // per conversation up front: with none reserved the first image fails
   // ("Media embedding cache was not set.", 0.19.0, measured 2026-11-23). As
-  // natively, unset is 1 with a vision encoder.
+  // natively, unset is 1 with a vision encoder. 0.20.0 reserves 4 when none
+  // is set, and answers an image past the reservation (measured 2026-11-25).
   if (config.maxNumImages ?? (config.visionBackend == null ? null : 1)
       case final images?) {
     executor['maxNumImages'] = images.toJS;
@@ -608,7 +611,7 @@ Future<Conversation> createConversationWithDefault(
 
 /// The page's `Backend` id for [backend]: CPU (WebAssembly) or GPU (WebGPU).
 /// A Gemma 4 web export asked for the GPU resolves to GPU_ARTISAN, the same
-/// WebGPU (0.19.0, measured 2026-11-23).
+/// WebGPU (0.19.0 and 0.20.0, measured 2026-11-23 and 2026-11-25).
 int _webBackendValue(Backend backend, LiteRtLmWebBackendIds ids) =>
     switch (backend) {
       CpuBackend() => ids.cpu,

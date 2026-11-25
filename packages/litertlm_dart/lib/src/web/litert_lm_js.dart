@@ -285,8 +285,8 @@ extension type JsLiteRtLmConversation._(JSObject _) implements JSObject {
   external JSObject sendMessageStreaming(JSAny message);
 
   /// Asks the generation in flight to stop (`cancelProcess()`). Measured on
-  /// 0.18.0 and 0.19.0 (2026-11-23, web_litertlm_runtime_probe_test.dart): a
-  /// generation
+  /// 0.18.0 and 0.19.0 (2026-11-23) and 0.20.0 (2026-11-25,
+  /// web_litertlm_runtime_probe_test.dart): a generation
   /// stopped before its end rejects with "Task cancelled", and so does every
   /// later send on this conversation, so it is replaced by one rebuilt from
   /// [getHistory]; with nothing in flight, or after the last chunk, the
@@ -294,9 +294,10 @@ extension type JsLiteRtLmConversation._(JSObject _) implements JSObject {
   external void cancel();
 
   /// The conversation's completed exchanges, without its preface (0.18.0 and
-  /// 0.19.0, measured 2026-11-23): a cancelled turn is not in it. A user
-  /// message sent as a string comes back with its content as that string,
-  /// and an image or audio part's bytes as `blob: {bytes: [...]}` (0.19.0).
+  /// 0.19.0, measured 2026-11-23; 0.20.0, 2026-11-25): a cancelled turn is
+  /// not in it. A user message sent as a string comes back with its content
+  /// as that string, and an image or audio part's bytes as
+  /// `blob: {bytes: [...]}` (0.19.0 and 0.20.0).
   external JSPromise<JSArray<JSObject>> getHistory();
 
   /// The conversation's token count. It runs on the engine's executor mutex,

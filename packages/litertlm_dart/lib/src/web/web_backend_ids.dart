@@ -98,7 +98,8 @@ final class LiteRtLmWebBackendIds {
   final int gpu;
 
   /// `Backend.GPU_ARTISAN`: what the runtime reports for a Gemma 4 web or
-  /// GPU export asked for the GPU (0.18.0 and 0.19.0, measured 2026-11-23):
+  /// GPU export asked for the GPU (0.18.0 and 0.19.0, measured 2026-11-23;
+  /// 0.20.0, 2026-11-25):
   /// the same WebGPU, through the runtime's legacy executor.
   final int gpuArtisan;
 

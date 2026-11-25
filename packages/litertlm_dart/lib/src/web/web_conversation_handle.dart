@@ -43,8 +43,9 @@
 //   conversation (its `preface.extra_context`), not per message, and has no
 //   per-message decoding options: a send that asks for either differently is
 //   an [UnsupportedError], never silently ignored. Images and audio go as
-//   their bytes in base64 (`blob`), the form 0.19.0 takes in a message and in
-//   a preface (measured 2026-11-23); a file path is refused, and so is media
+//   their bytes in base64 (`blob`), the form 0.19.0 and 0.20.0 take in a
+//   message and in a preface (measured 2026-11-23 and 2026-11-25); a file
+//   path is refused, and so is media
 //   for an encoder the engine did not load.
 
 import 'dart:async';
@@ -118,13 +119,13 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// The tokens the conversation this one was rebuilt from held, read when
   /// it was replaced: the runtime prefills a preface only at the first send,
-  /// so a new conversation counts 0 until then (N5, 0.19.0).
+  /// so a new conversation counts 0 until then (N5, 0.19.0 and 0.20.0).
   int _replayedTokens = 0;
 
   /// Whether the runtime conversation was rebuilt here: until something is
   /// prefilled on it (it counts 0 until then, N5), its first send prefills
   /// the replayed history with the message, and a refusal's count holds both
-  /// (N7, 0.19.0).
+  /// (N7, 0.19.0 and 0.20.0).
   bool _rebuilt = false;
 
   /// Whether [_replayedTokens] is a count the runtime gave: set once a
@@ -157,7 +158,8 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// Set once the history alone fills the context window: the runtime
   /// refused a message for its size ("Max number of tokens reached, the
-  /// context window is full." or "Input token ids are too long.", 0.19.0)
+  /// context window is full." or "Input token ids are too long.", 0.19.0
+  /// and 0.20.0)
   /// while the conversation already held [_maxTokens] tokens (N6: 128 of
   /// 128), so a rebuild replaying that history is refused too. Every later
   /// turn fails with [ContextFullException] without being sent, as natively
@@ -500,8 +502,8 @@ final class WebConversationHandle implements ConversationHandle {
         void onError(Object error, StackTrace stack) {
           if (turn.finished) return;
           // A rejected stream: the runtime conversation refuses every later
-          // send ("Task cancelled" after a stop, measured on 0.18.0 and
-          // 0.19.0).
+          // send ("Task cancelled" after a stop, measured on 0.18.0, 0.19.0
+          // and 0.20.0).
           _mustRebuild = true;
           if (turn.stopAsked) _rebuildCause = 'a stopped reply';
           if (turn.stopAsked && turn.streamed) {
@@ -845,7 +847,7 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// Marks every live turn stopped and stops the one streaming, if it was
   /// sent. With nothing in flight the runtime is not asked: a cancel there
-  /// changes nothing (0.18.0 and 0.19.0, measured).
+  /// changes nothing (0.18.0, 0.19.0 and 0.20.0, measured).
   @override
   void cancelGeneration() {
     for (final turn in _liveTurns) {
@@ -913,11 +915,13 @@ final class WebConversationHandle implements ConversationHandle {
         '$_rebuildCause ($e). $_untilRebuilt',
       );
     }
-    // The runtime's history holds no preface (P1, 0.18.0 and 0.19.0
+    // The runtime's history holds no preface (P1, 0.18.0, 0.19.0 and 0.20.0
     // measured): it is the exchanges since this conversation was created. A
     // turn the runtime failed (not a stop) stays at its end as the user
     // message with no reply, and replaying it fails again (M1, 0.19.0: an
-    // image past maxNumImages), while the history without it answers (N1):
+    // image past maxNumImages, which 0.20.0 answers; a send 0.20.0 refuses
+    // before it generates stays there too), while the history without it
+    // answers (N1):
     // that message, and only it, is left out.
     final exchanges = [...history];
     if (_failed case final failed?
@@ -1056,7 +1060,8 @@ bool _isBytes(Object? blob) =>
 /// that is work on the UI thread at the next message. 0.19.0 returns an
 /// image or audio part's bytes as `blob: {bytes: [...]}`, which a preface
 /// aborts the module on; the base64 `blob` of a message replays it (measured
-/// 2026-11-23, web_litertlm_runtime_probe_test.dart).
+/// 2026-11-23, web_litertlm_runtime_probe_test.dart; the history's form and
+/// the base64 replay again on 0.20.0, 2026-11-25).
 Object? _replayable(Object? message) {
   if (message case {'content': final List<Object?> parts}) {
     return {

@@ -150,7 +150,8 @@ const _stub = r'''
   };
   // 0.20.0's Session: text prefill, whole-reply decode. `p.ops` records
   // each call in order; `p.holdPrefill` / `p.holdClone` hold the next one
-  // until `__releaseHeld()`; `p.missingSessionMember` and
+  // until `__releaseHeld()`, `p.holdDecodeUntilCancel` the next decode until
+  // the session's cancel(); `p.missingSessionMember` and
   // `p.missingResponsesMember` leave a member out.
   const held = [];
   const hold = async () => { await new Promise((resolve) => held.push(resolve)); };
@@ -167,6 +168,12 @@ const _stub = r'''
     };
     s.runDecode = async () => {
       op('decode');
+      // `p.holdDecodeUntilCancel`: the decode runs until the session's
+      // cancel(), then resolves with what it had.
+      if (p.holdDecodeUntilCancel) {
+        p.holdDecodeUntilCancel = false;
+        await new Promise((resolve) => { s.stopDecode = resolve; });
+      }
       const r = {
         getTexts: () => ['decoded ' + s.prefills.length],
         delete: () => { p.responsesDeletes = (p.responsesDeletes || 0) + 1; },
@@ -174,7 +181,10 @@ const _stub = r'''
       if (p.missingResponsesMember) delete r[p.missingResponsesMember];
       return r;
     };
-    s.cancel = () => { p.sessionCancels = (p.sessionCancels || 0) + 1; };
+    s.cancel = () => {
+      p.sessionCancels = (p.sessionCancels || 0) + 1;
+      if (s.stopDecode) { s.stopDecode(); s.stopDecode = null; }
+    };
     s.clone = async () => {
       op('clone');
       if (p.holdClone) { p.holdClone = false; await hold(); }

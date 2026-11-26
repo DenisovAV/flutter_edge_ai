@@ -777,7 +777,9 @@ final class Conversation {
   /// stopped one. Where conversations share one native conversation by
   /// replay (see `Engine.createConversation`) it is an [UnsupportedError]:
   /// there is no KV cache of this conversation's own. On the web it is
-  /// `@litert-lm/core`'s `Conversation.getTokenCount()`. A [StateError] while
+  /// `@litert-lm/core`'s `Conversation.getTokenCount()`, after the
+  /// conversation a stop left refusing sends is rebuilt; a rebuild that
+  /// fails is this call's error. A [StateError] while
   /// a reply streams, or once the conversation or its engine is closed.
   Future<int> getTokenCount() => _state((s) => s.kvTokenCount());
 

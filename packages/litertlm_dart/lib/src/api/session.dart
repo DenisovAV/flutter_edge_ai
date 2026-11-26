@@ -170,7 +170,9 @@ final class Session {
   /// it returns the text decoded until then, empty when the stop came during
   /// the prefill or before the call reached native (natively measured: Gemma
   /// 4 E2B on the CPU returned the 16 numbers it had counted, 18 ms after the
-  /// stop). [runPrefill] and [runDecode] end the same way. The engine's close
+  /// stop). [runPrefill] and [runDecode] end the same way. So on the web:
+  /// `@litert-lm/core` 0.20.0's decode returns the text decoded until the
+  /// cancel (Gemma 4 E2B on WebGPU: 8-21 ms after it). The engine's close
   /// fails a call in flight with a [StateError].
   Future<String> generateContent(List<InputData> inputs) {
     _check();

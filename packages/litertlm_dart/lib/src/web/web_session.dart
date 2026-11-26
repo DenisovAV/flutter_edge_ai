@@ -99,6 +99,18 @@ final class WebSessionHandle implements SessionHandle {
   final bool _explicitSampler;
   bool _closed = false;
 
+  /// [cancelProcess] was called: a prefill or decode that has not reached
+  /// the runtime yet ends at once without running, as natively. One in the
+  /// runtime ends with the text decoded until the cancel: @litert-lm/core
+  /// 0.20.0's `runDecode` resolves with it (recorded: 8-21 ms after the
+  /// cancel, example/integration_test/web_litertlm_runtime_probe_test.dart).
+  bool _cancelRequested = false;
+
+  /// The runtime session was deleted (or left to a poisoned page): a cancel
+  /// no longer reaches it. Until then, also while [close] waits for the page
+  /// lock, it does.
+  bool _deleted = false;
+
   static JSArray<JSString> _texts(List<InputData> inputs) => [
     for (final input in inputs)
       switch (input) {
@@ -111,17 +123,37 @@ final class WebSessionHandle implements SessionHandle {
   ].toJS;
 
   /// Runs [body] holding the page lock: one operation of the page's module.
-  Future<T> _call<T>(String what, Future<T> Function() body) =>
-      _pageLock.run(() async {
-        if (_closed) throw StateError('The session is closed.');
-        try {
-          return await body();
-        } on StateError {
-          rethrow;
-        } catch (e) {
-          throw LiteRtLmNativeException('$liteRtLmWebRuntime $what: $e');
-        }
-      });
+  ///
+  /// A prefill or decode ([stopped]) ends as natively: cancelled by its
+  /// caller before it got the lock, it returns [stopped] without running;
+  /// cancelled while it ran, with what the runtime returned (or [stopped]
+  /// when the runtime refused it). One that the session's or the engine's
+  /// close stopped is a [StateError].
+  Future<T> _call<T>(
+    String what,
+    Future<T> Function() body, {
+    T Function()? stopped,
+  }) => _pageLock.run(() async {
+    if (_closed) throw StateError('The session is closed.');
+    if (stopped != null && _cancelRequested) return stopped();
+    T result;
+    try {
+      result = await body();
+    } on StateError {
+      rethrow;
+    } catch (e) {
+      if (stopped != null && _cancelRequested) return stopped();
+      if (_closed) throw _closedWhileRunning();
+      throw LiteRtLmNativeException('$liteRtLmWebRuntime $what: $e');
+    }
+    if (_closed && !_cancelRequested) throw _closedWhileRunning();
+    return result;
+  });
+
+  static StateError _closedWhileRunning() => StateError(
+    'The session or its engine was closed while the call ran: the call was '
+    'stopped and the session deleted.',
+  );
 
   Future<void> _prefill(JSArray<JSString> texts) =>
       _js.runPrefill(texts).toDart;
@@ -132,25 +164,27 @@ final class WebSessionHandle implements SessionHandle {
     _owner.noteGeneration(_sampling, explicit: _explicitSampler);
     final responses = await _js.runDecode().toDart;
     final missing = liteRtLmWebObjectMissing(responses, webResponsesMembers);
-    if (missing.isNotEmpty) {
-      throw StateError(_owner.incompleteRuntime('Responses', missing));
-    }
     try {
+      if (missing.isNotEmpty) {
+        throw StateError(_owner.incompleteRuntime('Responses', missing));
+      }
       final texts = responses.getTexts().toDart;
       return texts.isEmpty ? '' : texts.first.toDart;
     } finally {
-      responses.delete();
+      // Deleted also when refused, if it can be: nobody else would.
+      if (!missing.contains('delete')) responses.delete();
     }
   }
 
   @override
   Future<void> runPrefill(List<InputData> inputs) async {
     final texts = _texts(inputs);
-    await _call('refused the prefill', () => _prefill(texts));
+    await _call('refused the prefill', () => _prefill(texts), stopped: () {});
   }
 
   @override
-  Future<String> runDecode() => _call('refused the decode', _decode);
+  Future<String> runDecode() =>
+      _call('refused the decode', _decode, stopped: () => '');
 
   /// Prefill then decode, as LiteRT-LM's own `GenerateContent` does, in one
   /// hold of the page lock: the runtime's `Session` has no call that does
@@ -160,8 +194,10 @@ final class WebSessionHandle implements SessionHandle {
     final texts = _texts(inputs);
     return _call('refused the generation', () async {
       await _prefill(texts);
+      // Cancelled during the prefill: the decode does not start.
+      if (_cancelRequested) return '';
       return _decode();
-    });
+    }, stopped: () => '');
   }
 
   @override
@@ -172,9 +208,13 @@ final class WebSessionHandle implements SessionHandle {
     ),
   );
 
+  /// The runtime's `Session.cancel()`, which never suspends: it runs outside
+  /// the page lock, so it reaches the call in flight, also while [close]
+  /// waits for that call to end.
   @override
   void cancelProcess() {
-    if (!_closed) _js.cancel();
+    _cancelRequested = true;
+    if (!_deleted) _js.cancel();
   }
 
   /// The runtime's `Session.clone()`, holding the page lock, as a create the
@@ -194,14 +234,17 @@ final class WebSessionHandle implements SessionHandle {
     }),
   );
 
-  /// Deletes the runtime session after the call in flight on the page. Marked
-  /// closed and left out of the engine's sessions also when the page lock is
-  /// poisoned: the session is then left to the page, and the poison is the
-  /// error.
+  /// Stops the session's call in flight (the runtime's `cancel()`, which
+  /// never suspends), then deletes the runtime session once that call has
+  /// left the page; a call queued behind it is refused. So an engine's close
+  /// does not wait for a whole decode. Marked closed and left out of the
+  /// engine's sessions also when the page lock is poisoned: the session is
+  /// then left to the page, and the poison is the error.
   @override
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    _js.cancel();
     try {
       await _pageLock.run(() async {
         try {
@@ -211,6 +254,7 @@ final class WebSessionHandle implements SessionHandle {
         }
       });
     } finally {
+      _deleted = true;
       _owner.sessions.remove(this);
     }
   }

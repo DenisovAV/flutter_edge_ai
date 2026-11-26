@@ -1067,7 +1067,8 @@ final class WebConversationHandle
   /// it refusing sends (as [cloneHandle] does). A rebuilt conversation counts
   /// 0 until its next message, which prefills the replayed history with it
   /// (N5): until then its count is the one of the conversation it replaced,
-  /// which holds that history.
+  /// which holds that history. A rebuild that fails fails this call with the
+  /// rebuild's error, as it fails [cloneHandle] and the next send.
   @override
   Future<int> kvTokenCount() => _pageLock.run(() async {
     if (_closed) throw StateError('Conversation handle is closed');

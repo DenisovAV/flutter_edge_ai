@@ -36,8 +36,10 @@
 /// `--dart-define=PROBE_PART=parity`), records:
 /// - `Engine.createSession` and its `Session`: the members it has, a text
 ///   prefill and decode with Gemma 4's turn markers, a clone continued on
-///   its own, a cancel with nothing in flight then a prefill and decode, and
-///   an image input to `runPrefill`;
+///   its own, a cancel with nothing in flight then a prefill and decode, a
+///   cancel 200 ms into a prefill and decode of a long reply and into its
+///   decode alone (what the call ends with, when, and a decode after it),
+///   and an image input to `runPrefill`;
 /// - `Conversation.clone()`: the clone and the original each continued, and
 ///   their token counts;
 /// - `maxVisionTokensPerImage` on the engine: 70 (a budget the vision
@@ -160,6 +162,45 @@ window.__litertlmParityProbe = async (url, eg2Url, eg2VisionUrl, image) => {
         s.cancel();
         await s.runPrefill([turn('Say yes.')]);
         return await decoded(s);
+      } finally { await s.delete(); }
+    });
+    // A cancel during a session's work, as Session.cancelProcess sends it:
+    // 200 ms into a prefill + decode of a long reply, and 200 ms into the
+    // decode alone. What the call ends with, how long after the cancel, and
+    // whether the session answers afterwards.
+    const cancelled = async (s, work) => {
+      const t0 = performance.now();
+      let cancelAt;
+      const timer = setTimeout(() => { cancelAt = performance.now(); s.cancel(); }, 200);
+      let outcome;
+      try { outcome = {resolved: await work()}; }
+      catch (err) { outcome = {rejected: String((err && err.message) || err)}; }
+      clearTimeout(timer);
+      const end = performance.now();
+      outcome.endedMsAfterCancel = cancelAt === undefined ? null : Math.round(end - cancelAt);
+      outcome.totalMs = Math.round(end - t0);
+      try {
+        await s.runPrefill([turn('Say yes.')]);
+        outcome.after = await decoded(s);
+      } catch (err) { outcome.after = {rejected: String((err && err.message) || err)}; }
+      return outcome;
+    };
+    const long = turn('Count from 1 to 400, one number per line, nothing else.');
+    await attempt('session_cancel_during_generate', async () => {
+      const s = await e.createSession(greedy);
+      try {
+        return await cancelled(s, async () => {
+          await s.runPrefill([long]);
+          const prefilledAt = performance.now();
+          return {prefilledAt: Math.round(prefilledAt), decoded: await decoded(s)};
+        });
+      } finally { await s.delete(); }
+    });
+    await attempt('session_cancel_during_decode', async () => {
+      const s = await e.createSession(greedy);
+      try {
+        await s.runPrefill([long]);
+        return await cancelled(s, () => decoded(s));
       } finally { await s.delete(); }
     });
     await attempt('session_image_input', async () => {
@@ -1178,6 +1219,24 @@ void main() {
       expect((value('session_idle_cancel_then_decode')! as Map)['texts'], [
         isNotEmpty,
       ]);
+      // A cancel 200 ms into a session's work ends its runDecode normally
+      // with the text decoded until then, within ~20 ms, as natively; the
+      // session answers empty afterwards (recorded 2026-11-26: "1 2 3 4"
+      // to "1 … 5", 8-21 ms after the cancel, over two runs).
+      for (final probe in [
+        'session_cancel_during_generate',
+        'session_cancel_during_decode',
+      ]) {
+        final outcome = value(probe)! as Map;
+        expect(outcome['rejected'], isNull, reason: '$probe: $outcome');
+        final resolved = outcome['resolved'] as Map;
+        final texts =
+            ((resolved['decoded'] ?? resolved) as Map)['texts'] as List;
+        expect(texts.single as String, startsWith('1'));
+        expect(texts.single as String, isNot(contains('400')));
+        expect(outcome['endedMsAfterCancel'] as int, lessThan(1000));
+        expect((outcome['after'] as Map)['texts'], ['']);
+      }
       // A session prefills strings only: an image input is refused.
       expect(error('session_image_input'), contains('must be a string'));
       // Conversation.clone carries the history; each goes on alone.
@@ -1232,6 +1291,8 @@ const _parityProbes = [
   'session_prefill_decode',
   'session_clone',
   'session_idle_cancel_then_decode',
+  'session_cancel_during_generate',
+  'session_cancel_during_decode',
   'session_image_input',
   'conversation_clone',
   'vision_budget_unset',

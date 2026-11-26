@@ -161,4 +161,80 @@ void main() {
     );
     expect(owner.sessions, isEmpty);
   });
+
+  test("an engine's close cancels a session's decode in flight instead of "
+      'waiting for its end', () async {
+    final engine = await webEngine();
+    final session = await engine.createSession();
+    setOnPage('holdDecodeUntilCancel', true);
+    final generated = session.generateContent([const InputData.text('go')]);
+    await settle();
+    expect(page['sessionCancels'].dartify(), isNull);
+    final stoppedByClose = expectLater(
+      generated,
+      throwsWith<StateError>('closed while the call ran'),
+    );
+    await engine.close().timeout(const Duration(seconds: 5));
+    expect(page['sessionCancels'].dartify(), 1);
+    expect(page['sessionDeletes'].dartify(), 1);
+    await stoppedByClose;
+  });
+
+  test("a caller's cancel ends a decode in flight with what it had, and a "
+      'call queued behind another ends at once without running', () async {
+    final engine = await webEngine();
+    final a = await engine.createSession();
+    setOnPage('holdDecodeUntilCancel', true);
+    final generated = a.generateContent([const InputData.text('go')]);
+    await settle();
+    a.cancelProcess();
+    // The stub's decode resolves with the one prefill it had.
+    expect(await generated, 'decoded 1');
+
+    final b = await engine.createSession();
+    final c = await engine.createSession();
+    setOnPage('holdPrefill', true);
+    final held = b.runPrefill([const InputData.text('x')]);
+    await settle();
+    final queued = c.generateContent([const InputData.text('y')]);
+    await settle();
+    c.cancelProcess();
+    js('__releaseHeld');
+    await held;
+    expect(await queued, '');
+    expect(_ops(), ['prefill', 'decode', 'prefill']);
+    await engine.close();
+  });
+
+  test('a cancel reaches the runtime session while its close waits for the '
+      'page lock', () async {
+    final engine = await webEngine();
+    final a = await engine.createSession();
+    final b = await engine.createSession();
+    // b holds the page lock: a's close waits behind it.
+    setOnPage('holdPrefill', true);
+    final prefill = b.runPrefill([const InputData.text('x')]);
+    await settle();
+    final closing = engine.close();
+    await settle();
+    final before = page['sessionCancels'].dartify()! as num;
+    a.cancelProcess();
+    expect(page['sessionCancels'].dartify(), before + 1);
+    js('__releaseHeld');
+    await prefill.then((_) {}, onError: (_) {});
+    await closing;
+  });
+
+  test('a Responses this release cannot read is deleted before the '
+      'refusal', () async {
+    final engine = await webEngine();
+    final session = await engine.createSession();
+    setOnPage('missingResponsesMember', 'getTexts');
+    await expectLater(
+      session.generateContent([const InputData.text('a')]),
+      throwsWith<StateError>('getTexts'),
+    );
+    expect(page['responsesDeletes'].dartify(), 1);
+    await engine.close();
+  });
 }

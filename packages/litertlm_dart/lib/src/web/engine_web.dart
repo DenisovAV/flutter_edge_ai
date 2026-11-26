@@ -468,9 +468,11 @@ final class Engine {
     for (final listener in _closeListeners.toList()) {
       listener();
     }
-    // The conversations stop first: a create queued on the page lock may be
-    // waiting behind one of their generations. Started before the creates
-    // are awaited, so they cannot wait on each other.
+    // The conversations and sessions stop first: a create queued on the page
+    // lock may be waiting behind one of their generations. A session's close
+    // cancels its call in flight at once (the runtime's cancel never
+    // suspends), before it waits for the page lock. Started before the
+    // creates are awaited, so they cannot wait on each other.
     final closes = [
       for (final handle in _handles.toList())
         handle.close().then<Object?>((_) => null, onError: (Object e) => e),

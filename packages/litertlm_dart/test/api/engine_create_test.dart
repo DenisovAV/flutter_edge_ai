@@ -12,7 +12,9 @@ import 'dart:typed_data';
 
 import 'package:litertlm_dart/internal_io.dart';
 import 'package:litertlm_dart/litertlm_dart.dart';
-import 'package:litertlm_dart/src/api/engine.dart' show checkVisionBudget;
+import 'package:litertlm_dart/src/ffi/session_ffi.dart' show SessionSettings;
+import 'package:litertlm_dart/src/api/engine.dart'
+    show checkVisionBudget, liteRtLmToolChoiceRefusal, memoisedRead;
 import 'package:litertlm_dart/src/ffi/native_asset_dir.dart'
     show liteRtLmOutsideFlutter;
 import 'package:test/test.dart';
@@ -77,6 +79,20 @@ class _BenchClient extends LiteRtLmFfiClient {
   }
 }
 
+/// A [_BenchClient] whose sessions are addresses that count up.
+class _SessionClient extends _BenchClient {
+  final sessions = <SessionSettings>[];
+
+  @override
+  Future<int> createSession(SessionSettings settings) async {
+    sessions.add(settings);
+    return sessions.length;
+  }
+
+  @override
+  Future<void> sessionDelete(int session) async {}
+}
+
 class _Host extends EngineHost implements LiteRtLmNpuHost {
   _Host({this.abiName = 'macos_arm64', this.npuShips = false, this.client});
 
@@ -121,6 +137,12 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
 
   @override
   Future<bool?> linearAttentionState(String path) async => false;
+
+  /// The Android GPU family the host reports.
+  AndroidGpuFamily? gpuFamily;
+
+  @override
+  AndroidGpuFamily? androidGpuFamily() => gpuFamily;
 
   @override
   Future<void> initializeClient(
@@ -753,10 +775,25 @@ void main() {
     expect(host.creates.single.maxVisionTokensPerImage, 70);
   });
 
+  test('memoisedRead: nothing runs before the first ask, then one read, its '
+      'error kept for every ask and never left unhandled', () async {
+    var reads = 0;
+    final read = memoisedRead<List<int>?>(() async {
+      reads++;
+      throw const FormatException('unreadable vision section');
+    });
+    // An eager read would have run (and its error gone unhandled) here.
+    await Future<void>.delayed(Duration.zero);
+    expect(reads, 0);
+    await expectLater(read(), throwsFormatException);
+    await expectLater(read(), throwsFormatException);
+    expect(reads, 1);
+  });
+
   test(
     'checkVisionBudget: one of the budgets, at most the engine\'s',
     () async {
-      final budgets = Future.value(const [70, 140, 280]);
+      Future<List<int>?> budgets() => Future.value(const [70, 140, 280]);
       await checkVisionBudget(
         140,
         visionLoaded: true,
@@ -826,6 +863,214 @@ void main() {
       expect(host.creates.map((c) => c.numThreads), [3, null]);
     },
   );
+
+  test('speculation on or adaptive in a conversation or a session needs an '
+      'engine created speculating; a lenience alone or off does not', () async {
+    final path = write('g.litertlm', _bundle());
+    final client = _SessionClient();
+    host = _Host(client: client);
+    debugEngineHost = host;
+    final plain = await create(path);
+    for (final mode in [
+      SpeculativeDecodingMode.on,
+      SpeculativeDecodingMode.adaptive,
+    ]) {
+      final asked = SpeculativeDecodingConfig(mode: mode);
+      await expectLater(
+        plain.createConversation(
+          ConversationConfig(speculativeDecoding: asked),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => '${e.message}',
+            'message',
+            contains('drafter at engine create only'),
+          ),
+        ),
+      );
+      await expectLater(
+        plain.createSession(SessionConfig(speculativeDecoding: asked)),
+        throwsArgumentError,
+      );
+    }
+    for (final fine in [
+      SpeculativeDecodingConfig(lenience: 0.5),
+      SpeculativeDecodingConfig(mode: SpeculativeDecodingMode.off),
+    ]) {
+      await (await plain.createConversation(
+        ConversationConfig(speculativeDecoding: fine),
+      )).close();
+    }
+    await plain.close();
+    final speculating = await create(
+      path,
+      speculative: SpeculativeDecodingConfig(
+        mode: SpeculativeDecodingMode.adaptive,
+      ),
+    );
+    await (await speculating.createConversation(
+      ConversationConfig(
+        speculativeDecoding: SpeculativeDecodingConfig(
+          mode: SpeculativeDecodingMode.on,
+        ),
+      ),
+    )).close();
+    await (await speculating.createSession(
+      SessionConfig(
+        speculativeDecoding: SpeculativeDecodingConfig(
+          mode: SpeculativeDecodingMode.on,
+        ),
+      ),
+    )).close();
+    expect(client.sessions.single.speculativeMode, 1);
+    await speculating.close();
+  });
+
+  test(
+    'createSession is refused by name on the PowerVR GPU and the MediaTek '
+    'NPU, where several native contexts were measured broken; Adreno and '
+    'Qualcomm get one, and a sampler set on an NPU is said to be ignored',
+    () async {
+      final client = _SessionClient();
+      host = _Host(abiName: 'android_arm64', npuShips: true, client: client)
+        ..gpuFamily = AndroidGpuFamily.powerVr;
+      debugEngineHost = host;
+      final generic = write('g.litertlm', _bundle());
+      final powerVr = await create(generic, backend: const Backend.gpu());
+      await expectLater(
+        powerVr.createSession(),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (e) => '${e.message}',
+            'message',
+            contains('PowerVR'),
+          ),
+        ),
+      );
+      await powerVr.close();
+      host.gpuFamily = AndroidGpuFamily.adreno;
+      final adreno = await create(generic, backend: const Backend.gpu());
+      await (await adreno.createSession()).close();
+      await adreno.close();
+
+      final mediatek = await create(
+        write('m.litertlm', _bundle(npu: ('MediaTek', 'MT6989'))),
+        backend: Backend.npu(),
+      );
+      await expectLater(
+        mediatek.createSession(),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (e) => '${e.message}',
+            'message',
+            contains('#4256'),
+          ),
+        ),
+      );
+      await mediatek.close();
+
+      final qualcomm = await create(
+        write('q.litertlm', _bundle(npu: ('Qualcomm', 'SM8750'))),
+        backend: Backend.npu(),
+      );
+      client.loadedModelForTest(backend: 'npu');
+      final printed = <String>[];
+      await runZoned(
+        () async {
+          await (await qualcomm.createSession()).close();
+          expect(printed, isEmpty, reason: 'no sampler set: nothing said');
+          await (await qualcomm.createSession(
+            SessionConfig(
+              samplerConfig: SamplerConfig(
+                topK: 8,
+                topP: 0.9,
+                temperature: 0.7,
+              ),
+            ),
+          )).close();
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => printed.add(line),
+        ),
+      );
+      expect(
+        printed.where((l) => l.contains('decodes greedily')),
+        hasLength(1),
+      );
+      await qualcomm.close();
+    },
+  );
+
+  test('a tool choice other than auto: applied for Gemma 3, Gemma 3n, Gemma 4 '
+      'and FunctionGemma, refused by name for another family, a bundle naming '
+      'none and one whose family cannot be read', () async {
+    expect(liteRtLmToolChoiceRefusal(LlmModelFamily.gemma3), isNull);
+    expect(liteRtLmToolChoiceRefusal(LlmModelFamily.gemma3n), isNull);
+    expect(liteRtLmToolChoiceRefusal(LlmModelFamily.gemma4), isNull);
+    expect(liteRtLmToolChoiceRefusal(LlmModelFamily.functionGemma), isNull);
+    expect(
+      liteRtLmToolChoiceRefusal(LlmModelFamily.other),
+      contains('drops it'),
+    );
+    expect(liteRtLmToolChoiceRefusal(null), contains('names no model'));
+    expect(
+      liteRtLmToolChoiceRefusal(LlmModelFamily.gemma4, readError: 'truncated'),
+      contains('could not be read (truncated)'),
+    );
+
+    host = _Host(client: _BenchClient());
+    debugEngineHost = host;
+    Future<Object?> sendError(Engine engine, ToolChoice choice) async {
+      final conversation = await engine.createConversation(
+        ConversationConfig(
+          tools: [Tool(name: 'f', description: 'f')],
+        ),
+      );
+      try {
+        await conversation
+            .sendMessageStream(Message.user('hi'), toolChoice: choice)
+            .drain<void>();
+        return null;
+      } catch (e) {
+        return e;
+      } finally {
+        await conversation.close();
+      }
+    }
+
+    // 5 = qwen3: LiteRT-LM drops the choice.
+    for (final family in [5, null]) {
+      final engine = await create(
+        write('f$family.litertlm', _bundle(family: family)),
+      );
+      expect(
+        await sendError(engine, ToolChoice.none),
+        isA<UnsupportedError>().having(
+          (e) => '${e.message}',
+          'message',
+          contains('tool choice other than auto is refused'),
+        ),
+        reason: 'family $family',
+      );
+      // Auto is what every family applies: it goes on to the send.
+      expect(
+        await sendError(engine, ToolChoice.auto),
+        isNot(isA<UnsupportedError>()),
+      );
+      await engine.close();
+    }
+    for (final family in [8, 4]) {
+      final engine = await create(
+        write('f$family.litertlm', _bundle(family: family)),
+      );
+      expect(
+        await sendError(engine, ToolChoice.required),
+        isNot(isA<UnsupportedError>()),
+        reason: 'family $family',
+      );
+      await engine.close();
+    }
+  });
 
   test(
     'the NPU: a prepared directory is used as it is, else the vendor '

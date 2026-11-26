@@ -95,7 +95,11 @@ void main() {
   test('what a conversation is created with: system, tools, history, cap, '
       'constraint and extras', () async {
     final client = _Client();
-    final engine = engineForTest(client, backing: OpenSessionBacking.native);
+    final engine = engineForTest(
+      client,
+      backing: OpenSessionBacking.native,
+      speculates: true,
+    );
     await engine.createConversation(
       ConversationConfig(
         systemInstruction: 'be brief',

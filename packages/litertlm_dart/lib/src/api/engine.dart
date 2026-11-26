@@ -342,7 +342,23 @@ final class Engine {
     this._modelPath,
     this._visualTokenBudget,
     this._visionBudgets,
+    this._toolChoiceRefusal,
+    this._sessionRefusal,
+    this._speculates = false,
   });
+
+  /// Why a tool choice other than auto is refused on this engine's model
+  /// ([liteRtLmToolChoiceRefusal]); null where its family applies one.
+  final String? _toolChoiceRefusal;
+
+  /// Why [createSession] is refused on this engine's backend
+  /// ([liteRtLmSessionRefusal]); null where it is not.
+  final String? _sessionRefusal;
+
+  /// Whether the engine was created speculating (mode on or adaptive): the
+  /// drafter is loaded at engine create only, so a conversation or session
+  /// asking to speculate on an engine that does not is refused.
+  final bool _speculates;
 
   /// The model file; null for a test engine without one.
   final String? _modelPath;
@@ -351,10 +367,11 @@ final class Engine {
   /// be; null when the engine set none (the bundle's own largest).
   final int? _visualTokenBudget;
 
-  /// The vision budgets the bundle's vision encoder has
-  /// ([readLiteRtLmVisionTokenBudgets]); null when the engine loaded no
-  /// vision encoder or the file was not read for them.
-  final Future<List<int>?>? _visionBudgets;
+  /// Reads the vision budgets the bundle's vision encoder has
+  /// ([readLiteRtLmVisionTokenBudgets]) on its first call, memoised; null
+  /// when the engine loaded no vision encoder or the file is not read for
+  /// them.
+  final Future<List<int>?> Function()? _visionBudgets;
 
   /// How many LoRA inputs the model's `decode` signature has, read from the
   /// file once, on the first conversation with a [LoraConfig].
@@ -683,9 +700,11 @@ final class Engine {
       }
     }
     // Read once per engine with a vision encoder, on the first budget asked
-    // for; a file the reader does not know (bundle null) is left to native.
-    final Future<List<int>?>? visionBudgets = supportImage && bundle != null
-        ? readLiteRtLmVisionTokenBudgets(path, bundle)
+    // for (an engine that never asks never reads; a failed read is kept and
+    // thrown to every ask); a file the reader does not know (bundle null) is
+    // left to native.
+    final visionBudgets = supportImage && bundle != null
+        ? memoisedRead(() => readLiteRtLmVisionTokenBudgets(path, bundle))
         : null;
     if (config.visualTokenBudget case final budget?) {
       await checkVisionBudget(
@@ -826,6 +845,13 @@ final class Engine {
         modelPath: path,
         visualTokenBudget: config.visualTokenBudget,
         visionBudgets: visionBudgets,
+        toolChoiceRefusal: await _toolChoiceRefusalFor(path, bundle),
+        sessionRefusal: liteRtLmSessionRefusal(
+          backend: kind,
+          npuVendor: kind == BackendKind.npu ? vendor : null,
+          androidGpu: androidGpu,
+        ),
+        speculates: speculatesWith(speculative),
       );
     } catch (_) {
       // The engine exists: it is deleted before the failure reaches the
@@ -875,6 +901,30 @@ final class Engine {
       }
     } on FileSystemException {
       return false;
+    }
+  }
+
+  /// [liteRtLmToolChoiceRefusal] for the bundle at [path] ([bundle] null
+  /// when the file is not one this package reads).
+  static Future<String?> _toolChoiceRefusalFor(
+    String path,
+    BundleInfo? bundle,
+  ) async {
+    if (bundle == null) {
+      return liteRtLmToolChoiceRefusal(
+        null,
+        readError: 'the file is not a .litertlm this package reads',
+      );
+    }
+    try {
+      return liteRtLmToolChoiceRefusal(await readLlmModelFamily(path));
+    } on Object catch (e) {
+      if (e is! FileSystemException &&
+          e is! FormatException &&
+          e is! RangeError) {
+        rethrow;
+      }
+      return liteRtLmToolChoiceRefusal(null, readError: '$e');
     }
   }
 
@@ -963,6 +1013,7 @@ final class Engine {
   }) async {
     if (_closed) throw StateError('The engine is closed.');
     final c = config ?? ConversationConfig();
+    _checkSpeculation(c.speculativeDecoding);
     final lora = c.loraConfig;
     if (lora != null) await _checkLora(lora);
     if (c.visualTokenBudget case final budget?) {
@@ -1062,29 +1113,68 @@ final class Engine {
       engineClosed: () => _closed,
       engineCloseListeners: _closeListeners,
       constraintRefusal: _constraintRefusal,
+      toolChoiceRefusal: _toolChoiceRefusal,
+    );
+  }
+
+  /// Refuses a conversation's or session's [speculative] mode on or adaptive
+  /// on an engine created without speculation: LiteRT-LM loads the drafter at
+  /// engine create only.
+  void _checkSpeculation(SpeculativeDecodingConfig? speculative) {
+    final mode = speculative?.mode;
+    if (_speculates ||
+        (mode != SpeculativeDecodingMode.on &&
+            mode != SpeculativeDecodingMode.adaptive)) {
+      return;
+    }
+    throw ArgumentError.value(
+      speculative,
+      'speculativeDecoding',
+      'mode ${mode!.name} needs an engine created speculating: LiteRT-LM '
+          'loads the drafter at engine create only. Set '
+          'EngineConfig.speculativeDecoding',
     );
   }
 
   /// A low-level session of this engine: Kotlin's
   /// `Engine.createSession(SessionConfig)` (Engine.kt), over
   /// `litert_lm_engine_create_session`. See [Session]. [SessionConfig.loraConfig]
-  /// is checked as a conversation's is. On the web `@litert-lm/core`'s
-  /// `Engine.createSession`, without LoRA or speculative decoding.
+  /// is checked as a conversation's is, and a speculative mode on or
+  /// adaptive needs an engine created speculating. On the web
+  /// `@litert-lm/core`'s `Engine.createSession`, without LoRA or speculative
+  /// decoding.
+  ///
+  /// A session is a native context of its own beside the engine's other
+  /// sessions and conversations. Several such contexts on one engine were
+  /// measured to work on the CPU of macOS arm64, Linux and Windows x86_64,
+  /// on Metal, on Adreno and Mali GPUs, and on the Qualcomm and Google Tensor
+  /// NPUs (Android) and the Intel NPU (Windows). Two places were measured
+  /// broken and refuse it with an [UnsupportedError] naming why: the PowerVR
+  /// GPU (two greedy conversations diverged on a Pixel 11) and the MediaTek
+  /// NPU (a context answers its second message empty, LiteRT-LM #4256).
+  /// Linux Vulkan, Windows D3D12, iOS and the Android CPU are unmeasured for a
+  /// session beside a conversation. On an NPU, a [SessionConfig.samplerConfig]
+  /// set is said to be ignored, as for a conversation: the NPU decodes
+  /// greedily.
   Future<Session> createSession([SessionConfig? config]) async {
     if (_closed) throw StateError('The engine is closed.');
+    if (_sessionRefusal case final refusal?) throw UnsupportedError(refusal);
     final c = config ?? SessionConfig();
+    _checkSpeculation(c.speculativeDecoding);
     final lora = c.loraConfig;
     if (lora != null) await _checkLora(lora);
+    final sampler = samplerFor(c.samplerConfig, _client.bundleSampler);
     final address = await _withLoraRefusal(
       lora,
       () => _client.createSession((
-        sampler: samplerFor(c.samplerConfig, _client.bundleSampler),
+        sampler: sampler,
         loraPath: lora?.loraPath,
         audioLoraPath: lora?.audioLoraPath,
         speculativeMode: c.speculativeDecoding?.mode?.index,
         speculativeLenience: c.speculativeDecoding?.lenience,
       )),
     );
+    _client.noteNpuSampling(sampler, explicit: c.samplerConfig != null);
     final handle = NativeSessionHandle(
       _client,
       address,
@@ -1394,6 +1484,14 @@ Future<String> engineRenderUserMessage(Engine engine, String content) {
   return engine._client.renderUserMessage(content);
 }
 
+/// [read], run on the first call of the function returned and memoised: the
+/// same future, value or error, for every later call. Nothing runs until
+/// then, so an error no one asks for is never left unhandled.
+Future<T> Function() memoisedRead<T>(Future<T> Function() read) {
+  Future<T>? once;
+  return () => once ??= read();
+}
+
 /// Checks a visual token budget against the engine it is for: an
 /// [ArgumentError] when the engine loads no vision encoder
 /// ([visionLoaded]), when the bundle's vision encoder has no budget
@@ -1405,7 +1503,7 @@ Future<String> engineRenderUserMessage(Engine engine, String content) {
 Future<void> checkVisionBudget(
   int budget, {
   required bool visionLoaded,
-  required Future<List<int>?>? budgets,
+  required Future<List<int>?> Function()? budgets,
   required String? modelPath,
   int? engineBudget,
 }) async {
@@ -1416,7 +1514,7 @@ Future<void> checkVisionBudget(
       'needs a vision encoder: create the engine with a visionBackend',
     );
   }
-  final known = await budgets;
+  final known = await budgets?.call();
   if (known != null) {
     if (known.isEmpty) {
       throw ArgumentError.value(
@@ -1460,12 +1558,17 @@ Engine engineForTest(
   BundleInfo? bundleInfo,
   int? visualTokenBudget,
   List<int>? visionBudgets,
+  String? toolChoiceRefusal,
+  String? sessionRefusal,
+  bool speculates = false,
 }) => Engine._(
   client: client,
   backend: backend,
   visionBackend: visionBackend,
   visualTokenBudget: visualTokenBudget,
-  visionBudgets: visionBudgets == null ? null : Future.value(visionBudgets),
+  visionBudgets: visionBudgets == null
+      ? null
+      : () => Future.value(visionBudgets),
   audioBackend: audioBackend,
   maxNumTokens: maxNumTokens,
   activationDataType: null,
@@ -1475,6 +1578,9 @@ Engine engineForTest(
   linearAttentionState: linearAttentionState,
   constraintRefusal: constraintRefusal,
   modelPath: modelPath,
+  toolChoiceRefusal: toolChoiceRefusal,
+  sessionRefusal: sessionRefusal,
+  speculates: speculates,
 );
 
 /// The client under [engine].
@@ -1501,4 +1607,39 @@ Future<void> _shutdownAfterFailure(LiteRtLmFfiClient client) async {
   } on Object catch (e) {
     runtimeLog('[LiteRtLmEngine] deleting the failed engine failed too: $e');
   }
+}
+
+/// Whether an engine created with [speculative] speculates: mode on or
+/// adaptive.
+bool speculatesWith(SpeculativeDecodingConfig? speculative) =>
+    speculative?.mode == SpeculativeDecodingMode.on ||
+    speculative?.mode == SpeculativeDecodingMode.adaptive;
+
+/// Why a tool choice other than auto is refused for a model of [family]
+/// (null when the file names none; [readError] when it could not be read);
+/// null where LiteRT-LM 0.20.0 applies one. Only the Gemma 3 (and 3n), Gemma 4
+/// and FunctionGemma data processors build a constraint from a tool choice
+/// (`model_data_processor/{gemma3,gemma4,function_gemma}_data_processor.cc`);
+/// every other family's drops it and the reply runs as auto.
+String? liteRtLmToolChoiceRefusal(LlmModelFamily? family, {String? readError}) {
+  const applies =
+      'only Gemma 3, Gemma 3n, Gemma 4 and FunctionGemma bundles apply a tool '
+      'choice other than auto in LiteRT-LM 0.20.0; every other model family '
+      'drops it and answers as with auto';
+  if (readError != null) {
+    return 'A tool choice other than auto is refused: which model family this '
+        'bundle is could not be read ($readError), and $applies.';
+  }
+  return switch (family) {
+    LlmModelFamily.gemma3 ||
+    LlmModelFamily.gemma3n ||
+    LlmModelFamily.gemma4 ||
+    LlmModelFamily.functionGemma => null,
+    LlmModelFamily.other =>
+      'A tool choice other than auto is refused for this model: $applies.',
+    null =>
+      'A tool choice other than auto is refused: this bundle names no model '
+          'family (LiteRT-LM infers one from the tokenizer, which is not read '
+          'here), and $applies.',
+  };
 }

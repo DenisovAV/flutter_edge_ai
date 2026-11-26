@@ -2879,6 +2879,27 @@ class LiteRtLmFfiClient {
     );
   }
 
+  /// Says that the NPU executor decodes greedily when a conversation or a
+  /// session (Engine.createSession) of an NPU engine sends a sampler the
+  /// caller set ([explicit]): the executor argmaxes regardless, so the caller
+  /// is told rather than left believing a seed or temperature took hold. Only
+  /// for a sampler the caller set: the defaults are not greedy, and warning
+  /// on every NPU context would train people to ignore it. Printed once per
+  /// engine: a release build is where it gets reported, and runtimeLog is
+  /// silent there.
+  void noteNpuSampling(Sampler sampling, {required bool explicit}) {
+    if (_backend != 'npu' || !explicit || _warnedNpuSampling) return;
+    _warnedNpuSampling = true;
+    // ignore: avoid_print
+    print(
+      '[litertlm_dart] WARNING: NPU backend: sampler params '
+      '($sampling) are sent but the NPU executor decodes greedily and never '
+      'reads them, so output is deterministic argmax. Use '
+      'the CPU or the GPU if you need sampling. Shown once per '
+      'engine.',
+    );
+  }
+
   /// Reports what LiteRT-LM#2080 means for [conv]'s generation (see
   /// [EngineSamplerLatch]). A LiteRT-LM 0.19 engine builds its sampler at its
   /// first generation, not when a conversation is created; from 0.20 (C API
@@ -3088,23 +3109,7 @@ class LiteRtLmFfiClient {
           b.litert_lm_sampler_params_delete(samplerParams);
         }
 
-        // The NPU executor argmaxes regardless of what we just set, so tell the
-        // caller rather than letting them believe a seed or temperature took hold.
-        // Only when they set one themselves: the defaults are not greedy, and
-        // warning on every NPU session would train people to ignore it.
-        // Printed once per engine: a release build is where it gets reported, and
-        // runtimeLog is silent there.
-        if (_backend == 'npu' && samplingExplicit && !_warnedNpuSampling) {
-          _warnedNpuSampling = true;
-          // ignore: avoid_print
-          print(
-            '[litertlm_dart] WARNING: NPU backend: sampler params '
-            '($sampling) are sent but the NPU executor decodes greedily and never '
-            'reads them, so output is deterministic argmax. Use '
-            'the CPU or the GPU if you need sampling. Shown once per '
-            'engine.',
-          );
-        }
+        noteNpuSampling(sampling, explicit: samplingExplicit);
 
         // Optional per-session cap on how many tokens are *generated* (output),
         // independent of the engine's context window (maxTokens / KV-cache). This
@@ -4900,9 +4905,26 @@ class LiteRtLmFfiClient {
     for (final stop in _scoringStops) {
       stop.value = 1;
     }
+    // A session call in flight (Engine.createSession) runs inside the guard
+    // awaited below: it is stopped first, or shutdown would wait for a whole
+    // decode. A call that passed its check under the lock but had not reached
+    // native when the cancel came would run on: the cancel is repeated until
+    // the guard is free.
+    _cancelLiveSessions();
     if (_createsInFlight > 0) {
       _createsQuiescent ??= Completer<void>();
-      await _createsQuiescent!.future;
+      final quiescent = _createsQuiescent!.future;
+      final again = _liveSessions.isEmpty
+          ? null
+          : Timer.periodic(
+              const Duration(milliseconds: 100),
+              (_) => _cancelLiveSessions(),
+            );
+      try {
+        await quiescent;
+      } finally {
+        again?.cancel();
+      }
     }
 
     // Copy because close() mutates _handles.
@@ -4939,31 +4961,28 @@ class LiteRtLmFfiClient {
       ),
     );
 
-    // Sessions (Engine.createSession) left open: a call in flight on one is
-    // stopped and ends before the lock is free, then each is deleted before
-    // the engine.
+    // Sessions (Engine.createSession) left open: their calls were stopped and
+    // have ended (above), so each is deleted under the lock before the
+    // engine. Like a generation that does not end, a delete that does not
+    // come keeps the engine: deleting it under native's session would free
+    // what native still uses.
     if (_liveSessions.isNotEmpty && _bindings != null) {
       final sessions = _liveSessions.toList();
-      for (final session in sessions) {
-        _bindings!.litert_lm_session_cancel_process(
-          Pointer.fromAddress(session),
-        );
-      }
-      try {
-        await _protectNativeMutex(() async {
-          for (final session in sessions) {
-            if (_liveSessions.remove(session)) {
-              _bindings!.litert_lm_session_delete(Pointer.fromAddress(session));
-            }
+      await _protectNativeMutex(() async {
+        for (final session in sessions) {
+          if (_liveSessions.remove(session)) {
+            _bindings!.litert_lm_session_delete(Pointer.fromAddress(session));
           }
-        }).timeout(const Duration(seconds: 10));
-      } on Object catch (e) {
-        // ignore: avoid_print
-        print(
-          '[litertlm_dart] WARNING: open sessions were not deleted before the '
-          'engine ($e).',
-        );
-      }
+        }
+      }).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw TimeoutException(
+          'LiteRT-LM shutdown stopped after 10 s because the open sessions '
+          'could not be deleted; the engine was deliberately not deleted '
+          'while native still owns them.',
+          const Duration(seconds: 10),
+        ),
+      );
     }
     if (_engine != null && _engine != nullptr && _bindings != null) {
       _bindings!.litert_lm_engine_delete(_engine!);
@@ -4977,6 +4996,9 @@ class LiteRtLmFfiClient {
     // handle/virtual drains above already emptied the registry, but clear it so
     // no address can linger as a dangling "live" entry after a bulk free.
     _liveConvs.clear();
+    // Deleted with the engine: no address may stay "live" to a late cancel.
+    _liveSessions.clear();
+    _cancelledSessions.clear();
     _executor.unknown();
     _sentConvs.clear();
     _lastTurnEnds.clear();
@@ -5198,31 +5220,72 @@ class LiteRtLmFfiClient {
   /// [shutdown] deletes what is left.
   final Set<int> _liveSessions = {};
 
+  /// The sessions whose caller asked them to stop ([sessionCancel]): a call
+  /// on one that has not reached native yet is refused under the lock
+  /// instead of running, and a CANCELLED end is the caller's, not a failure.
+  /// LiteRT-LM does not support reusing a cancelled session, so the mark is
+  /// never cleared while the session lives.
+  final Set<int> _cancelledSessions = {};
+
+  /// The status name a session call reports when its caller cancelled it.
+  static const _sessionCancelled = 'CANCELLED';
+
   /// Runs a session call on a spawned isolate under [_nativeMutex], held off
   /// [shutdown]; a non-zero status is a [LiteRtLmNativeException] naming
-  /// [call] and LiteRT-LM's last error.
+  /// [call] and LiteRT-LM's last error. [publish] runs with the result before
+  /// the guard is left, so [shutdown] sees what the call made.
+  ///
+  /// A prefill or decode ([stoppable]) that its caller stopped
+  /// ([sessionCancel]) ends normally, as a stopped stream does: before native
+  /// started it, without running; while it ran, with what native returned
+  /// (the text decoded until then, or nothing when native answers
+  /// CANCELLED). One that [shutdown] stopped is a [StateError].
   Future<SessionCallResult> _sessionCall(
     String call,
     Future<SessionCallResult> Function(int engineAddr) body, {
     int? session,
+    bool stoppable = false,
+    void Function(SessionCallResult r)? publish,
   }) => _guardCreate(
     () => _protectNativeMutex(() async {
       final engine = _engine;
       if (_isShuttingDown || engine == null || engine == nullptr) {
         throw StateError('The LiteRT-LM engine is not loaded.');
       }
-      if (session != null && !_liveSessions.contains(session)) {
-        throw StateError('The session is closed.');
+      const stopped = (code: 0, address: 0, text: '', message: null);
+      if (session != null) {
+        if (!_liveSessions.contains(session)) {
+          throw StateError('The session is closed.');
+        }
+        // Asked to stop before native started it: native's cancel found
+        // nothing running, so the call does not run.
+        if (_cancelledSessions.contains(session)) {
+          if (stoppable) return stopped;
+          throw StateError('$call: the session was cancelled.');
+        }
       }
       // A session runs its own context on the executor.
       _executor.unknown();
       final r = await body(engine.address);
+      final byCaller = session != null && _cancelledSessions.contains(session);
+      if (session != null && _isShuttingDown && !byCaller) {
+        throw StateError(
+          '$call: the engine was closed while the call ran; the session was '
+          'stopped and deleted with it.',
+        );
+      }
       if (r.code != liteRtLmStatusOk) {
+        if (stoppable &&
+            byCaller &&
+            liteRtLmStatusName(r.code) == _sessionCancelled) {
+          return stopped;
+        }
         throw LiteRtLmNativeException(
           '$call failed with ${liteRtLmStatusName(r.code)}'
           '${r.message == null ? '' : ': ${r.message}'}',
         );
       }
+      publish?.call(r);
       return r;
     }),
   );
@@ -5233,8 +5296,8 @@ class LiteRtLmFfiClient {
       'litert_lm_engine_create_session',
       (engine) =>
           createSessionOffMainIsolate(engineAddr: engine, settings: settings),
+      publish: (r) => _liveSessions.add(r.address),
     );
-    _liveSessions.add(r.address);
     return r.address;
   }
 
@@ -5245,6 +5308,7 @@ class LiteRtLmFfiClient {
         (_) =>
             sessionPrefillOffMainIsolate(sessionAddr: session, inputs: inputs),
         session: session,
+        stoppable: true,
       );
 
   /// `litert_lm_session_run_decode`, or `litert_lm_session_generate_content`
@@ -5258,6 +5322,7 @@ class LiteRtLmFfiClient {
         : 'litert_lm_session_generate_content',
     (_) => sessionDecodeOffMainIsolate(sessionAddr: session, inputs: inputs),
     session: session,
+    stoppable: true,
   )).text!;
 
   /// `litert_lm_session_clone`, by address.
@@ -5266,23 +5331,48 @@ class LiteRtLmFfiClient {
       'litert_lm_session_clone',
       (_) => sessionCloneOffMainIsolate(sessionAddr: session),
       session: session,
+      publish: (r) => _liveSessions.add(r.address),
     );
-    _liveSessions.add(r.address);
     return r.address;
   }
 
   /// `litert_lm_session_cancel_process`: asks the session's prefill or
-  /// decode in flight to stop; nothing when none runs. Thread-safe natively,
-  /// so it runs here, outside the lock the call it stops holds.
+  /// decode in flight to stop, and marks the session so a call queued on it
+  /// is refused before native ([_cancelledSessions]). Thread-safe natively,
+  /// so it runs here, outside the lock the call it stops holds; also while
+  /// [shutdown] runs, until the session is deleted.
   void sessionCancel(int session) {
     final b = _bindings;
     if (b == null || !_liveSessions.contains(session)) return;
+    _cancelledSessions.add(session);
     b.litert_lm_session_cancel_process(Pointer.fromAddress(session));
   }
+
+  /// Stops every live session's call in flight, for [shutdown]: native's
+  /// cancel, without the caller's mark, so the stream it stops ends with an
+  /// error ([_sessionStreamFailure]).
+  void _cancelLiveSessions() {
+    final b = _bindings;
+    if (b == null) return;
+    for (final session in _liveSessions) {
+      b.litert_lm_session_cancel_process(Pointer.fromAddress(session));
+    }
+  }
+
+  /// Test seam: marks [session] live without a native engine, as a create
+  /// does.
+  @visibleForTesting
+  void seedLiveSessionForTest(int session) => _liveSessions.add(session);
+
+  /// Test seam: whether [session] was cancelled by its caller.
+  @visibleForTesting
+  bool isSessionCancelledForTest(int session) =>
+      _cancelledSessions.contains(session);
 
   /// `litert_lm_session_delete`, under the lock, after a call in flight on it.
   Future<void> sessionDelete(int session) => _protectNativeMutex(() async {
     if (!_liveSessions.remove(session)) return;
+    _cancelledSessions.remove(session);
     final b = _bindings;
     if (b == null || _engine == null) return;
     b.litert_lm_session_delete(Pointer.fromAddress(session));
@@ -5291,13 +5381,19 @@ class LiteRtLmFfiClient {
   /// `litert_lm_session_generate_content_stream`: the decode's chunks of
   /// text, through the stream proxy every conversation streams through. The
   /// lock is held from the call until native's final or error chunk; a
-  /// cancelled subscription cancels the session and waits for that end. A
-  /// stop ([sessionCancel]) ends the stream normally with what came before
-  /// it.
+  /// cancelled subscription cancels the session and waits for that end.
+  ///
+  /// How it ends: a stop the caller asked for ([sessionCancel], during the
+  /// prefill, the decode, or before native started) ends the stream normally
+  /// with what came before it; [shutdown] ends it with a [StateError]; any
+  /// other native error, the context window's end included ("Max number of
+  /// tokens reached.", which the C API and Kotlin report as an error too), is
+  /// a [LiteRtLmNativeException].
   Stream<String> sessionGenerateStream(int session, List<SessionInput> inputs) {
     late final StreamController<String> out;
     var started = false;
     var ended = false;
+    var consumerCancelled = false;
     final end = Completer<void>();
     out = StreamController<String>(
       onListen: () {
@@ -5306,12 +5402,17 @@ class LiteRtLmFfiClient {
           try {
             await _guardCreate(
               () => _protectNativeMutex(() async {
-                await _sessionStream(session, inputs, out, () => ended);
+                await _sessionStream(
+                  session,
+                  inputs,
+                  out,
+                  () => consumerCancelled,
+                );
                 ended = true;
               }),
             );
           } on Object catch (e, st) {
-            if (!out.isClosed) out.addError(e, st);
+            if (!out.isClosed && !consumerCancelled) out.addError(e, st);
           } finally {
             ended = true;
             if (!end.isCompleted) end.complete();
@@ -5321,6 +5422,7 @@ class LiteRtLmFfiClient {
       },
       onCancel: () {
         if (!started || ended) return null;
+        consumerCancelled = true;
         sessionCancel(session);
         return end.future.timeout(const Duration(seconds: 5), onTimeout: () {});
       },
@@ -5344,6 +5446,9 @@ class LiteRtLmFfiClient {
     if (!_liveSessions.contains(session)) {
       throw StateError('The session is closed.');
     }
+    // Asked to stop before native started: the caller's stop, so the stream
+    // ends normally with nothing.
+    if (_cancelledSessions.contains(session)) return;
     if (_missingChunkAccessors.isNotEmpty) {
       throw StateError(
         'libLiteRtLm does not export ${_missingChunkAccessors.join(', ')}: '
@@ -5364,10 +5469,9 @@ class LiteRtLmFfiClient {
         final error = decodeNativeString(errorMsg, maxBytes: _maxErrorBytes);
         _proxyFreeString!(errorMsg);
         if (chunk != nullptr) _proxyFreeString!(chunk);
-        // A stop (cancelProcess) ends the stream cleanly, as a
-        // conversation's does.
-        if (!error.startsWith('CANCELLED') && !out.isClosed) {
-          out.addError(LiteRtLmNativeException('Session stream error: $error'));
+        if (!out.isClosed && !abandoned()) {
+          final failure = _sessionStreamFailure(session, error);
+          if (failure != null) out.addError(failure);
         }
         callable.close();
         done.complete();
@@ -5420,13 +5524,49 @@ class LiteRtLmFfiClient {
       // No callback comes for a refused call: its proxy is freed here.
       releaseRefusedStreamProxy(r.code, proxyData, _proxyDestroy!);
       callable.close();
-      throw LiteRtLmNativeException(
-        'litert_lm_session_generate_content_stream failed with '
+      // A stop during the prefill, which native runs before it returns.
+      final failure = _sessionStreamFailure(
+        session,
         '${liteRtLmStatusName(r.code)}'
         '${r.message == null ? '' : ': ${r.message}'}',
       );
+      if (failure != null) throw failure;
+      return;
     }
     await done.future;
+  }
+
+  /// What a session stream's native [error] ends it with: null (a normal
+  /// end) for a stop its caller asked for, a [StateError] for one [shutdown]
+  /// asked for, else a [LiteRtLmNativeException].
+  Object? _sessionStreamFailure(int session, String error) {
+    if (error.startsWith(_sessionCancelled)) {
+      if (_cancelledSessions.contains(session)) return null;
+      if (_isShuttingDown) {
+        return StateError(
+          'The engine was closed while the session generated: the session '
+          'was stopped and deleted with it.',
+        );
+      }
+    }
+    return LiteRtLmNativeException('Session stream error: $error');
+  }
+
+  /// Test seam: what a session stream ends with on [error]
+  /// ([_sessionStreamFailure]), with [shuttingDown] as [shutdown] sets it.
+  @visibleForTesting
+  Object? sessionStreamFailureForTest(
+    int session,
+    String error, {
+    bool shuttingDown = false,
+  }) {
+    final was = _isShuttingDown;
+    _isShuttingDown = shuttingDown;
+    try {
+      return _sessionStreamFailure(session, error);
+    } finally {
+      _isShuttingDown = was;
+    }
   }
 
   /// The bindings, for a native call on [conv]: a [StateError] when the

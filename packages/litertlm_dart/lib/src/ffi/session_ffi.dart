@@ -147,7 +147,12 @@ Future<SessionCallResult> createSessionOffMainIsolate({
         config,
         out,
       );
-      return _result(b, code, address: code == 0 ? out.value.address : 0);
+      return sessionMadeResult(
+        'litert_lm_engine_create_session',
+        code,
+        out.value.address,
+        b.lastError,
+      );
     } finally {
       calloc.free(out);
     }
@@ -224,11 +229,39 @@ Future<SessionCallResult> sessionCloneOffMainIsolate({
       Pointer.fromAddress(sessionAddr),
       out,
     );
-    return _result(b, code, address: code == 0 ? out.value.address : 0);
+    return sessionMadeResult(
+      'litert_lm_session_clone',
+      code,
+      out.value.address,
+      b.lastError,
+    );
   } finally {
     calloc.free(out);
   }
 });
+
+/// The result of a call that makes a session ([call]): its [address] when
+/// [code] is OK and the address is not NULL. An OK with a NULL session is a
+/// failure, never a session at address 0.
+SessionCallResult sessionMadeResult(
+  String call,
+  int code,
+  int address,
+  String? Function() lastError,
+) {
+  if (code != 0) {
+    return (code: code, address: 0, text: null, message: lastError());
+  }
+  if (address == 0) {
+    return (
+      code: -1,
+      address: 0,
+      text: null,
+      message: '$call returned OK with no session',
+    );
+  }
+  return (code: 0, address: address, text: null, message: null);
+}
 
 /// `litert_lm_session_generate_content_stream` with [inputs], streaming to
 /// the C callback at [callbackAddr] with [callbackDataAddr] (a stream proxy).

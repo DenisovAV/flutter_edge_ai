@@ -2,8 +2,9 @@
 // 0.19.1+4 this file also held Package.swift's companion binary targets to the
 // hook, the Podfile stager and the SwiftPM packaging script (#689). From
 // litertlm_dart 0.20.0 (native-v0.20.0) LiteRtLm links no companion library
-// on macOS, the stager and the packaging script are gone, and Package.swift's
-// binary targets are left to this package's next release to remove.
+// on macOS, the stager and the packaging script are gone, and Package.swift
+// brings no binary target: one would put a second Metal accelerator in the
+// app.
 
 import 'dart:io';
 
@@ -23,5 +24,11 @@ void main() {
     final pod = RegExp(r":osx, '([\d.]+)'").firstMatch(_podspec)?.group(1);
     expect(swift, isNotNull);
     expect(pod, swift);
+  });
+
+  test('Package.swift brings no binary target and names no companion', () {
+    expect(_packageSwift, isNot(contains('binaryTarget')));
+    expect(_packageSwift, isNot(contains('GemmaModelConstraintProvider')));
+    expect(_packageSwift, isNot(contains('MetalAccelerator.xcframework')));
   });
 }

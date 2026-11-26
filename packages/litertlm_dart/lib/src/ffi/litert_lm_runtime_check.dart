@@ -63,9 +63,16 @@ void checkOwnLiteRtLmBuild(
 /// (`LITERT_LM_C_API_VERSION_MAJOR` in the vendored `c/engine.h`).
 const liteRtLmCApiMajor = 1;
 
+/// The oldest C API minor version of [liteRtLmCApiMajor] this release binds:
+/// 1.1 is LiteRT-LM 0.20.0's (native-v0.20.0), which adds the calls a 1.0
+/// library (LiteRT-LM 0.19, native-v0.19.x) lacks, such as the tool choice
+/// and the LoRA settings.
+const liteRtLmCApiMinMinor = 1;
+
 /// Throws [StateError] unless the library opened as [path] reports a C API
-/// version [liteRtLmCApiMajor].x through `litert_lm_get_api_version`
-/// ([readVersion], called only when [provides] has it).
+/// version [liteRtLmCApiMajor].x, x at least [liteRtLmCApiMinMinor], through
+/// `litert_lm_get_api_version` ([readVersion], called only when [provides]
+/// has it).
 ///
 /// From 1.0.0 upstream promises semver for the C API, and a library before
 /// 1.0.0 does not export the call: its constructors return the object
@@ -94,6 +101,15 @@ void checkLiteRtLmCApiVersion(
       '${code == 0 ? '$major.$minor.$patch' : 'version unknown (status $code)'}; '
       'this litertlm_dart release is built against '
       '$liteRtLmCApiMajor.x.',
+    );
+  }
+  if (minor < liteRtLmCApiMinMinor) {
+    throw StateError(
+      'The LiteRT-LM library at $path reports C API $major.$minor.$patch; '
+      'this litertlm_dart release is built against '
+      '$liteRtLmCApiMajor.$liteRtLmCApiMinMinor or later (LiteRT-LM 0.20.0). '
+      'A stale local prebuilt under native/litert_lm/prebuilt/ or in the '
+      'native cache is the usual cause; run `flutter clean` once.',
     );
   }
 }

@@ -151,7 +151,8 @@ const _stub = r'''
   // 0.20.0's Session: text prefill, whole-reply decode. `p.ops` records
   // each call in order; `p.holdPrefill` / `p.holdClone` hold the next one
   // until `__releaseHeld()`, `p.holdDecodeUntilCancel` the next decode until
-  // the session's cancel(); `p.missingSessionMember` and
+  // the session's cancel(), `p.throwingSessionCancel` makes cancel() throw;
+  // `p.missingSessionMember` and
   // `p.missingResponsesMember` leave a member out.
   const held = [];
   const hold = async () => { await new Promise((resolve) => held.push(resolve)); };
@@ -183,6 +184,7 @@ const _stub = r'''
     };
     s.cancel = () => {
       p.sessionCancels = (p.sessionCancels || 0) + 1;
+      if (p.throwingSessionCancel) throw new Error('cancel failed');
       if (s.stopDecode) { s.stopDecode(); s.stopDecode = null; }
     };
     s.clone = async () => {

@@ -128,14 +128,19 @@ final class WebSessionHandle implements SessionHandle {
   /// caller before it got the lock, it returns [stopped] without running;
   /// cancelled while it ran, with what the runtime returned (or [stopped]
   /// when the runtime refused it). One that the session's or the engine's
-  /// close stopped is a [StateError].
+  /// close stopped is a [StateError]. Any other call (a clone) is refused
+  /// with a [StateError] once the session was cancelled, as natively, and
+  /// returns what it made when the session closed while it ran.
   Future<T> _call<T>(
     String what,
     Future<T> Function() body, {
     T Function()? stopped,
   }) => _pageLock.run(() async {
     if (_closed) throw StateError('The session is closed.');
-    if (stopped != null && _cancelRequested) return stopped();
+    if (_cancelRequested) {
+      if (stopped != null) return stopped();
+      throw StateError('$what: the session was cancelled.');
+    }
     T result;
     try {
       result = await body();
@@ -146,7 +151,9 @@ final class WebSessionHandle implements SessionHandle {
       if (_closed) throw _closedWhileRunning();
       throw LiteRtLmNativeException('$liteRtLmWebRuntime $what: $e');
     }
-    if (_closed && !_cancelRequested) throw _closedWhileRunning();
+    if (stopped != null && _closed && !_cancelRequested) {
+      throw _closedWhileRunning();
+    }
     return result;
   });
 
@@ -244,8 +251,12 @@ final class WebSessionHandle implements SessionHandle {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    _js.cancel();
     try {
+      try {
+        _js.cancel();
+      } catch (_) {
+        // The delete below still runs; it ends whatever the cancel did not.
+      }
       await _pageLock.run(() async {
         try {
           await awaitIfThenable(_js.delete());

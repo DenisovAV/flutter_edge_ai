@@ -237,4 +237,61 @@ void main() {
     expect(page['responsesDeletes'].dartify(), 1);
     await engine.close();
   });
+
+  test('a clone finished while its source closes is returned, usable and '
+      'closable, as natively', () async {
+    final engine = await webEngine();
+    final a = await engine.createSession();
+    await a.runPrefill([const InputData.text('x')]);
+    setOnPage('holdClone', true);
+    final cloning = a.clone();
+    await settle();
+    final closing = a.close();
+    await settle();
+    js('__releaseHeld');
+    final clone = await cloning;
+    await closing;
+    expect(page['sessionDeletes'].dartify(), 1);
+    expect(await clone.runDecode(), 'decoded 1');
+    await clone.close();
+    expect(page['sessionDeletes'].dartify(), 2);
+    await engine.close();
+    expect(page['sessionDeletes'].dartify(), 2);
+  });
+
+  test(
+    "a close whose runtime cancel throws still deletes the session",
+    () async {
+      final engine = await webEngine();
+      final a = await engine.createSession();
+      setOnPage('throwingSessionCancel', true);
+      await a.close();
+      expect(page['sessionCancels'].dartify(), 1);
+      expect(page['sessionDeletes'].dartify(), 1);
+      await engine.close();
+      expect(page['sessionDeletes'].dartify(), 1);
+    },
+  );
+
+  test('a clone queued behind the page lock is refused once its session was '
+      'cancelled, as natively', () async {
+    final engine = await webEngine();
+    final a = await engine.createSession();
+    final b = await engine.createSession();
+    setOnPage('holdPrefill', true);
+    final held = b.runPrefill([const InputData.text('x')]);
+    await settle();
+    final cloning = a.clone();
+    final refused = expectLater(
+      cloning,
+      throwsWith<StateError>('the session was cancelled'),
+    );
+    await settle();
+    a.cancelProcess();
+    js('__releaseHeld');
+    await held;
+    await refused;
+    expect(_ops(), ['prefill']);
+    await engine.close();
+  });
 }

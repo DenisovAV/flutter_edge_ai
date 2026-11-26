@@ -11,7 +11,7 @@
 # 17. SentencePiece loads a BPE vocabulary with a NUL-byte piece (#659); on
 #     v0.19.0 a second patch on top of upstream's, which accepts only "\0"
 # 26. ThinkingBudgetConstraint copies a user bitmap by data() and vocabulary
-#     size (Windows: the Gemma provider's vector is libc++, the runtime MSVC)
+#     size (up to native-v0.19.1 the bitmap came from Google's libc++ provider)
 #
 # 28. Apple: Metal argument buffers stay on (Gemma 4 kernels exceed 31 slots)
 # 29. Tool-call constraints from LLGuidance (every tool_choice), not FST
@@ -22,7 +22,11 @@
 # a48771d2, 9738e180, e0dcad4e and 3db1cfd0ab ship what they patched); section
 # 10b drops the Google Tensor dispatch and Intel GlobalGraph v3 backports (in
 # the LiteRT pin bf49eb62) and adds two LiteRT backports after that pin
-# (aa9e40cd5, 95d3d567b).
+# (aa9e40cd5, 95d3d567b). Section 12 (the Linux ABI bridge to Google's prebuilt
+# Gemma constraint provider, #551) is deleted: with section 29 the Gemma data
+# processors build their tool-call constraints with LLGuidance, the code it
+# bridged is compiled out (LITERT_LM_USE_FST_TOOL_CALL_CONSTRAINTS unset), and
+# no provider is linked or shipped.
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -468,65 +472,6 @@ else
   echo "         CreateLiteRtNpuOptions moved; re-create the patch against it." >&2
   exit 1
 fi
-
-# ── 12. Linux constraint-provider ABI bridge (#551) ──
-# The three Gemma data processors reinterpret_cast the prebuilt provider's
-# object to Constraint*. On Linux that object speaks Google's libc++ ABI and
-# our runtime does not, so every native tool call aborts on its first
-# constrained token. gemma_constraint_abi_bridge.h wraps it instead; on every
-# other platform WrapGemmaModelConstraint is the same cast as before.
-#
-# Unlike the sections above, a missing anchor FAILS the patch: a WARN here
-# builds a runtime that crashes on tool calls with every other check green.
-BRIDGE_SRC="$(cd "$(dirname "$0")" && pwd)/gemma_constraint_abi_bridge.h"
-FLUTTER_GEMMA_LITERT_LM_DIR="$DIR" FLUTTER_GEMMA_BRIDGE_SRC="$BRIDGE_SRC" python3 - <<'PYEOF'
-import os, shutil, sys
-
-root = os.environ["FLUTTER_GEMMA_LITERT_LM_DIR"]
-src = os.environ["FLUTTER_GEMMA_BRIDGE_SRC"]
-cd_dir = os.path.join(root, "runtime/components/constrained_decoding")
-include = '#include "runtime/components/constrained_decoding/gemma_constraint_abi_bridge.h"'
-
-def fail(msg):
-    print(f"  ERROR: section 12: {msg}")
-    sys.exit(1)
-
-shutil.copyfile(src, os.path.join(cd_dir, "gemma_constraint_abi_bridge.h"))
-
-build = os.path.join(cd_dir, "BUILD")
-text = open(build).read()
-if '"gemma_constraint_abi_bridge.h"' not in text:
-    start = text.find('name = "gemma_model_constraint_provider_shared_lib"')
-    if start < 0:
-        fail("gemma_model_constraint_provider_shared_lib not found in BUILD")
-    end = text.find("\n)\n", start)
-    block = text[start:end]
-    old_hdrs = 'hdrs = [\n        "gemma_model_constraint_provider.h",\n    ],'
-    old_deps = 'deps = [\n        ":constraint",\n'
-    if block.count(old_hdrs) != 1 or block.count(old_deps) != 1:
-        fail("hdrs/deps layout of gemma_model_constraint_provider_shared_lib changed")
-    block = block.replace(old_hdrs, 'hdrs = [\n        "gemma_constraint_abi_bridge.h",\n        "gemma_model_constraint_provider.h",\n    ],')
-    block = block.replace(old_deps, old_deps + '        ":logit_mask",\n        "@com_google_absl//absl/memory",\n        "@com_google_absl//absl/types:span",\n')
-    open(build, "w").write(text[:start] + block + text[end:])
-    print("  OK: BUILD exports gemma_constraint_abi_bridge.h")
-else:
-    print("  SKIP: BUILD already exports gemma_constraint_abi_bridge.h")
-
-cast = "return absl::WrapUnique(reinterpret_cast<Constraint*>(constraint));"
-provider_include = '#include "runtime/components/constrained_decoding/gemma_model_constraint_provider.h"'
-for name in ("gemma3", "gemma4", "function_gemma"):
-    path = os.path.join(root, f"runtime/conversation/model_data_processor/{name}_data_processor.cc")
-    code = open(path).read()
-    if "WrapGemmaModelConstraint(constraint)" in code:
-        print(f"  SKIP: {name}_data_processor.cc already bridged")
-        continue
-    if code.count(cast) != 1 or code.count(provider_include) != 1:
-        fail(f"{name}_data_processor.cc: expected exactly one cast and one provider include")
-    code = code.replace(provider_include, provider_include + "\n" + include)
-    code = code.replace(cast, "return WrapGemmaModelConstraint(constraint);")
-    open(path, "w").write(code)
-    print(f"  OK: {name}_data_processor.cc returns WrapGemmaModelConstraint")
-PYEOF
 
 # ── 13. Linux/Windows: external weights read by path (EmbeddingGemma 2) ──
 # A .litertlm TFLiteModel with a TFLiteWeights section reads its weights from
@@ -1124,27 +1069,25 @@ else
 fi
 
 # ── 26. The thinking constraint copies a user bitmap without its end() ──
-# With thinking on, Tasks::Decode wraps the user constraint (the Gemma tool
+# With thinking on, Tasks::Decode wraps the user constraint (the tool
 # constraint, whenever a session has tools) in ThinkingBudgetConstraint. On
 # the first decode step of a turn its ComputeMask copies the user mask's
-# words(), begin() to end(), to add the start-of-thought token. On Windows the
-# mask comes from Google's prebuilt libGemmaModelConstraintProvider.dll, whose
-# vector is libc++'s {begin, size, capacity} (std::__u), while LiteRtLm.dll is
-# MSVC STL ({first, last, end}): the element count was read as the end
-# pointer, the copy threw std::length_error, and the process aborted
-# (0xc0000409, fast-fail 7) on the first token of every thinking turn with
-# tools (Intel's Gemma 4 12B on the Panther Lake NPU, 2026-11-12; by the code
-# every Windows backend). The copy now takes (vocab_size + 63) / 64 words from
-# words().data(): the begin pointer and vocab_size sit at the same offsets in
-# both layouts, and they are all CompositeLogitMask and the mask runner read.
-# The mask's own virtual Apply is no alternative: the provider returns
-# absl::Status in a register (Google's trivial_abi absl, no LTS namespace) and
-# this runtime reads it from memory, which crashed in StatusRep::CloneAndUnref
-# on macOS (measured with that variant of this section, 2026-11-12). It
-# matters on Windows (Linux has section 12's bridge; the Apple and Android
-# providers name std::__1 and std::__ndk1, the runtime's own libc++) and is
-# applied on every target to keep one source tree. The patch adds a test whose
-# user bitmap holds more words than its vocabulary needs.
+# words(), begin() to end(), to add the start-of-thought token. Up to
+# native-v0.19.1 that mask came from Google's prebuilt
+# libGemmaModelConstraintProvider, whose vector is libc++'s {begin, size,
+# capacity} (std::__u), while LiteRtLm.dll is MSVC STL ({first, last, end}):
+# on Windows the element count was read as the end pointer, the copy threw
+# std::length_error, and the process aborted (0xc0000409, fast-fail 7) on the
+# first token of every thinking turn with tools (Intel's Gemma 4 12B on the
+# Panther Lake NPU, 2026-11-12). The copy takes (vocab_size + 63) / 64 words
+# from words().data() instead: the begin pointer and vocab_size sit at the
+# same offsets in both layouts, and they are all CompositeLogitMask and the
+# mask runner read. From native-v0.20.0-a the tool constraint is LLGuidance's
+# (section 29), built into this runtime with its own standard library, so no
+# mask crosses a standard-library boundary any more; the copy stays because it
+# is right for any BitmapLogitMask, and its test (a user bitmap holding more
+# words than its vocabulary needs) runs in the Linux CI build. Applied on
+# every target to keep one source tree.
 THINKING_MASK_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/thinking_budget_user_bitmap_words.patch"
 if git -C "$DIR" apply --check "$THINKING_MASK_PATCH" 2>/dev/null; then
   git -C "$DIR" apply "$THINKING_MASK_PATCH"
@@ -1244,8 +1187,7 @@ fi
 # alphabetical order it chose worse argument values than under the FST provider
 # (the D8 tool-call matrix, macOS CPU and Metal, 2026-11-25).
 # patches/llg_fc_declared_argument_order.patch adds a declared-order mode to the
-# FC grammar and turns it on for FunctionGemma only. It patches the same
-# function_gemma_data_processor.cc as section 12, so it comes after it.
+# FC grammar and turns it on for FunctionGemma only.
 LLG_ORDER_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/llg_fc_declared_argument_order.patch"
 if git -C "$DIR" apply --check "$LLG_ORDER_PATCH" 2>/dev/null; then
   git -C "$DIR" apply "$LLG_ORDER_PATCH"

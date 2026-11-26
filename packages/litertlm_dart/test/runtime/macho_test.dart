@@ -1,5 +1,5 @@
-// The one Mach-O load-command walker: the hook's header room and the macOS
-// loader's "what does LiteRtLm link". Malformed input is a FormatException,
+// The one Mach-O load-command walker: the macOS loader's "what does LiteRtLm
+// link". Malformed input is a FormatException,
 // never a read past the bytes.
 import 'dart:typed_data';
 
@@ -35,19 +35,6 @@ Uint8List _machO(List<Uint8List> commands, {int trailing = 0, int? ncmds}) {
   ]);
 }
 
-/// An LC_SEGMENT_64 with sections at [offsets].
-Uint8List _segment(List<int> offsets, {int? size}) {
-  final length = size ?? 72 + 80 * offsets.length;
-  final b = ByteData(length)
-    ..setUint32(0, 0x19, Endian.little)
-    ..setUint32(4, length, Endian.little);
-  if (length >= 68) b.setUint32(64, offsets.length, Endian.little);
-  for (var i = 0; i < offsets.length && 72 + i * 80 + 52 <= length; i++) {
-    b.setUint32(72 + i * 80 + 48, offsets[i], Endian.little);
-  }
-  return b.buffer.asUint8List();
-}
-
 void main() {
   test('the linked dylibs: plain, weak and re-exported, not the id', () {
     final file = _machO([
@@ -63,26 +50,6 @@ void main() {
     ]);
     expect(machOHeaderAndCommandsLength(file), file.length);
   });
-
-  test(
-    'the header room: from the end of the commands to the first section',
-    () {
-      // 32 + (72 + 2 * 80) + 72 = 336.
-      final segment = _segment([1024, 400]);
-      final id = _command(0xd, '@rpath/x', size: 72);
-      expect(machOHeaderSlack(_machO([segment, id], trailing: 2048)), 64);
-      // A zero-fill section (offset 0) is not where the file's bytes start.
-      expect(
-        machOHeaderSlack(
-          _machO([
-            _segment([0, 380]),
-            id,
-          ], trailing: 2048),
-        ),
-        44,
-      );
-    },
-  );
 
   group('malformed input is a FormatException', () {
     final fat = Uint8List.fromList([
@@ -116,29 +83,10 @@ void main() {
       'a name offset inside the fixed part': _machO([
         _command(0xc, '/x', nameOffset: 8, size: 32),
       ]),
-      'a segment shorter than segment_command_64': _machO([
-        _segment([], size: 40),
-      ]),
-      'sections running past their segment': _machO([
-        _segment([100, 200], size: 152),
-      ]),
-    };
-    // The commands as a whole: both readers refuse.
-    const both = {
-      'a fat file',
-      'an ELF file',
-      'fewer bytes than a header',
-      'commands cut short of sizeofcmds',
-      'a command running past sizeofcmds',
     };
     for (final MapEntry(key: what, value: bytes) in cases.entries) {
       test(what, () {
-        if (both.contains(what) || what.startsWith('a name')) {
-          expect(() => machOLinkedDylibs(bytes), throwsFormatException);
-        }
-        if (both.contains(what) || !what.startsWith('a name')) {
-          expect(() => machOHeaderSlack(bytes), throwsFormatException);
-        }
+        expect(() => machOLinkedDylibs(bytes), throwsFormatException);
       });
     }
 

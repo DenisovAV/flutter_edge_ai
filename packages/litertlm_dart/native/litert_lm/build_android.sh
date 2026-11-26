@@ -108,48 +108,19 @@ fi
 # 3b. Apply C API patch.
 bash "$SCRIPT_DIR/patch_c_api.sh" "$LITERT_LM_DIR"
 
-# 4. Pull LFS files
+# 4. No prebuilt companion. Up to native-v0.19.1 this fetched Google's prebuilt
+# libGemmaModelConstraintProvider.so (FST tool-call constraints) and checked its
+# Constraint ABI against the source. From native-v0.20.0-a the tool-call
+# constraints are built with LLGuidance from source (patch_c_api.sh section 29),
+# so libLiteRtLm.so links no provider and none ships; step 9 refuses a library
+# that still names one. The LFS pull stays for upstream's other prebuilt files a
+# target of the tree may name; the provider it also pulls is linked by nothing.
 echo "Pulling LFS files..."
-# The companion prebuilts come from a LATER upstream commit than the source.
-# Upstream changed Constraint on 2026-08-21 (a8a8c445, a41b7c5c): ComputeMask
-# took the vtable slot ComputeBitmap had, and the prebuilt provider at the
-# v0.17.0 and v0.17.1 tags still implements the old one — so a tool call
-# segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
-# main in 4453b286, and that provider carries the LogitMask types. Upstream's
-# own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-95df4c2a932b4917ace66fcfef6c154e8d2a6699}"
-echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/android_arm64/*"
-# One file, from a different commit than the source: fetch it straight from the
-# LFS media endpoint. `git restore --source=<ref>` does the same job, but then
-# the ref lives in two places — the restore and this build's assumptions — and a
-# stale one is invisible. A URL carries the ref where you can read it.
-curl -fsSL -o "prebuilt/android_arm64/libGemmaModelConstraintProvider.so" \
-  "https://media.githubusercontent.com/media/google-ai-edge/LiteRT-LM/$PREBUILT_REF/prebuilt/android_arm64/libGemmaModelConstraintProvider.so"
-# Fail here, not an hour later at the end of the build: a wrong PREBUILT_REF
-# looks exactly like a correct one until something reads the binary.
-CONSTRAINT_H=runtime/components/constrained_decoding/constraint.h
-[ -f "$CONSTRAINT_H" ] || {
-  echo "ERROR: $CONSTRAINT_H is missing, so the provider ABI cannot be checked. A guard that cannot read its input must not pass." >&2
+grep -q 'enable_fst_constraints=false' .bazelrc || {
+  echo "ERROR: .bazelrc does not turn FST constraints off (patch_c_api.sh section 29); the build would link Google's prebuilt constraint provider." >&2
   exit 1
 }
-# Two-sided on purpose. A provider OLDER than the runtime segfaults in
-# CompositeLogitMask::Apply; a provider NEWER than the runtime does the same
-# thing from the other side, and that is reachable whenever this script is
-# pointed at a ref from before upstream's 2026-08-21 Constraint change while
-# PREBUILT_REF still names a post-change commit.
-if grep -q 'ComputeMask' "$CONSTRAINT_H"; then want=1; else want=0; fi
-PROVIDER="prebuilt/android_arm64/libGemmaModelConstraintProvider.so"
-[ -s "$PROVIDER" ] || { echo "ERROR: $PROVIDER is missing or empty — a guard that cannot read its input must not pass." >&2; exit 1; }
-# grep reads the binary directly: `strings … | grep -q` exits at the first
-# match, SIGPIPEs strings, and under `set -o pipefail` the pipeline status is
-# 141 — so the guard reported "no LogitMask" for every provider that has it.
-if grep -q 'LogitMask' "$PROVIDER"; then have=1; else have=0; fi
-[ "$want" = "$have" ] || {
-  echo "ERROR: provider/runtime Constraint ABI mismatch (source wants ComputeMask=$want, provider has LogitMask=$have) — every tool call would segfault. Point PREBUILT_REF at a commit whose prebuilts match this source." >&2
-  exit 1
-}
-echo "provider ABI: source and provider agree (ComputeMask=$want)"
 
 # 5. Build for Android arm64
 echo ""
@@ -265,34 +236,23 @@ LITERT_DIR="${LITERT_DIR:-}" "$SCRIPT_DIR/run_mediatek_dispatch_compat_test.sh"
   "$SCRIPT_DIR/mediatek_dispatch_compat.c" -llog
 echo "  libLiteRtDispatch_MediaTek.so → $PREBUILT_DIR/"
 
-# 8. Copy companion libs from upstream prebuilt (we don't rebuild these).
+# 8. No companion libs from upstream's prebuilt/.
 #
 #    Android GPU is the OpenCL accelerator linked into libLiteRtLm.so. No Dawn ships on
 #    Android: from native-v0.14.0 through v0.17.x upstream's WebGPU accelerator
 #    and sampler sat in every APK (~18 MB), NEEDED libwebgpu_dawn.so and could
-#    not be dlopen'ed. Google's own Android SDKs ship no Dawn either. Only the
-#    Gemma constraint provider is still Google's prebuilt.
+#    not be dlopen'ed. Google's own Android SDKs ship no Dawn either. Up to
+#    native-v0.19.1 Google's prebuilt Gemma constraint provider was copied here;
+#    from native-v0.20.0-a the tool-call constraints come from LLGuidance
+#    (patch_c_api.sh section 29) and no provider ships.
 echo ""
-echo "=== Copying companion libs from upstream prebuilt ==="
-# From native-v0.19.0-a only the constraint provider: libLiteRtLm.so links the
-# GPU accelerator and the OpenCL sampler in: OpenCL only (patch_c_api.sh
-# section 19 keeps upstream's OpenCL + OpenGL accelerator out); upstream's
-# prebuilt/ holds no accelerator at all any more from v0.20.0.
-for lib in libGemmaModelConstraintProvider.so; do
-  if [ -f "prebuilt/android_arm64/$lib" ]; then
-    cp "prebuilt/android_arm64/$lib" "$PREBUILT_DIR/$lib"
-    echo "  $lib"
-  elif [ -f "bazel-bin/runtime/components/$lib" ]; then
-    cp "bazel-bin/runtime/components/$lib" "$PREBUILT_DIR/$lib"
-    chmod +w "$PREBUILT_DIR/$lib"
-    echo "  $lib (built from source)"
-  else
-    echo "ERROR: prebuilt/android_arm64/$lib not found in upstream" >&2
-    exit 1
-  fi
-done
+echo "=== Removing stale companion libs ==="
 # PREBUILT_DIR outlives builds: drop copies an older build left there, or they
 # get packed into the tarball again.
+if [ -f "$PREBUILT_DIR/libGemmaModelConstraintProvider.so" ]; then
+  rm -f "$PREBUILT_DIR/libGemmaModelConstraintProvider.so"
+  echo "  removed stale libGemmaModelConstraintProvider.so (LLGuidance constraints, section 29)"
+fi
 for lib in libLiteRtGpuAccelerator.so \
            libLiteRtClGlAccelerator.so \
            libLiteRtOpenClAccelerator.so \
@@ -356,6 +316,14 @@ ls -lh "$PREBUILT_DIR/" | head -20
 echo ""
 echo "Symbols (libLiteRtLm.so):"
 nm -D "$PREBUILT_DIR/libLiteRtLm.so" 2>/dev/null | grep -i "litert_lm_engine_create\|SetPendingSamplerParams" | head -5
+# No constraint provider, NEEDED or named: the tool-call constraints are
+# LLGuidance's (patch_c_api.sh section 29). No `grep -q` (pipefail).
+named="$(strings "$PREBUILT_DIR/libLiteRtLm.so" | grep 'GemmaModelConstraintProvider' || true)"
+if [ -n "$named" ]; then
+  echo "ERROR: libLiteRtLm.so still needs or names the Gemma constraint provider: $named" >&2
+  exit 1
+fi
+echo "constraints: no Gemma constraint provider needed or named (LLGuidance)"
 
 echo ""
 echo "=== Done ==="

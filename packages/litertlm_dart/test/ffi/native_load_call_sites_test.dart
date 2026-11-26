@@ -89,40 +89,20 @@ void main() {
     }
   });
 
-  test(
-    'macOS refuses before anything loads: an app built with the '
-    'plain-Dart define, and a plain Dart program without its code assets',
-    () {
-      final app = _slice(
-        client,
-        r'\} else if \(Platform\.isMacOS\) \{',
-        r'\} else if \(Platform\.isLinux\) \{',
-      );
-      final misuse = _at(
-        app,
-        r'final misuse = macOSFlutterCodeAssetsMisuse\(\);\s*'
-        r'if \(misuse != null\) throw ArgumentError\(misuse\);',
-      );
-      expect(misuse, isNonNegative, reason: app);
-      expect(misuse, lessThan(_at(app, r'preload\(')), reason: app);
-
-      final plainDart = _slice(
-        client,
-        r'\} else if \(Platform\.isMacOS && liteRtLmOutsideFlutter\) \{',
-        r'\} else if \(Platform\.isMacOS\) \{',
-      );
-      final refusal = _at(
-        plainDart,
-        r'throw ArgumentError\(macOSCodeAssetsRefusal\(assets\)\)',
-      );
-      expect(refusal, isNonNegative, reason: plainDart);
-      expect(
-        refusal,
-        lessThan(_at(plainDart, r'preload\(')),
-        reason: plainDart,
-      );
-    },
-  );
+  test('macOS refuses before anything loads: a plain Dart program without '
+      'code assets it can load', () {
+    final plainDart = _slice(
+      client,
+      r'\} else if \(Platform\.isMacOS && liteRtLmOutsideFlutter\) \{',
+      r'\} else if \(Platform\.isMacOS\) \{',
+    );
+    final refusal = _at(
+      plainDart,
+      r'throw ArgumentError\(macOSCodeAssetsRefusal\(assets\)\)',
+    );
+    expect(refusal, isNonNegative, reason: plainDart);
+    expect(refusal, lessThan(_at(plainDart, r'preload\(')), reason: plainDart);
+  });
 
   test('Linux loads the GPU accelerator with RTLD_GLOBAL in a plain Dart '
       'program too: one list, no library skipped', () {

@@ -66,48 +66,20 @@ fi
 # at top of file (we are now in $LITERT_LM_DIR after cd above).
 bash "$SCRIPT_DIR/patch_c_api.sh" "$LITERT_LM_DIR"
 
-# 4. Pull LFS files (prebuilt companion libs)
+# 4. No prebuilt companion. Up to native-v0.19.1 this pulled Google's prebuilt
+# libGemmaModelConstraintProvider (FST tool-call constraints) from upstream's
+# LFS prebuilt/ and checked its Constraint ABI against the source. From
+# native-v0.20.0-a the tool-call constraints are built with LLGuidance from
+# source (patch_c_api.sh section 29), so libLiteRtLm links no provider and none
+# ships; the check after the build refuses a libLiteRtLm that still names one.
+# The LFS pull stays for upstream's other prebuilt (Dawn), which a target of
+# the tree may name; the provider it also pulls is linked by nothing.
 echo "Pulling LFS files..."
-# The companion prebuilts come from a LATER upstream commit than the source.
-# Upstream changed Constraint on 2026-08-21 (a8a8c445, a41b7c5c): ComputeMask
-# took the vtable slot ComputeBitmap had, and the prebuilt provider at the
-# v0.17.0 and v0.17.1 tags still implements the old one — so a tool call
-# segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
-# main in 4453b286, and that provider carries the LogitMask types. Upstream's
-# own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-95df4c2a932b4917ace66fcfef6c154e8d2a6699}"
-echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/macos_arm64/*"
-# One file, from a different commit than the source: fetch it straight from the
-# LFS media endpoint. `git restore --source=<ref>` does the same job, but then
-# the ref lives in two places — the restore and this build's assumptions — and a
-# stale one is invisible. A URL carries the ref where you can read it.
-curl -fsSL -o "prebuilt/macos_arm64/libGemmaModelConstraintProvider.dylib" \
-  "https://media.githubusercontent.com/media/google-ai-edge/LiteRT-LM/$PREBUILT_REF/prebuilt/macos_arm64/libGemmaModelConstraintProvider.dylib"
-# Fail here, not an hour later at the end of the build: a wrong PREBUILT_REF
-# looks exactly like a correct one until something reads the binary.
-CONSTRAINT_H=runtime/components/constrained_decoding/constraint.h
-[ -f "$CONSTRAINT_H" ] || {
-  echo "ERROR: $CONSTRAINT_H is missing, so the provider ABI cannot be checked. A guard that cannot read its input must not pass." >&2
+grep -q 'enable_fst_constraints=false' .bazelrc || {
+  echo "ERROR: .bazelrc does not turn FST constraints off (patch_c_api.sh section 29); the build would link Google's prebuilt constraint provider." >&2
   exit 1
 }
-# Two-sided on purpose. A provider OLDER than the runtime segfaults in
-# CompositeLogitMask::Apply; a provider NEWER than the runtime does the same
-# thing from the other side, and that is reachable whenever this script is
-# pointed at a ref from before upstream's 2026-08-21 Constraint change while
-# PREBUILT_REF still names a post-change commit.
-if grep -q 'ComputeMask' "$CONSTRAINT_H"; then want=1; else want=0; fi
-PROVIDER="prebuilt/macos_arm64/libGemmaModelConstraintProvider.dylib"
-[ -s "$PROVIDER" ] || { echo "ERROR: $PROVIDER is missing or empty — a guard that cannot read its input must not pass." >&2; exit 1; }
-# grep reads the binary directly: `strings … | grep -q` exits at the first
-# match, SIGPIPEs strings, and under `set -o pipefail` the pipeline status is
-# 141 — so the guard reported "no LogitMask" for every provider that has it.
-if grep -q 'LogitMask' "$PROVIDER"; then have=1; else have=0; fi
-[ "$want" = "$have" ] || {
-  echo "ERROR: provider/runtime Constraint ABI mismatch (source wants ComputeMask=$want, provider has LogitMask=$have) — every tool call would segfault. Point PREBUILT_REF at a commit whose prebuilts match this source." >&2
-  exit 1
-}
-echo "provider ABI: source and provider agree (ComputeMask=$want)"
 
 # 5. Build
 echo "Building with Bazel..."
@@ -136,21 +108,16 @@ chmod +w "$PREBUILT_DIR/libLiteRtLm.dylib"
 install_name_tool -id @rpath/libLiteRtLm.dylib "$PREBUILT_DIR/libLiteRtLm.dylib"
 install_name_tool -add_rpath '@loader_path/../../..' "$PREBUILT_DIR/libLiteRtLm.dylib" 2>/dev/null || true
 
-# Copy the one companion left in upstream's prebuilt/: the Gemma constraint
-# provider. Missing is fatal: without it every tool call fails.
-# Up to native-v0.19.1 this also copied upstream's prebuilt Metal accelerator
-# and shipped it as LiteRtLmMetalAccelerator.framework. Upstream deleted its
-# prebuilt accelerators at v0.20.0 (c57b9ae0), and libLiteRtLm links the Metal
-# accelerator in (runtime/executor:default_static_gpu_accelerator, set by
+# No companion library ships. Up to native-v0.19.1 Google's prebuilt Gemma
+# constraint provider and Metal accelerator were copied here. From
+# native-v0.20.0-a the tool-call constraints come from LLGuidance (patch_c_api.sh
+# section 29) and libLiteRtLm links the Metal accelerator in
+# (runtime/executor:default_static_gpu_accelerator, set by
 # LiteRtStaticLinkedAcceleratorGpuDef when the library loads), which LiteRT's
-# gpu_registry registers before it dlopens anything. So no Metal framework ships
-# from native-v0.20.0-a (0.20 migration decision D1); a stale copy is removed.
-for lib in libGemmaModelConstraintProvider.dylib; do
-  [ -f "prebuilt/macos_arm64/$lib" ] || { echo "ERROR: upstream prebuilt missing: prebuilt/macos_arm64/$lib" >&2; exit 1; }
-  cp "prebuilt/macos_arm64/$lib" "$PREBUILT_DIR/$lib"
-  echo "Copied $lib"
-done
-rm -f "$PREBUILT_DIR/libLiteRtMetalAccelerator.dylib" "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib"
+# gpu_registry registers before it dlopens anything (0.20 migration decision
+# D1). Stale copies are removed.
+rm -f "$PREBUILT_DIR/libLiteRtMetalAccelerator.dylib" "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib" \
+  "$PREBUILT_DIR/libGemmaModelConstraintProvider.dylib"
 
 # 7. Build stream proxy
 echo "Building stream proxy..."
@@ -225,8 +192,21 @@ check_dlopened_frameworks() {
   fi
   [ "$missing" -eq 0 ] || exit 1
 }
+# No constraint provider, linked or named: the tool-call constraints are
+# LLGuidance's (patch_c_api.sh section 29). No `grep -q` (pipefail, see above).
+check_no_constraint_provider() {
+  local dir="$1" named
+  named="$( { otool -L "$dir/libLiteRtLm.dylib"; strings "$dir/libLiteRtLm.dylib"; } \
+    | grep -E 'GemmaModelConstraintProvider' || true)"
+  if [ -n "$named" ]; then
+    echo "ERROR: libLiteRtLm still links or names the Gemma constraint provider: $named" >&2
+    exit 1
+  fi
+  echo "  constraints: no Gemma constraint provider linked or named (LLGuidance)"
+}
 check_static_gpu_accelerator "$PREBUILT_DIR"
 check_dlopened_frameworks "$PREBUILT_DIR"
+check_no_constraint_provider "$PREBUILT_DIR"
 echo "Symbols:"
 nm -gU "$PREBUILT_DIR/libLiteRtLm.dylib" | grep "litert_lm_engine_create" | head -2
 echo ""

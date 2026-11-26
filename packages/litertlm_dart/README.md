@@ -629,12 +629,9 @@ Linux (x64 and arm64) and Windows, and on the web. What an app does itself:
   Google Tensor, and MediaTek's NeuroPilot libraries for MediaTek. For
   `Backend.npu`, pass a `dispatchDir` holding one vendor's dispatch
   libraries, copied out of the APK by the app.
-- **macOS:** in an app, two companion frameworks,
-  `GemmaModelConstraintProvider` and `LiteRtLmMetalAccelerator` (on the
-  `native-v*` release as xcframework zips), must be embedded in the app's
-  `Frameworks`; the hook does not embed them. Without them the engine does
-  not load. A plain Dart program uses the `macos_companions: code_assets`
-  define instead (see [In a plain Dart program](#in-a-plain-dart-program)).
+- **macOS and iOS:** nothing. The hook bundles `LiteRtLm` and
+  `StreamProxy`, and that is all there is: the tool-call constraints are
+  built into `libLiteRtLm` (LLGuidance) and so is the Metal accelerator.
 - **One `libLiteRtLm` per app:** another package that bundles its own
   `libLiteRtLm` through a build hook leaves which build runs undefined.
 
@@ -664,36 +661,17 @@ Linux the program itself is `lib/libdartaot*.so`, run by the executable in
   program's pubspec.yaml (Build options below). The raw LiteRT bindings
   (`litert_bindings.dart`) open the same libraries and reach the GPU
   accelerator the same way as in an app.
-- **macOS:** the define below bundles the companion library as a code asset
-  instead of a Flutter app's framework. It goes in the pubspec.yaml of the
-  package you run, the root of its pub resolution, and never in a
-  resolution that also holds a Flutter app (a pub workspace with an app in
-  it): give the command-line program its own pubspec. A Flutter app built
-  with it refuses to load LiteRT-LM, naming the define. The Metal
-  accelerator framework is not bundled and not needed: libLiteRtLm carries
-  its own.
-
-  ```yaml
-  hooks:
-    user_defines:
-      litertlm_dart:
-        macos_companions: code_assets
-  ```
-
-- **macOS, `dart run` and `dart test`:** the Dart SDK writes each library's
-  path into the library, and Google's prebuilt constraint provider has room
-  for a short one only. Dart 3.14 and later put the libraries in a fresh
-  temporary directory, which (`$TMPDIR`, symbolic links resolved) must be 65
-  characters or shorter: macOS's default fits, otherwise run with
-  `TMPDIR=/tmp`. Dart 3.12 and 3.13 put them in the package's
-  `.dart_tool/lib/`, so the package's path must be 80 characters or
-  shorter. The build hook refuses a longer one, naming the fix. `dart build
-  cli` is not affected.
+- **No define on any platform:** a plain Dart program on macOS needs no
+  `hooks: user_defines` entry. `macos_companions`, which litertlm_dart
+  0.19.1+4 needed there, is obsolete: the build hook ignores it and prints a
+  warning naming it.
 - **Copies:** each `dart run` and `dart test` copies the libraries into the
-  temporary directory (Dart 3.14 and later): about 50 MB on macOS, 96 MB on
+  temporary directory (Dart 3.14 and later): about 40 MB on macOS; 96 MB on
   Linux and 243 MB on Windows, whose libraries include the Intel NPU stack
-  (OpenVINO and TBB, 120 MB) and the DirectX shader compiler. A `dart build
-  cli` bundle carries the same.
+  (OpenVINO and TBB, 120 MB) and the DirectX shader compiler, measured with
+  native-v0.19.1-c, which also carried the constraint provider (22 MB on
+  Linux, 13 MB under each of two names on Windows) that no longer ships. A
+  `dart build cli` bundle carries the same.
 - **Linux and Windows:** the GPU accelerator and Dawn (on Windows also the
   DirectX shader compiler) load with LiteRT-LM whatever the backend; they
   need no GPU to load, and nothing runs on them until a GPU engine does.
@@ -712,12 +690,10 @@ hooks:
       qualcomm_npu: true       # bundle Qualcomm's QNN runtime (Android, Linux arm64)
       google_tensor_npu: true  # Google Tensor G5/G6
       mediatek_npu: true       # MediaTek Dimensity
-      macos_companions: code_assets  # plain Dart on macOS only
 ```
 
-`macos_companions: code_assets` is for a plain Dart program on macOS and
-never goes in a Flutter app's resolution; see
-[In a plain Dart program](#in-a-plain-dart-program).
+`macos_companions`, read up to litertlm_dart 0.19.1+4, is obsolete and
+ignored, with a warning.
 
 On the MediaTek NPU every turn runs in a fresh native conversation that
 replays the history: there a conversation answers its second message empty

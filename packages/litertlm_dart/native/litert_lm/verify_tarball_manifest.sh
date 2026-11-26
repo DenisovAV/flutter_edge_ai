@@ -90,6 +90,18 @@ INTENTIONAL_DROPS=(
   # ships once, as webgpu_dawn.dll, which the accelerator imports (a
   # delay-load through runtime/components/BUILD's stub import library).
   "windows_x86_64:libwebgpu_dawn.dll"
+  # native-v0.20.0-a: Google's prebuilt Gemma constraint provider (FST) is
+  # gone. The tool-call constraints are built with LLGuidance from source
+  # (patch_c_api.sh section 29) and libLiteRtLm links no provider; FORBIDDEN
+  # below keeps a stale copy out of every archive.
+  "android_arm64:libGemmaModelConstraintProvider.so"
+  "ios_arm64:libGemmaModelConstraintProvider.dylib"
+  "ios_sim_arm64:libGemmaModelConstraintProvider.dylib"
+  "macos_arm64:libGemmaModelConstraintProvider.dylib"
+  "linux_x86_64:libGemmaModelConstraintProvider.so"
+  "linux_arm64:libGemmaModelConstraintProvider.so"
+  "windows_x86_64:libGemmaModelConstraintProvider.dll"
+  "windows_x86_64:GemmaModelConstraintProvider.dll"
 )
 
 _is_intentional() {
@@ -314,6 +326,17 @@ FORBIDDEN=(
   # Retired by upstream (cea62fa2): a stale Dawn under the old name proves
   # nothing about the webgpu_dawn.dll the accelerator imports.
   "windows_x86_64:libwebgpu_dawn.dll"
+  # native-v0.20.0-a: no Gemma constraint provider in any archive. The
+  # tool-call constraints are LLGuidance's, compiled into libLiteRtLm
+  # (patch_c_api.sh section 29); a copy left in prebuilt/ is dead weight that
+  # an older hook would still bundle. The SwiftPM zips are checked below.
+  "android_arm64:*GemmaModelConstraintProvider*"
+  "ios_arm64:*GemmaModelConstraintProvider*"
+  "ios_sim_arm64:*GemmaModelConstraintProvider*"
+  "macos_arm64:*GemmaModelConstraintProvider*"
+  "linux_x86_64:*GemmaModelConstraintProvider*"
+  "linux_arm64:*GemmaModelConstraintProvider*"
+  "windows_x86_64:*GemmaModelConstraintProvider*"
 )
 REQUIRED=(
   # Google Tensor G5/G6 AOT bundles use LiteRT's generic NPU executor plus
@@ -340,15 +363,13 @@ REQUIRED=(
   # GPU accelerator (c57b9ae0): the Linux and Windows workflows build both
   # from LiteRT at the tag's pin. Dynamic link mode makes them hard runtime
   # dependencies of libLiteRtLm. Linux: checked below to be this build's,
-  # not Google's. Dawn and the constraint provider stay Google's prebuilts.
+  # not Google's. Dawn stays Google's prebuilt.
   "linux_x86_64:libLiteRt.so"
   "linux_x86_64:libLiteRtWebGpuAccelerator.so"
   "linux_x86_64:libwebgpu_dawn.so"
-  "linux_x86_64:libGemmaModelConstraintProvider.so"
   "linux_arm64:libLiteRt.so"
   "linux_arm64:libLiteRtWebGpuAccelerator.so"
   "linux_arm64:libwebgpu_dawn.so"
-  "linux_arm64:libGemmaModelConstraintProvider.so"
   # Windows ships each LiteRT companion under both names: lib* for the PE
   # imports (LiteRtLm.dll imports libLiteRt.dll), prefixless for Native
   # Assets (LiteRt.dll is what LiteRtBindings and the preload open). Dawn
@@ -388,20 +409,16 @@ for new in "$DIST_DIR"/litertlm-*.tar.gz; do
     fi
   done
 done
-# Decision D1 reaches the macOS SwiftPM companion zips too
-# (package_macos_spm_companions.sh): Package.swift must not fetch a Metal
-# accelerator framework the archives no longer carry.
+# No macOS companion is left for a SwiftPM zip (native-v0.20.0-a): not the
+# Metal accelerator (decision D1), not the constraint provider (section 29).
+# Up to native-v0.19.1 the release carried both as xcframework zips beside a
+# checksums_spm_macos.txt; none of them may come back.
 for f in "$DIST_DIR"/*; do
   [[ -e "$f" ]] || continue
   case "$(basename "$f")" in
-    *LiteRtLmMetalAccelerator*)
-      echo "  [FAIL] release asset must not ship (decision D1): $(basename "$f")"
+    *LiteRtLmMetalAccelerator*|*GemmaModelConstraintProvider*|checksums_spm_macos.txt)
+      echo "  [FAIL] release asset must not ship (no macOS companion from native-v0.20.0-a): $(basename "$f")"
       content_fail=1 ;;
-    checksums_spm_macos.txt)
-      if grep -q 'LiteRtLmMetalAccelerator' "$f"; then
-        echo "  [FAIL] checksums_spm_macos.txt lists a LiteRtLmMetalAccelerator zip (decision D1)"
-        content_fail=1
-      fi ;;
   esac
 done
 if [[ $content_fail -eq 1 ]]; then

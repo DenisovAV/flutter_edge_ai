@@ -4,7 +4,9 @@ that ship.
 
 From LiteRT-LM v0.20.0 upstream's prebuilt/ carries no libLiteRt.so and no
 GPU accelerator, so both are built here from LiteRT's source beside
-libLiteRtLm.so; only the constraint provider and Dawn stay Google's. The Dart
+libLiteRtLm.so; only Dawn stays Google's (from native-v0.20.0-a no Gemma
+constraint provider ships: the tool-call constraints are LLGuidance's,
+patch_c_api.sh section 29). The Dart
 client opens the bundle with dlopen(RTLD_LAZY | RTLD_GLOBAL) in the order of
 `linuxGlobalLibraries` (lib/src/ffi/litert_lm_client.dart). Under lazy binding
 an unresolved FUNCTION symbol does not fail the load: it surfaces at the first
@@ -12,7 +14,7 @@ call as ld.so's "symbol lookup error", which exits the process with no Dart
 exception and no reason (review-linux B2). Nothing else in the build calls the
 GPU, so this checks the property directly:
 
-  1. every expected file is there, and is ELF;
+  1. every expected file is there, and is ELF; no forbidden file is;
   2. no DT_NEEDED holds a '/', and every DT_NEEDED is a file of the bundle or
      a system library from SYSTEM_LIBRARIES;
   3. a DT_SONAME, where present, equals the file name, and is present on the
@@ -41,14 +43,20 @@ import sys
 READELF = os.environ.get("READELF", "readelf")
 
 # What the bundle must hold. libLiteRt.so and the accelerator are ours from
-# v0.20.0 (built from LiteRT at the LiteRT-LM tag's pin); the provider and
-# Dawn are Google's prebuilts from the tag.
+# v0.20.0 (built from LiteRT at the LiteRT-LM tag's pin); Dawn is Google's
+# prebuilt from the tag.
 EXPECTED = [
     "libLiteRtLm.so",
     "libStreamProxy.so",
     "libLiteRt.so",
     "libLiteRtWebGpuAccelerator.so",
     "libwebgpu_dawn.so",
+]
+
+# What the bundle must not hold: Google's prebuilt Gemma constraint provider,
+# shipped up to native-v0.19.1. libLiteRtLm builds its tool-call constraints
+# with LLGuidance (patch_c_api.sh section 29) and links none.
+FORBIDDEN = [
     "libGemmaModelConstraintProvider.so",
 ]
 
@@ -56,7 +64,6 @@ EXPECTED = [
 # lib/src/ffi/litert_lm_client.dart). Keep the two equal.
 PRELOAD_ORDER = [
     "libLiteRt.so",
-    "libGemmaModelConstraintProvider.so",
     "libLiteRtWebGpuAccelerator.so",
     "libLiteRtLm.so",
 ]
@@ -67,7 +74,6 @@ PRELOAD_ORDER = [
 SONAME_REQUIRED = [
     "libLiteRt.so",
     "libLiteRtWebGpuAccelerator.so",
-    "libGemmaModelConstraintProvider.so",
 ]
 
 # What any glibc system provides, plus GCC's C++ runtime (Ubuntu 22.04+,
@@ -164,6 +170,9 @@ def main(argv):
     for want in EXPECTED:
         if want not in files:
             bad(f"{want} is not in the bundle")
+    for unwanted in FORBIDDEN:
+        if unwanted in files:
+            bad(f"{unwanted} must not ship (LLGuidance constraints, section 29)")
     for f in files:
         with open(os.path.join(root, f), "rb") as fh:
             if fh.read(4) != b"\x7fELF":

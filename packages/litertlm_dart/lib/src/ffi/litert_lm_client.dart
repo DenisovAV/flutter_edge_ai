@@ -250,7 +250,6 @@ const windowsPreloadLibraries = [
 @visibleForTesting
 const linuxGlobalLibraries = [
   'libLiteRt.so',
-  'libGemmaModelConstraintProvider.so',
   'libLiteRtWebGpuAccelerator.so',
   'libLiteRtLm.so',
 ];
@@ -2153,11 +2152,11 @@ class LiteRtLmFfiClient {
       preload(proxyPath);
       proxyLib = DynamicLibrary.open(proxyPath);
     } else if (Platform.isMacOS && liteRtLmOutsideFlutter) {
-      // A plain Dart program: its code assets, when its build bundled the
-      // companion there (macos_load_error.dart); refused, naming why, before
-      // anything is loaded otherwise (a preload of the framework's name could
-      // load a stray copy). Absolute paths, so the preload and the open are
-      // one image; checked all the same.
+      // A plain Dart program: its code assets (macos_load_error.dart);
+      // refused, naming why, before anything is loaded when there are none
+      // or they are an older release's build (a preload of the framework's
+      // name could load a stray copy). Absolute paths, so the preload and the
+      // open are one image; checked all the same.
       final assets = macOSCodeAssetsHere;
       final dir = switch (assets) {
         MacOSPlainDartAssets(:final dir) => dir,
@@ -2175,10 +2174,6 @@ class LiteRtLmFfiClient {
       proxyLib = DynamicLibrary.open(assetProxyPath);
       requireSameLoadedLibrary(preloadedAssetProxy, proxyLib, assetProxyPath);
     } else if (Platform.isMacOS) {
-      // An app built with the plain-Dart define is refused before anything
-      // loads (macos_load_error.dart).
-      final misuse = macOSFlutterCodeAssetsMisuse();
-      if (misuse != null) throw ArgumentError(misuse);
       // Relative paths: dyld resolves the preload's through its caller's and
       // the main executable's rpaths, the open's through FlutterMacOS's, so
       // the two are checked to be one image.
@@ -2225,8 +2220,6 @@ class LiteRtLmFfiClient {
       // Preload sequence:
       // - libLiteRt.so first (provides LiteRt C API used by the WebGPU
       //   accelerator at registration)
-      // - libGemmaModelConstraintProvider.so (libLiteRtLm.so has a
-      //   SONAME-level dependency on it)
       // - libLiteRtWebGpuAccelerator.so so gpu_registry.cc:162 can find it
       //   via the loader's already-loaded modules table when it does
       //   basename-only dlopen

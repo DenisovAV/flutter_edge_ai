@@ -9,11 +9,9 @@ import 'package:litertlm_dart/src/hook/download.dart';
 import 'package:litertlm_dart/src/hook/legacy_user_defines.dart';
 import 'package:litertlm_dart/src/hook/macos_companions.dart';
 import 'package:litertlm_dart/src/hook/mediatek_runtime.dart';
-import 'package:litertlm_dart/src/hook/podfile_mirror.dart';
 import 'package:litertlm_dart/src/hook/qairt_linux.dart';
 import 'package:litertlm_dart/src/hook/qnn_runtime.dart';
 import 'package:litertlm_dart/src/hook/unsupported_target.dart';
-import 'package:litertlm_dart/src/runtime/macos_companions.dart';
 import 'package:litertlm_dart/src/runtime/native_release.dart';
 import 'package:litertlm_dart/src/runtime/npu_stacks.dart';
 import 'package:hooks/hooks.dart';
@@ -23,17 +21,6 @@ const _packageName = 'litertlm_dart';
 /// This build's defines: `hooks.user_defines.litertlm_dart` (a define left
 /// under the old key fails the build, legacy_user_defines.dart).
 late HookDefines _defines;
-
-/// The macOS companion a plain Dart program (`macos_companions:
-/// code_assets`) does not bundle: the Metal accelerator. libLiteRtLm links
-/// one statically on Apple since LiteRT-LM 0.19 (build_macos.sh), and every
-/// LiteRT environment it creates registers that one before it looks for a
-/// library (gpu_registry.cc), so the engine, its encoders and EmbeddingGemma
-/// 2 run on Metal without the framework. Companions of other OSes are not in
-/// the macOS archive and are skipped by their absence; a new macOS one that
-/// is neither this nor the constraint provider fails the build, so that it
-/// is not dropped without a decision.
-const _companionsLeftOutOfMacOSCodeAssets = {'LiteRtLmMetalAccelerator'};
 
 // ============================================================================
 // Native bundles
@@ -72,14 +59,10 @@ class _NativeBundle {
   /// via [_dylibFileName].
   final String mainLibName;
 
-  /// Companion libraries to register alongside [mainLibName]. May be empty
-  /// (qdrant has none). LiteRT has Metal/OpenCL/WebGPU accelerators etc.
+  /// Companion libraries to register alongside [mainLibName], each where
+  /// the archive carries it. May be empty (qdrant has none). LiteRT: the
+  /// Linux/Windows runtime, WebGPU accelerator and Dawn.
   final List<String> companions;
-
-  /// Companions to skip on a specific OS. LiteRT skips Apple companion
-  /// dylibs on macOS because of a Native Assets install_name_tool slack
-  /// issue (#247) — the Podfile post_install handles them instead.
-  final Set<OS> skipCompanionsOn;
 
   /// Additional libraries to register on Windows only (no `lib` prefix).
   /// LiteRT: lib-prefixed copies for PE imports + DXC runtime + Intel NPU
@@ -102,10 +85,9 @@ class _NativeBundle {
   /// [_cacheBaseDir] (`<cacheBase>/macos_arm64/...`). When `false`, they live
   /// under a per-bundle namespace (`<cacheBase>/<namespace>/macos_arm64/...`).
   ///
-  /// LiteRT uses flat=true for backwards compatibility — `example/macos/Podfile`
-  /// and `example/ios/Podfile` post_install scripts (plus the Xcode
-  /// `project.pbxproj` build phase) hardcode the flat path. Any new bundle
-  /// must use flat=false to avoid colliding with LiteRT files.
+  /// LiteRT uses flat=true: one directory per release tag
+  /// ([cacheRoot]). Any new bundle must use flat=false to avoid colliding
+  /// with LiteRT files.
   final bool useFlatLayout;
 
   const _NativeBundle({
@@ -116,7 +98,6 @@ class _NativeBundle {
     required this.checksums,
     required this.mainLibName,
     this.companions = const [],
-    this.skipCompanionsOn = const {},
     this.windowsExtraLibs = const [],
     this.androidExtraLibs = const [],
     this.linuxExtraLibs = const [],
@@ -185,9 +166,11 @@ final _litertlmBundle = _NativeBundle(
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
   // One directory per release tag (`<cacheBase>/native-v0.19.1-c/<platform>`),
-  // so two tags never share files. The macOS Podfile block apps paste reads
-  // the old flat `flutter_gemma/native/macos_arm64`; [_mirrorForPodfileStager]
-  // keeps that working.
+  // so two tags never share files. Up to litertlm_dart 0.19.1+4 the hook also
+  // mirrored the macOS companions and their stager into the old flat
+  // `flutter_gemma/native/macos_arm64` for the Podfile block apps pasted;
+  // from native-v0.20.0-a there is no macOS companion, and nothing is put
+  // there.
   useFlatLayout: true,
   // 0.19.1-c changes the Android archive and nothing else: it adds
   // libLiteRtDispatch_MediaTek.so, our adapter (mediatek_dispatch_compat.c)
@@ -338,35 +321,18 @@ final _litertlmBundle = _NativeBundle(
     'litertlm-android_arm64.tar.gz':
         'b96972aa2fcab97572cdcf7b76e6f4d36412886220b133c85d54a7bc99d61169',
   },
+  // Up to native-v0.19.1 also Google's prebuilt GemmaModelConstraintProvider
+  // (every platform) and, on Apple, the Metal accelerator as
+  // LiteRtLmMetalAccelerator. From native-v0.20.0-a the tool-call constraints
+  // are built with LLGuidance (patch_c_api.sh section 29) and libLiteRtLm links
+  // the Metal accelerator in (0.20 migration decision D1), so no archive
+  // carries either, and the macOS companions' framework staging (#247, #689)
+  // is gone with them: on macOS and iOS only LiteRtLm and StreamProxy ship.
   companions: [
-    'GemmaModelConstraintProvider',
-    // macOS + iOS GPU (Metal). Upstream's libLiteRtMetalAccelerator, renamed:
-    // flutter_litert ships a framework under the upstream name, and an app
-    // bundle holds only one (see patch_c_api.sh §10).
-    'LiteRtLmMetalAccelerator',
     'LiteRtWebGpuAccelerator', // Linux/Windows GPU (WebGPU → Vulkan/DX12)
     'LiteRt', // Linux/Windows core runtime
     'webgpu_dawn', // Linux/Windows Dawn WebGPU (split to a shared lib in v0.14.0)
   ],
-
-  // On macOS, skip the upstream Apple companion dylibs from Native Assets
-  // bundling (#247). The companion dylibs Google ships in
-  // `prebuilt/macos_arm64/` (`libGemmaModelConstraintProvider.dylib`,
-  // `libLiteRtMetalAccelerator.dylib`, shipped as `libLiteRtLmMetalAccelerator`;
-  // the Metal sampler is not shipped at all) were linked without
-  // `-Wl,-headerpad_max_install_names`, leaving 64 and 56 bytes of slack in
-  // the load-commands area (native-v0.18.0-g). That fits the app's
-  // `@rpath/<X>.framework/<X>`, but not the absolute path `flutter test` gives
-  // every code asset, and a failed rewrite aborts the whole bundling step. So
-  // Native Assets never touches them: the app gets them as frameworks from
-  // this package's macOS Swift package (`macos/flutter_edge_ai_litertlm/
-  // Package.swift`, #689), or, with Swift Package Manager off, from the
-  // macos/Podfile block (`tool/stage_macos_companions.sh`), and
-  // [_stagePointedAtCompanionFrameworks] points LiteRtLm at them. iOS / Linux /
-  // Windows / Android are unaffected: their Native Assets paths (Xcode build
-  // phases on iOS, no install_name_tool on Linux/Windows/Android) don't
-  // trigger the bug.
-  skipCompanionsOn: {OS.macOS},
   // Windows: LiteRtLm.dll references companion DLLs by their original
   // Google filenames with "lib" prefix (libLiteRt.dll etc.) via PE imports.
   // Native Assets uses no prefix on Windows (LiteRt.dll), so we ship both
@@ -375,7 +341,6 @@ final _litertlmBundle = _NativeBundle(
   // DirectXShaderCompiler runtime (WebGPU/DX12) and the Intel NPU
   // dispatch (LiteRtDispatch.dll + OpenVino + TBB).
   windowsExtraLibs: [
-    'libGemmaModelConstraintProvider',
     'libLiteRt',
     'libLiteRtWebGpuAccelerator',
     'libwebgpu_dawn', // lib-prefixed for the accelerator's PE import (v0.14.0)
@@ -670,7 +635,6 @@ Future<void> _processBundle({
   required BuildOutputBuilder output,
   required OS os,
   required String dirName,
-  required MacOSCompanions macOSCompanions,
 }) async {
   // Skip the bundle entirely if it has no checksum for this platform.
   // Both bundles use this as the "is this target supported" gate. The skip is
@@ -795,37 +759,7 @@ Future<void> _processBundle({
     return destUri;
   }
 
-  // macOS: the companions reach the app as frameworks (#689), from the
-  // plugin's Swift package or from the Podfile block, so LiteRtLm is pointed at
-  // them here, before Flutter copies it into the app and Xcode signs it.
-  //
-  // Unless the program is plain Dart (`macos_companions: code_assets`): then
-  // the constraint provider is a code asset below and LiteRtLm keeps its
-  // `@rpath/libGemmaModelConstraintProvider.dylib`, which the Dart SDK
-  // rewrites to wherever it puts the provider.
-  final companionsAsCodeAssets =
-      os == OS.macOS && macOSCompanions == MacOSCompanions.codeAssets;
-  final skipCompanions =
-      !companionsAsCodeAssets && bundle.skipCompanionsOn.contains(os);
-  final Uri mainStaged;
-  if (companionsAsCodeAssets) {
-    mainStaged = stage(mainFileUri);
-    // The framework-pointed copy's marker: a later build for a Flutter app
-    // must patch the copy again, not trust a marker this copy outlived.
-    final marker = File.fromUri(
-      input.outputDirectory.resolve('$mainFileName.source-sha256'),
-    );
-    if (marker.existsSync()) marker.deleteSync();
-  } else if (os == OS.macOS && skipCompanions) {
-    consumed.add(mainFileUri);
-    mainStaged = _stagePointedAtCompanionFrameworks(
-      mainFileUri,
-      input.outputDirectory,
-      bundle.companions,
-    );
-  } else {
-    mainStaged = stage(mainFileUri);
-  }
+  final mainStaged = stage(mainFileUri);
   output.assets.code.add(
     CodeAsset(
       package: _packageName,
@@ -851,37 +785,9 @@ Future<void> _processBundle({
     );
   }
 
-  // Companion libraries (accelerators, samplers, etc.).
+  // Companion libraries (Linux/Windows runtime, accelerator, Dawn).
   for (final name in bundle.companions) {
-    if (skipCompanions) continue;
-    final fileName = _dylibFileName(os, name);
-    final fileUri = prebuiltDir.resolve(fileName);
-    if (companionsAsCodeAssets) {
-      // A plain Dart program on macOS: the provider only, under a short file
-      // name. The Metal accelerator is not bundled: libLiteRtLm's statically
-      // linked one serves the GPU ([_companionsLeftOutOfMacOSCodeAssets]).
-      if (name != 'GemmaModelConstraintProvider') {
-        if (File.fromUri(fileUri).existsSync() &&
-            !_companionsLeftOutOfMacOSCodeAssets.contains(name)) {
-          throw StateError(
-            'litertlm_dart: the macOS native bundle carries $fileName, which '
-            'macos_companions: code_assets neither bundles nor leaves out on '
-            'purpose; this hook needs updating for it.',
-          );
-        }
-        continue;
-      }
-      consumed.add(fileUri);
-      output.assets.code.add(
-        CodeAsset(
-          package: _packageName,
-          name: 'src/native/$name',
-          linkMode: DynamicLoadingBundled(),
-          file: _stageConstraintProviderForDart(fileUri, input),
-        ),
-      );
-      continue;
-    }
+    final fileUri = prebuiltDir.resolve(_dylibFileName(os, name));
     if (File.fromUri(fileUri).existsSync()) {
       output.assets.code.add(
         CodeAsset(
@@ -988,36 +894,6 @@ Future<void> _processBundle({
       case NpuStack.intel:
         break;
     }
-  }
-
-  // A bundle that skips its companions on this OS (see [skipCompanionsOn])
-  // leaves them for the app's own build phase to stage. Ship that phase its
-  // script through the one path it can already find.
-  if (skipCompanions && bundle.companions.isNotEmpty) {
-    // The Podfile block apps pasted (every codelab has it) reads the stager
-    // and the companions from the flat cache directory of the package this
-    // hook used to live in, so they are put there too.
-    final legacyDir = Directory('${_cacheBasePath('flutter_gemma')}/$dirName');
-    final mirrored = mirrorForPodfileStager(
-      companionFiles: [
-        for (final name in bundle.companions) _dylibFileName(os, name),
-      ],
-      legacyMainFile: _dylibFileName(os, bundle.mainLibName),
-      prebuiltDir: prebuiltDir,
-      legacyDir: legacyDir,
-    );
-    final staged = _shipCompanionStager(input.packageRoot, legacyDir);
-    if (staged != null) {
-      output.dependencies.add(staged.source);
-      // The destination too: the cache is shared across checkouts, so an app
-      // on an older plugin version can overwrite this file. Its content hash
-      // is what makes this hook re-run and put its own version back, instead
-      // of the Xcode phase silently executing the other checkout's script.
-      output.dependencies.add(staged.destination);
-    }
-    // Likewise the companions: an older flutter_edge_ai_litertlm on this
-    // machine replaces them with its own version's.
-    output.dependencies.addAll(mirrored);
   }
 
   output.dependencies.add(prebuiltDir);
@@ -1469,11 +1345,11 @@ void main(List<String> args) async {
 
     final codeConfig = input.config.code;
     final os = codeConfig.targetOS;
-    // Read on every native target, so a value that means nothing fails
-    // everywhere.
-    final macOSCompanions = readMacOSCompanionsDefine(
+    // Obsolete since 0.20.0: said, never refused.
+    final obsolete = obsoleteMacOSCompanionsWarning(
       input.userDefines[macOSCompanionsDefine],
     );
+    if (obsolete != null) stderr.writeln(obsolete);
 
     // Supported platforms: desktop + iOS + Android.
     // Web uses MediaPipe JS + wa-sqlite (dart:ffi blocked in WASM).
@@ -1497,7 +1373,6 @@ void main(List<String> args) async {
         output: output,
         os: os,
         dirName: dirName,
-        macOSCompanions: macOSCompanions,
       );
     }
   });
@@ -1524,38 +1399,6 @@ bool _sameBytes(File a, File b) {
   return true;
 }
 
-/// Name of the companion-staging script, in `tool/` here and copied into the
-/// native cache dir next to the dylibs it stages.
-const _stagerFileName = 'stage_macos_companions.sh';
-
-/// Source and destination of the shipped staging script.
-typedef _StagedScript = ({Uri source, Uri destination});
-
-/// Copy `tool/[_stagerFileName]` next to the dylibs it stages.
-///
-/// The app's Xcode build phase reads the companion dylibs from the flat native
-/// cache dir, so the script travels with them. The phase predates this
-/// package's macOS plugin (#689), and blocks pasted into Podfiles before it
-/// look only there.
-///
-/// Returns null when the script is absent (a consumer on an older plugin
-/// version), leaving the phase to report the missing file itself.
-_StagedScript? _shipCompanionStager(Uri packageRoot, Directory cacheDir) {
-  final src = File.fromUri(packageRoot.resolve('tool/$_stagerFileName'));
-  if (!src.existsSync()) return null;
-  final dst = File('${cacheDir.path}/$_stagerFileName');
-  // Content-compare, not the bundle `.version` marker: the script's version is
-  // the PACKAGE's, so a plugin-only patch release must be able to replace it
-  // without a native re-tag.
-  if (!dst.existsSync() || !_sameBytes(src, dst)) {
-    dst.parent.createSync(recursive: true);
-    src.copySync(dst.path);
-  }
-  // `copySync` does not carry the executable bit — callers invoke it as
-  // `sh <path>` rather than executing it directly.
-  return (source: src.uri, destination: dst.uri);
-}
-
 /// The nearest ancestor of [dir] that exists — or [dir] itself when it does.
 ///
 /// `output.dependencies` has TWO readers with different tolerances.
@@ -1576,124 +1419,4 @@ Directory _watchableAncestor(Directory dir) {
     d = parent;
   }
   return d;
-}
-
-/// Copies the macOS [src] LiteRtLm into [outDir] with its references to the
-/// [companions] pointed at their frameworks: `@rpath/lib<X>.dylib` becomes
-/// `@rpath/<X>.framework/Versions/A/<X>`, the install name the plugin's
-/// Swift package and `tool/stage_macos_companions.sh` both give them. The copy
-/// is then signed ad hoc; the app's build signs it again with its own identity.
-///
-/// libLiteRtLm is built with `-headerpad_max_install_names`, so the longer
-/// names fit. A `<name>.source-sha256` file beside the copy records which
-/// source, patched by which version of this step, it was made from, so an
-/// unchanged source is not patched again: a fresh copy on every run would
-/// change the file Flutter embeds each time.
-Uri _stagePointedAtCompanionFrameworks(
-  Uri src,
-  Uri outDir,
-  List<String> companions,
-) {
-  final source = File.fromUri(src);
-  final dest = File.fromUri(outDir.resolve(src.pathSegments.last));
-  final marker = File('${dest.path}.source-sha256');
-  final sourceSum =
-      '${sha256.convert(source.readAsBytesSync())} framework-refs-1';
-  if (dest.existsSync() &&
-      marker.existsSync() &&
-      marker.readAsStringSync() == sourceSum) {
-    return dest.uri;
-  }
-  dest.parent.createSync(recursive: true);
-  source.copySync(dest.path);
-
-  final listing = _run('otool', ['-L', dest.path]);
-  final args = <String>[];
-  for (final line in listing.split('\n').skip(1)) {
-    final ref = line.trim().split(' ').first;
-    for (final name in companions) {
-      if (ref.endsWith('/lib$name.dylib')) {
-        args.addAll([
-          '-change',
-          ref,
-          '@rpath/$name.framework/Versions/A/$name',
-        ]);
-      }
-    }
-  }
-  if (args.isNotEmpty) {
-    _run('install_name_tool', [...args, dest.path]);
-    _run('codesign', ['--force', '--sign', '-', dest.path]);
-  }
-  marker.writeAsStringSync(sourceSum);
-  return dest.uri;
-}
-
-/// Stages [src], Google's `libGemmaModelConstraintProvider.dylib`, as
-/// [macOSConstraintProviderAssetFile] for a plain Dart program; its install
-/// name stays `@rpath/libGemmaModelConstraintProvider.dylib`, which is what
-/// the Dart SDK finds LiteRtLm's reference to it by.
-///
-/// `dart run` and `dart test` (no linking: the JIT) write the file's absolute
-/// path (in a temporary directory since Dart 3.14, in the root package's
-/// `.dart_tool/lib/` before) into its header, where Google's build left
-/// little room: a directory too long for it fails the build here, naming a
-/// fix, instead of in the SDK's install_name_tool step.
-Uri _stageConstraintProviderForDart(Uri src, BuildInput input) {
-  final source = File.fromUri(src);
-  if (!source.existsSync()) {
-    throw StateError(
-      'litertlm_dart: ${src.toFilePath()} is missing from the native bundle; '
-      'it is needed for macos_companions: code_assets.',
-    );
-  }
-  if (!input.config.linkingEnabled) {
-    final currentId = _run('otool', [
-      '-D',
-      src.toFilePath(),
-    ]).trim().split('\n').last.trim();
-    // The SDK running this hook is the one that invoked it.
-    final projectRoot = dartToolOwnerOf(input.outputDirectoryShared);
-    final DartJitAssetDir? dir = dartJitUsesTempDir(Platform.version)
-        ? DartJitTempDir(Directory.systemTemp.resolveSymbolicLinksSync())
-        : projectRoot == null
-        ? null
-        : DartJitProjectDir(projectRoot);
-    if (dir == null) {
-      stderr.writeln(
-        '[litertlm_dart] macos_companions: code_assets: the header-room check '
-        'for dart run / dart test is skipped: Dart ${Platform.version} copies '
-        "the assets into the root package's .dart_tool/lib/, and this hook "
-        'could not tell which package that is.',
-      );
-    } else {
-      stderr.writeln(
-        '[litertlm_dart] macos_companions: code_assets: checking the header '
-        'room against ${dir.path} (Dart ${Platform.version.split(' ').first}).',
-      );
-      final refusal = dartJitInstallNameRefusal(
-        dir: dir,
-        slack: machOHeaderSlack(source.readAsBytesSync()),
-        currentId: currentId,
-      );
-      if (refusal != null) throw StateError(refusal);
-    }
-  }
-  final dest = File.fromUri(
-    input.outputDirectory.resolve(macOSConstraintProviderAssetFile),
-  );
-  if (!dest.existsSync() || !_sameBytes(source, dest)) {
-    dest.parent.createSync(recursive: true);
-    source.copySync(dest.path);
-  }
-  return dest.uri;
-}
-
-/// Runs [executable] and returns its stdout; a non-zero exit fails the build.
-String _run(String executable, List<String> args) {
-  final r = Process.runSync(executable, args);
-  if (r.exitCode != 0) {
-    throw StateError('$executable ${args.join(' ')} failed: ${r.stderr}');
-  }
-  return r.stdout as String;
 }

@@ -11,9 +11,6 @@ on:
       litertlm_version:
         description: 'LiteRT-LM ref (tag, branch, or commit SHA)'
         required: true
-      prebuilt_ref:
-        description: 'Upstream ref to take the prebuilt constraint provider from (default: the exact v0.20.0 source SHA; Dawn always comes from the source ref)'
-        required: false
       publish_release:
         description: 'Publish to GitHub Release'
         type: boolean
@@ -51,7 +48,6 @@ jobs:
     timeout-minutes: 150
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '95df4c2a932b4917ace66fcfef6c154e8d2a6699' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,28 +64,11 @@ jobs:
           # `git clone --branch SHA` only works for refs, not arbitrary commits.
           git clone https://github.com/google-ai-edge/LiteRT-LM /tmp/LiteRT-LM
           cd /tmp/LiteRT-LM && git checkout "$LITERTLM_VERSION"
-          # Companions from a LATER upstream commit than the source: upstream's
-          # 2026-08-21 Constraint change (a8a8c445, a41b7c5c) put ComputeMask in
-          # the vtable slot ComputeBitmap had, and the prebuilt provider at the
-          # v0.17.0/v0.17.1 tags still implements the old one — a tool call
-          # segfaults in CompositeLogitMask::Apply. 4453b286 is upstream's own
-          # refresh of those binaries. Their wheel compiles the provider in, so
-          # their release lane never sees it.
+          # Only Dawn comes from upstream's prebuilt/. Up to native-v0.19.1
+          # Google's prebuilt libGemmaModelConstraintProvider.so did too; from
+          # native-v0.20.0-a the tool-call constraints are built with
+          # LLGuidance (patch_c_api.sh section 29) and no provider ships.
           git lfs pull --include="prebuilt/linux_x86_64/*"
-          # One file, from a different commit than the source: fetch it straight
-          # from the LFS media endpoint, where the ref is visible in the URL.
-          curl -fsSL -o prebuilt/linux_x86_64/libGemmaModelConstraintProvider.so \
-            "https://media.githubusercontent.com/media/google-ai-edge/LiteRT-LM/$PREBUILT_REF/prebuilt/linux_x86_64/libGemmaModelConstraintProvider.so"
-          # Fail here, not an hour later in Collect artifacts.
-          H=runtime/components/constrained_decoding/constraint.h
-          [ -f "$H" ] || { echo "::error::$H is missing, so the provider ABI cannot be checked"; exit 1; }
-          # Two-sided: a provider older than the runtime segfaults, and so does
-          # a newer one against an older runtime — reachable whenever this runs
-          # on a ref from before upstream's 2026-08-21 Constraint change.
-          if grep -q 'ComputeMask' "$H"; then want=1; else want=0; fi
-          if grep -qa 'LogitMask' "prebuilt/linux_x86_64/libGemmaModelConstraintProvider.so"; then have=1; else have=0; fi
-          [ "$want" = "$have" ] || { echo "::error::provider/runtime Constraint ABI mismatch (source ComputeMask=$want, provider LogitMask=$have)"; exit 1; }
-          echo "provider ABI: source and provider agree (ComputeMask=$want)"
 
       - name: Patch C API
         env:
@@ -174,10 +153,11 @@ jobs:
           }
           pick_built libLiteRt.so c
           pick_built libLiteRtWebGpuAccelerator.so runtime/accelerators/gpu
-          # Only the constraint provider (fetched from $PREBUILT_REF in the
-          # clone step) and Dawn come from upstream's prebuilt/ now. A LiteRT
-          # runtime or accelerator back in there means upstream ships one
-          # again: decide which copy ships rather than letting a glob pick.
+          # Only Dawn comes from upstream's prebuilt/ now (the constraint
+          # provider it also holds is linked by nothing: patch_c_api.sh
+          # section 29). A LiteRT runtime or accelerator back in there means
+          # upstream ships one again: decide which copy ships rather than
+          # letting a glob pick.
           shopt -s nullglob
           pre=/tmp/LiteRT-LM/prebuilt/linux_x86_64
           stale=("$pre"/libLiteRt*.so)
@@ -185,10 +165,10 @@ jobs:
             echo "::error::$pre carries ${stale[*]##*/} again; this workflow ships the LiteRT runtime and accelerator it builds"
             exit 1
           fi
-          cp "$pre/libwebgpu_dawn.so" "$pre/libGemmaModelConstraintProvider.so" artifacts/
+          cp "$pre/libwebgpu_dawn.so" artifacts/
           # A git-lfs pointer stub would pass a bare existence test, so assert
           # ELF, not presence.
-          for want in libLiteRtLm.so libLiteRt.so libLiteRtWebGpuAccelerator.so libwebgpu_dawn.so libGemmaModelConstraintProvider.so; do
+          for want in libLiteRtLm.so libLiteRt.so libLiteRtWebGpuAccelerator.so libwebgpu_dawn.so; do
             if [ ! -s "artifacts/$want" ]; then
               echo "::error::missing $want — dynamic link mode requires it at runtime"
               exit 1
@@ -199,27 +179,17 @@ jobs:
             fi
           done
           # Set $ORIGIN rpath so each lib resolves its flat-layout siblings
-          # (libLiteRt.so, libwebgpu_dawn.so, the provider) from its own
+          # (libLiteRt.so, libwebgpu_dawn.so) from its own
           # directory at dlopen time.
           sudo apt-get update -qq && sudo apt-get install -y -qq patchelf
           chmod u+w artifacts/*.so   # Bazel outputs and git-lfs files are read-only; patchelf edits in place
-          # The provider must speak the same Constraint ABI as the runtime we just
-          # built. Upstream's 2026-08-21 change put ComputeMask where
-          # ComputeBitmap was, and a provider built before it segfaults on the
-          # first tool call, inside CompositeLogitMask::Apply — with every other
-          # check green, because nothing else in this build calls a tool. Assert
-          # on the binaries, not on the ref: the v0.17.x tags carry a stale one.
-          # Same two-sided assert as the clone step, on the bytes that actually
-          # ship. One-sided here would miss a provider NEWER than the runtime,
-          # and a `grep -q` on a missing header would skip the check entirely.
-          H=/tmp/LiteRT-LM/runtime/components/constrained_decoding/constraint.h
-          [ -f "$H" ] || { echo "::error::$H is missing, so the provider ABI cannot be checked"; exit 1; }
-          P=artifacts/libGemmaModelConstraintProvider.so
-          [ -s "$P" ] || { echo "::error::$P is missing or empty"; exit 1; }
-          if grep -q 'ComputeMask' "$H"; then want=1; else want=0; fi
-          if grep -q 'LogitMask' "$P"; then have=1; else have=0; fi
-          [ "$want" = "$have" ] || { echo "::error::provider/runtime Constraint ABI mismatch in the shipped artifact (source ComputeMask=$want, provider LogitMask=$have)"; exit 1; }
-          echo "provider ABI: shipped artifact agrees with this source (ComputeMask=$want)"
+          # No constraint provider: libLiteRtLm.so must neither NEED nor name
+          # one (LLGuidance constraints, patch_c_api.sh section 29).
+          named="$(strings artifacts/libLiteRtLm.so | grep 'GemmaModelConstraintProvider' || true)"
+          if [ -n "$named" ]; then
+            echo "::error::libLiteRtLm.so still needs or names the Gemma constraint provider: $named"
+            exit 1
+          fi
           for f in artifacts/*.so; do patchelf --set-rpath '$ORIGIN' "$f"; done
           ls -lh artifacts/
 
@@ -273,7 +243,6 @@ jobs:
     timeout-minutes: 150
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '95df4c2a932b4917ace66fcfef6c154e8d2a6699' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -288,28 +257,11 @@ jobs:
         run: |
           git clone https://github.com/google-ai-edge/LiteRT-LM /tmp/LiteRT-LM
           cd /tmp/LiteRT-LM && git checkout "$LITERTLM_VERSION"
-          # Companions from a LATER upstream commit than the source: upstream's
-          # 2026-08-21 Constraint change (a8a8c445, a41b7c5c) put ComputeMask in
-          # the vtable slot ComputeBitmap had, and the prebuilt provider at the
-          # v0.17.0/v0.17.1 tags still implements the old one — a tool call
-          # segfaults in CompositeLogitMask::Apply. 4453b286 is upstream's own
-          # refresh of those binaries. Their wheel compiles the provider in, so
-          # their release lane never sees it.
+          # Only Dawn comes from upstream's prebuilt/. Up to native-v0.19.1
+          # Google's prebuilt libGemmaModelConstraintProvider.so did too; from
+          # native-v0.20.0-a the tool-call constraints are built with
+          # LLGuidance (patch_c_api.sh section 29) and no provider ships.
           git lfs pull --include="prebuilt/linux_arm64/*"
-          # One file, from a different commit than the source: fetch it straight
-          # from the LFS media endpoint, where the ref is visible in the URL.
-          curl -fsSL -o prebuilt/linux_arm64/libGemmaModelConstraintProvider.so \
-            "https://media.githubusercontent.com/media/google-ai-edge/LiteRT-LM/$PREBUILT_REF/prebuilt/linux_arm64/libGemmaModelConstraintProvider.so"
-          # Fail here, not an hour later in Collect artifacts.
-          H=runtime/components/constrained_decoding/constraint.h
-          [ -f "$H" ] || { echo "::error::$H is missing, so the provider ABI cannot be checked"; exit 1; }
-          # Two-sided: a provider older than the runtime segfaults, and so does
-          # a newer one against an older runtime — reachable whenever this runs
-          # on a ref from before upstream's 2026-08-21 Constraint change.
-          if grep -q 'ComputeMask' "$H"; then want=1; else want=0; fi
-          if grep -qa 'LogitMask' "prebuilt/linux_arm64/libGemmaModelConstraintProvider.so"; then have=1; else have=0; fi
-          [ "$want" = "$have" ] || { echo "::error::provider/runtime Constraint ABI mismatch (source ComputeMask=$want, provider LogitMask=$have)"; exit 1; }
-          echo "provider ABI: source and provider agree (ComputeMask=$want)"
 
       - name: Patch C API
         env:
@@ -371,10 +323,13 @@ jobs:
 
       - name: Test the thinking constraint's user bitmap copy (patch_c_api.sh section 26)
         # With thinking on, the first decode step of a turn with tools copies
-        # the Gemma provider's bitmap; on Windows the provider is libc++ and
-        # reading its vector's end() aborted the process. Section 26 copies
-        # the words the vocabulary needs from data(); upstream's test plus a
-        # bitmap holding more words than its vocabulary needs.
+        # the tool constraint's bitmap. Up to native-v0.19.1 that bitmap came
+        # from Google's prebuilt provider (libc++), and on Windows reading its
+        # vector's end() aborted the process. From native-v0.20.0-a the
+        # constraint is LLGuidance's, built here (section 29); section 26
+        # still copies the words the vocabulary needs from data(), which is
+        # right for either. Upstream's test plus a bitmap holding more words
+        # than its vocabulary needs.
         run: |
           cd /tmp/LiteRT-LM
           bazelisk test -c opt --strip=always \
@@ -434,10 +389,11 @@ jobs:
           }
           pick_built libLiteRt.so c
           pick_built libLiteRtWebGpuAccelerator.so runtime/accelerators/gpu
-          # Only the constraint provider (fetched from $PREBUILT_REF in the
-          # clone step) and Dawn come from upstream's prebuilt/ now. A LiteRT
-          # runtime or accelerator back in there means upstream ships one
-          # again: decide which copy ships rather than letting a glob pick.
+          # Only Dawn comes from upstream's prebuilt/ now (the constraint
+          # provider it also holds is linked by nothing: patch_c_api.sh
+          # section 29). A LiteRT runtime or accelerator back in there means
+          # upstream ships one again: decide which copy ships rather than
+          # letting a glob pick.
           shopt -s nullglob
           pre=/tmp/LiteRT-LM/prebuilt/linux_arm64
           stale=("$pre"/libLiteRt*.so)
@@ -445,10 +401,10 @@ jobs:
             echo "::error::$pre carries ${stale[*]##*/} again; this workflow ships the LiteRT runtime and accelerator it builds"
             exit 1
           fi
-          cp "$pre/libwebgpu_dawn.so" "$pre/libGemmaModelConstraintProvider.so" artifacts/
+          cp "$pre/libwebgpu_dawn.so" artifacts/
           # A git-lfs pointer stub would pass a bare existence test, so assert
           # ELF, not presence.
-          for want in libLiteRtLm.so libLiteRt.so libLiteRtWebGpuAccelerator.so libwebgpu_dawn.so libGemmaModelConstraintProvider.so; do
+          for want in libLiteRtLm.so libLiteRt.so libLiteRtWebGpuAccelerator.so libwebgpu_dawn.so; do
             if [ ! -s "artifacts/$want" ]; then
               echo "::error::missing $want — dynamic link mode requires it at runtime"
               exit 1
@@ -459,27 +415,17 @@ jobs:
             fi
           done
           # Set $ORIGIN rpath so each lib resolves its flat-layout siblings
-          # (libLiteRt.so, libwebgpu_dawn.so, the provider) from its own
+          # (libLiteRt.so, libwebgpu_dawn.so) from its own
           # directory at dlopen time.
           sudo apt-get update -qq && sudo apt-get install -y -qq patchelf
           chmod u+w artifacts/*.so   # Bazel outputs and git-lfs files are read-only; patchelf edits in place
-          # The provider must speak the same Constraint ABI as the runtime we just
-          # built. Upstream's 2026-08-21 change put ComputeMask where
-          # ComputeBitmap was, and a provider built before it segfaults on the
-          # first tool call, inside CompositeLogitMask::Apply — with every other
-          # check green, because nothing else in this build calls a tool. Assert
-          # on the binaries, not on the ref: the v0.17.x tags carry a stale one.
-          # Same two-sided assert as the clone step, on the bytes that actually
-          # ship. One-sided here would miss a provider NEWER than the runtime,
-          # and a `grep -q` on a missing header would skip the check entirely.
-          H=/tmp/LiteRT-LM/runtime/components/constrained_decoding/constraint.h
-          [ -f "$H" ] || { echo "::error::$H is missing, so the provider ABI cannot be checked"; exit 1; }
-          P=artifacts/libGemmaModelConstraintProvider.so
-          [ -s "$P" ] || { echo "::error::$P is missing or empty"; exit 1; }
-          if grep -q 'ComputeMask' "$H"; then want=1; else want=0; fi
-          if grep -q 'LogitMask' "$P"; then have=1; else have=0; fi
-          [ "$want" = "$have" ] || { echo "::error::provider/runtime Constraint ABI mismatch in the shipped artifact (source ComputeMask=$want, provider LogitMask=$have)"; exit 1; }
-          echo "provider ABI: shipped artifact agrees with this source (ComputeMask=$want)"
+          # No constraint provider: libLiteRtLm.so must neither NEED nor name
+          # one (LLGuidance constraints, patch_c_api.sh section 29).
+          named="$(strings artifacts/libLiteRtLm.so | grep 'GemmaModelConstraintProvider' || true)"
+          if [ -n "$named" ]; then
+            echo "::error::libLiteRtLm.so still needs or names the Gemma constraint provider: $named"
+            exit 1
+          fi
           for f in artifacts/*.so; do patchelf --set-rpath '$ORIGIN' "$f"; done
           ls -lh artifacts/
 
@@ -535,7 +481,6 @@ jobs:
         shell: pwsh
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '95df4c2a932b4917ace66fcfef6c154e8d2a6699' }}
       # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: from
       # v0.20.0 the accelerator is built from LiteRT at the tag's pin, which
       # contains #11120 (dp4a off on Intel GPUs).
@@ -565,36 +510,11 @@ jobs:
           git clone https://github.com/google-ai-edge/LiteRT-LM C:\LiteRT-LM
           cd C:\LiteRT-LM
           git checkout "$env:LITERTLM_VERSION"
-          # Companions from a LATER upstream commit than the source: upstream's
-          # 2026-08-21 Constraint change (a8a8c445, a41b7c5c) put ComputeMask in
-          # the vtable slot ComputeBitmap had, and the prebuilt provider at the
-          # v0.17.0/v0.17.1 tags still implements the old one — a tool call
-          # segfaults in CompositeLogitMask::Apply. 4453b286 is upstream's own
-          # refresh of those binaries. Their wheel compiles the provider in, so
-          # their release lane never sees it.
+          # Only Dawn comes from upstream's prebuilt/. Up to native-v0.19.1
+          # Google's prebuilt libGemmaModelConstraintProvider.dll did too; from
+          # native-v0.20.0-a the tool-call constraints are built with
+          # LLGuidance (patch_c_api.sh section 29) and no provider ships.
           git lfs pull --include="prebuilt/windows_x86_64/*"
-          # One file, from a different commit than the source: fetch it straight
-          # from the LFS media endpoint, where the ref is visible in the URL.
-          curl.exe -fsSL -o C:\LiteRT-LM\prebuilt\windows_x86_64\libGemmaModelConstraintProvider.dll `
-            "https://media.githubusercontent.com/media/google-ai-edge/LiteRT-LM/$env:PREBUILT_REF/prebuilt/windows_x86_64/libGemmaModelConstraintProvider.dll"
-          if ($LASTEXITCODE -ne 0) { throw "could not fetch the provider for $env:PREBUILT_REF" }
-          $provPath = "C:\LiteRT-LM\prebuilt\windows_x86_64\libGemmaModelConstraintProvider.dll"
-          Write-Host "provider: $((Get-Item $provPath).Length) bytes from $env:PREBUILT_REF"
-          # Fail before the hour of Bazel, not after it.
-          # Absolute paths on purpose: `cd` moves PowerShell's location, not the
-          # process working directory, so a .NET call with a relative path reads
-          # from the workspace root and fails there instead.
-          # Two-sided: a provider older than the runtime segfaults in
-          # CompositeLogitMask::Apply, and a newer one against an older runtime
-          # does the same — reachable whenever this builds a ref from before
-          # upstream's 2026-08-21 Constraint change.
-          $want = [bool](Select-String -Path C:\LiteRT-LM\runtime\components\constrained_decoding\constraint.h -Pattern 'ComputeMask' -Quiet)
-          $prov = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($provPath))
-          $have = $prov.Contains('LogitMask')
-          if ($want -ne $have) {
-            throw "provider/runtime Constraint ABI mismatch (source ComputeMask=$want, provider LogitMask=$have) - every tool call would segfault"
-          }
-          Write-Host "provider ABI: source and provider agree (ComputeMask=$want)"
 
       - name: Patch C API
         shell: bash
@@ -761,8 +681,9 @@ jobs:
           # and our MSVC build of it crashed the first GPU decode
           # (0xC0000409). Section 20 leaves it out and no sampler DLL ships, so
           # GPU decoding samples on the CPU.
-          # From v0.20.0 upstream's prebuilt/ holds only the constraint provider
-          # and webgpu_dawn.dll (c57b9ae0; cea62fa2 deleted libwebgpu_dawn.dll).
+          # From v0.20.0 upstream's prebuilt/ holds only the constraint provider,
+          # which no longer ships (LLGuidance constraints, section 29), and
+          # webgpu_dawn.dll (c57b9ae0; cea62fa2 deleted libwebgpu_dawn.dll).
           # libLiteRt.dll and the WebGPU accelerator are ours, built above from
           # LiteRT at the tag's pin. A LiteRT runtime or accelerator back in
           # prebuilt/ means upstream ships one again: decide which copy ships
@@ -798,7 +719,6 @@ jobs:
           $built = @{
             'libLiteRt' = (& $pickOne 'libLiteRt.dll' 'c')
             'libLiteRtWebGpuAccelerator' = (& $pickOne 'libLiteRtWebGpuAccelerator.dll' 'runtime\accelerators\gpu')
-            'libGemmaModelConstraintProvider' = "$prebuilt\libGemmaModelConstraintProvider.dll"
           }
           # Both names of each: lib* is what the PE imports name (LiteRtLm.dll
           # imports libLiteRt.dll), the prefixless copy is the Native Assets
@@ -831,15 +751,12 @@ jobs:
           if ((Get-FileHash artifacts\webgpu_dawn.dll).Hash -ne (Get-FileHash $dawnSrc).Hash) {
             throw "artifacts\webgpu_dawn.dll is not upstream's prebuilt Dawn"
           }
-          # Same ABI assert as the Linux jobs: a provider from before upstream's
-          # ComputeMask change segfaults on the first tool call and nothing else
-          # in this build would notice.
-          $want = [bool](Select-String -Path C:\LiteRT-LM\runtime\components\constrained_decoding\constraint.h -Pattern 'ComputeMask' -Quiet)
-          $have = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes("artifacts\libGemmaModelConstraintProvider.dll")).Contains('LogitMask')
-          if ($want -ne $have) {
-            throw "provider/runtime Constraint ABI mismatch in the shipped artifact (source ComputeMask=$want, provider LogitMask=$have)"
+          # No constraint provider: LiteRtLm.dll must neither import nor name
+          # one (LLGuidance constraints, patch_c_api.sh section 29).
+          $lm = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes("artifacts\LiteRtLm.dll"))
+          if ($lm.Contains('GemmaModelConstraintProvider')) {
+            throw "LiteRtLm.dll still imports or names the Gemma constraint provider"
           }
-          Write-Host "provider ABI: shipped artifact agrees with this source (ComputeMask=$want)"
           # DXC runtime — search recursively because the zip layout puts the
           # x64 binaries in bin\x64\ inside the archive root.
           foreach ($dxc in 'dxil.dll', 'dxcompiler.dll') {
@@ -1079,7 +996,7 @@ jobs:
           $shippedLower = @($shipped | ForEach-Object { $_.ToLower() })
           foreach ($must in @('LiteRtLm.dll', 'LiteRtDispatch.dll', 'StreamProxy.dll',
                               'libLiteRt.dll', 'LiteRt.dll', 'libLiteRtWebGpuAccelerator.dll',
-                              'webgpu_dawn.dll', 'libGemmaModelConstraintProvider.dll')) {
+                              'webgpu_dawn.dll')) {
             if ($shipped -notcontains $must) { throw "$must is not in artifacts - Collect artifacts should have copied it" }
           }
           $allowedCrt = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
@@ -1221,7 +1138,6 @@ jobs:
       contents: write
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '95df4c2a932b4917ace66fcfef6c154e8d2a6699' }}
     steps:
       - name: Refuse to overwrite published native assets
         env:

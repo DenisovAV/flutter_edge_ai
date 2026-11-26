@@ -1,7 +1,6 @@
-// One reader of a 64-bit Mach-O file's load commands, for the build hook (the
-// header room the Dart SDK's install-name rewrite needs) and the macOS loader
+// One reader of a 64-bit Mach-O file's load commands, for the macOS loader
 // (which build of LiteRtLm a program carries, from the libraries it links).
-// `dart:typed_data` only, so the hook can import it. Every read is
+// `dart:typed_data` only. Every read is
 // bounds-checked; anything that is not a well-formed 64-bit little-endian
 // Mach-O is a [FormatException].
 //
@@ -14,7 +13,6 @@ import 'dart:typed_data';
 const machOHeaderSize = 32;
 
 const _magic64 = 0xfeedfacf;
-const _lcSegment64 = 0x19;
 const _lcLoadDylib = 0xc;
 const _lcLoadWeakDylib = 0x80000018;
 const _lcReexportDylib = 0x8000001f;
@@ -76,32 +74,6 @@ List<MachOLoadCommand> machOLoadCommands(Uint8List bytes) {
     at += size;
   }
   return commands;
-}
-
-/// The free bytes between the load commands of [bytes] and its first
-/// section: how much install_name_tool can grow them.
-int machOHeaderSlack(Uint8List bytes) {
-  final commands = machOLoadCommands(bytes);
-  final data = ByteData.sublistView(bytes);
-  var firstSection = bytes.length;
-  for (final (:cmd, :offset, :size) in commands) {
-    if (cmd != _lcSegment64) continue;
-    // segment_command_64 is 72 bytes, each section_64 80.
-    if (size < 72) {
-      throw FormatException('an LC_SEGMENT_64 of $size bytes');
-    }
-    final nsects = data.getUint32(offset + 64, Endian.little);
-    if (72 + nsects * 80 > size) {
-      throw const FormatException('sections run past their segment');
-    }
-    for (var s = 0; s < nsects; s++) {
-      // section_64: its file offset at byte 48.
-      final at = data.getUint32(offset + 72 + s * 80 + 48, Endian.little);
-      if (at != 0 && at < firstSection) firstSection = at;
-    }
-  }
-  final sizeofcmds = data.getUint32(20, Endian.little);
-  return firstSection - machOHeaderSize - sizeofcmds;
 }
 
 /// The install names of the dylibs [bytes] links (`LC_LOAD_DYLIB`, weak and

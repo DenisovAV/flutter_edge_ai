@@ -66,7 +66,9 @@ enum MacOSStagerStubOutcome {
 /// still carry the block, and an earlier stub does nothing either).
 ///
 /// [runProcess] runs `chmod`; a test replaces it. A `chmod` that cannot be
-/// started (a [ProcessException]) is handled as a write that failed.
+/// started (a [ProcessException]) is handled as a write that failed: where
+/// no stager of ours is replaced it is a [FileSystemException] naming
+/// [file].
 MacOSStagerStubOutcome writeMacOSStagerStub(
   File file,
   String version, {
@@ -115,7 +117,11 @@ MacOSStagerStubOutcome writeMacOSStagerStub(
     } on FileSystemException {
       // Nothing more to do: the rename's failure is what is reported.
     }
-    if (!stager) rethrow;
+    if (!stager) {
+      // The hook says a failed write and goes on (_replaceMacOSStager).
+      if (e is ProcessException) throw FileSystemException(why, file.path);
+      rethrow;
+    }
     throw StateError(
       '${file.path} is the macOS companion stager of an earlier '
       'litertlm_dart, and it could not be replaced ($why). Left there, '

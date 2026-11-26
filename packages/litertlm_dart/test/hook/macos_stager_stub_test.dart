@@ -100,7 +100,8 @@ void main() {
   }, skip: Platform.isWindows ? 'no file modes' : false);
 
   test('a chmod that cannot start is a failed write: a stager of ours fails '
-      'the build naming the path, the temporary file is gone', () {
+      'the build naming the path, an absent file is the FileSystemException '
+      'the hook reports as a warning, the temporary file is gone', () {
     file
       ..parent.createSync(recursive: true)
       ..writeAsStringSync(_oldStager);
@@ -121,7 +122,15 @@ void main() {
     final absent = File('${file.parent.path}/other.sh');
     expect(
       () => writeMacOSStagerStub(absent, '0.20.0', runProcess: noChmod),
-      throwsA(isA<ProcessException>()),
+      throwsA(
+        isA<FileSystemException>()
+            .having((e) => e.path, 'path', absent.path)
+            .having(
+              (e) => e.message,
+              'message',
+              contains('chmod could not run'),
+            ),
+      ),
     );
     expect(absent.existsSync(), isFalse);
   });

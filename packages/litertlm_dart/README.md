@@ -34,24 +34,24 @@ await engine.close();
 
 ```yaml
 dependencies:
-  litertlm_dart: '>=0.19.1+4 <0.19.2'
+  litertlm_dart: '>=0.20.0 <0.20.1'
 ```
 
 The version is the upstream LiteRT-LM version this package is built from:
 the first release on an upstream version carries it as is (`0.20.0`), and
-each later one adds its number (`0.20.0+1`, `0.20.0+2`). The releases on
-LiteRT-LM 0.19.1 started at `0.19.1+1`. Within one upstream version the Dart API stays compatible,
-with one exception: `EmbeddingEngineConfig.cacheDir` became a `String?` in
-0.19.1+2 (it was a `String`).
+each later one adds its number (`0.20.0+1`, `0.20.0+2`). Within one upstream
+version the Dart API stays compatible; a new upstream version may change it
+(0.20.0: `SpeculativeDecodingConfig` replaces `SpeculativeDecodingMode`, and a
+web page hands over `@litert-lm/core` as `window.litertLm`).
 This release runs:
 
 | | |
 |---|---|
-| Native | LiteRT-LM 0.19.1, our build `native-v0.19.1-c` |
+| Native | LiteRT-LM 0.20.0, our build `native-v0.20.0-a` |
 | Web | `@litert-lm/core` 0.20.0 |
 
-`dart pub add litertlm_dart` writes `^0.19.1+4`, which for a 0.x
-version also takes later 0.19.x releases; those follow newer LiteRT-LM
+`dart pub add litertlm_dart` writes `^0.20.0`, which for a 0.x
+version also takes later 0.20.x releases; those follow newer LiteRT-LM
 releases and may change the Dart API, so bound it at the next upstream patch,
 as above, to stay on one.
 
@@ -681,6 +681,10 @@ Linux the program itself is `lib/libdartaot*.so`, run by the executable in
 - **Linux and Windows:** the GPU accelerator and Dawn (on Windows also the
   DirectX shader compiler) load with LiteRT-LM whatever the backend; they
   need no GPU to load, and nothing runs on them until a GPU engine does.
+- **Windows, Intel GPU:** prefill takes about twice as long as with 0.19
+  (Gemma 4 12B; E2B about 1.5x), decode is unchanged. LiteRT-LM 0.20 dropped
+  the guard that keeps Intel GPUs off the int8 dot-product path, on which
+  Gemma 4 12B answers with empty text (LiteRT-LM #4083); this build restores it.
 - `dart compile exe` runs no build hooks, so it cannot bundle LiteRT-LM; use
   `dart build cli`.
 

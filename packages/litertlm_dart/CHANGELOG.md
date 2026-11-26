@@ -1,15 +1,17 @@
-## Unreleased
-- Web runs on `@litert-lm/core` 0.20.0: the page imports 0.20.0.
-- Web reads `@litert-lm/core` from `window.litertLm`, one shim line; see the README.
+## 0.20.0
+- LiteRT-LM 0.20.0 on `native-v0.20.0-a`; web on `@litert-lm/core` 0.20.0.
+- Breaking (web): the page hands over `@litert-lm/core` once as `window.litertLm`; see the README.
+- Breaking: `SpeculativeDecodingConfig` (mode, lenience) replaces `SpeculativeDecodingMode`; `benchmark()` takes it.
 - `ToolChoice` per message on `sendMessage`/`sendMessageStream` (native).
-- `SpeculativeDecodingConfig` (mode, lenience) replaces `SpeculativeDecodingMode` in the configs; `benchmark()` takes it.
+- Text and audio LoRA: `ConversationConfig.loraConfig`, `EngineConfig.loraRank`/`audioLoraRank`.
 - `EngineConfig.selectedSignatures`.
-- Text and audio LoRA: `ConversationConfig.loraConfig` (`LoraConfig`), `EngineConfig.loraRank`/`audioLoraRank`.
-- Tool-call constraints built with LLGuidance; Google's prebuilt constraint provider no longer ships.
-- macOS needs no `macos_companions` define; the hook ignores it with a warning.
-- macOS: the old Podfile stager block still builds; it now runs a no-op that says it can go.
-- Native CPU/GPU conversations each get their own sampler (LiteRT-LM #2080 fixed); no warning there.
-- Web refusals (EmbeddingGemma 2 on CPU, activation type, speculative decoding) give the 0.20.0 reasons.
+- Tool calls constrained with LLGuidance; Google's prebuilt constraint provider no longer ships.
+- Each native CPU/GPU conversation keeps its own sampler (LiteRT-LM #2080 fixed).
+- macOS needs no companions: the `macos_companions` define and the Podfile stager block are no-ops.
+- Windows: `libLiteRt.dll` needs no Visual C++ runtime.
+- Android Qualcomm NPU on QNN 2.52.0; Linux arm64 on QAIRT 2.51.1.
+- Windows Intel GPU: prefill ~2x slower than 0.19 (E2B ~1.5x) to keep Gemma 4 12B answering.
+- `LlmBenchmarkResult.initTime` counts the engine creation only, as in LiteRT-LM 0.20.
 
 ## 0.19.1+4
 - Plain Dart programs (`dart run`, `dart test`, `dart build cli`) on every backend; see the README.

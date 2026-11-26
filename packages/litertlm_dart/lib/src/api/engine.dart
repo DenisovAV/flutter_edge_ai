@@ -142,7 +142,8 @@ typedef GpuActivationDecision = ({
 /// On Android ([android]) Gemma 4 keeps the bundle's float16 at any context,
 /// with [GpuActivationReason.gemma4LongContextAndroid] above
 /// [gemma4Fp16MaxContextTokens] so the engine says so: float32 fails there on
-/// Adreno 8xx with this native build. An explicit float32 is still honoured.
+/// Adreno 8xx, with LiteRT-LM 0.19 and 0.20 alike (Galaxy S25 Ultra,
+/// google-ai-edge/LiteRT-LM#4825). An explicit float32 is still honoured.
 ({ActivationDataType? type, GpuActivationReason? reason}) gpuActivationFor({
   required LlmModelFamily? family,
   required bool? declaresActivation,
@@ -167,7 +168,8 @@ bool _notedAndroidGemma4Float16 = false;
 
 /// Says, once per isolate and in release builds too, that Gemma 4 with a
 /// context of [maxTokens] runs at float16 on this Android GPU, where a long
-/// prompt can degrade (LiteRT-LM #4001), and how to ask for float32.
+/// prompt can degrade (LiteRT-LM #4001), why float32 is not chosen there
+/// (LiteRT-LM #4825), and how to ask for it.
 void noteAndroidGemma4Float16(int maxTokens) {
   if (_notedAndroidGemma4Float16) return;
   _notedAndroidGemma4Float16 = true;
@@ -176,10 +178,10 @@ void noteAndroidGemma4Float16(int maxTokens) {
     '[litertlm_dart] WARNING: Gemma 4 with maxTokens $maxTokens runs at '
     "float16 on this Android GPU (the bundle's default): a prompt past about "
     '$gemma4Fp16MaxContextTokens tokens can degrade (LiteRT-LM #4001). '
-    'float32, which avoids that, is not chosen on Android: with this native '
-    'build it fails on Adreno 8xx GPUs ("Invalid work group size" at the '
-    'first token). Pass activationDataType: ActivationDataType.float32 to ask '
-    'for it. Shown once.',
+    'float32, which avoids that, is not chosen on Android: it fails on '
+    'Adreno 8xx GPUs ("Invalid work group size" at the first token, '
+    'LiteRT-LM #4825). Pass activationDataType: ActivationDataType.float32 '
+    'to ask for it. Shown once.',
   );
 }
 

@@ -236,7 +236,8 @@ final _litertlmBundle = _NativeBundle(
   // litert_lm_conversation_rewind_cancelled_turn, #682); Windows loads an AOT
   // NPU bundle's sections from memory instead of handing Google's prebuilt
   // libLiteRt.dll a C runtime descriptor it cannot read, which ended the
-  // process with 0xC0000409 (§15, LiteRT-LM #4023, #679); and
+  // process with 0xC0000409 (§15, LiteRT-LM #4023, #679; upstream since
+  // v0.20.0, a48771d2, and §15 is an anchor on it now); and
   // libLiteRtDispatch_GoogleTensor.so, built from LiteRT's
   // litert/vendors/google_tensor/dispatch at the pin, bundled only behind
   // google_tensor_npu (#670, #686). Windows LiteRtDispatch.dll is rebuilt from

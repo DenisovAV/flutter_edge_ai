@@ -241,13 +241,19 @@ npuExecutorFlags = (neonGreedySampling: true, hwCacheUpdate: true, hwPle: true);
 /// the bundle at [path] ([bundle]: null when the file could not be read).
 ///
 /// Qualcomm, Tensor and MediaTek: on, explicitly — the value they ran with up
-/// to LiteRT-LM v0.19.1, where it was the default (see [npuExecutorFlags]).
+/// to LiteRT-LM v0.19.1, where it was the default; v0.20.0 resolves an unset
+/// flag to the bundle's metadata, else off, so it is set until the new default
+/// is measured per vendor (see [npuExecutorFlags], decision D5).
 ///
 /// Intel: off (false), because with it on LiteRT sets up the kWH HW mask
 /// method, which Intel preview NPUs (LunarLake/PantherLake) did not fully
 /// support → CFG check failure 0xc0000409 (per Matt Kreileder's Intel NPU
-/// pipeline instructions). On, explicitly, for a bundle whose `tf_lite_aux`
-/// section is one of [intelBrokenNpuMaskAux] (Intel's public Gemma 4 26B A4B
+/// pipeline instructions). Up to LiteRT-LM v0.19.1 the flag defaulted to on,
+/// so off had to be set; from v0.20.0 (fd79fb15) off is LiteRT-LM's own
+/// default (an unset flag resolves to the bundle's NPU executor metadata,
+/// else off). It stays explicit, so that no bundle's metadata turns the kWH
+/// method back on. On, explicitly, for a bundle whose `tf_lite_aux` section
+/// is one of [intelBrokenNpuMaskAux] (Intel's public Gemma 4 26B A4B
 /// for Panther Lake), whose NPU-compiled mask graphs are wrong: the masks are
 /// then computed by the runtime. Every other Intel bundle, including the
 /// Panther Lake ones whose mask graphs are compiled for the NPU and right

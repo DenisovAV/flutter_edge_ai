@@ -86,7 +86,8 @@ String? legacyUserDefinesRefusal(Map<String, Object?> legacy, String pubspec) {
             '$legacyUserDefinesPackage.$k').join(', ')}. That key is no longer '
         'read (since litertlm_dart 0.20.0).',
     if (move.isNotEmpty)
-      'Move ${move.length == 1 ? '${_old(move.single)}' : 'the others'} to '
+      'Move ${move.length == 1 ? _old(move.single) : move.map(_old).join(', ')} '
+          'to '
           'hooks.user_defines.litertlm_dart '
           '(${move.map((k) => 'litertlm_dart: $k').join(', ')}) in the same '
           'pubspec.yaml.',

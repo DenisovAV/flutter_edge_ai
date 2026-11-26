@@ -162,6 +162,11 @@ echo "  libLiteRtLm.so → $PREBUILT_DIR/"
 # silently on a phone without OpenCL. Read the names, not a NEEDED list: both
 # accelerators NEED the same EGL/GLES libraries. No `grep -q` (SIGPIPE under
 # pipefail reads as "not found").
+# `strings … || true` passes on a missing or empty file: refuse those first.
+if [ ! -s "$PREBUILT_DIR/libLiteRtLm.so" ]; then
+  echo "ERROR: $PREBUILT_DIR/libLiteRtLm.so is missing or empty" >&2
+  exit 1
+fi
 gpu_names="$(strings "$PREBUILT_DIR/libLiteRtLm.so" | grep -xE 'GPU OpenCL|LiteRT GPU' || true)"
 gl_switch="$(strings "$PREBUILT_DIR/libLiteRtLm.so" | grep -F 'Using OpenGL instead' || true)"
 if [ "$gpu_names" != "GPU OpenCL" ] || [ -n "$gl_switch" ]; then
@@ -318,6 +323,10 @@ echo "Symbols (libLiteRtLm.so):"
 nm -D "$PREBUILT_DIR/libLiteRtLm.so" 2>/dev/null | grep -i "litert_lm_engine_create\|SetPendingSamplerParams" | head -5
 # No constraint provider, NEEDED or named: the tool-call constraints are
 # LLGuidance's (patch_c_api.sh section 29). No `grep -q` (pipefail).
+if [ ! -s "$PREBUILT_DIR/libLiteRtLm.so" ]; then
+  echo "ERROR: $PREBUILT_DIR/libLiteRtLm.so is missing or empty" >&2
+  exit 1
+fi
 named="$(strings "$PREBUILT_DIR/libLiteRtLm.so" | grep 'GemmaModelConstraintProvider' || true)"
 if [ -n "$named" ]; then
   echo "ERROR: libLiteRtLm.so still needs or names the Gemma constraint provider: $named" >&2

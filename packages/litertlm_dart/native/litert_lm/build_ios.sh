@@ -230,8 +230,17 @@ done
 # the build Mac, so this checks the pieces instead: the pointer is exported
 # and the Metal accelerator ("GPU Metal", its LiteRtAcceleratorImpl name) is in
 # the binary. A device run proves the rest (build-native skill).
+# A check that reads a library with `strings … || true` passes on a file
+# that is missing or empty; refuse those first.
+require_library() {
+  if [ ! -s "$1" ]; then
+    echo "ERROR: $1 is missing or empty" >&2
+    exit 1
+  fi
+}
 check_static_gpu_accelerator() {
   local dir="$1"
+  require_library "$dir/libLiteRtLm.dylib"
   local syms; syms="$(nm -gU "$dir/libLiteRtLm.dylib" || true)"
   grep -q ' _LiteRtStaticLinkedAcceleratorGpuDef$' <<<"$syms" || {
     echo "ERROR: $dir/libLiteRtLm.dylib exports no LiteRtStaticLinkedAcceleratorGpuDef" >&2
@@ -249,6 +258,7 @@ check_static_gpu_accelerator() {
 # (patches/litert_gpu_registry_apple.patch), so none should be named at all.
 check_dlopened_frameworks() {
   local dir="$1" fw missing=0
+  require_library "$dir/libLiteRtLm.dylib"
   for fw in $(strings "$dir/libLiteRtLm.dylib" \
                 | grep -oE '@executable_path/(\.\./)?Frameworks/[A-Za-z0-9_]+\.framework/' \
                 | sed -E 's|.*Frameworks/([A-Za-z0-9_]+)\.framework/|\1|' | sort -u); do
@@ -277,6 +287,7 @@ check_dlopened_frameworks() {
 # LLGuidance's (patch_c_api.sh section 29). No `grep -q` (pipefail, see above).
 check_no_constraint_provider() {
   local dir="$1" named
+  require_library "$dir/libLiteRtLm.dylib"
   named="$( { otool -L "$dir/libLiteRtLm.dylib"; strings "$dir/libLiteRtLm.dylib"; } \
     | grep -E 'GemmaModelConstraintProvider' || true)"
   if [ -n "$named" ]; then

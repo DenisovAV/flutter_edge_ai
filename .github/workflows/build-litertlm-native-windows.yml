@@ -183,6 +183,9 @@ jobs:
           # shipped: lib* for the PE imports, prefixless for Native Assets.
           # No GPU sampler on Windows since v0.19.0 (patch_c_api.sh section 20;
           # see build-litertlm-native.yml): neither linked in nor shipped.
+          if (-not (Test-Path artifacts\LiteRtLm.dll) -or (Get-Item artifacts\LiteRtLm.dll).Length -eq 0) {
+            throw 'artifacts\LiteRtLm.dll is missing or empty'
+          }
           $dll = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes('artifacts\LiteRtLm.dll'))
           if ($dll.Contains('AVTopKWebGpuSampler@lm@litert@@')) {
             throw 'LiteRtLm.dll links the TopK WebGPU sampler (section 20 did not apply)'
@@ -259,6 +262,9 @@ jobs:
           }
           # No constraint provider: LiteRtLm.dll must neither import nor name
           # one (LLGuidance constraints, patch_c_api.sh section 29).
+          if (-not (Test-Path artifacts\LiteRtLm.dll) -or (Get-Item artifacts\LiteRtLm.dll).Length -eq 0) {
+            throw 'artifacts\LiteRtLm.dll is missing or empty'
+          }
           $lm = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes("artifacts\LiteRtLm.dll"))
           if ($lm.Contains('GemmaModelConstraintProvider')) {
             throw "LiteRtLm.dll still imports or names the Gemma constraint provider"

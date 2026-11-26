@@ -239,6 +239,15 @@ def main(argv):
             names |= elf.defined
         return names
 
+    # libLiteRtLm.so imports from libc, libstdc++ and libLiteRt at the very
+    # least: none read means the symbol table was not parsed (a readelf whose
+    # output this script no longer matches), and every check below would pass
+    # over nothing.
+    lm_elf = libs.get("libLiteRtLm.so")
+    if lm_elf is not None and not lm_elf.undefined:
+        bad("libLiteRtLm.so: no undefined symbol read from readelf --dyn-syms; "
+            "the symbol table was not parsed, so nothing below was checked")
+
     earlier = []
     for f in sorted(libs, key=lambda n: (PRELOAD_ORDER.index(n)
                                          if n in PRELOAD_ORDER else -1, n)):

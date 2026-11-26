@@ -141,8 +141,17 @@ echo "=== Verification ==="
 # tries any library. A build that lost it would dlopen a framework no bundle
 # carries and run the GPU on the CPU with no error, so this loads the library
 # for real and reads the pointer.
+# A check that reads a library with `strings … || true` passes on a file
+# that is missing or empty; refuse those first.
+require_library() {
+  if [ ! -s "$1" ]; then
+    echo "ERROR: $1 is missing or empty" >&2
+    exit 1
+  fi
+}
 check_static_gpu_accelerator() {
   local dir="$1" probe
+  require_library "$dir/libLiteRtLm.dylib"
   probe="$(mktemp -d)/static_gpu_probe"
   cat > "$probe.c" << 'CEOF'
 #include <dlfcn.h>
@@ -169,6 +178,7 @@ CEOF
 # (patches/litert_gpu_registry_apple.patch), so none should be named at all.
 check_dlopened_frameworks() {
   local dir="$1" fw missing=0
+  require_library "$dir/libLiteRtLm.dylib"
   for fw in $(strings "$dir/libLiteRtLm.dylib" \
                 | grep -oE '@executable_path/(\.\./)?Frameworks/[A-Za-z0-9_]+\.framework/' \
                 | sed -E 's|.*Frameworks/([A-Za-z0-9_]+)\.framework/|\1|' | sort -u); do
@@ -196,6 +206,7 @@ check_dlopened_frameworks() {
 # LLGuidance's (patch_c_api.sh section 29). No `grep -q` (pipefail, see above).
 check_no_constraint_provider() {
   local dir="$1" named
+  require_library "$dir/libLiteRtLm.dylib"
   named="$( { otool -L "$dir/libLiteRtLm.dylib"; strings "$dir/libLiteRtLm.dylib"; } \
     | grep -E 'GemmaModelConstraintProvider' || true)"
   if [ -n "$named" ]; then

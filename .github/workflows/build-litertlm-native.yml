@@ -179,6 +179,11 @@ jobs:
           chmod u+w artifacts/*.so   # Bazel outputs and git-lfs files are read-only; patchelf edits in place
           # No constraint provider: libLiteRtLm.so must neither NEED nor name
           # one (LLGuidance constraints, patch_c_api.sh section 29).
+          # `strings … || true` passes on a missing or empty file.
+          if [ ! -s artifacts/libLiteRtLm.so ]; then
+            echo "::error::artifacts/libLiteRtLm.so is missing or empty"
+            exit 1
+          fi
           named="$(strings artifacts/libLiteRtLm.so | grep 'GemmaModelConstraintProvider' || true)"
           if [ -n "$named" ]; then
             echo "::error::libLiteRtLm.so still needs or names the Gemma constraint provider: $named"
@@ -399,6 +404,11 @@ jobs:
           chmod u+w artifacts/*.so   # Bazel outputs and git-lfs files are read-only; patchelf edits in place
           # No constraint provider: libLiteRtLm.so must neither NEED nor name
           # one (LLGuidance constraints, patch_c_api.sh section 29).
+          # `strings … || true` passes on a missing or empty file.
+          if [ ! -s artifacts/libLiteRtLm.so ]; then
+            echo "::error::artifacts/libLiteRtLm.so is missing or empty"
+            exit 1
+          fi
           named="$(strings artifacts/libLiteRtLm.so | grep 'GemmaModelConstraintProvider' || true)"
           if [ -n "$named" ]; then
             echo "::error::libLiteRtLm.so still needs or names the Gemma constraint provider: $named"
@@ -648,6 +658,9 @@ jobs:
           # Section 20: the TopK WebGPU sampler must not be linked in (its MSVC
           # RTTI name, present whenever it is, as in the v0.19.0 build that
           # crashed with 0xC0000409).
+          if (-not (Test-Path artifacts\LiteRtLm.dll) -or (Get-Item artifacts\LiteRtLm.dll).Length -eq 0) {
+            throw 'artifacts\LiteRtLm.dll is missing or empty'
+          }
           $dll = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes('artifacts\LiteRtLm.dll'))
           if ($dll.Contains('AVTopKWebGpuSampler@lm@litert@@')) {
             throw 'LiteRtLm.dll links the TopK WebGPU sampler (section 20 did not apply)'
@@ -738,6 +751,9 @@ jobs:
           }
           # No constraint provider: LiteRtLm.dll must neither import nor name
           # one (LLGuidance constraints, patch_c_api.sh section 29).
+          if (-not (Test-Path artifacts\LiteRtLm.dll) -or (Get-Item artifacts\LiteRtLm.dll).Length -eq 0) {
+            throw 'artifacts\LiteRtLm.dll is missing or empty'
+          }
           $lm = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes("artifacts\LiteRtLm.dll"))
           if ($lm.Contains('GemmaModelConstraintProvider')) {
             throw "LiteRtLm.dll still imports or names the Gemma constraint provider"

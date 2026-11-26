@@ -527,7 +527,11 @@ done
 for d in "$align_tmp"/litertlm-android_*; do
   [[ -d "$d" ]] || continue
   lib="$d/libLiteRtLm.so"
-  [[ -f "$lib" ]] || continue
+  if [[ ! -s "$lib" ]]; then
+    echo "  FAIL: $lib is missing or empty: the OpenCL-only check has nothing to read"
+    fail=1
+    continue
+  fi
   if ! python3 - "$lib" <<'PYANDROIDGPU'
 import sys
 data = open(sys.argv[1], "rb").read()
@@ -848,11 +852,11 @@ print(f"    {len(dlls)} DLL(s): {clean} import no C++ runtime, {len(crt)} do")
 
 # 1. The libraries we build must carry their own runtime: LiteRtLm.dll, and
 #    from v0.20.0 libLiteRt.dll (and its LiteRt.dll copy) and the WebGPU
-#    accelerator, built from LiteRT's source /MT
+#    accelerator (both its names), built from LiteRT's source /MT
 #    (patches/litert_libLiteRt_static_crt.patch, D9). Windows filenames are
 #    case-insensitive, so match that way.
 STATIC = {"litertlm.dll", "liblitert.dll", "litert.dll",
-          "liblitertwebgpuaccelerator.dll"}
+          "liblitertwebgpuaccelerator.dll", "litertwebgpuaccelerator.dll"}
 for n in sorted(crt):
     if os.path.basename(n).lower() in STATIC:
         print(f"  [FAIL] {n} imports {', '.join(crt[n])} —"

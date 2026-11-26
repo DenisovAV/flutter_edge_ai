@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-26",
+  "host": "macos_arm64",
+  "device": "Mac mini (M5 Pro, Mac17,16)",
+  "commit": "7a54228166c545f72b86a563345945867c1f25fa",
+  "packages": {
+    "flutter_edge_ai": "2.7.2",
+    "flutter_edge_ai_litertlm": "1.22.0",
+    "flutter_edge_ai_speech": "0.6.3"
+  },
+  "native": "e820e3acc547edbbb11380c02958d1c95160a79147b437ec3f2b1a5f9f361fa6",
+  "log_sha256": "c33b094736ee0a4668fa31b7b524c6ff20721e529863cc071c385509748c0b16",
+  "log_url": null,
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "embeddinggemma-2-text-vision-440m/generic": {
+      "cpu": [
+        "text to image retrieval"
+      ]
+    }
+  }
+}

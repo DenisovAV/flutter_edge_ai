@@ -514,9 +514,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-19_macos_arm64_mac-mini-m5-pro-mac17-16.json",
-        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-19, flutter_edge_ai_litertlm 1.21.0"
+        "status": "verified",
+        "source": "evidence/2026-11-26_macos_arm64_mac-mini-m5-pro-mac17-16-3.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-26, flutter_edge_ai_litertlm 1.22.0"
        }
       },
       "windows_x64": {
@@ -871,9 +871,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.22.0"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-19_macos_arm64_mac-mini-m5-pro-mac17-16.json",
-        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-19, flutter_edge_ai_litertlm 1.21.0"
+        "status": "verified",
+        "source": "evidence/2026-11-26_macos_arm64_mac-mini-m5-pro-mac17-16-3.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-26, flutter_edge_ai_litertlm 1.22.0"
        }
       },
       "windows_x64": {
@@ -4363,14 +4363,14 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-26_macos_arm64_mac-mini-m5-pro-mac17-16.json",
-        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-26, litertlm_dart 0.20.0, native-v0.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-26_macos_arm64_mac-mini-m5-pro-mac17-16-2.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-26, flutter_edge_ai_litertlm 1.22.0"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-26_macos_arm64_mac-mini-m5-pro-mac17-16.json",
-        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-26, litertlm_dart 0.20.0, native-v0.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-26_macos_arm64_mac-mini-m5-pro-mac17-16-2.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-26, flutter_edge_ai_litertlm 1.22.0"
        }
       },
       "windows_x64": {

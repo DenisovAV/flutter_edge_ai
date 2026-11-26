@@ -255,6 +255,8 @@ conversation.
 On the web (`@litert-lm/core` 0.20.0) a session takes text only ("inputs_array[0]
 must be a string"), decodes whole replies and does not stream;
 `generateContent` holds the page lock across its prefill and decode.
+`cancelProcess` ends a decode there as natively, with the text it had
+(measured 8-21 ms after the cancel on WebGPU).
 
 ```dart
 import 'package:litertlm_dart/litertlm_dart.dart';

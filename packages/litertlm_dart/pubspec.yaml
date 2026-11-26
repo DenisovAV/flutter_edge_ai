@@ -3,10 +3,10 @@ description: "LiteRT-LM in pure Dart for Flutter apps and plain Dart programs (C
 # The upstream LiteRT-LM version this is built from: the first release on an
 # upstream version carries it as is (0.20.0), each later one adds its number
 # (0.20.0+1, 0.20.0+2); the releases on 0.19.1 started at 0.19.1+1. The native
-# build (native-v0.19.1-c) and the web runtime (@litert-lm/core 0.19.0) each
-# release carries are in the README. Breaking Dart API changes ride an
-# upstream version change, except EmbeddingEngineConfig.cacheDir (String? in
-# 0.19.1+2).
+# build (native-v0.20.0 for 0.20.0) and the web runtime (@litert-lm/core
+# 0.20.0) each release carries are in the README. Breaking Dart API changes
+# ride an upstream version change, except EmbeddingEngineConfig.cacheDir
+# (String? in 0.19.1+2).
 version: 0.20.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/litertlm_dart

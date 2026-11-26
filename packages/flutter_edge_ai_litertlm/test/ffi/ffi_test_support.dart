@@ -78,6 +78,7 @@ FfiInferenceModelSession ffiSessionForHandle({
   List<lm.Tool> tools = const [],
   required VoidCallback onClose,
 }) => FfiInferenceModelSession(
+  declaresTools: tools.isNotEmpty,
   conversation: conversationForTest(
     handle,
     config: lm.ConversationConfig(tools: tools),

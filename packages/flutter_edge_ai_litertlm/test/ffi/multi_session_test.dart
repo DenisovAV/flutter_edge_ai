@@ -247,6 +247,31 @@ void main() {
       );
     }
 
+    for (final modelType in [ModelType.functionGemma, ModelType.gemma4]) {
+      test('$modelType: a tool result on a session opened without tools goes '
+          'as user text, as for a model whose tools run in Dart', () async {
+        final handle = _FakeConversationHandle(['ok']);
+        final session = ffiSessionForHandle(
+          handle: handle,
+          modelType: modelType,
+          fileType: ModelFileType.litertlm,
+          supportImage: false,
+          supportAudio: false,
+          onClose: () {},
+        );
+
+        await session.addQueryChunk(
+          Message.toolResponse(toolName: 'multiply', response: {'result': 7}),
+        );
+        expect(await session.getResponse(), 'ok');
+
+        // A user message (chatRaw), not a role-tool one (chatRawMessage).
+        expect(handle.sentMessages, isEmpty);
+        expect(handle.sentTexts.single, contains('<tool_response>'));
+        expect(handle.sentTexts.single, contains('multiply'));
+      });
+    }
+
     test('streaming sends tool results the same way', () async {
       final handle = _FakeConversationHandle(['done']);
       final session = nativeToolSession(handle);

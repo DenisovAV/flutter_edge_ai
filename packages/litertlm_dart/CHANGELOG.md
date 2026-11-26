@@ -12,6 +12,7 @@
 - Breaking: `ActivationDataType.int16` and `int8` (exhaustive switches); refused on the GPU for Gemma models.
 - `Backend.googleTensor()` is refused: LiteRT-LM 0.20.0 has no executor for it.
 - `ToolChoice` other than auto is refused for model families that drop it.
+- Breaking: a tool response on a conversation without tools is an `ArgumentError`.
 - Tool calls constrained with LLGuidance; Google's prebuilt constraint provider no longer ships.
 - Each native CPU/GPU conversation keeps its own sampler (LiteRT-LM #2080).
 - macOS needs no companions: `macos_companions` is ignored; see the README for the Podfile.

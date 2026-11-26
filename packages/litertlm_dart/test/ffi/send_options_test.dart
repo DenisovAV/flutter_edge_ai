@@ -120,6 +120,7 @@ void main() {
     final sources = [
       File('lib/src/ffi/send_options.dart').readAsStringSync(),
       File('lib/src/ffi/litert_lm_client.dart').readAsStringSync(),
+      File('lib/src/ffi/session_ffi.dart').readAsStringSync(),
     ].join('\n');
     const optionCalls = {
       'repetition_penalty',
@@ -148,6 +149,31 @@ void main() {
     ).readAsStringSync();
     final listed = RegExp(
       r'OPTION_SYMBOLS = \[(.*?)\]',
+      dotAll: true,
+    ).firstMatch(gate)!.group(1)!;
+    expect({
+      for (final m in RegExp(r'"(litert_lm_[a-z_]+)"').allMatches(listed))
+        m.group(1)!,
+    }, called);
+  });
+
+  test('the release gate lists every C function the Session API calls', () {
+    final session = File('lib/src/ffi/session_ffi.dart').readAsStringSync();
+    final client = File('lib/src/ffi/litert_lm_client.dart').readAsStringSync();
+    final called = {
+      for (final m in RegExp(r'\.(litert_lm_[a-z_]+)\b').allMatches(session))
+        m.group(1)!,
+      // The client's own session calls: the cancel and the delete.
+      for (final m in RegExp(
+        r'\.(litert_lm_session_(?:cancel_process|delete))\(',
+      ).allMatches(client))
+        m.group(1)!,
+    };
+    final gate = File(
+      'native/litert_lm/check_embedding_exports.py',
+    ).readAsStringSync();
+    final listed = RegExp(
+      r'SESSION_SYMBOLS = \[(.*?)\]',
       dotAll: true,
     ).firstMatch(gate)!.group(1)!;
     expect({

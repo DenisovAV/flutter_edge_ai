@@ -7,7 +7,8 @@ every one a thinking token budget calls (THINKING_BUDGET_SYMBOLS), every
 one the per-message and engine options call (OPTION_SYMBOLS), the
 symbol the loader checks to recognise this package's build
 (OWN_BUILD_SYMBOLS), the LLM functions the C API 1.0 client binds
-(LLM_SYMBOLS), the StreamProxy entry it streams through
+(LLM_SYMBOLS), every one the Session API calls (SESSION_SYMBOLS), the
+StreamProxy entry it streams through
 (STREAM_PROXY_SYMBOLS, from libStreamProxy / StreamProxy.dll), and, from every
 NPU dispatch in the bundle, the versioned dispatch entry LiteRT loads it by
 (DISPATCH_SYMBOL).
@@ -217,8 +218,9 @@ LITERT_BINDINGS_SYMBOLS = [
     "LiteRtUnlockTensorBuffer",
 ]
 
-# The LLM functions the C API 1.0 Dart client (core 2.6.0, PRs L2, L3 and 6)
-# binds beyond the ones above: the version gate, structured output, real
+# The LLM functions the Dart client (C API 1.0 from core 2.6.0, PRs L2, L3
+# and 6; C API 1.1 from LiteRT-LM v0.20.0) binds beyond the ones above and
+# SESSION_SYMBOLS: the version gate, structured output, real
 # conversations for open sessions, the effective NPU context (#4184), and our
 # patches' section 16 rewind and section 23 turn-end record, and section 4b's
 # four NPU executor flag setters, which every NPU load calls from LiteRT-LM
@@ -244,6 +246,41 @@ LLM_SYMBOLS = [
     "litert_lm_stream_chunk_get_error",
     "litert_lm_stream_chunk_get_text",
     "litert_lm_stream_chunk_is_final",
+]
+
+# Every C function Kotlin's Session API calls in this package
+# (Engine.createSession: lib/src/ffi/session_ffi.dart, and the client's cancel
+# and delete in litert_lm_client.dart; a VM test keeps this list equal to the
+# calls). New in the C API 1.1 client of LiteRT-LM v0.20.0. Missing one, that
+# session call fails on that target only, at its first use.
+SESSION_SYMBOLS = [
+    "litert_lm_clear_last_error",
+    "litert_lm_engine_create_session",
+    "litert_lm_input_data_create",
+    "litert_lm_input_data_delete",
+    "litert_lm_responses_delete",
+    "litert_lm_responses_get_response_text_at",
+    "litert_lm_sampler_params_create",
+    "litert_lm_sampler_params_delete",
+    "litert_lm_sampler_params_set_seed",
+    "litert_lm_sampler_params_set_temperature",
+    "litert_lm_sampler_params_set_top_k",
+    "litert_lm_sampler_params_set_top_p",
+    "litert_lm_session_cancel_process",
+    "litert_lm_session_clone",
+    "litert_lm_session_config_create",
+    "litert_lm_session_config_delete",
+    "litert_lm_session_config_set_audio_lora_path",
+    "litert_lm_session_config_set_lora_path",
+    "litert_lm_session_config_set_sampler_params",
+    "litert_lm_session_config_set_speculative_decoding_config",
+    "litert_lm_session_delete",
+    "litert_lm_session_generate_content",
+    "litert_lm_session_generate_content_stream",
+    "litert_lm_session_run_decode",
+    "litert_lm_session_run_prefill",
+    "litert_lm_speculative_decoding_config_create",
+    "litert_lm_speculative_decoding_config_delete",
 ]
 
 # The StreamProxy shim (stream_proxy.c) every streamed reply goes through. Its
@@ -491,8 +528,10 @@ def main(argv):
                           "engine options call"),
                          (OWN_BUILD_SYMBOLS, "symbols the loader checks to "
                           "recognise this package's build"),
-                         (LLM_SYMBOLS, "LLM functions the C API 1.0 client "
-                          "binds")):
+                         (LLM_SYMBOLS, "LLM functions the Dart client "
+                          "binds"),
+                         (SESSION_SYMBOLS, "functions the Session API "
+                          "(Engine.createSession) calls")):
         missing = [s for s in wanted if s not in names]
         if missing:
             failed = True

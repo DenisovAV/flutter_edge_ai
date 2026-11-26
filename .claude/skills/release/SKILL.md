@@ -109,6 +109,19 @@ silently do the other thing.
         `--no-fatal-infos` analyze both pass an `info` lint that pana charges
         10 points for: litertlm_dart 0.20.0 shipped at 150/160 over one
         `use_null_aware_elements` info. Commands in Step 8a.
+[ ] 8w  litertlm_dart or flutter_edge_ai_litertlm in the release? → the web drive
+        suites on the .litertlm web runtime are green AT THIS HEAD
+        (web_function_calling, web_thinking, web_multimodal, web_eg2_test,
+        web_eg2_llm, web_eg2_audio, web_litertlm_runtime_probe). A red one
+        blocks the publish until it is understood. When the release moves
+        @litert-lm/core, a red case is run against the previous runtime too
+        before anyone calls it a known flake: litertlm_dart 0.20.0 shipped with
+        web_function_calling case 5 red, read as the native "empty final"
+        flake, while @litert-lm/core 0.20.0 answered a role-tool message with
+        nothing where 0.19.0 answered (fixed in 0.20.0+2). Commands in Step 8w.
+[ ] 8r  no red test is parked: a failing test seen on the release branch is
+        fixed, or measured and named in the release notes as a known limit,
+        before the publish — never handed to another thread with no deadline
 [ ] 8b  native bundle moved? → litertlm_native_tools_test.dart green on every
         platform in the release (the smoke suite never passes a tool), else N/A
 [ ] 8c  litertlm or speech in the release? → MANDATORY, else N/A. NO PUBLISH of
@@ -734,6 +747,30 @@ dart pub global run pana --no-dartdoc --flutter-sdk ... .   # expect "Points: 15
   → `grantedPoints == maxPoints` once the analysis finishes (a few minutes).
   If it is lower, read `https://pub.dev/packages/<pkg>/score`, fix, and
   ship a `+1` release — do not leave a version below full points.
+
+### 8w. Web drive suites — required when litertlm_dart or the adapter ships
+
+Rule 6 in AGENTS.md: on the web `flutter drive` is the runner, and Rule 6b
+applies (a throwing setUp reads as "All tests passed": check that every suite
+ran its tests).
+
+Run each suite from `packages/flutter_edge_ai/example` with the exact
+command in its file header — they differ (the EG2 suites and the runtime
+probe use `test_driver/web_embeddings_driver.dart`, the others
+`test_driver/integration_test.dart`; `web_multimodal` needs
+`--dart-define=WEB_MODEL_URL=…`; all run on `-d web-server` with
+chromedriver on port 4444). The header also names the models to stage.
+A case that fails:
+
+1. Run it again on the previous `@litert-lm/core` (or the previous
+   litertlm_dart release) before calling it flaky. If the old runtime passes,
+   it is a regression of this release — fix or work around it here, or hold
+   the release.
+2. If it fails on the old runtime too, measure how often (seeds, greedy) and
+   put the limit in the release notes.
+
+"Known flake" is a conclusion from that comparison, not a label for a red
+test.
 
 ### 8b. One tool call on a device — required whenever the native bundle moved
 

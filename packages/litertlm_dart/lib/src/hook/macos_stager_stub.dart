@@ -8,7 +8,8 @@
 // an older release's companions into the app and rewrite its LiteRtLm. So the
 // hook writes this stub at that path: it accepts the same arguments, says the
 // block can go, and exits 0. It replaces only a stager of ours (any release's)
-// or an earlier stub, never another file.
+// or an earlier stub, never another file, and fails the build when a stager
+// of ours is there and cannot be replaced.
 
 import 'dart:io';
 
@@ -36,26 +37,74 @@ bool isOurMacOSStager(String content) =>
     content.contains(macOSStagerStubMarker) ||
     content.contains('COMPANIONS="GemmaModelConstraintProvider');
 
+/// What [writeMacOSStagerStub] found and did.
+enum MacOSStagerStubOutcome {
+  /// The file now holds the stub: it was absent, a stager of ours or an
+  /// earlier stub.
+  written,
+
+  /// The file already held this stub.
+  current,
+
+  /// The file is not ours, and was left alone.
+  notOurs,
+
+  /// The file is there but could not be read, so whose it is is unknown; it
+  /// was left alone.
+  unreadable,
+}
+
 /// Writes the stub for [version] as [file] when it is absent, ours and
-/// different, and returns whether [file] now holds it. A file that is not
-/// ours is left alone (false).
-bool writeMacOSStagerStub(File file, String version) {
+/// different. The stub is written beside it and renamed over it, so the
+/// Podfile block never runs a half-written file.
+///
+/// A file that is not ours, or cannot be read, is left alone. A stager of
+/// an earlier release that cannot be replaced is a [StateError] naming the
+/// path: left there, the block would stage that release's companions into
+/// the app. An absent file, or an earlier stub, that cannot be written is
+/// the [FileSystemException] of the write (the stub only serves apps that
+/// still carry the block, and an earlier stub does nothing either).
+MacOSStagerStubOutcome writeMacOSStagerStub(File file, String version) {
   final stub = macOSStagerStub(version);
+  // A stager of an earlier release, not a stub: only it would stage old
+  // companions if left there.
+  var stager = false;
   if (file.existsSync()) {
     final String current;
     try {
       current = file.readAsStringSync();
     } on FileSystemException {
-      return false;
+      return MacOSStagerStubOutcome.unreadable;
     } on FormatException {
-      return false;
+      // Not text: no stager of ours.
+      return MacOSStagerStubOutcome.notOurs;
     }
-    if (current == stub) return true;
-    if (!isOurMacOSStager(current)) return false;
+    if (current == stub) return MacOSStagerStubOutcome.current;
+    if (!isOurMacOSStager(current)) return MacOSStagerStubOutcome.notOurs;
+    stager = !current.contains(macOSStagerStubMarker);
   }
-  file.parent.createSync(recursive: true);
-  file.writeAsStringSync(stub);
-  // The block runs it with `sh`, but a stager was executable too.
-  Process.runSync('chmod', ['755', file.path]);
-  return true;
+  final temp = File('${file.path}.$pid.tmp');
+  try {
+    file.parent.createSync(recursive: true);
+    temp.writeAsStringSync(stub, flush: true);
+    // The block runs it with `sh`, but a stager was executable too.
+    Process.runSync('chmod', ['755', temp.path]);
+    temp.renameSync(file.path);
+  } on FileSystemException catch (e) {
+    try {
+      if (temp.existsSync()) temp.deleteSync();
+    } on FileSystemException {
+      // Nothing more to do: the rename's failure is what is reported.
+    }
+    if (!stager) rethrow;
+    throw StateError(
+      '${file.path} is the macOS companion stager of an earlier '
+      'litertlm_dart, and it could not be replaced (${e.message}'
+      '${e.osError == null ? '' : ': ${e.osError!.message}'}). Left there, '
+      "the Podfile's '[flutter_gemma] Setup LiteRT-LM macOS' block would copy "
+      "that release's companions into the app. Delete the file, or remove "
+      'the block from your Podfile.',
+    );
+  }
+  return MacOSStagerStubOutcome.written;
 }

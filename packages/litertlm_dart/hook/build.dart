@@ -1399,8 +1399,11 @@ void main(List<String> args) async {
 /// earlier release, so the block neither fails nor stages old companions.
 ///
 /// The block names the arm64 directory whatever the target architecture. A
-/// file that cannot be written is said, never a failed build: the stub is
-/// for apps that still carry the block.
+/// stub that cannot be created where there was none is said, never a failed
+/// build: the stub is for apps that still carry the block. A stager of an
+/// earlier release that cannot be replaced fails the build
+/// (writeMacOSStagerStub's StateError): left there, it would put that
+/// release's companions into the app.
 void _replaceMacOSStager(BuildInput input, BuildOutputBuilder output) {
   final file = File(
     '${_cacheBasePath('flutter_gemma')}/macos_arm64/$macOSStagerFileName',
@@ -1412,23 +1415,30 @@ void _replaceMacOSStager(BuildInput input, BuildOutputBuilder output) {
         multiLine: true,
       ).firstMatch(pubspec.readAsStringSync())?.group(1) ??
       'unknown';
-  final bool written;
+  final MacOSStagerStubOutcome outcome;
   try {
-    written = writeMacOSStagerStub(file, version);
-  } on Exception catch (e) {
+    outcome = writeMacOSStagerStub(file, version);
+  } on FileSystemException catch (e) {
     stderr.writeln(
       '[$_packageName] could not write the no-op macOS stager to '
       '${file.path}: $e',
     );
     return;
   }
-  if (written) {
-    // An older plugin's hook on this machine may write its stager back.
-    output.dependencies.add(file.uri);
-  } else {
-    stderr.writeln(
-      '[$_packageName] ${file.path} is not a stager of ours; left as it is.',
-    );
+  switch (outcome) {
+    case MacOSStagerStubOutcome.written || MacOSStagerStubOutcome.current:
+      // An older plugin's hook on this machine may write its stager back.
+      output.dependencies.add(file.uri);
+    case MacOSStagerStubOutcome.notOurs:
+      stderr.writeln(
+        '[$_packageName] ${file.path} is not a stager of ours; left as it is.',
+      );
+    case MacOSStagerStubOutcome.unreadable:
+      stderr.writeln(
+        '[$_packageName] ${file.path} could not be read, so whether it is '
+        "litertlm_dart's old macOS stager is unknown; left as it is. If it "
+        'is, delete it.',
+      );
   }
 }
 

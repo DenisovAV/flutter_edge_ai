@@ -25,8 +25,13 @@ void main() {
 
   test('is written where none was, and runs as the Podfile block runs it: '
       'sh, the app\'s Frameworks, exit 0, one line naming the block', () {
-    expect(writeMacOSStagerStub(file, '0.20.0'), isTrue);
+    expect(
+      writeMacOSStagerStub(file, '0.20.0'),
+      MacOSStagerStubOutcome.written,
+    );
     expect(file.readAsStringSync(), macOSStagerStub('0.20.0'));
+    // Written beside it and renamed: nothing else is left in the directory.
+    expect(file.parent.listSync().map((e) => e.path), [file.path]);
     final frameworks = Directory('${dir.path}/a.app/Contents/Frameworks')
       ..createSync(recursive: true);
     final r = Process.runSync('sh', [file.path, frameworks.path]);
@@ -51,9 +56,19 @@ void main() {
     file
       ..parent.createSync(recursive: true)
       ..writeAsStringSync(_oldStager);
-    expect(writeMacOSStagerStub(file, '0.20.0'), isTrue);
+    expect(
+      writeMacOSStagerStub(file, '0.20.0'),
+      MacOSStagerStubOutcome.written,
+    );
     expect(file.readAsStringSync(), macOSStagerStub('0.20.0'));
-    expect(writeMacOSStagerStub(file, '0.20.0+1'), isTrue);
+    expect(
+      writeMacOSStagerStub(file, '0.20.0'),
+      MacOSStagerStubOutcome.current,
+    );
+    expect(
+      writeMacOSStagerStub(file, '0.20.0+1'),
+      MacOSStagerStubOutcome.written,
+    );
     expect(file.readAsStringSync(), macOSStagerStub('0.20.0+1'));
   });
 
@@ -62,9 +77,83 @@ void main() {
     file
       ..parent.createSync(recursive: true)
       ..writeAsStringSync(foreign);
-    expect(writeMacOSStagerStub(file, '0.20.0'), isFalse);
+    expect(
+      writeMacOSStagerStub(file, '0.20.0'),
+      MacOSStagerStubOutcome.notOurs,
+    );
     expect(file.readAsStringSync(), foreign);
   });
+
+  test('a file it cannot read is reported as unreadable, not as not ours, '
+      'and left alone', () {
+    file
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(_oldStager);
+    Process.runSync('chmod', ['000', file.path]);
+    addTearDown(() => Process.runSync('chmod', ['644', file.path]));
+    expect(
+      writeMacOSStagerStub(file, '0.20.0'),
+      MacOSStagerStubOutcome.unreadable,
+    );
+    Process.runSync('chmod', ['644', file.path]);
+    expect(file.readAsStringSync(), _oldStager);
+  }, skip: Platform.isWindows ? 'no file modes' : false);
+
+  test('a stager of ours that cannot be replaced fails the build, naming '
+      'the path and what to do', () {
+    file
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(_oldStager);
+    Process.runSync('chmod', ['555', file.parent.path]);
+    addTearDown(() => Process.runSync('chmod', ['755', file.parent.path]));
+    expect(
+      () => writeMacOSStagerStub(file, '0.20.0'),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          allOf(
+            contains(file.path),
+            contains('Delete the file'),
+            contains('Podfile'),
+          ),
+        ),
+      ),
+    );
+    expect(file.readAsStringSync(), _oldStager);
+  }, skip: Platform.isWindows ? 'no file modes' : false);
+
+  test('an earlier stub that cannot be replaced is the write\'s '
+      'FileSystemException, not a failed build: it does nothing either', () {
+    file
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(macOSStagerStub('0.20.0'));
+    Process.runSync('chmod', ['555', file.parent.path]);
+    addTearDown(() => Process.runSync('chmod', ['755', file.parent.path]));
+    expect(
+      () => writeMacOSStagerStub(file, '0.20.0+1'),
+      throwsA(isA<FileSystemException>()),
+    );
+  }, skip: Platform.isWindows ? 'no file modes' : false);
+
+  test('an absent stub that cannot be created is the write\'s '
+      'FileSystemException, which the hook only reports', () {
+    file.parent.createSync(recursive: true);
+    Process.runSync('chmod', ['555', file.parent.path]);
+    addTearDown(() => Process.runSync('chmod', ['755', file.parent.path]));
+    expect(
+      () => writeMacOSStagerStub(file, '0.20.0'),
+      throwsA(isA<FileSystemException>()),
+    );
+    final hook = File('hook/build.dart').readAsStringSync();
+    expect(
+      hook,
+      contains(
+        'outcome = writeMacOSStagerStub(file, version);\n'
+        '  } on FileSystemException catch (e) {',
+      ),
+    );
+  }, skip: Platform.isWindows ? 'no file modes' : false);
 
   test('the hook writes it on every macOS build, at the arm64 path the '
       'block names', () {

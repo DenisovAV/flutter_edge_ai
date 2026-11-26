@@ -20,6 +20,11 @@ on:
       prebuilt_ref:
         description: 'Upstream ref to take the prebuilt constraint provider from (blank = the exact v0.20.0 source SHA; Dawn always comes from the source ref)'
         required: false
+      compiler:
+        description: 'C++ compiler for LiteRtLm.dll, libLiteRt.dll and the WebGPU accelerator: msvc (the release build) or clang-cl (an A/B of the Intel GPU prefill speed; not for release)'
+        type: choice
+        options: [msvc, clang-cl]
+        default: msvc
 
 jobs:
   build-windows-x86_64:
@@ -113,8 +118,17 @@ jobs:
           $env:PATH = "C:\Program Files\Git\usr\bin;$env:PATH"
           $env:BAZEL_SH = "C:\Program Files\Git\usr\bin\bash.exe"
           cd C:\LiteRT-LM
+          # compiler=clang-cl: Bazel's clang-cl toolchain with the runner's LLVM;
+          # the linker stays MSVC's link.exe.
+          $compilerFlags = @()
+          if ('${{ inputs.compiler }}' -eq 'clang-cl') {
+            $env:BAZEL_LLVM = 'C:\Program Files\LLVM'
+            & "$env:BAZEL_LLVM\bin\clang-cl.exe" --version
+            $compilerFlags = @('--compiler=clang-cl')
+          }
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build -c opt `
+            @compilerFlags `
             --linkopt=/OPT:REF --linkopt=/OPT:ICF `
             --build_tag_filters='-nowindows' `
             --features=compiler_param_file `

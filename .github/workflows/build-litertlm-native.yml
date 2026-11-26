@@ -486,9 +486,17 @@ jobs:
 
       - name: Clone LiteRT-LM
         run: |
+          # pwsh does not stop on a native command's exit code: check each.
           git clone https://github.com/google-ai-edge/LiteRT-LM C:\LiteRT-LM
+          if ($LASTEXITCODE -ne 0) { throw "git clone failed ($LASTEXITCODE)" }
           cd C:\LiteRT-LM
           git checkout "$env:LITERTLM_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw "git checkout $env:LITERTLM_VERSION failed ($LASTEXITCODE)" }
+          $head = git rev-parse HEAD
+          $want = git rev-parse "${env:LITERTLM_VERSION}^{commit}"
+          if ($LASTEXITCODE -ne 0 -or $head -ne $want) {
+            throw "LiteRT-LM HEAD is $head, not $env:LITERTLM_VERSION ($want)"
+          }
           # Only Dawn comes from upstream's prebuilt/. Up to native-v0.19.1
           # Google's prebuilt libGemmaModelConstraintProvider.dll did too; from
           # native-v0.20.0 the tool-call constraints are built with

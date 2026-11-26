@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-26",
+  "host": "macos_arm64",
+  "device": "Mac mini (M5 Pro, Mac17,16)",
+  "commit": "1508654e6868cd340d9d15f54d9551fc8a2ae4f8",
+  "packages": {
+    "flutter_edge_ai": "2.7.2",
+    "flutter_edge_ai_litertlm": "1.21.3",
+    "flutter_edge_ai_speech": "0.6.2",
+    "litertlm_dart": "0.20.0"
+  },
+  "native": "e820e3acc547edbbb11380c02958d1c95160a79147b437ec3f2b1a5f9f361fa6",
+  "log_sha256": "0a0fd847be7780e7d21de3a88dac7b3536db66dc8c23885a8a591666057578c2",
+  "log_url": null,
+  "log_location": "Plain Dart programs on litertlm_dart's public API (no integration test, no FEA_EVIDENCE lines), Gemma 4 E2B file sha256 181938105e0e... = gemma-4-e2b-it/generic. The libraries were the local prebuilt that shadowed the hook at that commit; both are byte-identical to the native-v0.20.0 litertlm-macos_arm64.tar.gz (libLiteRtLm 14a38a80..., libStreamProxy c55c483d..., compared with the published asset 2026-11-26). log_sha256 is of the four logs concatenated in this order, on the Mac mini under ~/Work/.scratch/v020-rel/logs/: smoke-stop-cpu.log, smoke-stop-gpu.log, smoke-proof-g4-cpu.log, smoke-proof-g4-gpu.log. Report: thread-storage thr_6r5zhn4fxm/v020-local-native-builds.md, 'macOS smoke'.",
+  "cells": {
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "JSON response format",
+        "stop and rewind",
+        "text",
+        "thinking within a budget",
+        "tool calls",
+        "tool calls with thinking",
+        "tool choice"
+      ],
+      "gpu": [
+        "JSON response format",
+        "stop and rewind",
+        "text",
+        "thinking within a budget",
+        "tool calls",
+        "tool calls with thinking",
+        "tool choice"
+      ]
+    }
+  }
+}

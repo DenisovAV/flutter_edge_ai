@@ -19,6 +19,7 @@ import 'package:yaml/yaml.dart';
 
 import 'check.dart';
 import 'evidence.dart';
+import 'pub_dev.dart';
 
 const backends = ['gpu', 'cpu', 'npu'];
 
@@ -104,10 +105,18 @@ final class SiteInputs {
     this.snapshots,
     this.versions,
     this.evidence,
-  ) : natives = {
-        for (final h in hosts)
-          if (nativeKey(repoRoot, h.id, versions) case final key?) h.id: key,
-      };
+    this.pin,
+  ) : natives = pin == null
+          ? {
+              for (final h in hosts)
+                if (nativeKey(repoRoot, h.id, versions) case final key?)
+                  h.id: key,
+            }
+          : {
+              for (final h in hosts)
+                if (pin.nativeFor(h.id) case final key?) h.id: key,
+            },
+      shipped = {...versions, ...?pin?.packages};
 
   final String repoRoot;
 
@@ -124,8 +133,17 @@ final class SiteInputs {
   /// The recorded runs, oldest first.
   final List<EvidenceRun> evidence;
 
-  /// Host → the native build the packages ship for it now ([nativeKey]).
+  /// What pub.dev ships ([pinFile]); null only where the repository has no
+  /// packages (a fixture registry), and then the workspace stands for it.
+  final PubDevPin? pin;
+
+  /// Host → the native build an app gets from pub.dev ([PubDevPin.nativeFor]),
+  /// which a run must have passed on to count as verified.
   final Map<String, String> natives;
+
+  /// Package → the version on pub.dev ([pin]), else the workspace's: the
+  /// minor version a run must match to count as verified.
+  final Map<String, String> shipped;
 
   static SiteInputs read(Directory registryDir, List<Problem> problems) {
     List<Object?> list(String name) {
@@ -213,6 +231,20 @@ final class SiteInputs {
         versions[package] = '${yaml['version']}';
       }
     }
+    final hasPackages = Directory(p.join(repoRoot, 'packages')).existsSync();
+    final pin =
+        hasPackages || File(p.join(registryDir.path, pinFile)).existsSync()
+        ? readPin(registryDir, problems)
+        : null;
+    if (pin != null) {
+      checkPin(
+        pin,
+        repoRoot,
+        [for (final h in hosts) h.id],
+        snapshots.keys,
+        problems,
+      );
+    }
     final inputs = SiteInputs._(
       repoRoot,
       hosts,
@@ -220,6 +252,7 @@ final class SiteInputs {
       snapshots,
       versions,
       readEvidence(registryDir, problems),
+      pin,
     );
     // A host a snapshot does not answer for would show as refused, and one
     // whose native build cannot be named would make every run there stale:
@@ -266,7 +299,7 @@ final class SiteInputs {
       );
     } else if (hook.existsSync()) {
       for (final host in hosts) {
-        if (!inputs.natives.containsKey(host.id)) {
+        if (nativeKey(repoRoot, host.id, versions) == null) {
           problems.add(
             Problem(
               'hosts.yaml',
@@ -520,8 +553,8 @@ Map<String, Map<String, Map<String, Cell>>> cells(
 }
 
 /// The cell's status from recorded runs: verified when a run passed on the
-/// native build the packages ship for [host] now and the variant's package is
-/// on the same minor version, stale when every such run predates that. Null
+/// native build that the packages on pub.dev bundle for [host] and the
+/// variant's package is on the same minor version as on pub.dev, stale when every such run predates that. Null
 /// when nothing was recorded.
 Cell? _proven(
   SiteInputs inputs,
@@ -539,7 +572,7 @@ Cell? _proven(
   String? minor(String? v) => v?.split('.').take(2).join('.');
   bool current(EvidenceRun run) =>
       run.native == inputs.natives[host] &&
-      minor(run.packages[package]) == minor(inputs.versions[package]);
+      minor(run.packages[package]) == minor(inputs.shipped[package]);
   final run = passed.firstWhere(current, orElse: () => passed.first);
   return Cell(
     current(run) ? 'verified' : 'stale',
@@ -629,8 +662,9 @@ String modelsJson(SiteInputs inputs, List<Entry> entries) {
   final json = {
     'schema_version': 1,
     'packages': {
-      for (final MapEntry(:key, :value) in inputs.versions.entries) key: value,
+      for (final MapEntry(:key, :value) in inputs.shipped.entries) key: value,
     },
+    if (inputs.pin != null) 'native_release': inputs.pin!.nativeRelease,
     'hosts': [
       for (final h in inputs.hosts) {'id': h.id, 'label': h.label},
     ],
@@ -690,11 +724,11 @@ String _url(Map<String, Object?> a) =>
 const _legend = {
   'verified': (
     '✅',
-    'Passed on that host and backend with the native build the packages ship now',
+    'Passed on that host and backend with the native build of the packages on pub.dev',
   ),
   'stale': (
     '🕓',
-    'Passed there on an earlier native build; not run since it changed',
+    'Passed there on another native build; not run on the one on pub.dev',
   ),
   'documented': (
     '📝',
@@ -758,7 +792,8 @@ String registryPage(SiteInputs inputs, List<Entry> entries) {
       'A blank cell is a combination that does not exist: a build compiled '
       'for one NPU on another platform, a web export on a phone, or a native '
       'build on the web. Package '
-      'versions: ${inputs.versions.entries.map((e) => '`${e.key}` ${e.value}').join(', ')}.',
+      'versions: ${inputs.shipped.entries.map((e) => '`${e.key}` ${e.value}').join(', ')}'
+      '${inputs.pin == null ? '' : ', as on pub.dev, with ${inputs.pin!.nativeRelease}'}.',
     )
     ..writeln();
   for (final kind in _kindTitles.keys) {

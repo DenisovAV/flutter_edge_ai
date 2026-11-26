@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-26",
+  "host": "windows_x64",
+  "device": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU)",
+  "commit": "1963fc4e9604471c5298db1933b4d4bdaa150e52",
+  "packages": {
+    "flutter_edge_ai": "2.7.2",
+    "flutter_edge_ai_litertlm": "1.21.3",
+    "flutter_edge_ai_speech": "0.6.2",
+    "litertlm_dart": "0.20.0"
+  },
+  "native": "ff8da8c4c7757b4d0bbcd40206e6866bcd8fb6fb92dd4a44b0199ebea5b9b95e",
+  "log_sha256": "9c3cad26ff142a62495a25c981115487a28b475b775778fdb5903f45677e9af1",
+  "log_url": null,
+  "log_location": "intel-ptl C:\\b\\v020-d8\\rcx\\smoke-e2b-gpu.log (UTF-16). A plain Dart program on litertlm_dart's public API (git archive of packages/litertlm_dart at the commit; no integration test, no FEA_EVIDENCE lines), the native-v0.20.0 archive downloaded and verified by the hook, no local prebuilt; D3D12, FP32, vision encoder on the GPU. Gemma 4 E2B file C:\\b\\models\\gemma-4-E2B-it.litertlm, sha256 181938105e0e... = gemma-4-e2b-it/generic. Report: thread-storage thr_6r5zhn4fxm/v020-windows-0.20.md, 'Release archive check'.",
+  "cells": {
+    "gemma-4-e2b-it/generic": {
+      "gpu": [
+        "text",
+        "tool calls with thinking",
+        "vision"
+      ]
+    }
+  }
+}

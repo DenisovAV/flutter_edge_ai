@@ -1003,10 +1003,41 @@ choice, so `required` behaves as `auto` there, and the app says so:
   /// it natively as LiteRT-LM's per-message tool choice, sent with each of
   /// your messages. The browser's `@litert-lm/core` takes no per-message tool
   /// choice, so on the web `required` behaves as `auto`, and the app says so.
+  /// Where the native runtime cannot apply a tool choice either, opening the
+  /// chat with `required` is refused; the chat page shows why and keeps the
+  /// previous choice ([openKeepingPrevious]).
   final bool supportsRequiredToolChoice;
 ```
 
-Both models set it to `!kIsWeb`.
+Both models set it to `!kIsWeb`. The devices where the runtime refuses a
+tool choice are the engine's to know, not the app's, so the chat page does not
+list them: it tries the new setting, and when the engine refuses it with an
+`UnsupportedError` it reopens the chat with the setting that worked and shows
+the refusal as the notice:
+
+```dart
+/// Opens a chat with the [next] tool choice and thinking setting. When the
+/// engine refuses them with an [UnsupportedError] — `ToolChoice.required` on a
+/// device whose runtime cannot apply a tool choice, for one — it opens one
+/// with the [previous] settings instead and returns the refusal, so the page
+/// can say why and the chat keeps working. Any other failure is thrown.
+Future<({T chat, (ToolChoice, bool) settings, String? refusal})>
+openKeepingPrevious<T>(
+  Future<T> Function(ToolChoice choice, bool thinking) open, {
+  required (ToolChoice, bool) next,
+  required (ToolChoice, bool) previous,
+}) async {
+  try {
+    return (chat: await open(next.$1, next.$2), settings: next, refusal: null);
+  } on UnsupportedError catch (error) {
+    return (
+      chat: await open(previous.$1, previous.$2),
+      settings: previous,
+      refusal: '${error.message ?? error}',
+    );
+  }
+}
+```
 
 ### Thinking mode, and what the 2.59 GB buys
 

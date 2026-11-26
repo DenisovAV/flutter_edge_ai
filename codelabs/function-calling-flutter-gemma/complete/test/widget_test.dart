@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:edge_ai_quickstart/download_page.dart';
@@ -146,15 +147,16 @@ void main() {
       expect(Models.functionGemma.supportsThinking, isFalse);
     });
 
-    // Neither, and that is the point of recording it per checkpoint rather
-    // than assuming the larger model can do more. FunctionGemma's prompt
-    // format cannot express "you must call"; Gemma 4's declarations reach the
-    // runtime as `tools_json`, which carries no `tool_choice` at all. A model
-    // whose format did express it would set this true — none here does.
-    test('neither model can be forced to call a tool', () {
-      expect(Models.gemma4.supportsRequiredToolChoice, isFalse);
-      expect(Models.functionGemma.supportsRequiredToolChoice, isFalse);
-    });
+    // Both, natively: from flutter_edge_ai_litertlm 1.22.0 the runtime takes
+    // `required` with each user message. In the browser it takes no
+    // per-message tool choice, so neither can be forced there.
+    test(
+      'both models can be forced to call a tool natively, not on the web',
+      () {
+        expect(Models.gemma4.supportsRequiredToolChoice, !kIsWeb);
+        expect(Models.functionGemma.supportsRequiredToolChoice, !kIsWeb);
+      },
+    );
   });
 
   testWidgets('the install screen offers the model before any plugin call', (

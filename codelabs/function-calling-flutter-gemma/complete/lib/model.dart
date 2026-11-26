@@ -96,6 +96,9 @@ class ModelChoice {
   /// it natively as LiteRT-LM's per-message tool choice, sent with each of
   /// your messages. The browser's `@litert-lm/core` takes no per-message tool
   /// choice, so on the web `required` behaves as `auto`, and the app says so.
+  /// Where the native runtime cannot apply a tool choice either, opening the
+  /// chat with `required` is refused; the chat page shows why and keeps the
+  /// previous choice ([openKeepingPrevious]).
   final bool supportsRequiredToolChoice;
 
   /// Points an install at wherever this model's bytes are.

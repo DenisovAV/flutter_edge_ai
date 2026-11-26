@@ -183,7 +183,8 @@ final class Session {
   /// during the prefill or the decode or before either started, ends it
   /// normally with what came before; cancelling the subscription stops
   /// native too and drops the rest. Either cancel ends the session (see
-  /// [Session]). The engine's close ends it with a [StateError]; reaching
+  /// [Session]); an error that ends the stream does not, nor does a
+  /// subscription cancelled on that error. The engine's close ends it with a [StateError]; reaching
   /// the engine's context window ends it with an error, as Kotlin's
   /// `onError` and the C API's final chunk say. Refused on the web.
   Stream<String> generateContentStream(List<InputData> inputs) {
@@ -197,7 +198,13 @@ final class Session {
       onListen: () {
         subscription = source.listen(
           out.add,
-          onError: out.addError,
+          // An error ends the stream (the native stream sends nothing after
+          // it): a subscription cancelled on it, as `await for` does, is not
+          // the caller's cancel.
+          onError: (Object e, StackTrace st) {
+            done = true;
+            out.addError(e, st);
+          },
           onDone: () {
             done = true;
             out.close();

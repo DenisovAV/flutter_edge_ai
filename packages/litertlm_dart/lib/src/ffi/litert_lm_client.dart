@@ -872,6 +872,24 @@ Future<({int code, String? message, int micros})> Function(
 )
 sendOffMainIsolate = Isolate.run;
 
+/// How a session clone reaches its spawned isolate:
+/// [sessionCloneOffMainIsolate], replaced by tests, which have no native
+/// library behind the call.
+@visibleForTesting
+Future<SessionCallResult> Function({required int sessionAddr}) sessionCloneOff =
+    sessionCloneOffMainIsolate;
+
+/// How a session's streamed generation reaches its spawned isolate:
+/// [sessionGenerateStreamOffMainIsolate], replaced by tests.
+@visibleForTesting
+Future<SessionCallResult> Function({
+  required int sessionAddr,
+  required List<SessionInput> inputs,
+  required int callbackAddr,
+  required int callbackDataAddr,
+})
+sessionStreamOff = sessionGenerateStreamOffMainIsolate;
+
 /// How a rewind reaches its spawned isolate: [_rewindCancelledTurnOffMainIsolate],
 /// replaced by tests, which have no native library behind the call.
 @visibleForTesting
@@ -5269,6 +5287,9 @@ class LiteRtLmFfiClient {
       final r = await body(engine.address);
       final byCaller = session != null && _cancelledSessions.contains(session);
       if (session != null && _isShuttingDown && !byCaller) {
+        // A session the call made (a clone) still exists natively: published,
+        // so shutdown deletes it with the others instead of leaking it.
+        if (r.code == liteRtLmStatusOk && r.address != 0) publish?.call(r);
         throw StateError(
           '$call: the engine was closed while the call ran; the session was '
           'stopped and deleted with it.',
@@ -5329,7 +5350,7 @@ class LiteRtLmFfiClient {
   Future<int> sessionClone(int session) async {
     final r = await _sessionCall(
       'litert_lm_session_clone',
-      (_) => sessionCloneOffMainIsolate(sessionAddr: session),
+      (_) => sessionCloneOff(sessionAddr: session),
       session: session,
       publish: (r) => _liveSessions.add(r.address),
     );
@@ -5407,6 +5428,7 @@ class LiteRtLmFfiClient {
                   inputs,
                   out,
                   () => consumerCancelled,
+                  () => ended = true,
                 );
                 ended = true;
               }),
@@ -5437,6 +5459,7 @@ class LiteRtLmFfiClient {
     List<SessionInput> inputs,
     StreamController<String> out,
     bool Function() abandoned,
+    void Function() nativeEnded,
   ) async {
     final b = _bindings;
     final engine = _engine;
@@ -5466,6 +5489,9 @@ class LiteRtLmFfiClient {
     ) {
       if (done.isCompleted) return;
       if (errorMsg != nullptr) {
+        // Ended natively: a cancel of the subscription after this error has
+        // nothing to stop.
+        nativeEnded();
         final error = decodeNativeString(errorMsg, maxBytes: _maxErrorBytes);
         _proxyFreeString!(errorMsg);
         if (chunk != nullptr) _proxyFreeString!(chunk);
@@ -5483,6 +5509,7 @@ class LiteRtLmFfiClient {
         if (!out.isClosed && !abandoned()) out.add(text);
       }
       if (isFinal != 0) {
+        nativeEnded();
         callable.close();
         done.complete();
       }
@@ -5509,7 +5536,7 @@ class LiteRtLmFfiClient {
     }
     final SessionCallResult r;
     try {
-      r = await sessionGenerateStreamOffMainIsolate(
+      r = await sessionStreamOff(
         sessionAddr: session,
         inputs: inputs,
         callbackAddr: proxyFn.address,
@@ -5521,6 +5548,7 @@ class LiteRtLmFfiClient {
       rethrow;
     }
     if (r.code != liteRtLmStatusOk) {
+      nativeEnded();
       // No callback comes for a refused call: its proxy is freed here.
       releaseRefusedStreamProxy(r.code, proxyData, _proxyDestroy!);
       callable.close();

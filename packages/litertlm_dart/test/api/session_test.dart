@@ -3,6 +3,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:litertlm_dart/internal_io.dart'
@@ -41,9 +42,22 @@ class _Handle implements SessionHandle {
     return 'six';
   }
 
+  /// When set, the stream sends 'a' and then this error, and closes later,
+  /// as the client's stream closes after native's error chunk.
+  Object? streamError;
+
   @override
   Stream<String> generateContentStream(List<InputData> inputs) {
     calls.add('stream(${_names(inputs)})');
+    final error = streamError;
+    if (error != null) {
+      final out = StreamController<String>();
+      out
+        ..add('a')
+        ..addError(error);
+      Timer(const Duration(milliseconds: 50), out.close);
+      return out.stream;
+    }
     return Stream.fromIterable(['a', 'b']);
   }
 
@@ -173,6 +187,24 @@ void main() {
         .listen((_) {});
     await subscription.cancel();
     expect(session.runDecode, throwsStateError);
+  });
+
+  test('a stream that ends with an error does not end the session, also '
+      'when its subscription is cancelled on the error', () async {
+    final handle = _Handle()..streamError = StateError('window full');
+    final session = newSession(handle, () => false);
+    final got = <String>[];
+    await expectLater(() async {
+      // `await for` cancels the subscription on the error.
+      await for (final chunk in session.generateContentStream([
+        const InputData.text('a'),
+      ])) {
+        got.add(chunk);
+      }
+    }(), throwsStateError);
+    expect(got, ['a']);
+    expect(await session.runDecode(), 'four');
+    expect(handle.calls, isNot(contains('cancel')));
   });
 
   test('a call that makes a session: OK with a NULL session is a failure, '

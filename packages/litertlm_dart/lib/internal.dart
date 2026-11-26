@@ -150,3 +150,5 @@ export 'src/web/web_runtime_version.dart'
         liteRtLmWebRuntimeVersion,
         webMediaPathMessage;
 export 'src/web/web_session_config.dart' show samplerTypeTopP, webSessionConfig;
+export 'src/web/web_tool_responses.dart'
+    show webToolResponseAsUserText, webToolResponseText;

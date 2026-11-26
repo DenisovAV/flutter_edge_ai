@@ -187,8 +187,9 @@ void noteWebDeleteFailure(String what, Object error) {
 final _deleteFailuresNoted = <String>{};
 
 /// The `@litert-lm/core` versions the page fetched, read from the URLs of
-/// its resources (`@litert-lm/core@X.Y.Z`): the runtime itself exports no
-/// version. Empty when none was fetched by a versioned URL.
+/// its resources (`@litert-lm/core@X.Y.Z`, with a prerelease such as
+/// `0.21.0-nightly.20261125` whole): the runtime itself exports no version.
+/// Empty when none was fetched by a versioned URL.
 Set<String> liteRtLmWebFetchedVersions() {
   final performance = globalContext['performance'];
   if (performance == null || !performance.isA<JSObject>()) return <String>{};
@@ -210,7 +211,9 @@ Set<String> liteRtLmWebFetchedVersions() {
   };
 }
 
-final _versioned = RegExp(r'@litert-lm/core@(\d+\.\d+\.\d+)');
+final _versioned = RegExp(
+  r'@litert-lm/core@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]*[0-9A-Za-z])?)',
+);
 
 /// Says once, with `print`, when the page fetched another `@litert-lm/core`
 /// than [liteRtLmWebRuntimeVersion]: one that has every member this release

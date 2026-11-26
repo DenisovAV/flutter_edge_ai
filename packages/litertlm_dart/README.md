@@ -973,6 +973,21 @@ Chrome 157 before it (2026-11-23):
   does not end within 30 s, after a stop or a close, makes the page unusable
   for LiteRT-LM (the module may still be suspended in it): the turn,
   `close()` and every later call fail and say so.
+- **Tool results go as user text.** Each result of a turn's tool calls goes
+  as `Tool <name> returned: <JSON>` (with a call id,
+  `Tool <name> (call <id>) returned: <JSON>`), one per line, in one user
+  message (an image or audio part sent with them stays in it, in order),
+  never as a `role: 'tool'` message: with Gemma 4 E2B's GPU export
+  the tool message got no text on 5 of 8 sampler seeds and under greedy
+  decoding on 0.20.0 and 0.21.0-nightly.20261125 (the nightly ends that
+  turn with `finish_reason: "stop"`), and on 3 of 8 seeds on 0.19.0 (greedy
+  answered there), while the same results as text got a reply on all 8
+  seeds and under greedy decoding on all three (measured 2026-11-26, Chrome
+  158). A runtime older than 0.20.0, which might keep the tool message,
+  lacks members this release calls and is refused before anything is sent.
+  The runtime's history then holds the user message, and a rebuilt
+  conversation replays it. A tool response in `initialMessages` goes the
+  same way.
 - **Per conversation, not per message:** thinking and the template variables
   (`extraContext`). Repetition penalties, no-repeat n-grams, suppressed
   tokens, a thinking token budget, response formats and speculative decoding

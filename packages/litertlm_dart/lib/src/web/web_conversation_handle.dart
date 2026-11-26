@@ -47,6 +47,14 @@
 //   message and in a preface (measured 2026-11-23 and 2026-11-25); a file
 //   path is refused, and so is media
 //   for an encoder the engine did not load.
+// - A tool message goes as user text (web_tool_responses.dart): 0.20.0
+//   and 0.21.0-nightly.20261125 answer a `role: 'tool'` message with nothing
+//   under greedy decoding and on most seeds, and answer the same result
+//   written as text. What is sent is what
+//   the turn keeps ([_Turn.message]), so the runtime's history, which then
+//   holds that user message, matches it wherever it is read: an empty reply
+//   told from a refused send, a refused message left out of a rebuild, a
+//   stopped exchange put back.
 
 import 'dart:async';
 import 'dart:convert';
@@ -71,6 +79,7 @@ import '../runtime/types.dart' show BenchmarkInfo;
 import 'litert_lm_js.dart';
 import 'page_lock.dart';
 import 'web_runtime_version.dart';
+import 'web_tool_responses.dart';
 
 /// A [ConversationHandle] over one `@litert-lm/core` conversation.
 final class WebConversationHandle
@@ -361,6 +370,24 @@ final class WebConversationHandle
     );
   }
 
+  /// Sends [messageJson], the conversation API JSON of a message.
+  ///
+  /// A tool response (a `role: 'tool'` message, or any message holding a
+  /// `tool_response` part: the results of the calls a reply made) goes to
+  /// `@litert-lm/core` as one user message instead, each result written as
+  /// the text `Tool <name> returned: <JSON>` (with a call id,
+  /// `Tool <name> (call <id>) returned: <JSON>`), one per line, its other
+  /// parts (text, an image, audio) kept in order. With Gemma 4
+  /// E2B's GPU export the tool message got no text on 5 of 8 sampler seeds
+  /// and under greedy decoding on 0.20.0 and 0.21.0-nightly.20261125 (the
+  /// nightly ends the turn with `finish_reason: "stop"`), and on 3 of 8 seeds
+  /// on 0.19.0 (greedy answered there); the same results as that text got a
+  /// reply on all 8 seeds and under greedy decoding on all three (measured
+  /// 2026-11-26, Chrome 158). It is done on every runtime: one older than
+  /// 0.20.0, the only kind that could keep the tool message, lacks members
+  /// this release calls and is refused before anything is sent. The
+  /// runtime's history then holds the user message, and a conversation
+  /// rebuilt from it replays that.
   @override
   Stream<String> chatRawMessage(
     String messageJson, {
@@ -372,8 +399,13 @@ final class WebConversationHandle
     }
     final refusal = _refusal(messageJson, enableThinking, options);
     if (refusal != null) return Stream.error(refusal);
-    final message = _jsMessage(messageJson);
-    final turn = _Turn(jsonDecode(messageJson) as Map<String, Object?>);
+    final decoded = jsonDecode(messageJson) as Map<String, Object?>;
+    final asText = webToolResponseAsUserText(decoded);
+    if (asText != null) _noteToolResponsesAsText();
+    // As text, the user message goes as the object (with its one text
+    // part), the form measured; never as a bare string.
+    final message = asText?.jsify() ?? _jsMessage(messageJson);
+    final turn = _Turn(asText ?? decoded);
     _liveTurns.add(turn);
 
     final controller = StreamController<String>();
@@ -892,6 +924,19 @@ final class WebConversationHandle
     }
     return json.jsify()!;
   }
+
+  /// Says once per page, in the runtime log, that tool results go as text.
+  static void _noteToolResponsesAsText() {
+    if (_toolTextNoted) return;
+    _toolTextNoted = true;
+    runtimeLog(
+      '[WebConversationHandle] tool results go to $liteRtLmWebRuntime as '
+      'user text ("Tool <name> returned: <JSON>"): a tool message mostly '
+      'gets no text.',
+    );
+  }
+
+  static bool _toolTextNoted = false;
 
   /// Marks every live turn stopped and stops the one streaming, if it was
   /// sent. With nothing in flight the runtime is not asked: a cancel there

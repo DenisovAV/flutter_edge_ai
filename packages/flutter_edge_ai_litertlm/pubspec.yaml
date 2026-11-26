@@ -51,7 +51,7 @@ dependencies:
   # The LiteRT-LM runtime and its build hook (libLiteRtLm and the NPU
   # stacks). Pinned exactly: this adapter reads litertlm_dart's internal
   # libraries, which carry no compatibility promise between releases.
-  litertlm_dart: 0.20.0+1
+  litertlm_dart: 0.20.0+2
   ffi: ^2.1.0
   mutex: ^3.1.0
   crypto: ^3.0.6

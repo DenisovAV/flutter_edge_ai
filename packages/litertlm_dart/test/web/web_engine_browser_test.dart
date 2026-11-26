@@ -757,7 +757,9 @@ void main() {
       expect(pieces.single.text, 'Hi');
     });
 
-    test('a tool result goes as the role-tool object', () async {
+    // Never as a tool message, which the runtime mostly answers with
+    // nothing (web_tool_responses.dart).
+    test('a tool result goes as user text', () async {
       // A conversation that declares the tool: a tool result on one that
       // declares none is refused before anything is sent.
       await conversation.close();
@@ -773,13 +775,9 @@ void main() {
           .drain<void>();
       await settle();
       expect(list('sent').single, {
-        'role': 'tool',
+        'role': 'user',
         'content': [
-          {
-            'type': 'tool_response',
-            'name': 'f',
-            'response': {'ok': true},
-          },
+          {'type': 'text', 'text': 'Tool f returned: {"ok":true}'},
         ],
       });
       js('__end');

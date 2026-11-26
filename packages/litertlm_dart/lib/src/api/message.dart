@@ -99,7 +99,9 @@ sealed class Content {
   /// call's fields; anything else goes in as it is. [id] is the call's
   /// [ToolCall.id], sent as the response's `id` when set: Swift's
   /// `Content.toolResponse(name:response:id:)` (Message.swift), which writes
-  /// it only when not empty, as here.
+  /// it only when not empty, as here. On the web it goes as
+  /// `Tool <name> returned: <JSON>` user text (see the README, "On the
+  /// web").
   const factory Content.toolResponse(
     String name,
     Object? response, {
@@ -207,7 +209,8 @@ final class Tool {
   /// Swift's do. If it throws, or returns a value that is not JSON, the
   /// model gets the error as text (`Error: …`) instead of a result and the
   /// reply continues. Null: the call reaches the caller, who answers it
-  /// with `Message.tool`.
+  /// with `Message.tool`. On the web the result goes as
+  /// `Tool <name> returned: <JSON>` user text.
   final FutureOr<Object?> Function(Map<String, Object?> arguments)? execute;
 }
 

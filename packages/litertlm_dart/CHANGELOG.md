@@ -1,5 +1,5 @@
 ## 0.20.0+2
-- Web: tool results go as user text on `@litert-lm/core` 0.20.0 and later, which often answer tool messages empty.
+- Web: tool results go as user text; `@litert-lm/core` often answered tool messages empty.
 
 ## 0.20.0+1
 - Pub analysis: a signature list uses a null-aware element (no lint info left).

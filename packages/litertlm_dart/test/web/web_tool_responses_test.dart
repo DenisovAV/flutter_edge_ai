@@ -1,9 +1,7 @@
-// Which page runtimes take a tool response as user text, and the text it
-// becomes (web_tool_responses.dart): from @litert-lm/core 0.20.0 on a
-// `role: 'tool'` message is answered with no text under greedy decoding
-// and on most sampler seeds (0.20.0 and 0.21.0-nightly.20261125, measured
-// 2026-11-26), while `Tool <name> returned: <JSON>` as user text is
-// answered.
+// The user text a tool message becomes on the web (web_tool_responses.dart):
+// `@litert-lm/core` answers a `role: 'tool'` message with no text on most
+// sampler seeds (0.20.0 and 0.21.0-nightly.20261125, measured 2026-11-26),
+// while `Tool <name> returned: <JSON>` as user text is answered.
 @TestOn('vm')
 library;
 
@@ -11,32 +9,6 @@ import 'package:litertlm_dart/internal.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('webToolResponsesAsUserText', () {
-    for (final (versions, asText) in [
-      (<String>{}, true), // self-hosted: the pinned version
-      ({'0.20.0'}, true),
-      ({'0.20.1'}, true),
-      ({'0.21.0-nightly.20261125'}, true),
-      ({'0.21.0'}, true),
-      ({'1.0.0'}, true),
-      ({'0.19.0'}, false),
-      ({'0.19.9'}, false),
-      ({'0.18.0'}, false),
-      ({'0.19.0', '0.20.0'}, true), // two runtimes: the affected one wins
-    ]) {
-      test('$versions: ${asText ? 'user text' : 'a tool message'}', () {
-        expect(webToolResponsesAsUserText(versions), asText);
-      });
-    }
-
-    test('no page version is read as the pinned one', () {
-      expect(
-        webToolResponsesAsUserText({}),
-        webToolResponsesAsUserText({liteRtLmWebRuntimeVersion}),
-      );
-    });
-  });
-
   group('webToolResponseAsUserText', () {
     test('one result is the text variant E answered with', () {
       expect(
@@ -117,6 +89,21 @@ void main() {
       );
       expect(
         webToolResponseAsUserText({'role': 'tool', 'content': <Object?>[]}),
+        isNull,
+      );
+      // Never rewritten in part: a result beside another kind of part.
+      expect(
+        webToolResponseAsUserText({
+          'role': 'tool',
+          'content': [
+            {
+              'type': 'tool_response',
+              'name': 'weather',
+              'response': {'temp': 25},
+            },
+            {'type': 'image', 'blob': 'AA=='},
+          ],
+        }),
         isNull,
       );
     });

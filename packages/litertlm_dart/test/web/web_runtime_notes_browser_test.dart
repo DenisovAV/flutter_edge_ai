@@ -118,6 +118,15 @@ void main() {
       expect(web.liteRtLmWebFetchedVersions(), {'0.19.0'});
     });
 
+    test('keep a prerelease whole', () {
+      _eval('''Object.defineProperty(performance, 'getEntriesByType', {
+          configurable: true,
+          value: (type) => type !== 'resource' ? [] : [{name:
+            'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.21.0-nightly.20261125/+esm'}],
+        });''');
+      expect(web.liteRtLmWebFetchedVersions(), {'0.21.0-nightly.20261125'});
+    });
+
     test('another than the pinned one is printed once per page', () async {
       final printed = await printsOf(() async {
         web.noteOtherWebRuntimeVersion();

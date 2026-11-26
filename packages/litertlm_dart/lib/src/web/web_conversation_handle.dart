@@ -47,10 +47,10 @@
 //   message and in a preface (measured 2026-11-23 and 2026-11-25); a file
 //   path is refused, and so is media
 //   for an encoder the engine did not load.
-// - A tool message goes as user text on a runtime from 0.20.0 on
-//   (web_tool_responses.dart): 0.20.0 and 0.21.0-nightly.20261125 answer a
-//   `role: 'tool'` message with nothing under greedy decoding and on most
-//   seeds, and answer the same result written as text. What is sent is what
+// - A tool message goes as user text (web_tool_responses.dart): 0.20.0
+//   and 0.21.0-nightly.20261125 answer a `role: 'tool'` message with nothing
+//   under greedy decoding and on most seeds, and answer the same result
+//   written as text. What is sent is what
 //   the turn keeps ([_Turn.message]), so the runtime's history, which then
 //   holds that user message, matches it wherever it is read: an empty reply
 //   told from a refused send, a refused message left out of a rebuild, a
@@ -96,7 +96,6 @@ final class WebConversationHandle
     this._maxTokens = 0,
     this._audio = false,
     this.toolCallsOf = nativeToolCalls,
-    this._toolResponsesAsUserText = false,
     this._onClose,
     this._cloneWith,
     LiteRtLmPageLock? pageLock,
@@ -316,10 +315,6 @@ final class WebConversationHandle
   /// Reads a stopped reply's tool calls ([createWebEngine]'s `toolCallsOf`).
   final ToolCallReader toolCallsOf;
 
-  /// Whether a tool message goes as user text (webToolResponsesAsUserText,
-  /// decided for the page's runtime when the engine was created).
-  final bool _toolResponsesAsUserText;
-
   Future<void>? _closedFuture;
 
   /// How long a stopped generation may take to end before the page lock is
@@ -378,17 +373,19 @@ final class WebConversationHandle
   /// Sends [messageJson], the conversation API JSON of a message.
   ///
   /// A tool message (`role: 'tool'`, the results of the calls a reply made)
-  /// goes to `@litert-lm/core` 0.20.0 and later as one user message of
-  /// text instead, each result written `Tool <name> returned: <JSON>` (with
-  /// a call id, `Tool <name> (call <id>) returned: <JSON>`), one per line:
-  /// with Gemma 4 E2B's GPU export, 0.20.0 and 0.21.0-nightly.20261125
-  /// answer the tool message with no text under greedy decoding and on 5 of
-  /// 8 seeds of the family sampler (the nightly ends the turn with
-  /// `finish_reason: "stop"`), and answer the same result as that text on
-  /// all of them (measured 2026-11-26, Chrome 158). On an older runtime it
-  /// stays a tool message (0.19.0 answered it under greedy decoding, and on
-  /// 5 of the 8 seeds). The runtime's history then holds the user message,
-  /// and a conversation rebuilt from it replays that.
+  /// goes to `@litert-lm/core` as one user message of text instead, each
+  /// result written `Tool <name> returned: <JSON>` (with a call id,
+  /// `Tool <name> (call <id>) returned: <JSON>`), one per line. With Gemma 4
+  /// E2B's GPU export the tool message got no text on 5 of 8 sampler seeds
+  /// and under greedy decoding on 0.20.0 and 0.21.0-nightly.20261125 (the
+  /// nightly ends the turn with `finish_reason: "stop"`), and on 3 of 8 seeds
+  /// on 0.19.0 (greedy answered there); the same results as that text got a
+  /// reply on all 8 seeds and under greedy decoding on all three (measured
+  /// 2026-11-26, Chrome 158). It is done on every runtime: one older than
+  /// 0.20.0, the only kind that could keep the tool message, lacks members
+  /// this release calls and is refused before anything is sent. The
+  /// runtime's history then holds the user message, and a conversation
+  /// rebuilt from it replays that.
   @override
   Stream<String> chatRawMessage(
     String messageJson, {
@@ -401,9 +398,7 @@ final class WebConversationHandle
     final refusal = _refusal(messageJson, enableThinking, options);
     if (refusal != null) return Stream.error(refusal);
     final decoded = jsonDecode(messageJson) as Map<String, Object?>;
-    final asText = _toolResponsesAsUserText
-        ? webToolResponseAsUserText(decoded)
-        : null;
+    final asText = webToolResponseAsUserText(decoded);
     if (asText != null) _noteToolResponsesAsText();
     // As text, the user message goes as the object (with its one text
     // part), the form measured; never as a bare string.
@@ -934,8 +929,8 @@ final class WebConversationHandle
     _toolTextNoted = true;
     runtimeLog(
       '[WebConversationHandle] tool results go to $liteRtLmWebRuntime as '
-      'user text ("Tool <name> returned: <JSON>"): from 0.20.0 a tool '
-      'message mostly gets no text.',
+      'user text ("Tool <name> returned: <JSON>"): a tool message mostly '
+      'gets no text.',
     );
   }
 

@@ -7,7 +7,7 @@
 - `EngineConfig.selectedSignatures`.
 - Tool calls constrained with LLGuidance; Google's prebuilt constraint provider no longer ships.
 - Each native CPU/GPU conversation keeps its own sampler (#2080; measured on macOS, Linux x64, Windows, Android).
-- macOS needs no companions: the `macos_companions` define and the Podfile stager block are no-ops.
+- macOS needs no companions: the Podfile stager block runs a no-op; remove the older inline block.
 - Windows: `libLiteRt.dll` needs no Visual C++ runtime.
 - Android Qualcomm NPU on QNN 2.52.0; Linux arm64 on QAIRT 2.51.1.
 - Windows Intel GPU: prefill ~2x slower than 0.19 (E2B 1.1-1.4x) to keep Gemma 4 12B answering.

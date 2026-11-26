@@ -460,8 +460,9 @@ jobs:
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
       # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: from
-      # v0.20.0 the accelerator is built from LiteRT at the tag's pin, which
-      # contains #11120 (dp4a off on Intel GPUs).
+      # v0.20.0 the accelerator is built from LiteRT at the tag's pin. That pin
+      # no longer has #11120 (reverted upstream by 9d3824510e), so patch_c_api.sh
+      # section 10b re-applies it (patches/litert_intel_webgpu_no_dp4a.patch).
       ANDROID_NDK_HOME: ''
       BAZEL_OUTPUT_BASE: 'D:\b'
     steps:

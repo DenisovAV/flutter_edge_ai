@@ -17,12 +17,6 @@ on:
         description: 'LiteRT-LM ref (tag, branch, or commit SHA)'
         required: true
         default: '95df4c2a932b4917ace66fcfef6c154e8d2a6699'
-        required: false
-      compiler:
-        description: 'C++ compiler for LiteRtLm.dll, libLiteRt.dll and the WebGPU accelerator: msvc (the release build) or clang-cl (an A/B of the Intel GPU prefill speed; not for release)'
-        type: choice
-        options: [msvc, clang-cl]
-        default: msvc
 
 jobs:
   build-windows-x86_64:
@@ -37,8 +31,9 @@ jobs:
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
       # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: from
-      # v0.20.0 the accelerator is built from LiteRT at the tag's pin, which
-      # contains #11120 (dp4a off on Intel GPUs).
+      # v0.20.0 the accelerator is built from LiteRT at the tag's pin. That pin
+      # no longer has #11120 (reverted upstream by 9d3824510e), so patch_c_api.sh
+      # section 10b re-applies it (patches/litert_intel_webgpu_no_dp4a.patch).
       ANDROID_NDK_HOME: ''
       BAZEL_OUTPUT_BASE: 'D:\b'
     steps:
@@ -90,19 +85,8 @@ jobs:
           $env:PATH = "C:\Program Files\Git\usr\bin;$env:PATH"
           $env:BAZEL_SH = "C:\Program Files\Git\usr\bin\bash.exe"
           cd C:\LiteRT-LM
-          # compiler=clang-cl: Bazel's clang-cl toolchain with the runner's LLVM;
-          # the linker stays MSVC's link.exe.
-          $compilerFlags = @()
-          if ('${{ inputs.compiler }}' -eq 'clang-cl') {
-            $env:BAZEL_LLVM = 'C:\Program Files\LLVM'
-            & "$env:BAZEL_LLVM\bin\clang-cl.exe" --version
-            # XNNPACK's amd64 .S microkernels go to MASM (ml64) under this
-            # toolchain and fail; the CPU kernels play no part in the GPU A/B.
-            $compilerFlags = @('--compiler=clang-cl', '--define=xnn_enable_assembly=false')
-          }
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build -c opt `
-            @compilerFlags `
             --linkopt=/OPT:REF --linkopt=/OPT:ICF `
             --build_tag_filters='-nowindows' `
             --features=compiler_param_file `

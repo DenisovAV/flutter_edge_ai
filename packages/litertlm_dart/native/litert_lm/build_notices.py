@@ -28,14 +28,20 @@ import urllib.request
 import zipfile
 
 # LiteRT-LM tag the native bundles are built from (build_*.sh DEFAULT_REF).
-LITERTLM_REF = "7a03724cece417f1724c923b3d527b4319730841"  # v0.19.1
+LITERTLM_REF = "95df4c2a932b4917ace66fcfef6c154e8d2a6699"  # v0.20.0
 # Google's Android library for the same LiteRT-LM release: its
 # THIRD_PARTY_NOTICE.txt is Google's own list for the code the runtime links.
-# PR B moves the consumer pin and regenerates NOTICES from this 0.19.0 AAR.
 LITERTLM_AAR = (
     "https://dl.google.com/android/maven2/com/google/ai/edge/litertlm/"
-    "litertlm-android/0.19.0/litertlm-android-0.19.0.aar"
+    "litertlm-android/0.20.0/litertlm-android-0.20.0.aar"
 )
+# Linux and Windows bundles: Dawn. libwebgpu_dawn.so / webgpu_dawn.dll are
+# Google's prebuilt from LiteRT-LM's prebuilt/ at LITERTLM_REF; our WebGPU
+# accelerator is compiled against Dawn's headers at the release LiteRT's
+# third_party/dawn/workspace.bzl pins (LiteRT bf49eb62, the LITERT_REF of
+# LITERTLM_REF's WORKSPACE). Google's 0.20.0 AAR no longer lists Dawn (Android
+# ships none), so its licence is read from Dawn itself.
+DAWN_TAG = "v20260720.160313"
 # Windows bundle: DXC runtime (build-litertlm-native*.yml $dxcVer).
 DXC_ZIP = (
     "https://github.com/microsoft/DirectXShaderCompiler/releases/download/"
@@ -56,6 +62,14 @@ QNN_AAR = (
     "https://repo1.maven.org/maven2/com/qualcomm/qti/qnn-runtime/2.52.0/"
     "qnn-runtime-2.52.0.aar"
 )
+# Linux arm64 opt-in: the QAIRT SDK zip the hook reads the QNN libraries out of
+# (lib/src/hook/qairt_linux.dart qairtBuild / qairtZipUrl).
+QAIRT_LINUX_BUILD = "2.51.1.261002"
+QAIRT_LINUX_ZIP = (
+    "https://softwarecenter.qualcomm.com/api/download/software/sdks/"
+    f"Qualcomm_AI_Runtime_Community/All/{QAIRT_LINUX_BUILD}/"
+    f"v{QAIRT_LINUX_BUILD}.zip"
+)
 
 SEPARATOR = "-" * 80
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -68,9 +82,15 @@ class _HttpRange(io.RawIOBase):
     def __init__(self, url):
         self.url = url
         self.pos = 0
-        head = urllib.request.urlopen(
-            urllib.request.Request(url, method="HEAD"), timeout=60)
-        self.size = int(head.headers["Content-Length"])
+        # A one-byte range request, not HEAD: Qualcomm's download refuses
+        # HEAD. It also follows the redirect once, so every later read goes
+        # to the server that answers ranges.
+        req = urllib.request.Request(url, headers={"Range": "bytes=0-0"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            if r.status != 206:
+                raise IOError(f"{url}: server ignored Range (HTTP {r.status})")
+            self.url = r.url
+            self.size = int(r.headers["Content-Range"].rsplit("/", 1)[1])
 
     def readable(self):
         return True
@@ -150,6 +170,8 @@ def main():
     litert = _fetch(
         "https://raw.githubusercontent.com/google-ai-edge/LiteRT-LM/"
         f"{LITERTLM_REF}/LICENSE")
+    dawn = _fetch(
+        f"https://raw.githubusercontent.com/google/dawn/{DAWN_TAG}/LICENSE")
     google = _zip_members(LITERTLM_AAR, ["THIRD_PARTY_NOTICE.txt"])
     dxc = _zip_members(DXC_ZIP, ["LICENSE-MS.txt", "LICENSE-LLVM.txt", "LICENSE-MIT.txt"])
     ov = _zip_members(OPENVINO_ZIP, [
@@ -160,6 +182,9 @@ def main():
         OPENVINO_ROOT + "docs/licensing/onetbb_third-party-programs.txt",
     ])
     qnn = _zip_members(QNN_AAR, ["NOTICE.txt"])
+    # The file the hook copies beside the Linux libraries (qairtNoticeFiles).
+    qairt_notice = f"qairt/{QAIRT_LINUX_BUILD}/QNN_NOTICE.txt"
+    qairt = _zip_members(QAIRT_LINUX_ZIP, [qairt_notice])
     lic = OPENVINO_ROOT + "docs/licensing/"
 
     entries = [
@@ -170,10 +195,19 @@ def main():
             "The native LiteRT-LM runtime this package bundles statically "
             "links third-party code. The notices below are the ones Google "
             "publishes for the same release (THIRD_PARTY_NOTICE.txt in "
-            "com.google.ai.edge.litertlm:litertlm-android:0.19.0, built from "
-            "LiteRT-LM v0.19.0). They may name components that a given "
+            "com.google.ai.edge.litertlm:litertlm-android:0.20.0, built from "
+            "LiteRT-LM v0.20.0). They may name components that a given "
             "platform's build does not contain.",
             _text(google["THIRD_PARTY_NOTICE.txt"]),
+        ),
+        _entry(
+            ["Dawn"],
+            "libwebgpu_dawn.so in the Linux bundles and webgpu_dawn.dll in the "
+            "Windows bundle are Google's prebuilt Dawn from LiteRT-LM v0.20.0, "
+            "unmodified, and the WebGPU accelerator in those bundles is "
+            f"compiled against Dawn's headers at {DAWN_TAG}. Dawn's licence "
+            "at that release follows.",
+            _text(dawn),
         ),
         _entry(
             ["DirectX Shader Compiler"],
@@ -208,16 +242,26 @@ def main():
         ),
         _entry(
             ["Qualcomm AI Engine Direct (QNN) runtime"],
-            "Applies only to Android apps built with `qualcomm_npu: true` in "
-            "their pubspec's hooks: user_defines. The build hook of such an "
-            "app fetches com.qualcomm.qti:qnn-runtime:2.52.0 from Maven "
-            "Central and bundles its QNN libraries into the app. Those "
-            "libraries are licensed by Qualcomm Technologies, Inc. under the "
-            "AI Stack License, LICENSE.pdf in that artifact, which the hook "
-            "copies next to the libraries in its cache and which is not "
-            "reproduced here. The notices Qualcomm ships with them "
-            "(NOTICE.txt in the same artifact) follow.",
-            _text(qnn["NOTICE.txt"]),
+            "Applies only to Android and Linux arm64 apps built with "
+            "`qualcomm_npu: true` in their pubspec's hooks: user_defines. The "
+            "build hook of such an app fetches the QNN libraries and bundles "
+            "them into the app: on Android from "
+            "com.qualcomm.qti:qnn-runtime:2.52.0 on Maven Central, on Linux "
+            f"arm64 from Qualcomm's public QAIRT SDK {QAIRT_LINUX_BUILD} zip. "
+            "Those libraries are licensed by Qualcomm Technologies, Inc. under "
+            "the AI Stack License, LICENSE.pdf in each artifact, which the "
+            "hook copies next to the libraries in its cache and which is not "
+            "reproduced here. The notices Qualcomm ships with them follow "
+            "(NOTICE.txt in the AAR, QNN_NOTICE.txt in the QAIRT zip"
+            + (", byte for byte the same file)."
+               if qnn["NOTICE.txt"] == qairt[qairt_notice] else ")."),
+            *([_text(qnn["NOTICE.txt"])]
+              if qnn["NOTICE.txt"] == qairt[qairt_notice] else [
+                  _section("qnn-runtime-2.52.0.aar NOTICE.txt",
+                           qnn["NOTICE.txt"]),
+                  _section(f"QAIRT {QAIRT_LINUX_BUILD} QNN_NOTICE.txt",
+                           qairt[qairt_notice]),
+              ]),
         ),
     ]
 

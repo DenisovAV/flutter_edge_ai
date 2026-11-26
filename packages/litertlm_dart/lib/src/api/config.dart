@@ -210,8 +210,9 @@ final class RegexResponseFormat extends ResponseFormat {
 /// Which tools the model may or must call for one message: Kotlin's and
 /// Swift's `ToolChoice`, OpenAI's `tool_choice`. Passed to
 /// `Conversation.sendMessage`/`sendMessageStream`, it applies to that
-/// message's first round only; the rounds that answer tool results run
-/// [auto], so [required] cannot loop.
+/// message's first round only; the rounds that answer tool results go with
+/// no choice (the model's default), as in Kotlin and Swift, so [required]
+/// cannot loop.
 @immutable
 sealed class ToolChoice {
   const ToolChoice();

@@ -139,7 +139,15 @@ enum SpeculativeDecodingMode {
 }
 
 /// LiteRT-LM's speculative decoding (MTP) settings: Kotlin's and Swift's
-/// `SpeculativeDecodingConfig`.
+/// `SpeculativeDecodingConfig`, except that [mode] is required here, where
+/// upstream's is nullable (inherited from the engine).
+///
+/// Any [lenience] above 0 gives up speculative decoding's quality guarantee
+/// (upstream's warning): at 0 it is lossless, the tokens follow the model's
+/// own sampling distribution; above 0 a drafted token that differs from the
+/// verifier's sample is still accepted with that probability, so the reply
+/// can differ from what the model itself would write. Set it only where
+/// lower quality is an acceptable price for speed.
 @immutable
 final class SpeculativeDecodingConfig {
   /// [lenience] must be in [0, 1]; null leaves LiteRT-LM's (the engine's, 0

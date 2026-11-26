@@ -14,9 +14,9 @@ import 'message.dart';
 export 'benchmark_result.dart';
 
 /// Benchmarks the `.litertlm` model at [modelPath] on [backend], as
-/// LiteRT-LM's Kotlin `benchmark()` does: creates an engine in the runtime's
-/// benchmark mode, sends [prompt] once in a new conversation, and closes the
-/// engine.
+/// LiteRT-LM's Kotlin and Swift `benchmark()` do: creates an engine in the
+/// runtime's benchmark mode, sends [prompt] (Swift's parameter; Kotlin takes
+/// `contents`) once in a new conversation, and closes the engine.
 ///
 /// In that mode the prompt's last text is cut or padded with token 0 to
 /// exactly [prefillTokens] tokens, and the reply runs exactly [decodeTokens]

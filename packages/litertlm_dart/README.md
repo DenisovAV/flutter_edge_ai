@@ -399,8 +399,8 @@ print(reply.text);
 Kotlin's and Swift's `ToolChoice`: `ToolChoice.auto` (the default),
 `ToolChoice.none`, `ToolChoice.required`, `ToolChoice.forcedFunction(name)` and
 `ToolChoice.allowedTools(names, required: ...)`. It applies to that message's
-first round only; the rounds that answer tool results run `auto`, so
-`required` cannot loop.
+first round only; the rounds that answer tool results go with no choice (the
+model's default), as in Kotlin and Swift, so `required` cannot loop.
 
 ```dart
 import 'package:litertlm_dart/litertlm_dart.dart';
@@ -444,8 +444,9 @@ final quick = await conversation.sendMessage(
 ```
 
 `ThinkingConfig()` turns thinking on with no budget; `enableThinking: false`
-turns it off. A budget is 1 to 2,147,483,647 (Kotlin's -1 and 0 are an unset budget
-and `enableThinking: false` here), caps the first channel the bundle declares
+turns it off. A budget is 1 to 2,147,483,647 (upstream's -1 and 0 both mean no
+cap: 0 skips the budget constraint while thinking stays on in the template;
+both are an unset budget here), caps the first channel the bundle declares
 (`thought` on Gemma 4), and counts towards `maxOutputTokens`.
 
 ## Sampling and constrained decoding
@@ -607,17 +608,17 @@ so compare runs with the same `run.maxNumTokens`.
 | Streaming | `sendMessageAsync` (Kotlin), `sendMessageStream` (Swift) | `sendMessageStream`, a `Stream<Message>` |
 | System prompt | `systemInstruction` (Kotlin), `systemMessage` (Swift) | `systemInstruction`, a `String` |
 | Tools | Kotlin functions or `OpenApiTool`, called automatically by default | `Tool` with a JSON Schema; with `execute` called automatically, as in Kotlin and Swift; limit 25 |
-| Speculative decoding | `ExperimentalFlags.enableSpeculativeDecoding` | `EngineConfig.speculativeDecoding`, per conversation too |
-| Thinking budget | -1 unlimited, 0 off | unset, or 1 to 2,147,483,647; `enableThinking: false` is off |
-| Several conversations per engine | — | yes, a stopped, refused or failed turn recovered before the next |
-| Reading a bundle without loading it | — | `readBundleInfo`, `readBundleGenericData` |
+| Speculative decoding | `SpeculativeDecodingConfig` on `EngineConfig`, `ConversationConfig` (and Kotlin's `SessionConfig`) and `benchmark()`; its `mode` nullable (inherits); `ExperimentalFlags.enableSpeculativeDecoding` deprecated | `EngineConfig.speculativeDecoding`, `ConversationConfig.speculativeDecoding`, `benchmark()`; `mode` required |
+| Thinking budget | -1 and 0 both no cap (0 skips the budget constraint; thinking still reaches the template) | unset, or 1 to 2,147,483,647; `enableThinking: false` turns thinking off |
+| Several conversations per engine | yes, and `Conversation.clone()` | yes, each recovered after a stopped, refused or failed turn |
+| Reading a bundle without loading it | `ModelInfo` | `readBundleInfo`, `readBundleGenericData`, read in Dart: sections, NPU stamps, generic data |
 | Tokenizer | — | `Engine.tokenize`, `detokenize` |
 | Option scoring | — | `Engine.scoreTargets`: the exact log-probability of each target as a continuation |
-| Constrained decoding | C++ API | `ResponseFormat.json`, `.regex` |
-| `benchmark()` | `BenchmarkInfo` with mark durations | `LlmBenchmarkResult`, plus the whole create's time, the backend and the GPU activation type; no media contents |
+| Constrained decoding | `ResponseFormat` per message, after `ConversationConfig.enableResponseFormat` | `ConversationConfig.responseFormat`, for every message |
+| `benchmark()` | `BenchmarkInfo`, with mark durations in Kotlin's (Swift's has none) | `LlmBenchmarkResult`, plus the whole create's time, the backend and the GPU activation type; no media contents |
 | EmbeddingGemma 2 | text, images, audio | the same, text with images and audio in one vector, per-SoC NPU bundles |
 | LoRA | `LoraConfig` on the conversation and the session (Kotlin), `loraPath` and `loraRank` (Swift) | `ConversationConfig.loraConfig` (`LoraConfig`), `EngineConfig.loraRank`; the native libraries carry a text LoRA backport (LiteRT-LM PR #2508) |
-| Tool choice | per message (Kotlin; Swift has none) | per message, `ToolChoice` |
+| Tool choice | `ToolChoice` per message, first round only (Kotlin and Swift) | per message, first round only; `auto` sends no choice |
 
 ## Where it runs today
 

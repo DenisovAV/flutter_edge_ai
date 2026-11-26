@@ -23,7 +23,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'web_session_fixture.dart';
 
 /// A Conversation whose `sendMessageStreaming` records what it was sent and
-/// returns an iterator that is already done.
+/// returns an iterator that is already done: an empty reply, which its
+/// `getHistory()` shows as the message answered by an empty assistant entry
+/// (a reply that ends before any chunk with no such entry is a refused
+/// send).
 ({JSObject conversation, List<JSAny?> sent}) _stubConversation() {
   final sent = <JSAny?>[];
   final done = JSObject()..['done'] = true.toJS;
@@ -35,6 +38,19 @@ import 'web_session_fixture.dart';
       return iterator;
     }).toJS
     ..['cancel'] = (() {}).toJS
+    ..['getHistory'] = (() {
+      final last = sent.last;
+      final message = last.isA<JSString>()
+          ? ({'role': 'user', 'content': (last as JSString).toDart}.jsify())
+          : last;
+      final reply = {
+        'role': 'assistant',
+        'content': [
+          {'type': 'text', 'text': ''},
+        ],
+      }.jsify();
+      return Future<JSArray<JSAny?>>.value([message, reply].toJS).toJS;
+    }).toJS
     ..['delete'] = (() => Future<void>.value().toJS).toJS;
   return (conversation: conversation, sent: sent);
 }

@@ -1,19 +1,19 @@
 // The EmbeddingGemma 2 web pass over the REAL interop — `WindowLiteRtLmWebRuntime`
-// and the page's `window.litertLmReady` / `window.EmbeddingEngine` — with a
-// stub engine of `@litert-lm/core`'s shape defined in plain JS (`eval`),
+// and the page's `window.litertLmReady` / `window.litertLm` — with a stub
+// module of `@litert-lm/core`'s shape defined in plain JS (`eval`),
 // through the path an app takes: the web backend's describe(), the pass, and
 // core's inline host. What the VM suite cannot see: the JS objects themselves.
-// - the loader states: no loader, a loader without `EmbeddingEngine` (an
-//   index.html written for the LLM only), a loader still importing, a loader
-//   that failed;
+// - the loader states: no loader, a page with the old shim (`window.Engine`,
+//   no `window.litertLm`), a module without `EmbeddingEngine`, a loader still
+//   importing, a loader that failed;
 // - the WebGPU question, on a stubbed `navigator.gpu` (the test browser may
 //   have no GPU): an adapter, no adapter, no `navigator.gpu` — asked with the
 //   runtime's own `powerPreference: 'high-performance'` — and a page without
 //   WebGPU refused before `EmbeddingEngine.create` is called;
-// - the settings object `EmbeddingEngine.create` receives: `backend: 4` (GPU),
+// - the settings object `EmbeddingEngine.create` receives: `backend: 3` (GPU),
 //   `maxInputLength: 1024`, and NO `visionBackend` key unless images are
 //   declared (the runtime tests `!== undefined`; a null would ask for a tower
-//   without a backend), then `visionBackend: 4`;
+//   without a backend), then `visionBackend: 3`;
 // - each request: a text part is the prefixed string, an image part is
 //   `{type: 'image', data: ArrayBuffer}` of exactly the file's bytes, options
 //   `{normalize: true, insertSpecialTokens: true, inputOverflowStrategy: 1}`;
@@ -21,7 +21,7 @@
 // - audio (1.13.2): describe() reads the bundle's container header through
 //   the page's own `fetch()` (`readPrefix`, over a `blob:` URL as the Cache
 //   API and OPFS copies are) and refuses a bundle without an audio encoder
-//   before anything is created; `audioBackend: 4` only when audio is
+//   before anything is created; `audioBackend: 3` only when audio is
 //   declared; an audio part is `{type: 'audio', data: ArrayBuffer}` of exactly
 //   the clip, and a combined input one JS array of its parts in order.
 //
@@ -44,6 +44,7 @@ import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_backend_
 import 'package:litertlm_dart/internal_web.dart'
     show
         LiteRtLmWebGpuSupport,
+        LiteRtLmWebModuleError,
         LiteRtLmWebRuntimeState,
         WindowLiteRtLmWebRuntime;
 import 'package:flutter_test/flutter_test.dart';
@@ -58,8 +59,10 @@ T _eval<T extends JSAny?>(String source) =>
 /// Removes everything a test may have put on the page, the `navigator.gpu`
 /// stub included (the browser's own getter is on the prototype).
 void _clearPage() => _js('''
-  delete window.EmbeddingEngine;
+  delete window.litertLm;
   delete window.litertLmReady;
+  delete window.Engine;
+  delete window.EmbeddingEngine;
   delete window.__eg2;
   delete navigator.gpu;
   delete window.__gpuRequests;
@@ -83,7 +86,8 @@ void _stubGpu({bool present = true, bool adapter = true}) => _js('''
 
 int get _gpuRequests => (globalContext['__gpuRequests']! as JSArray).length;
 
-/// A stub `EmbeddingEngine` of the runtime's shape that records what it is given.
+/// A stub module (`window.litertLm`, nothing else on the page) whose
+/// `EmbeddingEngine` has the runtime's shape and records what it is given.
 /// A text "token" is a space-separated word, plus BOS and EOS; an image is
 /// 140 tokens, an audio clip one per byte; an array of parts is the sum.
 /// Inputs over `__eg2.maxSeq` under TRUNCATE come back with
@@ -91,11 +95,13 @@ int get _gpuRequests => (globalContext['__gpuRequests']! as JSArray).length;
 void _installEngine() => _js('''
   window.__eg2 = { settings: [], inputs: [], options: [], deletes: 0,
                    maxSeq: 1024, createError: null, computeError: null };
-  window.EmbeddingEngine = function () {};
+  const EmbeddingEngine = function () {};
   // The members the release calls, which the runtime check looks for.
-  window.EmbeddingEngine.prototype.computeEmbedding = function () {};
-  window.EmbeddingEngine.prototype.delete = function () {};
-  window.EmbeddingEngine.create = async function (settings) {
+  EmbeddingEngine.prototype.computeEmbedding = function () {};
+  EmbeddingEngine.prototype.delete = function () {};
+  // The module's Backend enum, as @litert-lm/core 0.20.0 numbers it.
+  window.litertLm = {EmbeddingEngine, Backend: {GPU_ARTISAN: 1, CPU: 2, GPU: 3}};
+  EmbeddingEngine.create = async function (settings) {
     const s = window.__eg2;
     s.settings.push(settings);
     if (s.createError) throw new Error(s.createError);
@@ -234,32 +240,71 @@ void main() {
       );
     });
 
-    test(
-      'a loader that sets only window.Engine: embeddingEngineMissing',
-      () async {
-        _js('''
+    test('a loader with the old shim (window.Engine, no window.litertLm): '
+        'refused naming the lines to replace', () async {
+      _js('''
         window.litertLmReady = Promise.resolve().then(() => {
           window.Engine = function () {};
+          window.EmbeddingEngine = function () {};
           return window.Engine;
         });
       ''');
-        expect(
-          await runtime.ensureReady(),
-          LiteRtLmWebRuntimeState.embeddingEngineMissing,
-        );
-      },
-    );
+      await expectLater(
+        runtime.ensureReady(),
+        throwsA(
+          isA<LiteRtLmWebModuleError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('window.EmbeddingEngine = m.EmbeddingEngine;'),
+              contains('window.litertLm = m;'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('the old shim without the loader: refused the same way', () async {
+      _js('window.Engine = function () {};');
+      await expectLater(
+        runtime.ensureReady(),
+        throwsA(isA<LiteRtLmWebModuleError>()),
+      );
+    });
+
+    test('a module without EmbeddingEngine (the LLM\'s Engine only): '
+        'refused naming it', () async {
+      _js('''
+        window.litertLm = {Engine: function () {}, Backend: {GPU_ARTISAN: 1, CPU: 2, GPU: 3}};
+        window.litertLmReady = Promise.resolve(window.litertLm);
+      ''');
+      await expectLater(
+        runtime.ensureReady(),
+        throwsA(
+          isA<LiteRtLmWebModuleError>().having(
+            (e) => e.message,
+            'message',
+            contains(
+              'window.litertLm has no EmbeddingEngine (a value of type '
+              'undefined)',
+            ),
+          ),
+        ),
+      );
+    });
 
     test(
-      'a loader still importing: ready once it has set EmbeddingEngine',
+      'a loader still importing: ready once it has set window.litertLm',
       () async {
         _js('''
         window.litertLmReady = new Promise((resolve) => setTimeout(() => {
-          window.EmbeddingEngine = function () {};
-          window.EmbeddingEngine.create = async function () {};
-          window.EmbeddingEngine.prototype.computeEmbedding = function () {};
-          window.EmbeddingEngine.prototype.delete = function () {};
-          resolve(null);
+          const EmbeddingEngine = function () {};
+          EmbeddingEngine.create = async function () {};
+          EmbeddingEngine.prototype.computeEmbedding = function () {};
+          EmbeddingEngine.prototype.delete = function () {};
+          window.litertLm = {EmbeddingEngine,
+                             Backend: {GPU_ARTISAN: 1, CPU: 2, GPU: 3}};
+          resolve(window.litertLm);
         }, 50));
       ''');
         expect(await runtime.ensureReady(), LiteRtLmWebRuntimeState.ready);
@@ -269,10 +314,12 @@ void main() {
     test('an EmbeddingEngine without computeEmbedding is incomplete, and '
         'names what it lacks', () async {
       _js('''
-        window.litertLmReady = Promise.resolve(null);
-        window.EmbeddingEngine = function () {};
-        window.EmbeddingEngine.create = async function () {};
-        window.EmbeddingEngine.prototype.delete = function () {};
+        const EmbeddingEngine = function () {};
+        EmbeddingEngine.create = async function () {};
+        EmbeddingEngine.prototype.delete = function () {};
+        window.litertLm = {EmbeddingEngine,
+                           Backend: {GPU_ARTISAN: 1, CPU: 2, GPU: 3}};
+        window.litertLmReady = Promise.resolve(window.litertLm);
       ''');
       expect(
         await runtime.ensureReady(),
@@ -320,8 +367,8 @@ void main() {
     });
   }
 
-  test('a page without the shim line: the app gets the named '
-      'EmbeddingLoadException', () async {
+  test('a page with the old shim: the app gets an EmbeddingLoadException '
+      'naming the lines to replace', () async {
     _js('''
       window.litertLmReady = Promise.resolve().then(() => {
         window.Engine = function () {};
@@ -336,13 +383,71 @@ void main() {
             .having(
               (e) => e.message,
               'message',
-              contains('window.EmbeddingEngine = m.EmbeddingEngine;'),
+              allOf(
+                contains('window.Engine = m.Engine;'),
+                contains('window.litertLm = m;'),
+              ),
             ),
       ),
     );
   });
 
-  test('text only: WebGPU asked once, then create gets GPU (4), '
+  test('a page with no window.litertLm and no loader: the app gets an '
+      'EmbeddingLoadException quoting the line', () async {
+    await expectLater(
+      _start(),
+      throwsA(
+        isA<EmbeddingLoadException>().having(
+          (e) => e.message,
+          'message',
+          contains('window.litertLm = m;'),
+        ),
+      ),
+    );
+  });
+
+  test('a module without Backend: the app gets an EmbeddingLoadException '
+      'naming it, and create is never called', () async {
+    _installEngine();
+    _stubGpu();
+    _js('delete window.litertLm.Backend;');
+    await expectLater(
+      _start(),
+      throwsA(
+        isA<EmbeddingLoadException>()
+            .having((e) => e.engine, 'engine', 'LiteRT-LM')
+            .having(
+              (e) => e.message,
+              'message',
+              contains(
+                'window.litertLm has no Backend (a value of type undefined)',
+              ),
+            ),
+      ),
+    );
+    expect(_count('settings'), 0, reason: 'create was called');
+  });
+
+  test('a 0.19.0 page: create gets its GPU id (4)', () async {
+    _installEngine();
+    _stubGpu();
+    _js(
+      'window.litertLm.Backend = '
+      '{UNSPECIFIED: 0, CPU_ARTISAN: 1, GPU_ARTISAN: 2, CPU: 3, GPU: 4, '
+      'GOOGLE_TENSOR_ARTISAN: 5, NPU: 6};',
+    );
+    final model = await _start();
+    try {
+      final settings =
+          (globalContext['__eg2']! as JSObject)['settings']!.dartify()!
+              as List<Object?>;
+      expect((settings.single! as Map)['backend'], 4);
+    } finally {
+      await model.close();
+    }
+  });
+
+  test('text only: WebGPU asked once, then create gets GPU (3), '
       'maxInputLength 1024 and no vision keys; the probe and each text are '
       'strings; the options are normalize, special tokens and TRUNCATE '
       '(1)', () async {
@@ -360,7 +465,7 @@ void main() {
         (settings['model']! as JSString).toDart,
         'blob:https://example.com/eg2',
       );
-      expect((settings['backend']! as JSNumber).toDartInt, 4);
+      expect((settings['backend']! as JSNumber).toDartInt, 3);
       expect((settings['maxInputLength']! as JSNumber).toDartInt, 1024);
       for (final key in [
         'visionBackend',
@@ -400,8 +505,8 @@ void main() {
     final model = await _start(images: true);
     try {
       final settings = _recordedObject('settings', 0);
-      expect((settings['backend']! as JSNumber).toDartInt, 4);
-      expect((settings['visionBackend']! as JSNumber).toDartInt, 4);
+      expect((settings['backend']! as JSNumber).toDartInt, 3);
+      expect((settings['visionBackend']! as JSNumber).toDartInt, 3);
       expect((settings['visionTokensPerImage']! as JSNumber).toDartInt, 140);
       expect(model.modalities, {
         EmbeddingModality.text,
@@ -530,9 +635,9 @@ void main() {
     );
     try {
       final settings = _recordedObject('settings', 0);
-      expect((settings['backend']! as JSNumber).toDartInt, 4);
-      expect((settings['audioBackend']! as JSNumber).toDartInt, 4);
-      expect((settings['visionBackend']! as JSNumber).toDartInt, 4);
+      expect((settings['backend']! as JSNumber).toDartInt, 3);
+      expect((settings['audioBackend']! as JSNumber).toDartInt, 3);
+      expect((settings['visionBackend']! as JSNumber).toDartInt, 3);
       expect(model.modalities, EmbeddingModality.values.toSet());
 
       // A RIFF/WAVE header: core sniffs WAV before anything is sent.

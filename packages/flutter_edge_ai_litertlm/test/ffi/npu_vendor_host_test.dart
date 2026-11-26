@@ -374,8 +374,8 @@ void main() {
       },
     );
 
-    test('the other vendors leave LiteRT-LM\'s default whatever the file '
-        'says, nothing hashed', () async {
+    test('the other vendors set it on, as LiteRT-LM v0.19.1 defaulted it, '
+        'whatever the file says, nothing hashed', () async {
       for (final vendor in [
         NpuStack.qualcomm,
         NpuStack.googleTensor,
@@ -397,7 +397,7 @@ void main() {
               path: 'x.litertlm',
               sha256OfRange: hashing(public26b),
             ),
-            isNull,
+            isTrue,
             reason: vendor.name,
           );
         }

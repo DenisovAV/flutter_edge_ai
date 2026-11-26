@@ -240,8 +240,12 @@ class LiteRtLmEngine
             cacheDir: cacheDir,
             activationDataType: config.activationDataType?.toRuntime,
             speculativeDecoding: switch (config.enableSpeculativeDecoding) {
-              true => lm.SpeculativeDecodingMode.on,
-              false => lm.SpeculativeDecodingMode.off,
+              true => lm.SpeculativeDecodingConfig(
+                mode: lm.SpeculativeDecodingMode.on,
+              ),
+              false => lm.SpeculativeDecodingConfig(
+                mode: lm.SpeculativeDecodingMode.off,
+              ),
               null => null,
             },
           ),

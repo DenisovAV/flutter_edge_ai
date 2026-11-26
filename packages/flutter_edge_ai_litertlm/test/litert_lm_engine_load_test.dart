@@ -126,6 +126,10 @@ class _FakeHost extends EngineHost implements LiteRtLmNpuHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? speculativeDecodingMode,
+    double? speculativeDecodingLenience,
+    List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     required int? numThreads,
     required int? activationDataType,
     required GpuActivationReason? gpuActivationReason,
@@ -193,6 +197,10 @@ class _InitCapturingClient extends LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? speculativeDecodingMode,
+    double? speculativeDecodingLenience,
+    List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     int? numThreads,
     int? activationDataType,
     GpuActivationReason? gpuActivationReason,
@@ -661,7 +669,7 @@ void main() {
       expect(host.preparedFor, [NpuStack.qualcomm]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/qualcomm',
-        useHwMasking: null,
+        useHwMasking: true,
         stagesWeightBanks: false,
       ));
       await stamped.close();
@@ -710,7 +718,7 @@ void main() {
         expect(host.preparedFor, [NpuStack.googleTensor], reason: soc);
         expect(host.npuDispatches.single, (
           dir: '/fake/npu/googleTensor',
-          useHwMasking: null,
+          useHwMasking: true,
           stagesWeightBanks: false,
         ));
       }
@@ -747,7 +755,7 @@ void main() {
       expect(host.preparedFor, [NpuStack.mediatek]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/mediatek',
-        useHwMasking: null,
+        useHwMasking: true,
         stagesWeightBanks: false,
       ));
     },

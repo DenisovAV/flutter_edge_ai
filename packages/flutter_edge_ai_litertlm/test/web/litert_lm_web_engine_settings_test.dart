@@ -34,14 +34,21 @@ class _Resolver implements WebModelSourceResolver {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// Installs a `window.Engine` that records its settings and resolves as
-/// 0.19.0 does for Gemma 4 E2B's GPU export; returns the recorded settings.
-List<Map<String, Object?>> _installEngine() {
+/// `Backend` of `@litert-lm/core` 0.19.0 and of 0.20.0, which renumbered it.
+const _backends019 = {'GPU_ARTISAN': 2, 'CPU': 3, 'GPU': 4};
+const _backends020 = {'GPU_ARTISAN': 1, 'CPU': 2, 'GPU': 3};
+
+/// Installs a page module (`window.litertLm`, nothing else) whose `Engine`
+/// records its settings and resolves as 0.19.0 does for Gemma 4 E2B's GPU
+/// export (to GPU_ARTISAN in [backends]); returns the recorded settings.
+List<Map<String, Object?>> _installEngine({
+  Map<String, int> backends = _backends019,
+}) {
   final settings = <Map<String, Object?>>[];
   JSObject engineFor(Map<String, Object?> asked) => JSObject()
     // As 0.19.0 reports them: the encoders asked for, resolved.
     ..['settings'] = {
-      'backend': 2,
+      'backend': backends['GPU_ARTISAN'],
       'visionBackend': ?asked['visionBackend'],
       'audioBackend': ?asked['audioBackend'],
       'mainExecutorSettings': {'maxNumTokens': 8192},
@@ -67,7 +74,9 @@ List<Map<String, Object?>> _installEngine() {
           return Future<JSObject>.value(engineFor(asked)).toJS;
         }).toJS;
   globalContext['litertLmReady'] = Future<void>.value().toJS;
-  globalContext['Engine'] = constructor;
+  globalContext['litertLm'] = JSObject()
+    ..['Engine'] = constructor
+    ..['Backend'] = backends.jsify();
   return settings;
 }
 
@@ -123,6 +132,23 @@ void main() {
     );
 
     expect(settings.single['audioBackend'], 3);
+    await engine.close();
+  });
+
+  test('on a 0.20.0 page the ids are its own: GPU 3, the audio encoder\'s '
+      'CPU 2', () async {
+    final settings = _installEngine(backends: _backends020);
+
+    final engine = await createLiteRtLmWebEngine(
+      _Resolver(),
+      maxTokens: 2048,
+      supportImage: true,
+      supportAudio: true,
+    );
+
+    expect(settings.single['backend'], 3);
+    expect(settings.single['visionBackend'], 3);
+    expect(settings.single['audioBackend'], 2);
     await engine.close();
   });
 
@@ -206,9 +232,10 @@ void main() {
     () async {
       _installEngine();
       final stream = openStream()..['locked'] = true.toJS;
-      ((globalContext['Engine']! as JSObject)['prototype']! as JSObject).delete(
-        'delete'.toJS,
-      );
+      (((globalContext['litertLm']! as JSObject)['Engine']!
+                  as JSObject)['prototype']!
+              as JSObject)
+          .delete('delete'.toJS);
 
       await expectLater(
         createWebEngineFromStream(streamed(), stream),
@@ -229,9 +256,10 @@ void main() {
       ..['cancel'] = (() => Future<void>.error(
         StateError('already closed'),
       ).toJS).toJS;
-    ((globalContext['Engine']! as JSObject)['prototype']! as JSObject).delete(
-      'delete'.toJS,
-    );
+    (((globalContext['litertLm']! as JSObject)['Engine']!
+                as JSObject)['prototype']!
+            as JSObject)
+        .delete('delete'.toJS);
 
     await expectLater(
       createWebEngineFromStream(streamed(), stream),
@@ -245,9 +273,10 @@ void main() {
   test('a refused load cancels the OPFS stream it was given', () async {
     _installEngine();
     final stream = openStream();
-    ((globalContext['Engine']! as JSObject)['prototype']! as JSObject).delete(
-      'delete'.toJS,
-    );
+    (((globalContext['litertLm']! as JSObject)['Engine']!
+                as JSObject)['prototype']!
+            as JSObject)
+        .delete('delete'.toJS);
 
     await expectLater(
       createWebEngineFromStream(streamed(), stream),

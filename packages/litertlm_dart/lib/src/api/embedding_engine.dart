@@ -25,9 +25,10 @@ import '../runtime/native_hosts.dart'
         liteRtLmEmbeddingGpuMeasured,
         liteRtLmEmbeddingGpuRefusedAbis;
 import '../runtime/npu_stacks.dart' show NpuStack;
+import '../runtime/runtime_log.dart' show runtimeLog;
 import '../bundle/litertlm_bundle_info.dart' show LiteRtLmBundleException;
 import 'dart:io' show FileSystemException;
-import '../runtime/types.dart' show BackendKind;
+import '../runtime/types.dart' show ActivationDataType, BackendKind;
 import 'backend.dart';
 import 'engine.dart' show currentEngineHost;
 import 'embedding_engine_config.dart';
@@ -170,6 +171,21 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
       if (config.visionBackend != null && !towers.vision) {
         refuse('$file has no vision tower: it takes no images.');
       }
+      // Integer activations on the GPU: the text tower runs them at float16
+      // (the 270m on Metal, native-v0.20.0: every vector of the ten golden
+      // texts equal to float16's, max abs diff 0), so the type asked for is
+      // refused rather than run as another.
+      final asked = config.activationDataType;
+      if (asked == ActivationDataType.int16 ||
+          asked == ActivationDataType.int8) {
+        throw ArgumentError.value(
+          asked,
+          'activationDataType',
+          '${asked!.name} on the GPU: EmbeddingGemma 2 runs it at float16 '
+              '(measured on Metal with native-v0.20.0: the same vectors as '
+              'float16). Use ActivationDataType.float16 or float32',
+        );
+      }
       gpu = true;
     case final NpuBackend npu:
       final dir = npu.dispatchDir;
@@ -201,6 +217,13 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
         refuse('$file needs the $target NPU, and $reason.');
       }
       dispatchDir = dir ?? await host.prepareDispatchDir(vendor);
+  }
+  if (config.activationDataType case final type? when !gpu) {
+    runtimeLog(
+      '[EmbeddingEngine] activationDataType (${type.name}) has no effect: '
+      '$file runs on the ${backendKindOf(backend).name.toUpperCase()}, and '
+      'only the GPU executor reads it.',
+    );
   }
   // The towers run where the bundle puts them: vision on the NPU beside an
   // NPU text tower and on the CPU otherwise, audio on the CPU everywhere

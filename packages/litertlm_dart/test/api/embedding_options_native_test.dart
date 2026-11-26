@@ -7,6 +7,9 @@
 //   EG2_IMAGE           a JPEG or PNG for the 440m's image checks
 //   EG2_CACHE_DIR       where the engine keeps its weight caches
 //   LITERTLM_EG2_BACKEND  cpu (default) or gpu
+//   EG2_TEXT_GOLDEN     the example's integration_test/goldens/
+//                       eg2_text_golden.dart, whose texts the GPU activation
+//                       types are compared on (gpu only)
 //
 // Every check prints what it measured, for the record.
 @TestOn('vm')
@@ -168,7 +171,11 @@ void main() {
       final base = await (await open(
         model270m!,
       )).computeEmbedding([const Content.text(_text)]);
-      for (final type in ActivationDataType.values) {
+      // int16 and int8 are refused on the GPU (the test below).
+      for (final type
+          in gpu
+              ? [ActivationDataType.float32, ActivationDataType.float16]
+              : ActivationDataType.values) {
         final engine = await open(model270m, activationDataType: type);
         final v = await engine.computeEmbedding([const Content.text(_text)]);
         print(
@@ -181,6 +188,73 @@ void main() {
       }
     });
   });
+
+  test(
+    'activationDataType on the GPU: each type against the CPU over the '
+    'golden texts; int16 and int8 are refused',
+    skip: model270m == null || !gpu || _file('EG2_TEXT_GOLDEN') == null
+        ? 'EG2_270M_LITERTLM, EG2_TEXT_GOLDEN and LITERTLM_EG2_BACKEND=gpu'
+        : null,
+    timeout: const Timeout(Duration(minutes: 10)),
+    () async {
+      final golden = File(_file('EG2_TEXT_GOLDEN')!).readAsStringSync();
+      final items = RegExp(
+        r'"prefix": "([^"]*)",\s*"text": "([^"]*)"',
+      ).allMatches(golden).map((m) => '${m[1]}${m[2]}').toList();
+      expect(items, hasLength(10));
+      Directory(cacheDir).createSync(recursive: true);
+      Future<List<List<double>>> embedAll(
+        Backend on,
+        ActivationDataType? type,
+      ) async {
+        final engine = await EmbeddingEngine.create(
+          EmbeddingEngineConfig(
+            modelPath: model270m!,
+            cacheDir: cacheDir,
+            backend: on,
+            activationDataType: type,
+          ),
+        );
+        try {
+          return [
+            for (final text in items)
+              await engine.computeEmbedding([Content.text(text)]),
+          ];
+        } finally {
+          await engine.close();
+        }
+      }
+
+      final cpu = await embedAll(const Backend.cpu(), null);
+      for (final type in [
+        null,
+        ActivationDataType.float32,
+        ActivationDataType.float16,
+      ]) {
+        final v = await embedAll(const Backend.gpu(), type);
+        final cos = [for (var i = 0; i < v.length; i++) _cos(v[i], cpu[i])];
+        print(
+          '[eg2 270m gpu] activationDataType ${type?.name ?? 'unset'}: '
+          'cos to the CPU over ${cos.length} golden texts, min '
+          '${cos.reduce(math.min).toStringAsFixed(6)}, mean '
+          '${(cos.reduce((a, b) => a + b) / cos.length).toStringAsFixed(6)}',
+        );
+        expect(cos.reduce(math.min), greaterThan(0.99));
+      }
+      for (final type in [ActivationDataType.int16, ActivationDataType.int8]) {
+        await expectLater(
+          embedAll(const Backend.gpu(), type),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => '${e.message}',
+              'message',
+              contains('on the GPU'),
+            ),
+          ),
+        );
+      }
+    },
+  );
 
   group(
     '440m images ($tag)',

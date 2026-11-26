@@ -90,7 +90,12 @@ final class EmbeddingEngineConfig {
 
   /// The activation type of the text tower and, when there is one, the
   /// vision tower (Kotlin's `EmbeddingEngineConfig.activationDataType`;
-  /// Swift has none). Null keeps the bundle's preferred type. Refused on the
+  /// Swift has none). Null keeps the bundle's preferred type. Only the GPU
+  /// reads it: on the CPU and the NPU it has no effect (logged). On the GPU
+  /// the 270m measured, over the ten golden texts on Metal (native-v0.20.0),
+  /// a minimum cosine to the CPU of 0.99937 at float32 and 0.99696 at
+  /// float16, the bundle's own; int16 and int8 ran as float16 (the same
+  /// vectors) and are refused there with an [ArgumentError]. Refused on the
   /// web, whose `EmbeddingEngine` takes none.
   final ActivationDataType? activationDataType;
 }

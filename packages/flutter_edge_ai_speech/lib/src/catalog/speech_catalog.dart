@@ -106,6 +106,10 @@ final class LiteRtSttVariant extends SttVariant {
     required this.tokenizer,
     this.npuTarget,
     Set<PreferredBackend> withheld = const {},
+    // An initializing formal here makes the analyzer warn that no variant
+    // passes it (none is withheld today); the generator passes it when the
+    // registry withholds one.
+    // ignore: prefer_initializing_formals
   }) : _withheld = withheld;
 
   /// Backends the registry withholds this variant from (all of them for a
@@ -185,6 +189,10 @@ final class LiteRtTtsVariant extends TtsVariant {
     required this.baseUrl,
     required this.files,
     Set<PreferredBackend> withheld = const {},
+    // An initializing formal here makes the analyzer warn that no variant
+    // passes it (none is withheld today); the generator passes it when the
+    // registry withholds one.
+    // ignore: prefer_initializing_formals
   }) : _withheld = withheld;
 
   /// Backends the registry withholds this variant from (see

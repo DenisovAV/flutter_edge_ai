@@ -5,7 +5,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_edge_ai_litertlm'
-  s.version          = '1.21.3'
+  s.version          = '1.22.0'
   s.summary          = 'macOS plugin shell of flutter_edge_ai_litertlm; delivers no library.'
   s.homepage         = 'https://flutteredge.ai'
   s.license          = { :file => '../LICENSE' }

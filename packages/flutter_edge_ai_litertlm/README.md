@@ -46,7 +46,7 @@ other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your 
 uses both formats.
 
 Depend on both packages (`flutter_edge_ai: ^2.7.2`,
-`flutter_edge_ai_litertlm: ^1.21.3`) and install `.litertlm` files with
+`flutter_edge_ai_litertlm: ^1.22.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
@@ -189,6 +189,34 @@ history is dropped behind your back. `InferenceChat`'s `tokenBuffer` rotation
 counts replies and images, not your own messages, so it does not prevent a
 long message from being refused. On the NPU the window is the one the bundle
 was compiled for; when it differs from `maxTokens`, the first turn prints it.
+
+## Tool choice
+
+Core's `ToolChoice` (`openChat(toolChoice:)`) reaches LiteRT-LM on the models
+whose tools it renders, Gemma 4 and FunctionGemma; core's own tools prompt
+carries it for the others. `ToolChoice.required` goes with each user message
+as LiteRT-LM's per-message tool choice (never with the message that answers
+tool calls), so the model calls a tool; `ToolChoice.none` opens the
+conversation without the tools, so the model never sees them. Measured on
+macOS (CPU and Metal, greedy) with a question no tool answers: Gemma 4 E2B
+answered in text with `auto` and called the tool with `required`; the base
+FunctionGemma 270M called it with `auto` too, and answered in text with
+`none`. On the web `none` works the same way, but the runtime takes no
+per-message choice, so `required` does not reach Gemma 4 there.
+
+## LoRA
+
+Natively, a session's `loraPath` (`openSession`, `openChat`) is a `.tflite`
+LoRA adapter for a `.litertlm` exported with LoRA input signatures
+(LiteRT-LM's LoRA Colab, step 3); sessions without it on the same model run
+the base weights. A file that is not there, a model without LoRA inputs and
+the NPU are refused by name before the session opens; the web takes no
+adapter (`UnsupportedError`). An adapter installed with `withLora…` is not
+applied by itself. Measured on macOS, CPU and
+Metal, with the FunctionGemma 270M LoRA of LiteRT-LM's Colab: the adapter
+turns "Turn on the living room lights" into the fine-tuned
+`set_device_state(device_id: light.living_room)`, and a chat without it on
+the same model, before and after, does not.
 
 ## Open sessions
 
@@ -1029,7 +1057,10 @@ GPU and the audio encoder on the CPU, and a session then sends images and
 audio; without them an image or audio message throws `UnsupportedError`
 rather than being dropped. `maxNumImages` counts a whole conversation's
 images on the web (natively a message's): the model reserves their space up
-front (unset: 1), and an image past it is refused before it is sent. `loraPath` throws. A stopped
+front (unset: 1), and an image past it is refused before it is sent. `loraPath`
+throws: the page's runtime takes no LoRA. `ToolChoice.none` opens the
+conversation without the tools, as natively; the runtime takes no per-message
+tool choice, so `ToolChoice.required` does not reach Gemma 4 there. A stopped
 reply is kept as on native (its text, or the tool calls it made): the next
 message goes to a conversation rebuilt from the history, because the runtime
 refuses every send after a stop mid-reply. As on native, a message that does
@@ -1099,12 +1130,11 @@ Native platforms need no web setup.
 The native library (`native-v0.20.0`, LiteRT-LM v0.20.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
-entitlements, and macOS 14.0. On macOS the companion libraries come from this
-package's Swift package with Swift Package Manager on (since 1.19.0), and from
-a `post_install` block in `macos/Podfile` with it off ([Desktop → macOS](https://flutteredge.ai/docs/desktop#macos)).
-Without them the first model load fails; the error contains
-`litertlm_dart: LiteRT-LM did not load on macOS` and names the fix
-([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)). See
+entitlements, and macOS 14.0. Since 1.22.0 macOS needs no companion
+libraries: `libLiteRtLm` carries the tool-call constraints and the Metal
+accelerator itself, with Swift Package Manager on or off. A `macos/Podfile`
+block from an earlier release keeps building and can be removed
+([Desktop → macOS](https://flutteredge.ai/docs/desktop#macos)). See
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 
 `PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and

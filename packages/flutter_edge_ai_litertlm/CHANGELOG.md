@@ -1,6 +1,9 @@
-## Unreleased
-- Requires `litertlm_dart` 0.20.0.
-- Web reads `@litert-lm/core` from `window.litertLm`; see MIGRATION.
+## 1.22.0
+- Requires `litertlm_dart` 0.20.0 (LiteRT-LM 0.20.0, `native-v0.20.0`).
+- Web: import `@litert-lm/core@0.20.0` and `window.litertLm = m;` replaces the `window.Engine` lines.
+- Native `.litertlm` sessions take `loraPath` on models exported with LoRA inputs.
+- `ToolChoice.required` (native) and `none` take effect on Gemma 4 and FunctionGemma `.litertlm`.
+- macOS needs no companion libraries; the Podfile block now does nothing.
 
 ## 1.21.3
 - Requires `litertlm_dart` 0.19.1+4.

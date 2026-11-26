@@ -96,17 +96,18 @@ for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 devices. The Simulator stays CPU-only because Metal sim has a 256 MB
 single-allocation cap.
 
-² Web `.litertlm` is an **early preview** via `@litert-lm/core` 0.19.0. A
+² Web `.litertlm` is an **early preview** via `@litert-lm/core` 0.20.0. A
 language model runs only from a build for the web — Gemma 4 E2B's GPU export
 (images and audio too) and Gemma 3n's web exports (documented on 0.18.0, not
-measured on 0.19.0); a native language-model
+measured since); a native language-model
 `.litertlm` installs on web and then fails at the first generation. EmbeddingGemma 2 is
 the exception: its generic `.litertlm` bundles embed text and images on web
 through WebGPU, and the 740m audio from litertlm 1.13.2 (see
 [Embedding models](#embedding-models)). See the feature matrix in
 [Troubleshooting](/docs/troubleshooting). For image input to a chat model on
-web use Gemma 4 E2B's GPU export or a MediaPipe `-web.task` build. LoRA works
-only on MediaPipe `.task`.
+web use Gemma 4 E2B's GPU export or a MediaPipe `-web.task` build. On the web
+LoRA works only on MediaPipe `.task`; natively also on a `.litertlm` exported
+with LoRA input signatures.
 
 ³ On desktop the OS model exists on **macOS** (Apple Foundation Models) and
 **Windows** (AI Foundry; Windows 11 25H2+ on Copilot+-class hardware, packaged
@@ -271,7 +272,7 @@ mark.
 | [Gemma 3 270M](/docs/registry#gemma-3-270m-it) | 304&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | yes |
 | [Gemma 3n E2B](/docs/registry#gemma-3n-e2b-it) | 3.04–3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | yes |
 | [Gemma 3n E4B](/docs/registry#gemma-3n-e4b-it) | 4.28–4.92&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | yes |
-| [Gemma 4 E2B](/docs/registry#gemma-4-e2b-it) | 2.34–2.59&nbsp;GB | GPU&nbsp;✅ CPU&nbsp;✅ NPU&nbsp;✅ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;✅ CPU&nbsp;✅ NPU&nbsp;✅ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 | no |
+| [Gemma 4 E2B](/docs/registry#gemma-4-e2b-it) | 2.34–2.59&nbsp;GB | GPU&nbsp;🕓 CPU&nbsp;🕓 NPU&nbsp;🕓 | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;🕓 CPU&nbsp;🕓 NPU&nbsp;🕓 | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 | no |
 | [Gemma 4 E4B](/docs/registry#gemma-4-e4b-it) | 3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⏸️ | no |
 | [LFM2.5 230M](/docs/registry#lfm2.5-230m) | 177–266&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
 | [LLaVA-OneVision 0.5B](/docs/registry#llava-onevision-0.5b) | 829&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |

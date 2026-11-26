@@ -6,14 +6,14 @@
 # hand. `dart run bin/registry.dart pub-check` compares it with
 # pub.dev. See README.md, "What pub.dev ships".
 packages:
-  flutter_edge_ai_litertlm: 1.21.3
-  flutter_edge_ai_speech: 0.6.2
-litertlm_dart: 0.19.1+4
-native_release: native-v0.19.1-c
+  flutter_edge_ai_litertlm: 1.22.0
+  flutter_edge_ai_speech: 0.6.3
+litertlm_dart: 0.20.0
+native_release: native-v0.20.0
 archives:
-  android_arm64: b96972aa2fcab97572cdcf7b76e6f4d36412886220b133c85d54a7bc99d61169
-  ios_arm64: b477c3fad86dcfaab62ea87e327556fdfb2f4b61ce03351d71828b9e9f8f848f
-  linux_arm64: 812b465e77cd30ce6c1ca144e48158eb364e08b5af4aca546052c42b391f4750
-  linux_x64: fde4a418818747f740795e95e65821f31bb48a104ffe89844f6f7303f6f05799
-  macos_arm64: 698c48bcc01633a49640af5c51c85a2ee850bed81789a91c24efc8926080d170
-  windows_x64: c114569468a5bbe8a68ca48ba1c5ff31a5c96d635042b71ab84cf56ed3c3a1dc
+  android_arm64: dbce6e6d333fcc4aa3dce086a832dc2ed5df7eeeb9b06e2a863f1d535c006bf3
+  ios_arm64: d94c23c97f86fd2b30b597d2a9fdde08c526060457ac36a8b3b4fa77c7e6f680
+  linux_arm64: e3f5a0ba6eb1e31c5baab680f1ebf95575d8395ae7a397613da8725742ef969c
+  linux_x64: 207691315ba167e894c784db489ab740a7e3b86b8e378fa83740af263270727e
+  macos_arm64: e820e3acc547edbbb11380c02958d1c95160a79147b437ec3f2b1a5f9f361fa6
+  windows_x64: ff8da8c4c7757b4d0bbcd40206e6866bcd8fb6fb92dd4a44b0199ebea5b9b95e

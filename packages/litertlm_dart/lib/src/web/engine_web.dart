@@ -37,6 +37,7 @@ import 'web_embedder.dart' show LiteRtLmWebBackend;
 import 'web_runtime_version.dart';
 import 'web_session.dart';
 import 'web_session_config.dart';
+import 'web_tool_responses.dart';
 import '../api/session.dart';
 
 /// One `.litertlm` model loaded by the page's `@litert-lm/core` runtime.
@@ -50,7 +51,12 @@ final class Engine {
     required this._pageLock,
     this._maxNumImages,
     this._toolCallsOf = nativeToolCalls,
+    this._toolResponsesAsUserText = false,
   });
+
+  /// Whether this page's runtime takes a tool response as user text
+  /// ([webToolResponsesAsUserText]), decided when the engine is created.
+  final bool _toolResponsesAsUserText;
 
   /// Reads the tool calls of a stopped reply, which a rebuilt conversation
   /// replays as calls.
@@ -331,6 +337,7 @@ final class Engine {
         maxTokens: maxNumTokens,
         audio: audioBackend != null,
         toolCallsOf: _toolCallsOf,
+        toolResponsesAsUserText: _toolResponsesAsUserText,
         onClose: () => _handles.remove(handle),
         cloneWith: (clone) {
           if (_closed) {
@@ -698,6 +705,9 @@ Future<Engine> createWebEngine(
         : (config.maxNumTokens ?? 0),
     pageLock: lock,
     toolCallsOf: toolCallsOf,
+    toolResponsesAsUserText: webToolResponsesAsUserText(
+      liteRtLmWebFetchedVersions(),
+    ),
   );
 }
 

@@ -757,7 +757,10 @@ void main() {
       expect(pieces.single.text, 'Hi');
     });
 
-    test('a tool result goes as the role-tool object', () async {
+    // On 0.20.0 and later as user text: they mostly answer a tool message
+    // with nothing (web_conversation_tools_browser_test.dart has 0.19.0's tool
+    // message).
+    test('a tool result goes as user text on the pinned runtime', () async {
       // A conversation that declares the tool: a tool result on one that
       // declares none is refused before anything is sent.
       await conversation.close();
@@ -773,13 +776,9 @@ void main() {
           .drain<void>();
       await settle();
       expect(list('sent').single, {
-        'role': 'tool',
+        'role': 'user',
         'content': [
-          {
-            'type': 'tool_response',
-            'name': 'f',
-            'response': {'ok': true},
-          },
+          {'type': 'text', 'text': 'Tool f returned: {"ok":true}'},
         ],
       });
       js('__end');

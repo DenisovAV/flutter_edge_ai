@@ -29,8 +29,10 @@ import 'package:litertlm_dart/src/runtime/npu_stacks.dart';
 /// `third_party/qairt/workspace.bzl`, which Maven Central does not carry (it
 /// has 2.51.0 and 2.52.0). 2.52.0 is the pair Google publishes in LiteRT
 /// v2.4.0 (`qairt/2.52.0.261104`), so the dispatch is built against a local
-/// 2.52.0 SDK (`LITERT_QAIRT_SDK`) and the hook fetches this runtime. Test
-/// branch for decision D3: not yet run on Snapdragon hardware.
+/// 2.52.0 SDK (`LITERT_QAIRT_SDK`) and the hook fetches this runtime. Run
+/// on the NPU on DDP phones, 2026-11-25: Gemma 4 E2B on a Galaxy S25 Ultra
+/// (SM8750) and EmbeddingGemma 2 on a Galaxy S24 (SM8650), S25 Ultra and S26+
+/// (SM8850), each with the same outputs as native-v0.19.1-c on QNN 2.50.0.
 const qnnRuntimeVersion = '2.52.0';
 
 /// SHA256 of `qnn-runtime-2.52.0.aar` as published on Maven Central (its SHA1

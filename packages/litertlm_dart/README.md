@@ -454,7 +454,10 @@ and `enableThinking: false` here), caps the first channel the bundle declares
   not given). With no `SamplerConfig`, a conversation uses the sampler the
   model file carries, field by field, then 0.8 / 40 / 0.95 / seed 1.
   Natively each conversation gets its own sampler on the CPU and the GPU
-  (LiteRT-LM 0.20 fixed #2080). On the web `@litert-lm/core` still fixes the
+  (LiteRT-LM 0.20 fixed #2080; measured on macOS arm64 CPU and Metal, Linux
+  x64 CPU and a Tesla T4, Windows x64 CPU and an Arc B390, and Android
+  Adreno 830 and Mali-G715, GPU and CPU; not measured on iOS, Linux arm64 or
+  PowerVR). On the web `@litert-lm/core` still fixes the
   sampler at the engine's first generation; a later conversation that asks
   for another one is told so once. On the NPU the executor decodes greedily
   whatever is sent, and an explicit sampler there prints a warning.

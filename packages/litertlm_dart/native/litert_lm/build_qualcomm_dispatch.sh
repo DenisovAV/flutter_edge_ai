@@ -12,8 +12,10 @@
 #   - Internet access (Bazel auto-downloads QAIRT SDK ~500MB on first run)
 #     OR set LITERT_QAIRT_SDK=/path/to/qairt/<version> to use local copy.
 #     The version is whatever LiteRT's third_party/qairt/workspace.bzl pins at
-#     the derived LITERT_REF (2.51.1.261002 at the v0.20.0 pin; 2.52.0 on the D3 test branch) — a local SDK
-#     must be that same version.
+#     the derived LITERT_REF (2.51.1.261002 at the v0.20.0 pin). Android builds
+#     against a local 2.52.0 SDK instead, the runtime the hook fetches from
+#     Maven (see the per-target check below) — a local SDK must be the
+#     version that check names.
 #
 # Linux arm64 (TARGET=linux_arm64) builds natively on an arm64 Linux host — CI
 # runs it on ubuntu-22.04-arm, whose glibc sets the floor — with clang >= 15

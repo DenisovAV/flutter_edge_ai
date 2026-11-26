@@ -44,8 +44,8 @@ final qairtZipUrl = Uri.parse(
 const qairtZipLength = 2971039746;
 
 /// SHA-256 of each library as it sits in the zip, measured from the zip by
-/// range reads on 2026-11-25. D3 test branch, candidate B: the exact QAIRT
-/// LiteRT bf49eb62 pins; not yet run on a QCS8275.
+/// range reads on 2026-11-25: the exact QAIRT LiteRT bf49eb62 pins. Not run
+/// on a Qualcomm Linux board (QCS8275) yet.
 const qairtLinuxSha256 = {
   'libQnnHtp.so':
       'bf77968b801cccca89dc3f99aca9894bab45980a2e3a4b6d629b022c8617beac',

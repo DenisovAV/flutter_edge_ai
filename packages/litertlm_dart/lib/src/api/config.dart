@@ -508,7 +508,10 @@ final class ConversationConfig {
 
   /// The caller's sampler; null takes the model file's sampler, field by
   /// field, then 0.8 / 40 / 0.95 / seed 1. Natively each conversation's
-  /// sampler is its own on the CPU and the GPU; the NPU decodes greedily. On
+  /// sampler is its own on the CPU and the GPU (LiteRT-LM 0.20; measured on
+  /// macOS arm64 CPU and Metal, Linux x64 CPU and a Tesla T4, Windows x64 CPU
+  /// and an Arc B390, Android Adreno 830 and Mali-G715; not measured on iOS,
+  /// Linux arm64 or PowerVR); the NPU decodes greedily. On
   /// the web the engine's first generation fixes the sampler
   /// (LiteRT-LM#2080), and a set one that differs is said once; the file's
   /// sampler cannot be read there, so null is 0.8 / 40 / 0.95 / seed 1.
@@ -529,9 +532,16 @@ final class ConversationConfig {
   /// This conversation's LoRA adapters, as Kotlin's
   /// `ConversationConfig.loraConfig`; null runs the base weights. Checked
   /// before the conversation is created: a file that does not exist, a model
-  /// without LoRA inputs, an NPU engine and the web are refused. A
-  /// conversation with an adapter always has its own native conversation,
-  /// also where conversations otherwise share one.
+  /// without LoRA inputs, an audio adapter without an audio encoder, an NPU
+  /// engine and the web are refused.
+  ///
+  /// Measured with a text adapter on macOS arm64 (CPU and Metal) and Android
+  /// (Galaxy S24, Adreno; Pixel 8a, Mali; GPU and CPU), through this API and
+  /// through flutter_edge_ai. A conversation with an adapter always has its
+  /// own native conversation, also where conversations otherwise share one
+  /// by replay (iOS, Android CPU and PowerVR, Linux and Windows GPUs): there,
+  /// a LoRA conversation beside another live conversation of the same engine
+  /// has not been measured.
   final LoraConfig? loraConfig;
 
   /// Variables for the model's prompt template.

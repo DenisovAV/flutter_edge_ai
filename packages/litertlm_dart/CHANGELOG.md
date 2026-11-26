@@ -6,7 +6,7 @@
 - Text and audio LoRA: `ConversationConfig.loraConfig`, `EngineConfig.loraRank`/`audioLoraRank`.
 - `EngineConfig.selectedSignatures`.
 - Tool calls constrained with LLGuidance; Google's prebuilt constraint provider no longer ships.
-- Each native CPU/GPU conversation keeps its own sampler (LiteRT-LM #2080 fixed).
+- Each native CPU/GPU conversation keeps its own sampler (#2080; measured on macOS, Linux x64, Windows, Android).
 - macOS needs no companions: the `macos_companions` define and the Podfile stager block are no-ops.
 - Windows: `libLiteRt.dll` needs no Visual C++ runtime.
 - Android Qualcomm NPU on QNN 2.52.0; Linux arm64 on QAIRT 2.51.1.

@@ -26,7 +26,17 @@
 # Gemma constraint provider, #551) is deleted: with section 29 the Gemma data
 # processors build their tool-call constraints with LLGuidance, the code it
 # bridged is compiled out (LITERT_LM_USE_FST_TOOL_CALL_CONSTRAINTS unset), and
-# no provider is linked or shipped.
+# no provider is linked or shipped. Section 13 (TFLiteWeights read by path on
+# Linux and Windows) is deleted too: it kept a C++ map from crossing into
+# Google's prebuilt libLiteRt, which no longer ships (both platforms build
+# libLiteRt from source with the runtime's own standard library and, on
+# Windows, CRT). A Linux x64 build without it gave bit-identical EmbeddingGemma
+# 2 270m/440m/740m vectors on CPU and GPU (texts, images, audio) and passed
+# Gemma 4 E2B text, images, audio, tools, thinking and stop-rewind on both
+# (T4 VM, CI run 45664837300, 2026-11-26); Windows had compiled it out since
+# decision D9. Its anchor checks went with it: they guarded the assumptions of
+# the rewrite, and the in-memory weight map they kept out is safe to hand over
+# to a libLiteRt of the same build.
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -471,88 +481,6 @@ else
   echo "  ERROR: $NPU_PATCH does not apply to this LiteRT-LM revision —" >&2
   echo "         CreateLiteRtNpuOptions moved; re-create the patch against it." >&2
   exit 1
-fi
-
-# ── 13. Linux/Windows: external weights read by path (EmbeddingGemma 2) ──
-# A .litertlm TFLiteModel with a TFLiteWeights section reads its weights from
-# a group named "tflite_weights". Upstream hands that section to the runtime
-# through litert::Options::SetExternalWeightScopedFile, which stores a C++
-# std::unordered_map inside the runtime's LiteRtOptionsT. On Linux and Windows
-# the runtime is Google's prebuilt libLiteRt (libc++) and we are not, so the
-# map is unreadable: Linux opens "tflite_weights" in the working directory and
-# engine_create fails, Windows faults in libLiteRt.dll (0xC0000005).
-# external_weights_by_path.{h,cc} rename the group to an absolute path of the
-# bundle and shift the offsets, so the runtime maps the same bytes through its
-# own path branch; GetWeightsSectionOffset reports no section, so no map is
-# handed over. Apple and Android compile it out (one standard library there),
-# and since v0.20.0 Windows too: libLiteRt.dll is built from source with /MT
-# (patches/litert_libLiteRt_static_crt.patch), both DLLs allocate from the
-# process heap, and the scoped-file map passed full page heap on Panther Lake
-# (D9). Linux keeps it until a skip_path_weights run there shows it unneeded.
-# -DLITERT_LM_FORCE_PATH_WEIGHTS turns it on for a test build.
-#
-# A real diff, applied like section 11, plus anchors on the assumptions the
-# patch rests on: a moved upstream line fails the build here, not a user's
-# engine_create.
-PATHW_SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
-# LITERTLM_SKIP_PATH_WEIGHTS=1 builds without this section: the v0.19.0
-# migration's check of whether 0.18.1's EmbeddingGemma 2 ABI fix made it
-# unnecessary.
-if [ "${LITERTLM_SKIP_PATH_WEIGHTS:-0}" = "1" ]; then
-  echo "  SKIP: section 13 (LITERTLM_SKIP_PATH_WEIGHTS=1)"
-else
-for f in external_weights_by_path.h external_weights_by_path.cc \
-    external_weights_by_path_test.cc; do
-  cp "$PATHW_SRC_DIR/$f" "$DIR/runtime/components/$f"
-done
-PATHW_PATCH="$PATHW_SRC_DIR/patches/external_weights_by_path.patch"
-if git -C "$DIR" apply --check "$PATHW_PATCH" 2>/dev/null; then
-  git -C "$DIR" apply "$PATHW_PATCH"
-  echo "  OK: TFLiteWeights are read by path on Linux and Windows"
-elif git -C "$DIR" apply --reverse --check "$PATHW_PATCH" 2>/dev/null; then
-  echo "  SKIP: external weights by path already applied"
-else
-  echo "  ERROR: $PATHW_PATCH does not apply to this LiteRT-LM revision —" >&2
-  echo "         model_resources_litert_lm or runtime/components/BUILD moved;" >&2
-  echo "         re-create the patch against it." >&2
-  exit 1
-fi
-pathw_fail() {
-  echo "  ERROR: section 13: $1" >&2
-  exit 1
-}
-PATHW_UTILS="$DIR/runtime/executor/litert_compiled_model_executor_utils.cc"
-# The group name the rewrite looks for is the one upstream gives the section.
-# v0.19.0 also lets a model reference another model's weights as
-# "tflite_weights:<model type>" (tied embeddings deduplicated across models,
-# 90aac9c); this section rewrites only a model's own group, so such a bundle
-# still fails on Linux and Windows.
-PATHW_RESOURCES_H="$DIR/runtime/components/model_resources.h"
-# Since v0.20.0 the constant lives in model_resources.h and
-# GetExternalWeightResources asks GetWeightsSectionOffset for the model's own
-# group by it.
-grep -qF 'constexpr absl::string_view kModelWeightGroupName = "tflite_weights";' "$PATHW_RESOURCES_H" ||
-  pathw_fail "model_resources.h no longer names the group \"tflite_weights\""
-grep -qF 'section_offset = resources.GetWeightsSectionOffset(model_type_str);' "$PATHW_UTILS" ||
-  pathw_fail "GetExternalWeightResources no longer reads the model's own group through GetWeightsSectionOffset"
-# NotFound from GetWeightsSectionOffset must still mean "no scoped file".
-grep -qF 'absl::IsNotFound(section_offset.status())' "$PATHW_UTILS" ||
-  pathw_fail "GetExternalWeightResources no longer treats NotFound as no external weights"
-# Every caller of SetExternalWeightScopedFile must be fed by
-# GetExternalWeightResources; a new one would hand the runtime a map again.
-pathw_callers="$(grep -rlF '.SetExternalWeightScopedFile(' --include='*.cc' \
-  "$DIR/runtime" "$DIR/c" | grep -v '_test\.cc$' | sed "s|^$DIR/||" | sort | tr '\n' ' ')"
-[ "$pathw_callers" = "runtime/components/embedding_lookup/embedding_lookup_text.cc runtime/executor/litert_compiled_model_executor_utils.cc " ] ||
-  pathw_fail "unexpected SetExternalWeightScopedFile callers: $pathw_callers"
-grep -qF 'if (external_weight_file_.has_value() &&' \
-  "$DIR/runtime/components/embedding_lookup/embedding_lookup_text.cc" ||
-  pathw_fail "EmbeddingLookupText no longer skips an absent weight file"
-# The in-memory map (SetWeightInMemoryMap) crosses the same boundary; the
-# .litertlm resources must keep returning none.
-if grep -q 'GetWeightInMemoryMap' "$DIR/runtime/components/model_resources_litert_lm.h"; then
-  pathw_fail "ModelResourcesLitertLm now provides an in-memory weight map"
-fi
-echo "  OK: section 13 anchors hold"
 fi
 
 # ── 14. EmbeddingEngine response lengths (EmbeddingGemma 2) ──

@@ -18,10 +18,6 @@ on:
       release_tag:
         description: 'Release tag to publish to (blank = native-<litertlm_version>). Use this for a re-release of the same upstream source, e.g. native-v0.17.0-a.'
         required: false
-      skip_path_weights:
-        description: 'Build without patch_c_api.sh section 13 (external weights by path) — the LiteRT-LM 0.19 check of whether it is still needed'
-        type: boolean
-        default: false
       qualcomm_dispatch_linux_only:
         description: 'Build only the Linux arm64 Qualcomm dispatch + libcdsprpc shim (an artifact to add to an existing linux_arm64 archive); never publishes'
         type: boolean
@@ -71,8 +67,6 @@ jobs:
           git lfs pull --include="prebuilt/linux_x86_64/*"
 
       - name: Patch C API
-        env:
-          LITERTLM_SKIP_PATH_WEIGHTS: ${{ inputs.skip_path_weights && '1' || '0' }}
         run: bash packages/litertlm_dart/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
 
       - name: Build libLiteRtLm.so
@@ -264,8 +258,6 @@ jobs:
           git lfs pull --include="prebuilt/linux_arm64/*"
 
       - name: Patch C API
-        env:
-          LITERTLM_SKIP_PATH_WEIGHTS: ${{ inputs.skip_path_weights && '1' || '0' }}
         run: bash packages/litertlm_dart/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
 
       - name: Build libLiteRtLm.so
@@ -306,20 +298,6 @@ jobs:
             --define=litert_runtime_link_mode=dynamic \
             --test_output=errors \
             '//support/tokenizer:sentencepiece_nul_piece_test'
-
-      - name: Test external weights by path (patch_c_api.sh section 13)
-        if: ${{ !inputs.skip_path_weights }}
-        # Section 13 repacks every TFLite model that has a TFLiteWeights
-        # section (EmbeddingGemma 2) so Google's runtime reads the weights by
-        # path. Its unit test runs here, on one of the two platforms that
-        # compile it in, with the build's flags so Bazel reuses its cache.
-        # Not on x86_64: same source, and less headroom under its timeout.
-        run: |
-          cd /tmp/LiteRT-LM
-          bazelisk test -c opt --strip=always \
-            --define=litert_runtime_link_mode=dynamic \
-            --test_output=errors \
-            '//runtime/components:external_weights_by_path_test'
 
       - name: Test the thinking constraint's user bitmap copy (patch_c_api.sh section 26)
         # With thinking on, the first decode step of a turn with tools copies
@@ -518,8 +496,6 @@ jobs:
 
       - name: Patch C API
         shell: bash
-        env:
-          LITERTLM_SKIP_PATH_WEIGHTS: ${{ inputs.skip_path_weights && '1' || '0' }}
         run: bash packages/litertlm_dart/native/litert_lm/patch_c_api.sh C:/LiteRT-LM
 
       - name: Build LiteRtLm.dll

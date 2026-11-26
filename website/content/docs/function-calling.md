@@ -135,7 +135,11 @@ reaches it natively as LiteRT-LM's per-message tool choice, sent with each user
 message (not with the one answering tool calls): measured on macOS, Gemma 4 E2B
 called the tool for a question no tool answers, which it answered in text with
 `auto`. On the web the runtime takes no per-message choice, so there
-`required` behaves as `auto`, as it did natively before 1.22.0. A `.task`
+`required` behaves as `auto`, as it did natively before 1.22.0. `required`
+without tools is an `ArgumentError`. LiteRT-LM applies a tool choice by
+constrained decoding, so where that is not qualified (every NPU, Linux arm64,
+an Android GPU that is neither Adreno, Mali nor PowerVR) `required` on these
+two models is refused at open with an `UnsupportedError`. A `.task`
 FunctionGemma gets the old "not supported" warning, and the JSON-format
 families (Qwen, DeepSeek, Phi-4 Mini) get a "you must call a function"
 instruction written into their prompt.
@@ -271,8 +275,11 @@ Gemma 4 often writes a sentence and then calls a tool (`flutter_edge_ai`
 `onToolCall` runs if only the final answer should remain, as
 `flutter_edge_ai_agent` does — but the chat's history keeps only the call
 (`role` and `tool_calls`), not the sentence. Without
-`supportsFunctionCalls: true`, or with `toolChoice: ToolChoice.none`, the call
-is not parsed and its JSON stays in the text.
+`supportsFunctionCalls: true` the call is not parsed and its JSON stays in the
+text. So does a call made under `toolChoice: ToolChoice.none` where the model
+still sees the tools, as on a `.litertlm` before `flutter_edge_ai_litertlm`
+1.22.0; from 1.22.0 a `.litertlm` Gemma 4 or FunctionGemma session under
+`none` has no tools to call.
 
 This is the same driver the voice loop uses: `VoiceSession.fromChat(…, onToolCall:)`
 runs function calls inside a spoken turn through it (see

@@ -137,14 +137,13 @@ class _ChatPageState extends State<ChatPage> {
         // changed to add the other three: the loop dispatches by name.
         tools: toolbox,
         supportsFunctionCalls: true,
-        // Whether the model may, must, or must not call. On a `.litertlm` the
-        // runtime holds the declarations for both families — `openChat`
-        // passes `tools` into the underlying session regardless of this — so
-        // `none` cannot take them back out. What it switches off is the SDK's
-        // suppression of tool-call JSON, which is why a call made under `none`
-        // can arrive as raw markup in the bubble. On a `.task` FunctionGemma
-        // the SDK writes the declarations into the prompt itself, and there
-        // `none` really does leave them out.
+        // Whether the model may, must, or must not call. On a `.litertlm`
+        // the runtime renders the declarations for both families: from
+        // flutter_edge_ai_litertlm 1.22.0 `none` opens the session without
+        // them, and `required` reaches the runtime with each of your messages
+        // (natively; the web runtime takes no per-message tool choice). On a
+        // `.task` FunctionGemma the SDK writes the declarations into the
+        // prompt itself, and `none` leaves them out there too.
         toolChoice: _toolChoice,
         // Reason first, then answer. On weights with no thinking training this
         // buys nothing, which is why the switch is disabled for those.
@@ -182,9 +181,9 @@ class _ChatPageState extends State<ChatPage> {
       _notice =
           _toolChoice == ToolChoice.required &&
               !widget.model.supportsRequiredToolChoice
-          ? '${widget.model.label} cannot be forced to call a tool — nothing '
-                'in the prompt it is given can say "you must", so `required` '
-                'behaves as "auto".'
+          ? '${widget.model.label} cannot be forced to call a tool in the '
+                'browser — its LiteRT-LM runtime takes no per-message tool '
+                'choice, so `required` behaves as "auto".'
           : null;
     });
 

@@ -13,7 +13,7 @@ with
 window.litertLm = m;
 return m;
 ```
-and import `@litert-lm/core@0.20.0`. A 0.19.0 page with the new line still runs, with a one-time version note. A page without the line is refused at engine or embedder create with a `StateError` that quotes the line to add. Later releases that use more of the module need no further page edit.
+and import `@litert-lm/core@0.20.0`. A 0.19.0 page with the new line still runs, with a one-time version note. A page without the line is refused at create, quoting the line to add: a language model with a `StateError`, an EmbeddingGemma 2 embedder with an `EmbeddingLoadException`. Later releases that use more of the module need no further page edit.
 
 ## flutter_edge_ai_litertlm 1.21.1: web on `@litert-lm/core` 0.19.0
 
@@ -27,7 +27,7 @@ apps change nothing.
   is not recognised. Change the version in the handshake's import:
 
   ```
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
   ```
 - **Gemma 4 E2B on the web is `LiteRtLmModels.gemma4E2bIt.webGpu`.** The
   catalog no longer offers `gemma4E2bIt.web` or `gemma4E4bIt.web` (the

@@ -174,7 +174,7 @@ final vector = await embedder.embed(
   - On LiteRT-LM 0.20 (litertlm_dart 0.20.0, `native-v0.20.0`) the 270m's
     GPU vectors measured min cosine 0.9969–0.9991 to the CPU ones on a Tesla T4
     (Vulkan, 2026-11-26), 0.9959–0.9988 on a Panther Lake Arc B390 (D3D12,
-    from the released archive, 2026-11-26) and at least 0.9971 on Metal
+    from the released archive, 2026-11-26) and at least 0.9970 on Metal
     (M5 Pro, 2026-11-25). On the T4 a text takes 14–25 ms on the GPU versus
     188–204 ms on its CPU.
   - Only the text tower runs on the GPU. The 440m and 740m vision and audio

@@ -1063,12 +1063,12 @@ renumbered them). Each is read when it is used, so a later release that calls
 more of the module needs no new line. A page without `window.litertLm` fails
 the model's or the embedder's load with an error that quotes the line (on a
 page that still sets the old `window.Engine` and `window.EmbeddingEngine`
-globals, the lines it replaces;
-see MIGRATION.md). A browser without WebGPU fails the embedder's load too,
-with no fallback here (the CPU path of `@litert-lm/core` 0.20.0 loads these
-bundles but takes 110-225 s to load and 9-12 s per short text). A page whose `@litert-lm/core` lacks a member or
-call litertlm_dart makes is refused, naming it and 0.19.0. Another library
-that loads its own copy of `@litert-lm/core` from another URL (llamadart's
+globals, the lines it replaces; see MIGRATION.md). A browser without WebGPU
+fails the embedder's load too, with no fallback here (the CPU path of
+`@litert-lm/core` 0.20.0 loads these bundles but takes 110-225 s to load and
+9-12 s per short text). A page whose `@litert-lm/core` lacks a member or call
+litertlm_dart makes is refused, naming it and 0.20.0. Another library that
+loads its own copy of `@litert-lm/core` from another URL (llamadart's
 LiteRT-LM loader, for one) puts a second runtime in the page: only
 `window.litertLm` is read here, but two runtimes sharing the GPU and the
 page's memory is not tested.

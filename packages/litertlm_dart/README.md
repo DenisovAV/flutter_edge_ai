@@ -101,7 +101,9 @@ await engine.close();
   engine keeps the bundle's, except that Gemma 4 above a 2,048-token context
   and a FunctionGemma bundle that declares no type get float32 on the GPU
   (not Gemma 4 on Android: there it keeps float16 on every GPU, because
-  float32 failed on an Adreno 830 with this native build).
+  float32 failed on an Adreno 830 with this native build). `int16` and
+  `int8` are refused on the GPU for Gemma 4 and FunctionGemma bundles: the
+  engine loads, then decodes nonsense (measured on Metal).
 - `engine.bundleInfo` is what the file says about itself;
   `readBundleInfo(path)` reads it without loading the model.
 
@@ -231,10 +233,28 @@ print(await branch.renderMessageIntoString(Message.user('Who am I?')));
 **A low-level session.** `Engine.createSession(SessionConfig)` is Kotlin's
 `Session`: `runPrefill` and `runDecode`, `generateContent` and
 `generateContentStream`, `cancelProcess` and `clone`, with no conversation's
-history or tool calls. Images and audio go through a conversation: LiteRT-LM
-0.20.0 refuses raw media in a session ("Image must be preprocessed before
-being used in SessionAdvanced", measured on macOS). On the web
-(`@litert-lm/core` 0.20.0) a session takes text only and does not stream.
+history or tool calls. It takes text only: LiteRT-LM 0.20.0 refuses raw media
+in a session ("Image must be preprocessed before being used in
+SessionAdvanced", measured on macOS), so an image or audio input is refused
+before native; send media through a conversation. `cancelProcess` ends the
+call in flight normally (a decode returns the text it had; the stream ends
+with what came) and ends the session: LiteRT-LM does not support reusing a
+cancelled session, so every later call but `close()` is a `StateError`.
+Closing the engine stops a call in flight, which then fails with a
+`StateError`.
+
+A session is a native context beside the engine's others. Several were
+measured to work on the CPU of macOS arm64, Linux and Windows x86_64, on
+Metal, on Adreno and Mali GPUs, and on the Qualcomm and Google Tensor NPUs
+(Android) and the Intel NPU (Windows). It is refused, by name, on the PowerVR
+GPU (two greedy conversations diverged on a Pixel 11) and on the MediaTek NPU
+(a context answers its second message empty, LiteRT-LM #4256). Linux Vulkan,
+Windows D3D12, iOS and the Android CPU are unmeasured for a session beside a
+conversation.
+
+On the web (`@litert-lm/core` 0.20.0) a session takes text only ("inputs_array[0]
+must be a string"), decodes whole replies and does not stream;
+`generateContent` holds the page lock across its prefill and decode.
 
 ```dart
 import 'package:litertlm_dart/litertlm_dart.dart';
@@ -464,8 +484,8 @@ print(reply.text);
 Kotlin's and Swift's `ToolChoice`: `ToolChoice.auto` (text, calls or both),
 `ToolChoice.none`, `ToolChoice.required`, `ToolChoice.forcedFunction(name)` and
 `ToolChoice.allowedTools(names, required: ...)`. No choice leaves the model's
-default; `ToolChoice.auto` is sent as an explicit `"auto"`, as Kotlin and Swift
-send it. It applies to that message's first round only; the rounds that
+default; `ToolChoice.auto` is sent as an explicit auto choice, as Kotlin and
+Swift send one. It applies to that message's first round only; the rounds that
 answer tool results go with no choice (the model's default), as in Kotlin and
 Swift, so `required` cannot loop.
 
@@ -484,7 +504,12 @@ not carry the response format (with automatic tools pending the message's own
 send goes without it, as in Kotlin and Swift, and the choice applies there),
 and must name tools the conversation has; otherwise it is an `ArgumentError`.
 With `ToolChoice.none` the model cannot call a tool, but may still write what
-a call would look like as text. On the web `auto` is what its unconstrained
+a call would look like as text. Only Gemma 3, Gemma 3n, Gemma 4 and
+FunctionGemma bundles apply a choice other than `auto` in LiteRT-LM 0.20.0;
+every other model family drops it, so there it is refused with an
+`UnsupportedError`, as is a bundle whose family cannot be read (measured: Qwen3
+0.6B refused, Gemma 4 E2B calls the tool under `required`). A tool response
+on a conversation that declares no tools is an `ArgumentError`. On the web `auto` is what its unconstrained
 decoding already does; any other choice is refused, as its runtime has no
 tool choice.
 
@@ -638,8 +663,11 @@ final short = await embedder.computeEmbedding(
   it, and that is `info.maxInputTokens` (300 gives 512 on the 270m). Null is
   1024. A length above the bundle's largest signature is refused at load.
 - `EmbeddingEngineConfig.activationDataType` (Kotlin's) sets the text and
-  vision towers' activation type; null keeps the bundle's. Refused on the
-  web, whose `EmbeddingEngine` takes none.
+  vision towers' activation type; null keeps the bundle's. Only the GPU reads
+  it. On Metal the 270m's minimum cosine to the CPU over the ten golden texts
+  is 0.99937 at float32 and 0.99696 at float16; `int16` and `int8` ran as
+  float16 there (the same vectors), so they are refused on the GPU. Refused on
+  the web, whose `EmbeddingEngine` takes none.
 
 ## Errors and closing
 
@@ -733,17 +761,17 @@ API's numbers, as Swift's `BenchmarkInfo`.
 | EmbeddingGemma 2 | text, images, audio | the same, text with images and audio in one vector, per-SoC NPU bundles |
 | Embedding options | `EmbeddingOptions` per request: `normalize`, `insertSpecialTokens`, `outputSize`, `visionTokensPerImage` | the same; a request's vision budget is 70 or 140, at most the engine's, and on the web the engine's own |
 | `EmbeddingEngineConfig` | `maxInputLength` (Kotlin and Swift), `activationDataType` and `modelFd` (Kotlin) | `maxInputLength`; `activationDataType` natively; no `modelFd`: LiteRT-LM's C API creates embedding settings from a path only, and the bundle is read by path before the engine exists |
-| `computeEmbeddingBatch` | Kotlin and Swift | none: one `computeEmbedding` per input (batching was measured no faster) |
-| LoRA | `LoraConfig` on the conversation and the session (Kotlin), `loraPath` and `loraRank` (Swift) | `ConversationConfig.loraConfig` (`LoraConfig`), `EngineConfig.loraRank`; the native libraries carry a text LoRA backport (LiteRT-LM PR #2508) |
-| Tool choice | `ToolChoice` per message, first round only (Kotlin and Swift) | the same; `auto` sent as an explicit `"auto"` |
+| `computeEmbeddingBatch` | Kotlin and Swift | not bound: one `computeEmbedding` per input |
+| LoRA | `LoraConfig` on the conversation and the session (Kotlin), `loraPath` and `loraRank` (Swift) | `ConversationConfig.loraConfig`, `SessionConfig.loraConfig` and `benchmark(loraConfig:)` (`LoraConfig`), `EngineConfig.loraRank`; the native libraries carry a text LoRA backport (LiteRT-LM PR #2508) |
+| Tool choice | `ToolChoice` per message, first round only (Kotlin and Swift) | the same; `auto` sent as an explicit auto choice, as Kotlin and Swift send one; another choice refused for a model family that drops it (all but Gemma 3, 3n, 4 and FunctionGemma) |
 | Output cap per message | `maxOutputToken` (Kotlin), `maxOutputTokens` (Swift) on `sendMessage` | the same, `maxOutputTokens` |
 | Visual token budget | `ExperimentalFlags.visualTokenBudget` (both); `ConversationConfig.visualTokenBudget` (Swift) | `EngineConfig.visualTokenBudget`, `ConversationConfig.visualTokenBudget`, checked against the bundle's vision budgets |
 | Chat template | `ConversationConfig.chatTemplate` | the same |
 | Tool call streaming | `ConversationConfig.enableToolCallStreaming` (Swift) | the same, into `channels['tool_call']` |
 | Tool call ids | `ToolCall.id`, `Content.toolResponse(name:response:id:)` (Swift) | the same, `ToolCall.id`, `Content.toolResponse(name, response, id: ...)` |
 | Conversation state | `getTokenCount()`, `renderMessageIntoString`, `renderPrefaceIntoString` | the same names; where conversations share one native conversation by replay, an `UnsupportedError` |
-| Low-level session | `Engine.createSession(SessionConfig)`, `Session` (Kotlin) | the same; on the web text only, no streaming |
-| Activation types | `FLOAT32`, `FLOAT16`, `INT16`, `INT8` | the same four |
+| Low-level session | `Engine.createSession(SessionConfig)`, `Session` (Kotlin) | the same, text only (LiteRT-LM 0.20.0 refuses raw media in a session); a cancelled session refuses later calls; refused on the PowerVR GPU and the MediaTek NPU; on the web no streaming |
+| Activation types | `FLOAT32`, `FLOAT16`, `INT16`, `INT8` | the same four; int16/int8 refused on the GPU for Gemma 4 and FunctionGemma (measured nonsense on Metal) and for EmbeddingGemma 2 (ran as float16) |
 | `Backend.GOOGLE_TENSOR` (Kotlin) | the `GOOGLE_TENSOR_ARTISAN` executor | refused: the open-source LiteRT-LM registers none; the Tensor NPU is `Backend.npu()` |
 | Custom `channels`, `prefillPrefaceOnInit` (Kotlin) | through Kotlin's JNI | not offered: LiteRT-LM's C API has no setter for either |
 
@@ -837,7 +865,9 @@ hooks:
 ```
 
 `macos_companions`, read up to litertlm_dart 0.19.1+4, is obsolete and
-ignored, with a warning.
+ignored, with a warning. A define under the old key, which 0.19.x still read
+with a warning, now fails the build with the line to move: put it under
+`litertlm_dart:`.
 
 On the MediaTek NPU every turn runs in a fresh native conversation that
 replays the history: there a conversation answers its second message empty
@@ -970,7 +1000,12 @@ Chrome 157 before it (2026-11-23):
   `requireWeightCache` are refused (the web keeps no weight cache). A page
   without WebGPU is refused before anything loads. Images on the 270m and
   audio on the 270m or the 440m are refused from the bundle's header: the
-  runtime creates those towers and fails only the first input.
+  runtime creates those towers and fails only the first input. A
+  `maxInputLength` above the largest text signature (8192) is refused, as
+  natively.
+- **`EngineConfig.visualTokenBudget`** cannot be checked against the
+  bundle's budgets on the web: `@litert-lm/core` 0.20.0 takes any (70 and 100
+  were both read back and answered); unset, it is 280.
 - **One module per page.** An LLM and an embedder share the page's
   WebAssembly module (4 GB) and WebGPU device: their calls take turns, and
   their memory adds up. The 440m with images loads next to Gemma 4 E2B's GPU

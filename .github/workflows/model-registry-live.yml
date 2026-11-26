@@ -9,7 +9,9 @@
 # repository the token cannot read is noAccess and fails the run, so a missing
 # or expired HF_TOKEN, or an account that has not accepted a gated license,
 # shows as red rather than as files nobody looked at. It does not mean a pull
-# request broke something.
+# request broke something. It also runs `registry.dart pub-check`: red when
+# model_registry/pub_dev.yaml no longer names what pub.dev serves (a release
+# that skipped `registry.dart pin`).
 name: Model registry live check (Hugging Face)
 
 on:
@@ -42,3 +44,7 @@ jobs:
         run: |
           dart pub get
           dart run bin/registry.dart live
+
+      - name: The pub.dev pin against pub.dev
+        working-directory: tool/model_registry
+        run: dart run bin/registry.dart pub-check

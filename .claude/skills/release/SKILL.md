@@ -116,12 +116,18 @@ silently do the other thing.
         example/integration_test, on every host release_critical.yaml lists;
         they print FEA_EVIDENCE lines), then in tool/model_registry
         `dart run bin/registry.dart evidence --device … <log>` per host,
-        `dart run bin/registry.dart freeze <package>`, `generate`, and commit
-        the evidence, the snapshot and the generated files together. Then
+        `dart run bin/registry.dart freeze <package>`,
+        `dart run bin/registry.dart pin <package>` (model_registry/pub_dev.yaml:
+        the site shows what pub.dev ships, so the pin moves with the release;
+        for the adapter it also moves litertlm_dart and the native build),
+        `generate`, and commit the evidence, the snapshot, the pin and the
+        generated files together. Then
         `dart run bin/registry.dart release-check <package>` must print
         "<package> <version>: ready to publish" on that commit, with nothing
         uncommitted. Nothing enforces this but this step: run it again after
         any later commit, and never skip it
+[ ] 10a  litertlm or speech published? → `(cd tool/model_registry && dart run
+        bin/registry.dart pub-check)` must say pub_dev.yaml matches pub.dev
 [ ] 10b  after publishing: pub.dev actually SERVES the new versions (its API
         lags minutes behind the upload); if a package's web/ changed
         (flutter_edge_ai_litertlm or flutter_edge_ai), sync every codelab copy to

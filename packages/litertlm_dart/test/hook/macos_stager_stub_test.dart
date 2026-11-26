@@ -99,6 +99,33 @@ void main() {
     expect(file.readAsStringSync(), _oldStager);
   }, skip: Platform.isWindows ? 'no file modes' : false);
 
+  test('a chmod that cannot start is a failed write: a stager of ours fails '
+      'the build naming the path, the temporary file is gone', () {
+    file
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(_oldStager);
+    ProcessResult noChmod(String executable, List<String> arguments) =>
+        throw ProcessException(executable, arguments, 'No such file');
+    expect(
+      () => writeMacOSStagerStub(file, '0.20.0', runProcess: noChmod),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains(file.path), contains('chmod could not run')),
+        ),
+      ),
+    );
+    expect(file.readAsStringSync(), _oldStager);
+    expect(file.parent.listSync().map((e) => e.path), [file.path]);
+    final absent = File('${file.parent.path}/other.sh');
+    expect(
+      () => writeMacOSStagerStub(absent, '0.20.0', runProcess: noChmod),
+      throwsA(isA<ProcessException>()),
+    );
+    expect(absent.existsSync(), isFalse);
+  });
+
   test('a stager of ours that cannot be replaced fails the build, naming '
       'the path and what to do', () {
     file

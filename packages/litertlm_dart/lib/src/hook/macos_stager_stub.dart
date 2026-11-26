@@ -64,7 +64,15 @@ enum MacOSStagerStubOutcome {
 /// the app. An absent file, or an earlier stub, that cannot be written is
 /// the [FileSystemException] of the write (the stub only serves apps that
 /// still carry the block, and an earlier stub does nothing either).
-MacOSStagerStubOutcome writeMacOSStagerStub(File file, String version) {
+///
+/// [runProcess] runs `chmod`; a test replaces it. A `chmod` that cannot be
+/// started (a [ProcessException]) is handled as a write that failed.
+MacOSStagerStubOutcome writeMacOSStagerStub(
+  File file,
+  String version, {
+  ProcessResult Function(String executable, List<String> arguments) runProcess =
+      Process.runSync,
+}) {
   final stub = macOSStagerStub(version);
   // A stager of an earlier release, not a stub: only it would stage old
   // companions if left there.
@@ -88,9 +96,20 @@ MacOSStagerStubOutcome writeMacOSStagerStub(File file, String version) {
     file.parent.createSync(recursive: true);
     temp.writeAsStringSync(stub, flush: true);
     // The block runs it with `sh`, but a stager was executable too.
-    Process.runSync('chmod', ['755', temp.path]);
+    runProcess('chmod', ['755', temp.path]);
     temp.renameSync(file.path);
-  } on FileSystemException catch (e) {
+  } on Exception catch (e) {
+    final String why;
+    switch (e) {
+      case FileSystemException():
+        why =
+            '${e.message}'
+            '${e.osError == null ? '' : ': ${e.osError!.message}'}';
+      case ProcessException():
+        why = 'chmod could not run: ${e.message}';
+      default:
+        rethrow;
+    }
     try {
       if (temp.existsSync()) temp.deleteSync();
     } on FileSystemException {
@@ -99,8 +118,7 @@ MacOSStagerStubOutcome writeMacOSStagerStub(File file, String version) {
     if (!stager) rethrow;
     throw StateError(
       '${file.path} is the macOS companion stager of an earlier '
-      'litertlm_dart, and it could not be replaced (${e.message}'
-      '${e.osError == null ? '' : ': ${e.osError!.message}'}). Left there, '
+      'litertlm_dart, and it could not be replaced ($why). Left there, '
       "the Podfile's '[flutter_gemma] Setup LiteRT-LM macOS' block would copy "
       "that release's companions into the app. Delete the file, or remove "
       'the block from your Podfile.',

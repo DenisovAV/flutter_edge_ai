@@ -197,7 +197,12 @@ whose tools it renders, Gemma 4 and FunctionGemma; core's own tools prompt
 carries it for the others. `ToolChoice.required` goes with each user message
 as LiteRT-LM's per-message tool choice (never with the message that answers
 tool calls), so the model calls a tool; `ToolChoice.none` opens the
-conversation without the tools, so the model never sees them. Measured on
+conversation without the tools, so the model never sees them; the legacy
+`createChat(toolChoice:)` maps it the same way. `required` without tools is an
+`ArgumentError`. LiteRT-LM applies a tool choice by constrained decoding, so
+`required` on a Gemma 4 or FunctionGemma model is refused at open
+(`UnsupportedError`) where that is not qualified: every NPU, Linux arm64, and
+an Android GPU that is neither Adreno, Mali nor PowerVR. Measured on
 macOS (CPU and Metal, greedy) with a question no tool answers: Gemma 4 E2B
 answered in text with `auto` and called the tool with `required`; the base
 FunctionGemma 270M called it with `auto` too, and answered in text with

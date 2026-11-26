@@ -6,7 +6,6 @@ import 'dart:io';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:litertlm_dart/internal.dart' show conversationConfig;
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 
 import 'ffi_test_support.dart';
@@ -104,5 +103,44 @@ void main() {
       throwsA(isA<ArgumentError>()),
     );
     expect(client.extras, isEmpty);
+  });
+
+  test('a legacy createSession whose loraPath is not there is refused '
+      'before the live session is closed', () async {
+    final client = _Client();
+    final m = model(client);
+    // ignore: deprecated_member_use
+    final live = await m.createSession();
+    await expectLater(
+      // ignore: deprecated_member_use
+      m.createSession(loraPath: '${dir.path}/missing.tflite'),
+      throwsA(isA<ArgumentError>()),
+    );
+    // ignore: deprecated_member_use
+    expect(m.session, same(live));
+    expect(client.extras, hasLength(1));
+  });
+
+  test('a legacy createSession with loraPath on the NPU is refused before '
+      'the live session is closed', () async {
+    final client = _Client();
+    final m = ffiModelForClient(
+      ffiClient: client,
+      maxTokens: 1024,
+      modelType: ModelType.functionGemma,
+      activeBackend: PreferredBackend.npu,
+      openSessionBacking: OpenSessionBacking.virtual,
+      onClose: () {},
+    );
+    addTearDown(m.close);
+    // ignore: deprecated_member_use
+    final live = await m.createSession();
+    await expectLater(
+      // ignore: deprecated_member_use
+      m.createSession(loraPath: adapter),
+      throwsA(isA<UnsupportedError>()),
+    );
+    // ignore: deprecated_member_use
+    expect(m.session, same(live));
   });
 }

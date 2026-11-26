@@ -7,6 +7,10 @@
 // raw JSON for core's tool-call parser, the model-wide generation lock and how
 // a turn ended.
 //
+// The model also keeps the deprecated singleton chat API (createChat) until
+// 3.0, so that its tool choice reaches the session.
+// ignore_for_file: deprecated_member_use
+//
 // No dart:js_interop: the engine arrives as a [WebLlmEngine]
 // (web/web_llm_engine.dart over litertlm_dart's web `Engine`, a fake in the VM
 // tests).
@@ -186,6 +190,87 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     bool enableThinking = false,
     List<Tool> tools = const [],
     int? maxOutputTokens,
+  }) => _createSingletonSession(
+    temperature: temperature,
+    randomSeed: randomSeed,
+    topK: topK,
+    topP: topP,
+    loraPath: loraPath,
+    enableVisionModality: enableVisionModality,
+    enableAudioModality: enableAudioModality,
+    systemInstruction: systemInstruction,
+    enableThinking: enableThinking,
+    tools: tools,
+    maxOutputTokens: maxOutputTokens,
+  );
+
+  /// Core's legacy [createChat], with its [toolChoice] reaching the session
+  /// as [openEngineSession] takes it.
+  @override
+  Future<InferenceChat> createChat({
+    double? temperature,
+    int? randomSeed,
+    int? topK,
+    double? topP,
+    int tokenBuffer = 256,
+    String? loraPath,
+    bool? supportImage,
+    bool? supportAudio,
+    List<Tool> tools = const [],
+    bool? supportsFunctionCalls,
+    bool enableThinking = false,
+    ModelType? modelType,
+    ToolChoice toolChoice = ToolChoice.auto,
+    int? maxFunctionBufferLength,
+    String? systemInstruction,
+    int? maxOutputTokens,
+  }) async {
+    chat = InferenceChat(
+      sessionCreator: () => _createSingletonSession(
+        temperature: temperature,
+        randomSeed: randomSeed,
+        topK: topK,
+        topP: topP,
+        loraPath: loraPath,
+        enableVisionModality: supportImage ?? false,
+        enableAudioModality: supportAudio ?? false,
+        systemInstruction: systemInstruction,
+        enableThinking: enableThinking,
+        tools: tools,
+        maxOutputTokens: maxOutputTokens,
+        toolChoice: toolChoice,
+      ),
+      maxTokens: maxTokens,
+      tokenBuffer: tokenBuffer,
+      supportImage: supportImage ?? false,
+      supportAudio: supportAudio ?? false,
+      supportsFunctionCalls: supportsFunctionCalls ?? false,
+      maxFunctionBufferLength:
+          maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
+      tools: tools,
+      enableThinking: enableThinking,
+      modelType: modelType ?? ModelType.gemmaIt,
+      fileType: fileType,
+      toolChoice: toolChoice,
+      systemInstruction: systemInstruction,
+    );
+    await chat!.initSession();
+    return chat!;
+  }
+
+  Future<InferenceModelSession> _createSingletonSession({
+    double? temperature,
+    int? randomSeed,
+    int? topK,
+    double? topP,
+    String? loraPath,
+    bool? enableVisionModality,
+    bool? enableAudioModality,
+    String? systemInstruction,
+    bool enableThinking = false,
+    List<Tool> tools = const [],
+    int? maxOutputTokens,
+    ToolChoice toolChoice = ToolChoice.auto,
   }) async {
     if (_isClosed) {
       throw StateError(
@@ -199,6 +284,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         'loraPath or use a MediaPipe .task web model.',
       );
     }
+    final sessionTools = _toolChoiceTools(toolChoice, tools);
     // Resolved before anything loads: values it rejects must not load the
     // engine.
     final explicit = SamplingParams(
@@ -222,7 +308,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         sampling: sampling,
         systemInstruction: systemInstruction,
         enableThinking: enableThinking,
-        tools: tools,
+        tools: sessionTools,
         maxOutputTokens: maxOutputTokens,
       );
       // Closed while the engine or the conversation was being created: the
@@ -234,7 +320,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
 
       final session = _session = LiteRtLmWebSession(
         conversation: conversation,
-        declaresTools: tools.isNotEmpty,
+        declaresTools: sessionTools.isNotEmpty,
         modelType: modelType,
         fileType: fileType,
         generationMutex: generationMutex,
@@ -282,11 +368,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       :maxOutputTokens,
       :toolChoice,
     ) = request;
-    // Core's ToolChoice.none: the conversation gets no tools, so the model
-    // never sees them, as natively. The page's runtime takes no per-message
-    // tool choice, so ToolChoice.required reaches the model only through
-    // core's tools prompt, on the models that have one.
-    final sessionTools = toolChoice == ToolChoice.none ? const <Tool>[] : tools;
+    final sessionTools = _toolChoiceTools(toolChoice, tools);
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
@@ -375,6 +457,23 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
   /// the runtime only for the models whose tool calling LiteRT-LM runs
   /// natively (Gemma 4, FunctionGemma), the same predicate as the native path
   /// and as core's chat, so the declarations are rendered exactly once.
+  /// The tools a session's conversation gets for core's [toolChoice]:
+  /// none for [ToolChoice.none], so the model never sees them, as natively.
+  /// [ToolChoice.required] without tools is an [ArgumentError]. The page's
+  /// `@litert-lm/core` 0.20.0 takes no per-message tool choice, so on a model
+  /// whose tools the runtime renders (Gemma 4, FunctionGemma) required
+  /// answers as auto; on the others core's tools prompt carries it.
+  List<Tool> _toolChoiceTools(ToolChoice toolChoice, List<Tool> tools) {
+    if (toolChoice == ToolChoice.required && tools.isEmpty) {
+      throw ArgumentError.value(
+        toolChoice,
+        'toolChoice',
+        'ToolChoice.required needs at least one tool',
+      );
+    }
+    return toolChoice == ToolChoice.none ? const <Tool>[] : tools;
+  }
+
   Future<lm.Conversation> _buildConversation({
     required SamplingParams explicit,
     required ResolvedSampling sampling,

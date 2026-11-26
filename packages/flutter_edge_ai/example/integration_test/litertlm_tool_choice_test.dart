@@ -103,6 +103,55 @@ Future<({List<FunctionCallResponse> calls, String text})> _turn(
   }
 }
 
+/// A `required` chat on Gemma 4: the weather question gets a call; the tool
+/// result goes back and the model answers in text, because the choice never
+/// goes with the message carrying tool results.
+Future<({List<FunctionCallResponse> calls, String text})>
+_requiredThenToolResult(InferenceModel model) async {
+  final chat = await model.openChat(
+    topK: 1,
+    tools: _tools,
+    supportsFunctionCalls: true,
+    modelType: ModelType.gemma4,
+    toolChoice: ToolChoice.required,
+    maxOutputTokens: 128,
+  );
+  try {
+    await chat.addQuery(
+      const Message(text: 'What is the weather in Paris?', isUser: true),
+    );
+    FunctionCallResponse? call;
+    await for (final r in chat.generateChatResponseAsync()) {
+      if (r is FunctionCallResponse) call ??= r;
+      if (r is ParallelFunctionCallResponse) call ??= r.calls.first;
+    }
+    expect(call, isNotNull, reason: 'required: no call for the question');
+    await chat.addQuery(
+      Message.toolResponse(
+        toolName: call!.name,
+        response: const {'sky': 'clear', 'celsius': 18},
+      ),
+    );
+    final calls = <FunctionCallResponse>[];
+    final text = StringBuffer();
+    await for (final r in chat.generateChatResponseAsync()) {
+      switch (r) {
+        case FunctionCallResponse():
+          calls.add(r);
+        case ParallelFunctionCallResponse(calls: final parallel):
+          calls.addAll(parallel);
+        case TextResponse(:final token):
+          text.write(token);
+        case ThinkingResponse():
+          break;
+      }
+    }
+    return (calls: calls, text: text.toString());
+  } finally {
+    await chat.close();
+  }
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -139,6 +188,16 @@ void main() {
           isNot(contains('get_weather')),
           reason: 'none: $none',
         );
+        if (modelType == ModelType.gemma4) {
+          final after = await _requiredThenToolResult(model);
+          // ignore: avoid_print
+          print(
+            '[tool choice] $modelType required, after the tool result: '
+            '$after',
+          );
+          expect(after.calls, isEmpty, reason: 'after the result: $after');
+          expect(after.text.trim(), isNotEmpty, reason: 'after: $after');
+        }
       } finally {
         await model.close();
       }

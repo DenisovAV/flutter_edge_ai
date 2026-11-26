@@ -1,8 +1,14 @@
 // The page's module script lives in one place, `liteRtLmWebModuleShim`: every
-// copy this repository ships (the READMEs, the example pages, the codelab
-// pages, the skills and the site) is that text, so an app that copies any of
-// them hands over the module the way this release reads it. Also the words a
-// page without it is refused with.
+// copy under packages/ (the READMEs, the example pages and the skills, all of
+// which build against or ship with this workspace's litertlm_dart) is that
+// text, so an app that copies any of them hands over the module the way this
+// release reads it. Also the words a page without it is refused with.
+//
+// codelabs/ and website/ are not searched: the site deploys on merge, and its
+// pages and the codelab apps build against the published
+// flutter_edge_ai_litertlm, which reads window.Engine on @litert-lm/core
+// 0.19.0 until the adapter release that moves to this runtime. They move to
+// the new shim with that release, and join this search then.
 //
 // Run: dart test test/web/web_module_shim_test.dart
 @TestOn('vm')
@@ -18,7 +24,7 @@ import 'package:test/test.dart';
 const _root = '../..';
 
 /// Where copies of the module script live.
-const _searched = ['codelabs', 'packages', 'website'];
+const _searched = ['packages'];
 
 /// Directories never searched: build output and dependencies.
 const _skipped = {
@@ -82,8 +88,8 @@ void main() {
   final carriers = _carriers();
 
   test('the copies are found', () {
-    // 41 codelab pages, 2 example pages, 2 READMEs, a skill and the site.
-    expect(carriers.length, greaterThanOrEqualTo(50));
+    // 2 example pages, 2 READMEs and a skill.
+    expect(carriers.length, greaterThanOrEqualTo(5));
     final paths = carriers.map((f) => f.path).toList();
     for (final expected in [
       'packages/litertlm_dart/README.md',
@@ -93,7 +99,6 @@ void main() {
     ]) {
       expect(paths, contains('$_root/$expected'));
     }
-    expect(paths.where((p) => p.contains('/codelabs/')), hasLength(43));
   });
 
   final shim = liteRtLmWebModuleShim.split('\n');

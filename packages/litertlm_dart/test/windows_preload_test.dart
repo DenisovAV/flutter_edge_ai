@@ -21,12 +21,11 @@ import 'package:test/test.dart';
 /// must equal it: a native bump that changes the Windows archive fails here
 /// until this list is taken again from the new archive.
 const _windowsArchiveSha256 =
-    'c114569468a5bbe8a68ca48ba1c5ff31a5c96d635042b71ab84cf56ed3c3a1dc';
+    'ff8da8c4c7757b4d0bbcd40206e6866bcd8fb6fb92dd4a44b0199ebea5b9b95e';
 
-/// `tar -tzf litertlm-windows_x86_64.tar.gz` of native-v0.19.1-b, the archive
+/// `tar -tzf litertlm-windows_x86_64.tar.gz` of native-v0.20.0, the archive
 /// of [_windowsArchiveSha256].
 const _windowsArchive = {
-  'GemmaModelConstraintProvider.dll',
   'LiteRt.dll',
   'LiteRtDispatch.dll',
   'LiteRtLm.dll',
@@ -34,10 +33,8 @@ const _windowsArchive = {
   'StreamProxy.dll',
   'dxcompiler.dll',
   'dxil.dll',
-  'libGemmaModelConstraintProvider.dll',
   'libLiteRt.dll',
   'libLiteRtWebGpuAccelerator.dll',
-  'libwebgpu_dawn.dll',
   'openvino.dll',
   'openvino_intel_npu_compiler.dll',
   'openvino_intel_npu_compiler_loader.dll',

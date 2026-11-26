@@ -356,7 +356,8 @@ final _litertlmBundle = _NativeBundle(
   windowsExtraLibs: [
     'libLiteRt',
     'libLiteRtWebGpuAccelerator',
-    'libwebgpu_dawn', // lib-prefixed for the accelerator's PE import (v0.14.0)
+    // No lib-prefixed Dawn from native-v0.20.0: the accelerator built from
+    // LiteRT's source imports webgpu_dawn.dll by that one name (a companion).
     // DXC runtime
     'dxil',
     'dxcompiler',

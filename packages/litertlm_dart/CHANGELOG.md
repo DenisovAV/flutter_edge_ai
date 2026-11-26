@@ -1,10 +1,14 @@
 ## 0.20.0
 - LiteRT-LM 0.20.0 on `native-v0.20.0`; web on `@litert-lm/core` 0.20.0.
 - Breaking (web): the page hands over `@litert-lm/core` once as `window.litertLm`; see the README.
-- Breaking: `SpeculativeDecodingConfig` (mode, lenience) replaces `SpeculativeDecodingMode`; `benchmark()` takes it.
-- `ToolChoice` per message on `sendMessage`/`sendMessageStream` (native).
+- Breaking: `SpeculativeDecodingConfig` (mode, lenience; null inherits) replaces `SpeculativeDecodingMode`; `benchmark()` takes it.
+- `ToolChoice` per message on `sendMessage`/`sendMessageStream` (native), as Kotlin and Swift send it.
 - Text and audio LoRA: `ConversationConfig.loraConfig`, `EngineConfig.loraRank`/`audioLoraRank`.
 - `EngineConfig.selectedSignatures`.
+- Per-message `maxOutputTokens`; `visualTokenBudget` on `EngineConfig` and `ConversationConfig`.
+- `ConversationConfig.chatTemplate` and `enableToolCallStreaming`; tool call ids (`ToolCall.id`).
+- `Conversation.clone()`, `getTokenCount()`, `renderMessageIntoString()`, `renderPrefaceIntoString()`.
+- `Engine.createSession()` (Kotlin's `Session`); `ActivationDataType.int16` and `int8`.
 - Tool calls constrained with LLGuidance; Google's prebuilt constraint provider no longer ships.
 - Each native CPU/GPU conversation keeps its own sampler (#2080; measured on macOS, Linux x64, Windows, Android).
 - macOS needs no companions: `macos_companions` is ignored, the stager block is a no-op, the inline block must go.

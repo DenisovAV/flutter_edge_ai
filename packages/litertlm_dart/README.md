@@ -198,6 +198,54 @@ await done.future;
 message on `sendMessage`/`sendMessageStream`, feeds the model's prompt
 template; per-message keys win.
 
+**Per message.** `maxOutputTokens` on `sendMessage`/`sendMessageStream` caps
+that message's reply in place of `ConversationConfig.maxOutputTokens`, as
+Kotlin's `maxOutputToken` and Swift's `maxOutputTokens` do.
+
+**A conversation's own state.** As Kotlin and Swift: `getTokenCount()` is
+what its KV cache holds, `renderMessageIntoString` and
+`renderPrefaceIntoString` show what its template makes of a message and of
+its preface, `clone()` copies it (history and KV cache) into a new
+conversation that goes its own way. `ConversationConfig.chatTemplate`
+replaces the model's Jinja template for one conversation;
+`enableToolCallStreaming` streams the tokens of a tool call as
+`channels['tool_call']` before the call itself arrives. Where conversations
+share one native conversation by replay (iOS, Android CPU and PowerVR, Linux
+and Windows GPUs) the count and the rendering are an `UnsupportedError`, and a
+clone replays the history when it first sends.
+
+```dart
+import 'package:litertlm_dart/litertlm_dart.dart';
+
+final engine = await Engine.create(EngineConfig(modelPath: modelPath));
+final conversation = await engine.createConversation();
+await conversation.sendMessage(
+  Message.user('My name is Ada.'),
+  maxOutputTokens: 16,
+);
+final branch = await conversation.clone();
+print(await branch.getTokenCount());
+print(await branch.renderMessageIntoString(Message.user('Who am I?')));
+```
+
+**A low-level session.** `Engine.createSession(SessionConfig)` is Kotlin's
+`Session`: `runPrefill` and `runDecode`, `generateContent` and
+`generateContentStream`, `cancelProcess` and `clone`, with no conversation's
+history or tool calls. Images and audio go through a conversation: LiteRT-LM
+0.20.0 refuses raw media in a session ("Image must be preprocessed before
+being used in SessionAdvanced", measured on macOS). On the web
+(`@litert-lm/core` 0.20.0) a session takes text only and does not stream.
+
+```dart
+import 'package:litertlm_dart/litertlm_dart.dart';
+
+final engine = await Engine.create(EngineConfig(modelPath: modelPath));
+final session = await engine.createSession();
+await session.runPrefill([const InputData.text('What is 2 + 2?')]);
+print(await session.runDecode());
+await session.close();
+```
+
 ## Speculative decoding
 
 Multi-token prediction is an engine setting here, not an experimental flag:
@@ -218,8 +266,12 @@ final engine = await Engine.create(
 ```
 
 A conversation can override it with `ConversationConfig.speculativeDecoding`,
-and `benchmark()` takes one too. Unset, it is LiteRT-LM's default (off). The
-NPU executor ignores the lenience and stays exact.
+and `benchmark()` takes one too. Each field left null inherits, as in Kotlin
+and Swift: on a conversation the engine's value, so
+`SpeculativeDecodingConfig(lenience: 0.5)` changes only the lenience; on the
+engine LiteRT-LM's default (off). A conversation cannot speculate when its
+engine's mode is off: the drafter is loaded at engine create only. The NPU
+executor ignores the lenience and stays exact.
 
 ## Selected signatures
 
@@ -298,6 +350,19 @@ PNG, …); `Content.audioBytes` and `Content.audioFile` take encoded audio
 (WAV, MP3, FLAC, …). `EngineConfig.maxNumImages` is how many images one
 message may carry (1 when unset). The Gemma 4 and Gemma 3n audio encoders
 declare the CPU.
+
+**Visual token budget.** Gemma 4 looks at an image with 70, 140, 280, 560 or
+1120 tokens, as many of them as its vision encoder has signatures for (Gemma
+4 E2B: 70, 140, 280). `EngineConfig.visualTokenBudget` is the most the engine
+prepares (unset: the bundle's largest), `ConversationConfig.visualTokenBudget`
+what each image of a conversation's messages takes, as Swift's
+`ConversationConfig.visualTokenBudget` and Kotlin's and Swift's
+`ExperimentalFlags.visualTokenBudget`. Each is checked before anything native:
+it needs a vision encoder and one of the bundle's budgets, and a
+conversation's may not exceed the engine's. Measured on macOS (CPU and Metal)
+with Gemma 4 E2B and one image: 112-118 tokens in the conversation at 70, 316
+at 280. On the web the engine's is `@litert-lm/core`'s
+`maxVisionTokensPerImage`, and a conversation's own is refused.
 
 ## Function calling
 
@@ -396,11 +461,13 @@ print(reply.text);
 ### Tool choice
 
 `sendMessage` and `sendMessageStream` take a `toolChoice` for one message, as
-Kotlin's and Swift's `ToolChoice`: `ToolChoice.auto` (the default),
+Kotlin's and Swift's `ToolChoice`: `ToolChoice.auto` (text, calls or both),
 `ToolChoice.none`, `ToolChoice.required`, `ToolChoice.forcedFunction(name)` and
-`ToolChoice.allowedTools(names, required: ...)`. It applies to that message's
-first round only; the rounds that answer tool results go with no choice (the
-model's default), as in Kotlin and Swift, so `required` cannot loop.
+`ToolChoice.allowedTools(names, required: ...)`. No choice leaves the model's
+default; `ToolChoice.auto` is sent as an explicit `"auto"`, as Kotlin and Swift
+send it. It applies to that message's first round only; the rounds that
+answer tool results go with no choice (the model's default), as in Kotlin and
+Swift, so `required` cannot loop.
 
 ```dart
 import 'package:litertlm_dart/litertlm_dart.dart';
@@ -412,11 +479,14 @@ Future<Message> askWeather(Conversation conversation) =>
     );
 ```
 
-A choice other than `auto` needs a conversation with tools and no response
-format, and must name tools the conversation has; otherwise it is an
-`ArgumentError`. With `ToolChoice.none` the model cannot call a tool, but may
-still write what a call would look like as text. Refused on the web, whose
-runtime has no tool choice.
+A choice other than `auto` needs a conversation with tools, a send that does
+not carry the response format (with automatic tools pending the message's own
+send goes without it, as in Kotlin and Swift, and the choice applies there),
+and must name tools the conversation has; otherwise it is an `ArgumentError`.
+With `ToolChoice.none` the model cannot call a tool, but may still write what
+a call would look like as text. On the web `auto` is what its unconstrained
+decoding already does; any other choice is refused, as its runtime has no
+tool choice.
 
 ## Thinking
 
@@ -608,9 +678,9 @@ so compare runs with the same `run.maxNumTokens`.
 | Streaming | `sendMessageAsync` (Kotlin), `sendMessageStream` (Swift) | `sendMessageStream`, a `Stream<Message>` |
 | System prompt | `systemInstruction` (Kotlin), `systemMessage` (Swift) | `systemInstruction`, a `String` |
 | Tools | Kotlin functions or `OpenApiTool`, called automatically by default | `Tool` with a JSON Schema; with `execute` called automatically, as in Kotlin and Swift; limit 25 |
-| Speculative decoding | `SpeculativeDecodingConfig` on `EngineConfig`, `ConversationConfig` (and Kotlin's `SessionConfig`) and `benchmark()`; its `mode` nullable (inherits); `ExperimentalFlags.enableSpeculativeDecoding` deprecated | `EngineConfig.speculativeDecoding`, `ConversationConfig.speculativeDecoding`, `benchmark()`; `mode` required |
+| Speculative decoding | `SpeculativeDecodingConfig` on `EngineConfig`, `ConversationConfig` (and Kotlin's `SessionConfig`) and `benchmark()`; fields nullable (inherit) | the same (`speculativeDecoding`), fields nullable (inherit), also on `SessionConfig` |
 | Thinking budget | -1 and 0 both no cap (0 skips the budget constraint; thinking still reaches the template) | unset, or 1 to 2,147,483,647; `enableThinking: false` turns thinking off |
-| Several conversations per engine | yes, and `Conversation.clone()` | yes, each recovered after a stopped, refused or failed turn |
+| Several conversations per engine | yes, and `Conversation.clone()` | the same, `Conversation.clone()` included; each recovered after a stopped, refused or failed turn |
 | Reading a bundle without loading it | `ModelInfo` | `readBundleInfo`, `readBundleGenericData`, read in Dart: sections, NPU stamps, generic data |
 | Tokenizer | — | `Engine.tokenize`, `detokenize` |
 | Option scoring | — | `Engine.scoreTargets`: the exact log-probability of each target as a continuation |
@@ -618,7 +688,17 @@ so compare runs with the same `run.maxNumTokens`.
 | `benchmark()` | `BenchmarkInfo`, with mark durations in Kotlin's (Swift's has none) | `LlmBenchmarkResult`, plus the whole create's time, the backend and the GPU activation type; no media contents |
 | EmbeddingGemma 2 | text, images, audio | the same, text with images and audio in one vector, per-SoC NPU bundles |
 | LoRA | `LoraConfig` on the conversation and the session (Kotlin), `loraPath` and `loraRank` (Swift) | `ConversationConfig.loraConfig` (`LoraConfig`), `EngineConfig.loraRank`; the native libraries carry a text LoRA backport (LiteRT-LM PR #2508) |
-| Tool choice | `ToolChoice` per message, first round only (Kotlin and Swift) | per message, first round only; `auto` sends no choice |
+| Tool choice | `ToolChoice` per message, first round only (Kotlin and Swift) | the same; `auto` sent as an explicit `"auto"` |
+| Output cap per message | `maxOutputToken` (Kotlin), `maxOutputTokens` (Swift) on `sendMessage` | the same, `maxOutputTokens` |
+| Visual token budget | `ExperimentalFlags.visualTokenBudget` (both); `ConversationConfig.visualTokenBudget` (Swift) | `EngineConfig.visualTokenBudget`, `ConversationConfig.visualTokenBudget`, checked against the bundle's vision budgets |
+| Chat template | `ConversationConfig.chatTemplate` | the same |
+| Tool call streaming | `ConversationConfig.enableToolCallStreaming` (Swift) | the same, into `channels['tool_call']` |
+| Tool call ids | `ToolCall.id`, `Content.toolResponse(name:response:id:)` (Swift) | the same, `ToolCall.id`, `Content.toolResponse(name, response, id: ...)` |
+| Conversation state | `getTokenCount()`, `renderMessageIntoString`, `renderPrefaceIntoString` | the same names; where conversations share one native conversation by replay, an `UnsupportedError` |
+| Low-level session | `Engine.createSession(SessionConfig)`, `Session` (Kotlin) | the same; on the web text only, no streaming |
+| Activation types | `FLOAT32`, `FLOAT16`, `INT16`, `INT8` | the same four |
+| `Backend.GOOGLE_TENSOR` (Kotlin) | the `GOOGLE_TENSOR_ARTISAN` executor | refused: the open-source LiteRT-LM registers none; the Tensor NPU is `Backend.npu()` |
+| Custom `channels`, `prefillPrefaceOnInit` (Kotlin) | through Kotlin's JNI | not offered: LiteRT-LM's C API has no setter for either |
 
 ## Where it runs today
 

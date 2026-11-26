@@ -1010,7 +1010,7 @@ fi
 # Panther Lake NPU, 2026-11-12). The copy takes (vocab_size + 63) / 64 words
 # from words().data() instead: the begin pointer and vocab_size sit at the
 # same offsets in both layouts, and they are all CompositeLogitMask and the
-# mask runner read. From native-v0.20.0-a the tool constraint is LLGuidance's
+# mask runner read. From native-v0.20.0 the tool constraint is LLGuidance's
 # (section 29), built into this runtime with its own standard library, so no
 # mask crosses a standard-library boundary any more; the copy stays because it
 # is right for any BitmapLogitMask, and its test (a user bitmap holding more

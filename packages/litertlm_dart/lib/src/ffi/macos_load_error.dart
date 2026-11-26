@@ -9,7 +9,7 @@
 //
 // A plain Dart program (`dart run`, `dart test`, `dart build cli`) has no
 // app: there LiteRtLm is a code asset, in the directory [nativeAssetLookup]
-// finds. From native-v0.20.0-a LiteRtLm links no companion library on macOS
+// finds. From native-v0.20.0 LiteRtLm links no companion library on macOS
 // (the Gemma constraint provider is gone, patch_c_api.sh section 29; the
 // Metal accelerator is linked in), so a plain Dart program needs no define
 // and a Flutter app's build bundles the same files.
@@ -52,7 +52,7 @@ final class MacOSPlainDartAssets extends MacOSCodeAssets {
 
 /// The LiteRtLm in [dir] links Google's Gemma constraint provider
 /// ([provider], its install name there): a build of a native release before
-/// native-v0.20.0-a, which shipped the provider beside it. This release ships
+/// native-v0.20.0, which shipped the provider beside it. This release ships
 /// none, so it would not load.
 final class MacOSOlderBuildAssets extends MacOSCodeAssets {
   const MacOSOlderBuildAssets(this.dir, this.provider);
@@ -105,7 +105,7 @@ MacOSCodeAssets macOSCodeAssets({
 }
 
 /// Whether [installName], one dylib a LiteRtLm links, is the Gemma constraint
-/// provider in any of the forms a release before native-v0.20.0-a gave it.
+/// provider in any of the forms a release before native-v0.20.0 gave it.
 bool linksConstraintProvider(String installName) =>
     installName.contains('GemmaModelConstraintProvider') ||
     installName.endsWith('/libLtGmcp.dylib') ||
@@ -120,7 +120,7 @@ String? macOSCodeAssetsRefusal(MacOSCodeAssets assets) => switch (assets) {
     'litertlm_dart: $dir/$macOSLiteRtLmAssetFile, where this Dart '
         "program's build put LiteRT-LM, links Google's Gemma constraint "
         'provider ($provider): it is a build of a native release before '
-        'native-v0.20.0-a, and this release ships no provider. Build the '
+        'native-v0.20.0, and this release ships no provider. Build the '
         'program again.',
   MacOSUnreadableAssets(:final dir, :final reason) =>
     'litertlm_dart: $dir/$macOSLiteRtLmAssetFile, where this Dart '
@@ -205,7 +205,7 @@ enum MacOSLoadCause {
 /// matters: dyld lists "(no such file)" for the paths it tried on the way in
 /// almost every failure, so [MacOSLoadCause.notBundled] needs the app's own
 /// Frameworks path to be the one that is missing. LiteRtLm links no companion
-/// library from native-v0.20.0-a; a "Library not loaded" naming one (a stale
+/// library from native-v0.20.0; a "Library not loaded" naming one (a stale
 /// build of an older release) is [MacOSLoadCause.unknown], whose advice is a
 /// clean build.
 MacOSLoadCause diagnoseMacOSLoadError(String dyldText) {

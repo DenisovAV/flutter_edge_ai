@@ -62,7 +62,7 @@ jobs:
           cd /tmp/LiteRT-LM && git checkout "$LITERTLM_VERSION"
           # Only Dawn comes from upstream's prebuilt/. Up to native-v0.19.1
           # Google's prebuilt libGemmaModelConstraintProvider.so did too; from
-          # native-v0.20.0-a the tool-call constraints are built with
+          # native-v0.20.0 the tool-call constraints are built with
           # LLGuidance (patch_c_api.sh section 29) and no provider ships.
           git lfs pull --include="prebuilt/linux_x86_64/*"
 
@@ -253,7 +253,7 @@ jobs:
           cd /tmp/LiteRT-LM && git checkout "$LITERTLM_VERSION"
           # Only Dawn comes from upstream's prebuilt/. Up to native-v0.19.1
           # Google's prebuilt libGemmaModelConstraintProvider.so did too; from
-          # native-v0.20.0-a the tool-call constraints are built with
+          # native-v0.20.0 the tool-call constraints are built with
           # LLGuidance (patch_c_api.sh section 29) and no provider ships.
           git lfs pull --include="prebuilt/linux_arm64/*"
 
@@ -303,7 +303,7 @@ jobs:
         # With thinking on, the first decode step of a turn with tools copies
         # the tool constraint's bitmap. Up to native-v0.19.1 that bitmap came
         # from Google's prebuilt provider (libc++), and on Windows reading its
-        # vector's end() aborted the process. From native-v0.20.0-a the
+        # vector's end() aborted the process. From native-v0.20.0 the
         # constraint is LLGuidance's, built here (section 29); section 26
         # still copies the words the vocabulary needs from data(), which is
         # right for either. Upstream's test plus a bitmap holding more words
@@ -491,7 +491,7 @@ jobs:
           git checkout "$env:LITERTLM_VERSION"
           # Only Dawn comes from upstream's prebuilt/. Up to native-v0.19.1
           # Google's prebuilt libGemmaModelConstraintProvider.dll did too; from
-          # native-v0.20.0-a the tool-call constraints are built with
+          # native-v0.20.0 the tool-call constraints are built with
           # LLGuidance (patch_c_api.sh section 29) and no provider ships.
           git lfs pull --include="prebuilt/windows_x86_64/*"
 

@@ -110,7 +110,7 @@ bash "$SCRIPT_DIR/patch_c_api.sh" "$LITERT_LM_DIR"
 
 # 4. No prebuilt companion. Up to native-v0.19.1 this fetched Google's prebuilt
 # libGemmaModelConstraintProvider.so (FST tool-call constraints) and checked its
-# Constraint ABI against the source. From native-v0.20.0-a the tool-call
+# Constraint ABI against the source. From native-v0.20.0 the tool-call
 # constraints are built with LLGuidance from source (patch_c_api.sh section 29),
 # so libLiteRtLm.so links no provider and none ships; step 9 refuses a library
 # that still names one. The LFS pull stays for upstream's other prebuilt files a
@@ -243,7 +243,7 @@ echo "  libLiteRtDispatch_MediaTek.so → $PREBUILT_DIR/"
 #    and sampler sat in every APK (~18 MB), NEEDED libwebgpu_dawn.so and could
 #    not be dlopen'ed. Google's own Android SDKs ship no Dawn either. Up to
 #    native-v0.19.1 Google's prebuilt Gemma constraint provider was copied here;
-#    from native-v0.20.0-a the tool-call constraints come from LLGuidance
+#    from native-v0.20.0 the tool-call constraints come from LLGuidance
 #    (patch_c_api.sh section 29) and no provider ships.
 echo ""
 echo "=== Removing stale companion libs ==="

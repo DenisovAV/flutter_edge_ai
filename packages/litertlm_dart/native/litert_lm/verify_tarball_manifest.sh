@@ -79,18 +79,18 @@ INTENTIONAL_DROPS=(
   "ios_arm64:libLiteRtMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtMetalAccelerator.dylib"
   "macos_arm64:libLiteRtMetalAccelerator.dylib"
-  # native-v0.20.0-a (decision D1): the Metal accelerator companion is gone.
+  # native-v0.20.0 (decision D1): the Metal accelerator companion is gone.
   # LiteRT-LM v0.20.0 removed the prebuilt it was renamed from (c57b9ae0), and
   # libLiteRtLm has linked a static Metal accelerator since v0.19.0, which
   # LiteRT's gpu_registry registers before it looks for any library.
   "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
   "macos_arm64:libLiteRtLmMetalAccelerator.dylib"
-  # native-v0.20.0-a: upstream deleted libwebgpu_dawn.dll (cea62fa2). Dawn
+  # native-v0.20.0: upstream deleted libwebgpu_dawn.dll (cea62fa2). Dawn
   # ships once, as webgpu_dawn.dll, which the accelerator imports (a
   # delay-load through runtime/components/BUILD's stub import library).
   "windows_x86_64:libwebgpu_dawn.dll"
-  # native-v0.20.0-a: Google's prebuilt Gemma constraint provider (FST) is
+  # native-v0.20.0: Google's prebuilt Gemma constraint provider (FST) is
   # gone. The tool-call constraints are built with LLGuidance from source
   # (patch_c_api.sh section 29) and libLiteRtLm links no provider; FORBIDDEN
   # below keeps a stale copy out of every archive.
@@ -299,7 +299,7 @@ FORBIDDEN=(
   "android_arm64:libLiteRtCompilerPlugin_MediaTek*"
   # Linked into libLiteRtLm.so: the OpenCL accelerator and sampler since
   # native-v0.19.0-a (section 19), upstream's OpenCL + OpenGL accelerator from
-  # native-v0.20.0-a (decision D2, LiteRT-LM 6cf79561). A separate copy of any
+  # native-v0.20.0 (decision D2, LiteRT-LM 6cf79561). A separate copy of any
   # would be a second GPU accelerator in the process.
   "android_arm64:libLiteRtOpenClAccelerator.so"
   "android_arm64:libLiteRtTopKOpenClSampler.so"
@@ -317,7 +317,7 @@ FORBIDDEN=(
   "ios_arm64:libLiteRtMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtMetalAccelerator.dylib"
   "macos_arm64:libLiteRtMetalAccelerator.dylib"
-  # Decision D1 (native-v0.20.0-a): no Metal accelerator companion. A copy
+  # Decision D1 (native-v0.20.0): no Metal accelerator companion. A copy
   # left in prebuilt/ would be a second ML Drift Metal in the process beside
   # the static one in libLiteRtLm. The SwiftPM zips are checked below.
   "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
@@ -326,7 +326,7 @@ FORBIDDEN=(
   # Retired by upstream (cea62fa2): a stale Dawn under the old name proves
   # nothing about the webgpu_dawn.dll the accelerator imports.
   "windows_x86_64:libwebgpu_dawn.dll"
-  # native-v0.20.0-a: no Gemma constraint provider in any archive. The
+  # native-v0.20.0: no Gemma constraint provider in any archive. The
   # tool-call constraints are LLGuidance's, compiled into libLiteRtLm
   # (patch_c_api.sh section 29); a copy left in prebuilt/ is dead weight that
   # an older hook would still bundle. The SwiftPM zips are checked below.
@@ -409,7 +409,7 @@ for new in "$DIST_DIR"/litertlm-*.tar.gz; do
     fi
   done
 done
-# No macOS companion is left for a SwiftPM zip (native-v0.20.0-a): not the
+# No macOS companion is left for a SwiftPM zip (native-v0.20.0): not the
 # Metal accelerator (decision D1), not the constraint provider (section 29).
 # Up to native-v0.19.1 the release carried both as xcframework zips beside a
 # checksums_spm_macos.txt; none of them may come back.
@@ -417,7 +417,7 @@ for f in "$DIST_DIR"/*; do
   [[ -e "$f" ]] || continue
   case "$(basename "$f")" in
     *LiteRtLmMetalAccelerator*|*GemmaModelConstraintProvider*|checksums_spm_macos.txt)
-      echo "  [FAIL] release asset must not ship (no macOS companion from native-v0.20.0-a): $(basename "$f")"
+      echo "  [FAIL] release asset must not ship (no macOS companion from native-v0.20.0): $(basename "$f")"
       content_fail=1 ;;
   esac
 done
@@ -546,7 +546,7 @@ done
 
 echo
 echo "==> Checking the Linux LiteRT runtime and accelerator are this build's"
-# From native-v0.20.0-a both are built by the Linux jobs from LiteRT's source,
+# From native-v0.20.0 both are built by the Linux jobs from LiteRT's source,
 # with clang-17 against Ubuntu 22.04's libstdc++, so each NEEDs
 # libstdc++.so.6. Google's prebuilts of them (up to native-v0.19.1-c) linked
 # their own libc++ and NEEDed only libc/libm/libdl/libpthread/librt: one of

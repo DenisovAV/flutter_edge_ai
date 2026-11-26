@@ -3,7 +3,7 @@
 // Up to 0.19.1+4 the hook put `stage_macos_companions.sh` in
 // `~/Library/Caches/flutter_gemma/native/macos_arm64/`, and the Podfile block
 // apps pasted ("[flutter_gemma] Setup LiteRT-LM macOS") runs it from there,
-// failing the build when the file is missing. From native-v0.20.0-a there is
+// failing the build when the file is missing. From native-v0.20.0 there is
 // no macOS companion to stage, and an old stager left on a machine would copy
 // an older release's companions into the app and rewrite its LiteRtLm. So the
 // hook writes this stub at that path: it accepts the same arguments, says the

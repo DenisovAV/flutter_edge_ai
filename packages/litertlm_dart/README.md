@@ -47,7 +47,7 @@ This release runs:
 
 | | |
 |---|---|
-| Native | LiteRT-LM 0.20.0, our build `native-v0.20.0-a` |
+| Native | LiteRT-LM 0.20.0, our build `native-v0.20.0` |
 | Web | `@litert-lm/core` 0.20.0 |
 
 `dart pub add litertlm_dart` writes `^0.20.0`, which for a 0.x

@@ -1,5 +1,5 @@
 ## 0.20.0
-- LiteRT-LM 0.20.0 on `native-v0.20.0-a`; web on `@litert-lm/core` 0.20.0.
+- LiteRT-LM 0.20.0 on `native-v0.20.0`; web on `@litert-lm/core` 0.20.0.
 - Breaking (web): the page hands over `@litert-lm/core` once as `window.litertLm`; see the README.
 - Breaking: `SpeculativeDecodingConfig` (mode, lenience) replaces `SpeculativeDecodingMode`; `benchmark()` takes it.
 - `ToolChoice` per message on `sendMessage`/`sendMessageStream` (native).

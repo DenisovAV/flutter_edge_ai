@@ -69,7 +69,7 @@ bash "$SCRIPT_DIR/patch_c_api.sh" "$LITERT_LM_DIR"
 # 4. No prebuilt companion. Up to native-v0.19.1 this pulled Google's prebuilt
 # libGemmaModelConstraintProvider (FST tool-call constraints) from upstream's
 # LFS prebuilt/ and checked its Constraint ABI against the source. From
-# native-v0.20.0-a the tool-call constraints are built with LLGuidance from
+# native-v0.20.0 the tool-call constraints are built with LLGuidance from
 # source (patch_c_api.sh section 29), so libLiteRtLm links no provider and none
 # ships; the check after the build refuses a libLiteRtLm that still names one.
 # The LFS pull stays for upstream's other prebuilt (Dawn), which a target of
@@ -110,7 +110,7 @@ install_name_tool -add_rpath '@loader_path/../../..' "$PREBUILT_DIR/libLiteRtLm.
 
 # No companion library ships. Up to native-v0.19.1 Google's prebuilt Gemma
 # constraint provider and Metal accelerator were copied here. From
-# native-v0.20.0-a the tool-call constraints come from LLGuidance (patch_c_api.sh
+# native-v0.20.0 the tool-call constraints come from LLGuidance (patch_c_api.sh
 # section 29) and libLiteRtLm links the Metal accelerator in
 # (runtime/executor:default_static_gpu_accelerator, set by
 # LiteRtStaticLinkedAcceleratorGpuDef when the library loads), which LiteRT's
@@ -165,7 +165,7 @@ CEOF
   fi
 }
 # Every framework libLiteRtLm dlopens by path must be in the bundle. From
-# native-v0.20.0-a LiteRT's gpu_registry dlopens nothing on Apple
+# native-v0.20.0 LiteRT's gpu_registry dlopens nothing on Apple
 # (patches/litert_gpu_registry_apple.patch), so none should be named at all.
 check_dlopened_frameworks() {
   local dir="$1" fw missing=0

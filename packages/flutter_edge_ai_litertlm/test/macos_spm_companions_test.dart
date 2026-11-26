@@ -1,7 +1,7 @@
 // The plugin's macOS Swift package and its podspec. Up to litertlm_dart
 // 0.19.1+4 this file also held Package.swift's companion binary targets to the
 // hook, the Podfile stager and the SwiftPM packaging script (#689). From
-// litertlm_dart 0.20.0 (native-v0.20.0-a) LiteRtLm links no companion library
+// litertlm_dart 0.20.0 (native-v0.20.0) LiteRtLm links no companion library
 // on macOS, the stager and the packaging script are gone, and Package.swift's
 // binary targets are left to this package's next release to remove.
 

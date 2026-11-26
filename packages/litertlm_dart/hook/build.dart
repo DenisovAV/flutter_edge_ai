@@ -170,7 +170,7 @@ final _litertlmBundle = _NativeBundle(
   // so two tags never share files. Up to litertlm_dart 0.19.1+4 the hook also
   // mirrored the macOS companions and their stager into the old flat
   // `flutter_gemma/native/macos_arm64` for the Podfile block apps pasted;
-  // from native-v0.20.0-a there is no macOS companion, and nothing is put
+  // from native-v0.20.0 there is no macOS companion, and nothing is put
   // there.
   useFlatLayout: true,
   // 0.19.1-c changes the Android archive and nothing else: it adds
@@ -325,7 +325,7 @@ final _litertlmBundle = _NativeBundle(
   },
   // Up to native-v0.19.1 also Google's prebuilt GemmaModelConstraintProvider
   // (every platform) and, on Apple, the Metal accelerator as
-  // LiteRtLmMetalAccelerator. From native-v0.20.0-a the tool-call constraints
+  // LiteRtLmMetalAccelerator. From native-v0.20.0 the tool-call constraints
   // are built with LLGuidance (patch_c_api.sh section 29) and libLiteRtLm links
   // the Metal accelerator in (0.20 migration decision D1), so no archive
   // carries either, and the macOS companions' framework staging (#247, #689)

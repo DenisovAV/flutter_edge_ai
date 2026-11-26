@@ -4,7 +4,7 @@
 // Up to 0.19.1+4 the define chose how Google's prebuilt Gemma constraint
 // provider reached a program on macOS: as a Flutter app's framework (unset) or
 // as a code asset of a plain Dart program (`code_assets`). From
-// native-v0.20.0-a the tool-call constraints are built with LLGuidance
+// native-v0.20.0 the tool-call constraints are built with LLGuidance
 // (patch_c_api.sh section 29) and LiteRtLm links no companion library, so
 // there is nothing left to choose: the hook bundles the same files for both,
 // and a plain Dart program on macOS needs no define. A pubspec that still sets

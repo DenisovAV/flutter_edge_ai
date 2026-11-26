@@ -62,7 +62,7 @@ jobs:
           git checkout "$env:LITERTLM_VERSION"
           # Only Dawn comes from upstream's prebuilt/. Up to native-v0.19.1
           # Google's prebuilt libGemmaModelConstraintProvider.dll did too; from
-          # native-v0.20.0-a the tool-call constraints are built with
+          # native-v0.20.0 the tool-call constraints are built with
           # LLGuidance (patch_c_api.sh section 29) and no provider ships.
           git lfs pull --include="prebuilt/windows_x86_64/*"
 

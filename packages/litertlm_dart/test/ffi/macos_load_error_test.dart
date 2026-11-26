@@ -170,7 +170,7 @@ void main() {
     });
 
     test('a constraint provider an older build links is a stale build, not a '
-        'setup step: LiteRtLm links no companion from native-v0.20.0-a', () {
+        'setup step: LiteRtLm links no companion from native-v0.20.0', () {
       expect(diagnoseMacOSLoadError(_missingCompanion), MacOSLoadCause.unknown);
     });
 
@@ -486,7 +486,7 @@ void main() {
   });
 
   // The real thing: libLiteRtLm alone in a framework directory, nothing
-  // beside it. From native-v0.20.0-a it links no companion, so it loads.
+  // beside it. From native-v0.20.0 it links no companion, so it loads.
   // LiteRT-LM ships macOS arm64 only, so another host has nothing to load.
   final String? dylib = Platform.isMacOS && Abi.current() == Abi.macosArm64
       ? firstExistingPath(
@@ -518,7 +518,7 @@ void main() {
         ? 'macOS arm64 with a libLiteRtLm in the hook cache or LITERTLM_DYLIB '
               'only'
         : olderDylib
-        ? '$dylib is a build of a release before native-v0.20.0-a: it links '
+        ? '$dylib is a build of a release before native-v0.20.0: it links '
               'the constraint provider'
         : false,
   );
@@ -544,7 +544,7 @@ void main() {
         assetsOf(const NativeAssetsNotOurs('/usr/lib/x.dylib'), never),
         isA<MacOSNoCodeAssets>(),
       );
-      // From native-v0.20.0-a LiteRtLm links no companion.
+      // From native-v0.20.0 LiteRtLm links no companion.
       expect(
         assetsOf(found, (path) {
           expect(path, '/t/lib/libLiteRtLm.dylib');
@@ -591,7 +591,7 @@ void main() {
       )!;
       expect(older, contains('/t/lib/libLiteRtLm.dylib'));
       expect(older, contains('@rpath/libGemmaModelConstraintProvider.dylib'));
-      expect(older, contains('native-v0.20.0-a'));
+      expect(older, contains('native-v0.20.0'));
       expect(older, contains('Build the program again'));
       expect(older, isNot(contains('macos_companions')));
       // A dart compile exe binary is not told to set the define.
@@ -637,7 +637,7 @@ void main() {
       );
       expect(thrown, isA<ArgumentError>());
       final message = '${(thrown! as ArgumentError).message}';
-      expect(message, contains('native-v0.20.0-a'));
+      expect(message, contains('native-v0.20.0'));
       expect(message, contains('Build the program again'));
     });
 
@@ -688,7 +688,7 @@ void main() {
       expect(thrown, isA<UnsupportedError>());
       expect(
         '${(thrown! as UnsupportedError).message}',
-        contains('native-v0.20.0-a'),
+        contains('native-v0.20.0'),
       );
     });
 
@@ -708,7 +708,7 @@ void main() {
       expect(thrown, isA<UnsupportedError>());
       final message = '${(thrown! as UnsupportedError).message}';
       expect(message, contains('/cache/libLiteRtLm.dylib: Failed to load'));
-      expect(message, contains('native-v0.20.0-a'));
+      expect(message, contains('native-v0.20.0'));
     });
 
     test('inside Flutter the code assets are never looked at', () {
@@ -746,7 +746,7 @@ void main() {
     skip: cached == null || !Platform.isMacOS
         ? 'macOS with a libLiteRtLm in the hook cache only'
         : machOLinkedDylibsOf(cached).any(linksConstraintProvider)
-        ? '$cached is a build of a release before native-v0.20.0-a'
+        ? '$cached is a build of a release before native-v0.20.0'
         : false,
   );
 }

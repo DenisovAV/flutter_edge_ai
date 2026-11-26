@@ -73,7 +73,7 @@ bash "$SCRIPT_DIR/patch_c_api.sh" "$LITERT_LM_DIR"
 
 # 4. No prebuilt companion. Up to native-v0.19.1 this fetched Google's prebuilt
 # libGemmaModelConstraintProvider (FST tool-call constraints) for both slices and
-# checked its Constraint ABI against the source. From native-v0.20.0-a the
+# checked its Constraint ABI against the source. From native-v0.20.0 the
 # tool-call constraints are built with LLGuidance from source (patch_c_api.sh
 # section 29), so libLiteRtLm links no provider and none ships; the checks after
 # the build refuse a libLiteRtLm that still names one. The LFS pull stays for
@@ -145,7 +145,7 @@ clang -shared -o "$SIM_DIR/libStreamProxy.dylib" \
 echo "StreamProxy (simulator): OK"
 
 # 8. No companion libs. Up to native-v0.19.1 Google's prebuilt Gemma constraint
-# provider and Metal accelerator were copied here. From native-v0.20.0-a the
+# provider and Metal accelerator were copied here. From native-v0.20.0 the
 # tool-call constraints come from LLGuidance (patch_c_api.sh section 29), and
 # libLiteRtLm links the Metal accelerator in
 # (runtime/executor:default_static_gpu_accelerator), which LiteRT's
@@ -245,7 +245,7 @@ check_static_gpu_accelerator() {
   echo "  GPU: Metal accelerator statically linked"
 }
 # Every framework libLiteRtLm dlopens by path must be in the bundle. From
-# native-v0.20.0-a LiteRT's gpu_registry dlopens nothing on Apple
+# native-v0.20.0 LiteRT's gpu_registry dlopens nothing on Apple
 # (patches/litert_gpu_registry_apple.patch), so none should be named at all.
 check_dlopened_frameworks() {
   local dir="$1" fw missing=0

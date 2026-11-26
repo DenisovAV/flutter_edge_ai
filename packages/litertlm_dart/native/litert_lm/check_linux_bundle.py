@@ -4,7 +4,7 @@ that ship.
 
 From LiteRT-LM v0.20.0 upstream's prebuilt/ carries no libLiteRt.so and no
 GPU accelerator, so both are built here from LiteRT's source beside
-libLiteRtLm.so; only Dawn stays Google's (from native-v0.20.0-a no Gemma
+libLiteRtLm.so; only Dawn stays Google's (from native-v0.20.0 no Gemma
 constraint provider ships: the tool-call constraints are LLGuidance's,
 patch_c_api.sh section 29). The Dart
 client opens the bundle with dlopen(RTLD_LAZY | RTLD_GLOBAL) in the order of

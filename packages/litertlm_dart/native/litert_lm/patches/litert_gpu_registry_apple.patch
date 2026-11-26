@@ -1,7 +1,7 @@
 flutter_edge_ai (patch_c_api.sh section 10b): on Apple, LiteRT's GPU registry
 registers only the accelerator linked into libLiteRtLm and never dlopens one.
 Up to native-v0.19.1 this patch put our LiteRtLmMetalAccelerator.framework
-first and turned off the default lookup; from native-v0.20.0-a no Metal
+first and turned off the default lookup; from native-v0.20.0 no Metal
 framework ships (0.20 migration decision D1), so the whole library loop is
 compiled out on Apple. An unregistered static accelerator is an error, not a
 search: flutter_litert's accelerator in the same app crashed when registered

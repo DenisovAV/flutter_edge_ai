@@ -6,13 +6,20 @@ import 'dart:typed_data' show Uint8List;
 import 'package:meta/meta.dart' show immutable;
 
 import '../embedder/embedder_types.dart';
+import '../runtime/types.dart' show ActivationDataType;
 import 'backend.dart';
 import 'message.dart';
 
-/// What an `EmbeddingEngine` loads, and on what: LiteRT-LM's
-/// `EmbeddingEngineConfig`.
+/// What an `EmbeddingEngine` loads, and on what: LiteRT-LM's Kotlin and
+/// Swift `EmbeddingEngineConfig`.
+///
+/// Kotlin's `modelFd` (an Android file descriptor in place of [modelPath]) is
+/// not here: LiteRT-LM's C API creates embedding settings from a path only,
+/// and the bundle's NPU stamp and towers are read from the file by path
+/// before the engine exists.
 @immutable
 final class EmbeddingEngineConfig {
+  /// Throws [ArgumentError] for a [maxInputLength] below 1.
   EmbeddingEngineConfig({
     required this.modelPath,
     this.cacheDir,
@@ -21,7 +28,13 @@ final class EmbeddingEngineConfig {
     this.audioBackend,
     this.visionTokensPerImage,
     this.requireWeightCache = false,
-  }) : backend = backend ?? const Backend.cpu();
+    this.maxInputLength,
+    this.activationDataType,
+  }) : backend = backend ?? const Backend.cpu() {
+    if (maxInputLength case final length? when length < 1) {
+      throw ArgumentError.value(length, 'maxInputLength', 'must be 1 or more');
+    }
+  }
 
   /// The EmbeddingGemma 2 `.litertlm` bundle. On the web: a URL the page can
   /// fetch (`blob:`, `https:`).
@@ -63,6 +76,23 @@ final class EmbeddingEngineConfig {
   /// warning. Native only: the web keeps no weight cache, and `true` is
   /// refused there.
   final bool requireWeightCache;
+
+  /// The longest text input the engine must take, in tokens (Kotlin's and
+  /// Swift's `maxInputLength`). Null is 1024 (the largest signature when a
+  /// bundle has none that long). The engine prepares the bundle's text
+  /// signatures up to the smallest one at or above it, and that signature is
+  /// its limit (`info.maxInputTokens`): an input over it is refused with an
+  /// [EmbedderInputTooLongException], never truncated. Natively a length
+  /// above the bundle's largest signature is refused at load (LiteRT-LM
+  /// refuses it). Memory grows with the signature: one 8192-token input
+  /// peaked at +10.25 GB.
+  final int? maxInputLength;
+
+  /// The activation type of the text tower and, when there is one, the
+  /// vision tower (Kotlin's `EmbeddingEngineConfig.activationDataType`;
+  /// Swift has none). Null keeps the bundle's preferred type. Refused on the
+  /// web, whose `EmbeddingEngine` takes none.
+  final ActivationDataType? activationDataType;
 }
 
 /// [contents] as one embedder request: at most one text part, any image

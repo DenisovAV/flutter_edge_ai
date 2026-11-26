@@ -26,10 +26,15 @@
 //   backends stay NULL: present towers run on the main backend (D26).
 // - One vector may combine parts (`combinedInputs`): the text with its task
 //   prefix, then the images in order, then the audio (`embedding_parts.dart`).
-// - The input cap is set explicitly to 1024 tokens (D21): the bundles' metadata
-//   says 1024 but no C getter exposes it, and one 8192-token input peaked at
-//   +10.25 GB. `maxInputTokens` is the smallest text signature at or above the
-//   setting — the limit the engine enforces.
+// - The input cap is set explicitly, to 1024 tokens unless the caller asks
+//   for another length (`EmbeddingEngineConfig.maxInputLength`) (D21): the
+//   bundles' metadata says 1024 but no C getter exposes it, and one
+//   8192-token input peaked at +10.25 GB. `maxInputTokens` is the smallest
+//   text signature at or above the setting — the limit the engine enforces.
+// - Per request, Kotlin's and Swift's `EmbeddingOptions` (normalize, special
+//   tokens, Matryoshka `outputSize`, the vision budget) get options of their
+//   own, deleted with the request; a request without any uses the options
+//   made at load.
 // - The engine always gets an existing, writable cache directory that this
 //   pass owns (D22), under the platform cache directory (never backed up):
 //   without one it runs with no weight cache (measured on the 270m: +290 MB)
@@ -192,6 +197,8 @@ final class LiteRtLmEmbeddingConfig {
     this.gpu = false,
     this.visionTowerOnCpu = false,
     this.audioTowerOnCpu = false,
+    this.maxInputLength,
+    this.activationDataType,
   }) : assert(
          (npuTarget == null) == (npuDispatchDir == null),
          'an NPU bundle runs with a dispatch directory, a CPU one without',
@@ -267,6 +274,20 @@ final class LiteRtLmEmbeddingConfig {
   /// engine create fails ("Audio backend constraint mismatch").
   final bool audioTowerOnCpu;
 
+  /// The longest input the caller asked the engine to take, in tokens
+  /// (`EmbeddingEngineConfig.maxInputLength`, Kotlin's and Swift's); null is
+  /// [liteRtLmMaxInputLength], or the bundle's largest text signature when
+  /// none reaches it. Set, it must be at most the largest (LiteRT-LM refuses
+  /// a longer one); the engine then accepts the smallest signature at or
+  /// above it.
+  final int? maxInputLength;
+
+  /// The C API's activation type number (0 float32, 1 float16, 2 int16,
+  /// 3 int8) set on the engine's executors, Kotlin's
+  /// `EmbeddingEngineConfig.activationDataType`; null leaves the engine's
+  /// own (the bundle's preferred type).
+  final int? activationDataType;
+
   /// The backend the engine is created on.
   BackendKind get backend => npuTarget != null
       ? BackendKind.npu
@@ -319,6 +340,7 @@ const liteRtLmEmbeddingSymbols = <String>[
   'litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir',
   'litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir',
   'litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir',
+  'litert_lm_embedding_engine_settings_set_activation_data_type',
   'litert_lm_embedding_engine_create',
   'litert_lm_embedding_engine_delete',
   'litert_lm_embedding_engine_compute_embedding',
@@ -327,6 +349,8 @@ const liteRtLmEmbeddingSymbols = <String>[
   'litert_lm_embedding_options_set_normalize',
   'litert_lm_embedding_options_set_insert_special_tokens',
   'litert_lm_embedding_options_set_input_overflow_strategy',
+  'litert_lm_embedding_options_set_output_size',
+  'litert_lm_embedding_options_set_vision_tokens_per_image',
   'litert_lm_input_data_create',
   'litert_lm_input_data_delete',
   'litert_lm_embedding_response_get_size',
@@ -433,7 +457,7 @@ final class LiteRtLmEmbedder {
 
     final info = _readModelInfo(b);
     final textSignatures = _checkModelInfo(info);
-    final (:setting, :maxInputTokens) = liteRtLmInputLimit(textSignatures);
+    final (:setting, :maxInputTokens) = _inputLimit(textSignatures);
     final images = _config.declaredMedia.contains(EmbedderModality.image);
     // Checked by _checkModelInfo against the container: the bundle has an
     // audio encoder whenever audio was declared.
@@ -538,13 +562,46 @@ final class LiteRtLmEmbedder {
     );
   }
 
-  Future<List<double>> embed(EmbedderInput input) async {
+  /// [liteRtLmInputLimit] for the bundle's [textSignatures] and the
+  /// caller's `maxInputLength`, a length the bundle cannot take refused as a
+  /// load failure before any engine exists.
+  ({int setting, int maxInputTokens}) _inputLimit(List<int> textSignatures) {
+    try {
+      return liteRtLmInputLimit(
+        textSignatures,
+        requested: _config.maxInputLength,
+      );
+    } on ArgumentError catch (e) {
+      if (_config.maxInputLength == null) rethrow;
+      throw EmbedderLoadException(
+        '$_file cannot take maxInputLength ${_config.maxInputLength}: '
+        '${e.message}',
+        cause: e,
+      );
+    }
+  }
+
+  /// The vector of [input], computed with [options] (Kotlin's and Swift's
+  /// per-request `EmbeddingOptions`; the default is the engine's own: the
+  /// whole vector, L2-normalised, special tokens added). Throws
+  /// [ArgumentError] for [options] this engine cannot apply
+  /// ([checkEmbeddingOptions]).
+  Future<List<double>> embed(
+    EmbedderInput input, {
+    EmbeddingOptions options = const EmbeddingOptions(),
+  }) async {
     final b = _bindings;
     if (!_loaded || _closed || b == null) {
       throw const EmbedderEngineException(
         'LiteRtLmEmbedder.embed() needs a loaded, open pass',
       );
     }
+    checkEmbeddingOptions(
+      options,
+      dimension: _dimension,
+      engineVisionTokensPerImage: _images ? _config.visionTokensPerImage : null,
+      budgets: liteRtLmVisionTokenBudgets,
+    );
     final parts = embeddingParts(input);
     final kinds = {for (final part in parts) part.kind};
     if (parts.isEmpty ||
@@ -565,6 +622,11 @@ final class LiteRtLmEmbedder {
     // thread-local, and an `await` could resume this isolate on another
     // thread before it is read.
     final handles = <Pointer<LiteRtLmInputData>>[];
+    // The engine's defaults use the options made at load; any other request
+    // gets its own, deleted with the request.
+    final requestOptions = options.isDefault
+        ? _options
+        : _createOptions(b, options);
     try {
       for (final part in parts) {
         handles.add(_createPart(b, part));
@@ -578,6 +640,7 @@ final class LiteRtLmEmbedder {
           b,
           partArray,
           handles.length,
+          options: requestOptions,
         );
         if (response == nullptr) {
           // kTruncate: an overflow returns a (truncated) response, never NULL.
@@ -597,7 +660,7 @@ final class LiteRtLmEmbedder {
           );
         }
         try {
-          return _vectorOf(b, response);
+          return _vectorOf(b, response, size: options.outputSize ?? _dimension);
         } finally {
           b.litert_lm_embedding_response_delete(response);
         }
@@ -607,6 +670,9 @@ final class LiteRtLmEmbedder {
     } finally {
       for (final handle in handles) {
         b.litert_lm_input_data_delete(handle);
+      }
+      if (requestOptions != _options) {
+        b.litert_lm_embedding_options_delete(requestOptions);
       }
     }
   }
@@ -696,11 +762,13 @@ final class LiteRtLmEmbedder {
     }
   }
 
-  /// The vector in [response], or the overflow it reports.
+  /// The vector in [response], [size] values long (the dimension, or the
+  /// request's `outputSize`), or the overflow it reports.
   List<double> _vectorOf(
     LiteRtLmEmbeddingBindings b,
-    Pointer<LiteRtLmEmbeddingResponse> response,
-  ) {
+    Pointer<LiteRtLmEmbeddingResponse> response, {
+    required int size,
+  }) {
     final inputLength = _responseInt(
       (out) => b.litert_lm_embedding_response_get_input_length(response, out),
     );
@@ -731,14 +799,15 @@ final class LiteRtLmEmbedder {
         actualTokens: inputLength,
       );
     }
-    final (:size, :values) = _responseVector(b, response);
-    if (size != _dimension || values == nullptr) {
+    final (size: got, :values) = _responseVector(b, response);
+    if (got != size || values == nullptr) {
       throw EmbedderEngineException(
-        '$_file returned a vector of $size values for dimension $_dimension',
+        '$_file returned a vector of $got values for '
+        '${size == _dimension ? 'dimension $_dimension' : 'outputSize $size'}',
       );
     }
     // The values belong to the response: copy before deleting it.
-    return List<double>.generate(size, (i) => values[i]);
+    return List<double>.generate(got, (i) => values[i]);
   }
 
   Future<void> close() async {
@@ -782,8 +851,9 @@ final class LiteRtLmEmbedder {
   _compute(
     LiteRtLmEmbeddingBindings b,
     Pointer<Pointer<LiteRtLmInputData>> parts,
-    int count,
-  ) => _npuCall(() {
+    int count, {
+    Pointer<LiteRtLmEmbeddingOptions>? options,
+  }) => _npuCall(() {
     // The error state is per thread and survives successful calls: clear it,
     // so a failure with nothing reported is never read as an old message.
     b.litert_lm_clear_last_error();
@@ -793,7 +863,7 @@ final class LiteRtLmEmbedder {
         _engine,
         parts,
         count,
-        _options,
+        options ?? _options,
         out,
       );
       final response = code == _statusOk
@@ -1522,6 +1592,19 @@ final class LiteRtLmEmbedder {
           maxInputLength,
         ),
       );
+      // Kotlin's EmbeddingEngineConfig.activationDataType: LiteRT-LM sets it
+      // on the main executor's settings (and the vision executor's, when
+      // there is one); unset leaves the bundle's preferred type.
+      final activation = _config.activationDataType;
+      if (activation != null) {
+        setter(
+          'litert_lm_embedding_engine_settings_set_activation_data_type',
+          b.litert_lm_embedding_engine_settings_set_activation_data_type(
+            settings,
+            LiteRtLmActivationDataType.fromValue(activation),
+          ),
+        );
+      }
       final threads = _config.numThreads;
       if (threads != null) {
         setter(
@@ -1635,64 +1718,105 @@ final class LiteRtLmEmbedder {
     }
   }
 
+  /// Embedding options with [options] applied: normalised and special tokens
+  /// on unless it says otherwise, kTruncate always. Made at load for the
+  /// engine's defaults, and per [request] for any other options; a failure
+  /// is then an [EmbedderEngineException], at load an
+  /// [EmbedderLoadException].
   Pointer<LiteRtLmEmbeddingOptions> _createOptions(
-    LiteRtLmEmbeddingBindings b,
-  ) {
+    LiteRtLmEmbeddingBindings b, [
+    EmbeddingOptions options = const EmbeddingOptions(),
+  ]) {
+    final request = !options.isDefault;
+    void check(String call, int code) {
+      try {
+        _checkSetter(b, call, code);
+      } on EmbedderLoadException catch (e) {
+        if (!request) rethrow;
+        throw EmbedderEngineException(e.message, nativeCode: e.nativeCode);
+      }
+    }
+
     final out = _alloc<Pointer<LiteRtLmEmbeddingOptions>>();
-    final Pointer<LiteRtLmEmbeddingOptions> options;
+    final Pointer<LiteRtLmEmbeddingOptions> native;
     try {
       final code = b.litert_lm_embedding_options_create(out);
-      options = code == _statusOk ? out.value : nullptr;
+      native = code == _statusOk ? out.value : nullptr;
     } finally {
       _alloc.free(out);
     }
-    if (options == nullptr) {
+    if (native == nullptr) {
       // `new` in C++: it fails only on a NULL out-parameter.
-      throw const EmbedderLoadException(
-        'litert_lm_embedding_options_create failed',
-      );
+      const failed = 'litert_lm_embedding_options_create failed';
+      throw request
+          ? const EmbedderEngineException(failed)
+          : const EmbedderLoadException(failed);
     }
     try {
-      _checkSetter(
-        b,
+      check(
         'litert_lm_embedding_options_set_normalize',
-        b.litert_lm_embedding_options_set_normalize(options, true),
+        b.litert_lm_embedding_options_set_normalize(
+          native,
+          options.normalize ?? true,
+        ),
       );
-      // Pinned (D26): BOS 2 / EOS 1, as Sentence Transformers; off changes
-      // the vectors (cos ≈ 0.90).
-      _checkSetter(
-        b,
+      // On by default (D26): BOS 2 / EOS 1, as Sentence Transformers; off
+      // changes the vectors.
+      check(
         'litert_lm_embedding_options_set_insert_special_tokens',
-        b.litert_lm_embedding_options_set_insert_special_tokens(options, true),
+        b.litert_lm_embedding_options_set_insert_special_tokens(
+          native,
+          options.insertSpecialTokens ?? true,
+        ),
       );
       // kTruncate (§4.8, the P3 gate): an overflowing input comes back as a
       // truncated response whose token counts the pass reports exactly.
-      _checkSetter(
-        b,
+      check(
         'litert_lm_embedding_options_set_input_overflow_strategy',
         b.litert_lm_embedding_options_set_input_overflow_strategy(
-          options,
+          native,
           LiteRtLmInputOverflowStrategy.kLiteRtLmInputOverflowStrategyTruncate,
         ),
       );
+      // Matryoshka truncation (Kotlin's and Swift's outputSize): LiteRT-LM
+      // keeps the first values, then L2-normalises them when normalize is on.
+      if (options.outputSize case final size?) {
+        check(
+          'litert_lm_embedding_options_set_output_size',
+          b.litert_lm_embedding_options_set_output_size(native, size),
+        );
+      }
+      if (options.visionTokensPerImage case final budget?) {
+        check(
+          'litert_lm_embedding_options_set_vision_tokens_per_image',
+          b.litert_lm_embedding_options_set_vision_tokens_per_image(
+            native,
+            budget,
+          ),
+        );
+      }
     } catch (_) {
-      b.litert_lm_embedding_options_delete(options);
+      b.litert_lm_embedding_options_delete(native);
       rethrow;
     }
-    // output_size is never set: MRL is an app recipe (D18).
-    return options;
+    return native;
   }
 }
 
 /// The text input setting and the resulting limit for a bundle whose text
 /// signatures are [textSignatures] (at least one positive).
 ///
-/// The setting is [liteRtLmMaxInputLength] (D21), or the largest signature
-/// when none reaches it; the engine then accepts inputs up to the smallest
-/// signature at or above the setting — that is `maxInputTokens`.
+/// The setting is [requested] (`EmbeddingEngineConfig.maxInputLength`) when
+/// the caller set one, else [liteRtLmMaxInputLength] (D21), or the largest
+/// signature when none reaches it; the engine then accepts inputs up to the
+/// smallest signature at or above the setting — that is `maxInputTokens`.
+/// Throws [ArgumentError] for a [requested] length above the largest
+/// signature, which LiteRT-LM refuses ("Requested target capacity … exceeds
+/// maximum available signature length").
 ({int setting, int maxInputTokens}) liteRtLmInputLimit(
-  List<int> textSignatures,
-) {
+  List<int> textSignatures, {
+  int? requested,
+}) {
   final lengths = [
     for (final length in textSignatures)
       if (length > 0) length,
@@ -1700,7 +1824,15 @@ final class LiteRtLmEmbedder {
   if (lengths.isEmpty) {
     throw ArgumentError.value(textSignatures, 'textSignatures', 'no length');
   }
-  final setting = math.min(liteRtLmMaxInputLength, lengths.last);
+  if (requested != null && (requested < 1 || requested > lengths.last)) {
+    throw ArgumentError.value(
+      requested,
+      'maxInputLength',
+      'must be from 1 to the longest text signature, ${lengths.last} '
+          '(signatures: ${lengths.join(', ')})',
+    );
+  }
+  final setting = requested ?? math.min(liteRtLmMaxInputLength, lengths.last);
   return (
     setting: setting,
     maxInputTokens: lengths.firstWhere((length) => length >= setting),

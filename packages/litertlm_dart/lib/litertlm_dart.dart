@@ -91,7 +91,8 @@ export 'src/embedder/embedder_types.dart'
         EmbedderInfo,
         EmbedderInputTooLongException,
         EmbedderLoadException,
-        EmbedderModality;
+        EmbedderModality,
+        EmbeddingOptions;
 export 'src/runtime/errors.dart'
     show
         ConstraintUnsupportedException,

@@ -16,6 +16,7 @@ import '../embedder/embedder_types.dart';
 import '../embedder/litert_lm_embedder.dart';
 import '../ffi/litert_lm_embedding_bindings.dart'
     show LiteRtLmEmbeddingBindings;
+import '../ffi/backend_preference.dart' show activationDataTypeWireValue;
 import '../ffi/npu_vendor_host.dart';
 import '../runtime/native_hosts.dart'
     show
@@ -57,14 +58,20 @@ final class EmbeddingEngine {
 
   /// The embedding of [contents]: at most one text part (its task prefix
   /// already in front), any image parts and at most one audio part, one
-  /// vector for all of them. Throws [EmbedderInputTooLongException] for an
-  /// input over the limit (never truncated), [ArgumentError] for contents it
-  /// does not take (none, two texts, images or audio the engine was not
-  /// loaded for) and [StateError] after [close].
-  Future<Float32List> computeEmbedding(List<Content> contents) async {
+  /// vector for all of them, computed with [options] (Kotlin's
+  /// `computeEmbedding(contents, options)`, Swift's
+  /// `computeEmbedding(contents:options:)`). Throws
+  /// [EmbedderInputTooLongException] for an input over the limit (never
+  /// truncated), [ArgumentError] for contents it does not take (none, two
+  /// texts, images or audio the engine was not loaded for) or [options] it
+  /// cannot apply, and [StateError] after [close].
+  Future<Float32List> computeEmbedding(
+    List<Content> contents, {
+    EmbeddingOptions options = const EmbeddingOptions(),
+  }) async {
     if (_closed) throw StateError('The embedding engine is closed.');
     final input = embedderInputOfContents(contents, info.modalities);
-    final vector = await _embedder.embed(input);
+    final vector = await _embedder.embed(input, options: options);
     return Float32List.fromList(vector);
   }
 
@@ -241,6 +248,8 @@ Future<LiteRtLmEmbeddingConfig> embedderConfigFor(
     visionTokensPerImage:
         config.visionTokensPerImage ?? liteRtLmDefaultVisionTokensPerImage,
     requireWeightCache: config.requireWeightCache,
+    maxInputLength: config.maxInputLength,
+    activationDataType: activationDataTypeWireValue(config.activationDataType),
     npuTarget: npuTarget,
     npuDispatchDir: dispatchDir,
     gpu: gpu,

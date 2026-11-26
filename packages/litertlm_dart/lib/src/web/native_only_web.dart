@@ -10,7 +10,8 @@ import 'package:meta/meta.dart' show experimental;
 
 import '../api/backend.dart';
 import '../api/benchmark_result.dart';
-import '../api/config.dart' show SamplerConfig;
+import '../api/config.dart'
+    show LoraConfig, RepetitionPenaltyConfig, SamplerConfig;
 import '../bundle/litertlm_bundle_info.dart' show BundleInfo;
 import '../bundle/litertlm_generic_limits.dart';
 import 'web_runtime_version.dart';
@@ -44,6 +45,8 @@ Future<LlmBenchmarkResult> benchmark({
   String? cacheDir,
   SamplerConfig? samplerConfig,
   SpeculativeDecodingConfig? speculativeDecoding,
+  LoraConfig? loraConfig,
+  RepetitionPenaltyConfig? repetitionPenaltyConfig,
 }) async => throw UnsupportedError(
   'benchmark() runs exactly the prefill and decode token counts asked for; '
   '$liteRtLmWebRuntime\'s benchmark mode (benchmarkEnabled) takes no token '

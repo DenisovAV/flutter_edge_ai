@@ -145,17 +145,23 @@ final class LiteRtLmWebEngineSettings {
       '$visionTokensPerImage)';
 }
 
-/// `EmbeddingOptions` for one `computeEmbedding` call.
+/// `EmbeddingOptions` for one `computeEmbedding` call. A null
+/// [outputSize] or [visionTokensPerImage] is left out of the options object:
+/// the whole vector, the engine's vision budget.
 final class LiteRtLmWebEmbeddingOptions {
   const LiteRtLmWebEmbeddingOptions({
     required this.normalize,
     required this.insertSpecialTokens,
     required this.inputOverflowStrategy,
+    this.outputSize,
+    this.visionTokensPerImage,
   });
 
   final bool normalize;
   final bool insertSpecialTokens;
   final LiteRtLmWebOverflowStrategy inputOverflowStrategy;
+  final int? outputSize;
+  final int? visionTokensPerImage;
 }
 
 /// What one `computeEmbedding` call embeds: one part — a string, an encoded
@@ -305,6 +311,7 @@ final class LiteRtLmWebEmbedderConfig {
     this.visionTokensPerImage = liteRtLmDefaultVisionTokensPerImage,
     this.backend = LiteRtLmWebBackend.gpu,
     this.audioBackend = liteRtLmWebAudioBackend,
+    this.maxInputLength = liteRtLmMaxInputLength,
     @visibleForTesting this.minInputLength,
   });
 
@@ -343,6 +350,11 @@ final class LiteRtLmWebEmbedderConfig {
   /// [liteRtLmWebAudioBackend] unless the public `EmbeddingEngineConfig` asks
   /// for another; flutter_edge_ai_litertlm never changes it.
   final LiteRtLmWebBackend audioBackend;
+
+  /// `maxInputLength` (the public `EmbeddingEngineConfig.maxInputLength`):
+  /// the engine prepares the bundle's one text signature at or above it, and
+  /// that signature is the limit, pinned at load.
+  final int maxInputLength;
 
   /// `minInputLength`; null leaves the runtime's default (= the max input
   /// length: one signature). Set only by the drive suite's measurement of
@@ -631,9 +643,13 @@ final class LiteRtLmWebEmbedder {
   /// - cut it (the CPU path): `truncatedLength` is the limit;
   /// - split it into windows and averaged them (WebGPU, which ignores the
   ///   overflow strategy): the window is the limit. It is pinned, not
-  ///   guessed: [liteRtLmMaxInputLength] tokens must be one window and one
-  ///   token more two, by the engine's own counts;
-  /// - neither: null (a model whose limit is beyond the probe).
+  ///   guessed: the window must be the signature the engine was asked to
+  ///   prepare — the smallest EmbeddingGemma 2 text signature at or above
+  ///   the configured `maxInputLength` ([liteRtLmEg2TextSignatures]) — so
+  ///   that many tokens must be one window and one token more two, by the
+  ///   engine's own counts;
+  /// - neither: null (a model whose limit is beyond the probe, or a window
+  ///   other than the one asked for).
   Future<int?> _inputLimit(
     LiteRtLmWebEngine engine,
     LiteRtLmWebEmbedding probe,
@@ -642,8 +658,15 @@ final class LiteRtLmWebEmbedder {
     if (probe.numChunks <= 1) return null;
     // BOS and EOS, as the engine counted them around the probe's words.
     final special = probe.inputLength - _probeWords;
-    final words = liteRtLmMaxInputLength - special;
-    if (special < 0 || words < 1) return null;
+    if (special < 0) return null;
+    // Only the signature asked for: a larger window means the runtime did
+    // not prepare what it was asked to, and its limit is not trusted.
+    final window = liteRtLmEg2TextSignatures.firstWhere(
+      (length) => length >= _config.maxInputLength,
+      orElse: () => 0,
+    );
+    final words = window - special;
+    if (window == 0 || words < 1) return null;
     final atLimit = await engine.computeEmbedding(
       LiteRtLmWebText(_the(words)),
       _options,
@@ -653,10 +676,10 @@ final class LiteRtLmWebEmbedder {
       _options,
     );
     final pinned =
-        atLimit.inputLength == liteRtLmMaxInputLength &&
+        atLimit.inputLength == window &&
         atLimit.numChunks == 1 &&
         atLimit.truncatedLength == null &&
-        overLimit.inputLength == liteRtLmMaxInputLength + 1 &&
+        overLimit.inputLength == window + 1 &&
         overLimit.numChunks == 2;
     runtimeLog(
       '[LiteRtLmWebEmbedder] $_file: the engine split the '
@@ -664,9 +687,9 @@ final class LiteRtLmWebEmbedder {
       'instead of truncating it (${_config.backend.name}); '
       '${atLimit.inputLength} tokens took ${atLimit.numChunks}, '
       '${overLimit.inputLength} took ${overLimit.numChunks}'
-      '${pinned ? ': the window is $liteRtLmMaxInputLength' : ''}.',
+      '${pinned ? ': the window is $window' : ''}.',
     );
-    return pinned ? liteRtLmMaxInputLength : null;
+    return pinned ? window : null;
   }
 
   Future<void> _requireRuntime() async {
@@ -758,7 +781,7 @@ final class LiteRtLmWebEmbedder {
       // Unset = no tower: a text-only embedder never pays for one.
       visionBackend: images ? _config.backend : null,
       audioBackend: audio ? _config.audioBackend : null,
-      maxInputLength: liteRtLmMaxInputLength,
+      maxInputLength: _config.maxInputLength,
       minInputLength: _config.minInputLength,
       visionTokensPerImage: images ? _config.visionTokensPerImage : null,
     );
@@ -809,13 +832,39 @@ final class LiteRtLmWebEmbedder {
   /// [EmbedderInputTooLongException] for an input the engine had to cut or
   /// split (never the cut or averaged vector), [EmbedderEngineException] for
   /// any other failure.
-  Future<List<double>> embed(EmbedderInput input) async {
+  ///
+  /// [options] are Kotlin's and Swift's per-request `EmbeddingOptions`
+  /// ([checkEmbeddingOptions]; a vision budget other than the engine's own is
+  /// refused here: the web runtime prepares that one vision signature).
+  Future<List<double>> embed(
+    EmbedderInput input, {
+    EmbeddingOptions options = const EmbeddingOptions(),
+  }) async {
     final engine = _engine;
     if (_state != _EmbedderState.loaded || engine == null) {
       throw const EmbedderEngineException(
         'LiteRtLmWebEmbedder.embed() needs a loaded, open embedder',
       );
     }
+    checkEmbeddingOptions(
+      options,
+      dimension: _dimension,
+      engineVisionTokensPerImage: _images ? _config.visionTokensPerImage : null,
+      budgets: liteRtLmVisionTokenBudgets,
+      onlyEngineBudget:
+          'on the web $liteRtLmWebRuntime prepares one vision signature, the '
+          "engine's",
+    );
+    final requestOptions = options.isDefault
+        ? _options
+        : LiteRtLmWebEmbeddingOptions(
+            normalize: options.normalize ?? true,
+            insertSpecialTokens: options.insertSpecialTokens ?? true,
+            inputOverflowStrategy: LiteRtLmWebOverflowStrategy.truncate,
+            outputSize: options.outputSize,
+            visionTokensPerImage: options.visionTokensPerImage,
+          );
+    final size = options.outputSize ?? _dimension;
     // The native order (`embedding_parts.dart`): the text with its task
     // prefix — the engine adds BOS and EOS — then the images in order, then
     // the audio. A media part is the encoded file as it is, never prefixed.
@@ -850,7 +899,7 @@ final class LiteRtLmWebEmbedder {
       response = await liteRtLmPageLock.run(() {
         // Closed while it waited for the page: the engine is deleted.
         _checkNotClosed();
-        return engine.computeEmbedding(request, _options);
+        return engine.computeEmbedding(request, requestOptions);
       });
     } on LiteRtLmPagePoisonedError {
       // The page's state, not this embedding's: the caller tells them apart.
@@ -886,10 +935,10 @@ final class LiteRtLmWebEmbedder {
       throw _tooLong(response.inputLength, limit, media: media);
     }
     final vector = response.embedding;
-    if (vector.length != _dimension) {
+    if (vector.length != size) {
       throw EmbedderEngineException(
-        '$_file returned a vector of ${vector.length} values for dimension '
-        '$_dimension',
+        '$_file returned a vector of ${vector.length} values for '
+        '${size == _dimension ? 'dimension $_dimension' : 'outputSize $size'}',
       );
     }
     if (_unusable(vector)) {

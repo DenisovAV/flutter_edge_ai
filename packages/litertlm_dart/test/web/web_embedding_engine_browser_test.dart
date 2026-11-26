@@ -20,7 +20,8 @@ import 'package:test/test.dart';
 
 const _stub = r'''
 (() => {
-  const p = window.__eg = {settings: [], inputs: [], deletes: 0, pinnable: true};
+  const p = window.__eg = {settings: [], inputs: [], options: [], deletes: 0,
+                           pinnable: true};
   const EmbeddingEngine = function EmbeddingEngine() {};
   EmbeddingEngine.prototype.computeEmbedding = function () {};
   EmbeddingEngine.prototype.delete = function () {};
@@ -29,6 +30,7 @@ const _stub = r'''
     return {
       computeEmbedding: async (input, options) => {
         p.inputs.push(input);
+        p.options.push(options);
         const parts = Array.isArray(input) ? input : [input];
         let tokens = 2;
         for (const part of parts) {
@@ -39,7 +41,10 @@ const _stub = r'''
           }
         }
         const chunks = p.pinnable ? Math.ceil(tokens / 1024) : 1;
-        return {embedding: [0.5, 0.5, 0.5, 0.5], inputLength: tokens, numChunks: chunks};
+        const vector = [0.5, 0.5, 0.5, 0.5];
+        return {embedding: options && options.outputSize ?
+                    vector.slice(0, options.outputSize) : vector,
+                inputLength: tokens, numChunks: chunks};
       },
       delete: async () => { p.deletes++; },
     };
@@ -88,6 +93,7 @@ EmbeddingEngineConfig _config({
   String? cacheDir,
   bool requireWeightCache = false,
   int? budget,
+  ActivationDataType? activation,
 }) => EmbeddingEngineConfig(
   modelPath: 'blob:https://example.com/0f9a/embeddinggemma-2-740m.litertlm',
   backend: backend,
@@ -96,6 +102,7 @@ EmbeddingEngineConfig _config({
   cacheDir: cacheDir,
   requireWeightCache: requireWeightCache,
   visionTokensPerImage: budget,
+  activationDataType: activation,
 );
 
 /// The 740m's container header (vision and audio towers), from the fixture
@@ -141,6 +148,11 @@ void main() {
         'a vision tower on another backend',
         _config(vision: const Backend.cpu()),
         "the text tower's backend",
+      ),
+      (
+        'an activation type, which its EmbeddingEngine takes none of',
+        _config(activation: ActivationDataType.float32),
+        'takes no activation type',
       ),
     ]) {
       test(what, () async {
@@ -227,6 +239,47 @@ void main() {
       await engine.close();
     },
   );
+
+  test("Kotlin's and Swift's EmbeddingOptions reach the runtime's "
+      'computeEmbedding, and outputSize is the vector length; maxInputLength '
+      'reaches create', () async {
+    final engine = await EmbeddingEngine.create(
+      EmbeddingEngineConfig(
+        modelPath:
+            'blob:https://example.com/0f9a/embeddinggemma-2-740m.litertlm',
+        backend: const Backend.gpu(),
+        maxInputLength: 1024,
+      ),
+    );
+    expect(((_list('settings').single! as Map)['maxInputLength']), 1024);
+    final cut = await engine.computeEmbedding(
+      [Content.text('task: search result | query: cats')],
+      options: const EmbeddingOptions(
+        outputSize: 2,
+        normalize: false,
+        insertSpecialTokens: false,
+      ),
+    );
+    expect(cut, hasLength(2));
+    final sent = (_list('options').last! as Map).cast<String, Object?>();
+    expect(sent['outputSize'], 2);
+    expect(sent['normalize'], false);
+    expect(sent['insertSpecialTokens'], false);
+    expect(sent.containsKey('visionTokensPerImage'), isFalse);
+    await engine.computeEmbedding([
+      Content.text('task: search result | query: cats'),
+    ]);
+    final plain = (_list('options').last! as Map).cast<String, Object?>();
+    expect(plain.containsKey('outputSize'), isFalse);
+    expect(plain['normalize'], true);
+    await expectLater(
+      engine.computeEmbedding([
+        Content.text('cats'),
+      ], options: const EmbeddingOptions(outputSize: 5)),
+      throwsArgumentError,
+    );
+    await engine.close();
+  });
 
   test('a limit the engine does not let pin is a load failure naming the '
       'file, and the engine is deleted', () async {

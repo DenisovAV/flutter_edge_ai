@@ -22,6 +22,7 @@ EmbedderLoadException
 EmbedderModality
 EmbeddingEngine
 EmbeddingEngineConfig
+EmbeddingOptions
 Engine
 EngineConfig
 GpuBackend

@@ -534,6 +534,43 @@ await embedder.close();
   the load and every `computeEmbedding` block that isolate. In an app with a
   UI, create and use it on a worker isolate.
 
+Per request, `computeEmbedding` takes Kotlin's and Swift's
+`EmbeddingOptions`; unset fields keep the engine's defaults:
+
+```dart
+final embedder = await EmbeddingEngine.create(
+  EmbeddingEngineConfig(
+    modelPath: embeddingModelPath,
+    cacheDir: cacheDir,
+    maxInputLength: 512, // the 512-token text signature
+  ),
+);
+final short = await embedder.computeEmbedding(
+  [Content.text('task: search result | query: red apples')],
+  // Matryoshka: the first 256 values, L2-normalised again.
+  options: const EmbeddingOptions(outputSize: 256),
+);
+```
+
+- `outputSize` (1 to the dimension) keeps the first values and normalises
+  them, as LiteRT-LM does; `normalize: false` returns the vector as the
+  model computed it (on the 270m: norm about 590, and the first 256 values
+  of the normalised vector renormalised match `outputSize: 256` within
+  6e-8).
+- `insertSpecialTokens: false` leaves out BOS, EOS and the media boundary
+  tokens; the vector then differs (cos 0.90 on the 270m).
+- `visionTokensPerImage` per request: 70 or 140, at most the engine's own
+  (LiteRT-LM answers a larger one with INVALID_ARGUMENT; measured on the
+  440m), and on the web only the engine's own (the runtime prepares one
+  vision signature).
+- `EmbeddingEngineConfig.maxInputLength` (Kotlin's and Swift's) picks the
+  text signature: the engine takes inputs up to the smallest one at or above
+  it, and that is `info.maxInputTokens` (300 gives 512 on the 270m). Null is
+  1024. A length above the bundle's largest signature is refused at load.
+- `EmbeddingEngineConfig.activationDataType` (Kotlin's) sets the text and
+  vision towers' activation type; null keeps the bundle's. Refused on the
+  web, whose `EmbeddingEngine` takes none.
+
 ## Errors and closing
 
 The exceptions below all extend `LiteRtLmException`, one type to catch.
@@ -600,6 +637,13 @@ process: pass a new empty directory, or `':nocache'`, for a cold run.
 `maxNumTokens` unset leaves the context to the bundle; it changes the speeds,
 so compare runs with the same `run.maxNumTokens`.
 
+As Kotlin's, it takes `loraConfig` (the conversation runs with those LoRA
+weights) and `repetitionPenaltyConfig` (the penalties on every decode step of
+the message). Kotlin's `BenchmarkInfo.markDurationsInSecond` has no
+counterpart: LiteRT-LM's C API has no getter for the runtime's mark
+durations (Kotlin's JNI reads them from C++), so the result carries the C
+API's numbers, as Swift's `BenchmarkInfo`.
+
 ## Differences from the Kotlin and Swift APIs
 
 | | Kotlin / Swift | litertlm_dart |
@@ -615,8 +659,11 @@ so compare runs with the same `run.maxNumTokens`.
 | Tokenizer | — | `Engine.tokenize`, `detokenize` |
 | Option scoring | — | `Engine.scoreTargets`: the exact log-probability of each target as a continuation |
 | Constrained decoding | `ResponseFormat` per message, after `ConversationConfig.enableResponseFormat` | `ConversationConfig.responseFormat`, for every message |
-| `benchmark()` | `BenchmarkInfo`, with mark durations in Kotlin's (Swift's has none) | `LlmBenchmarkResult`, plus the whole create's time, the backend and the GPU activation type; no media contents |
+| `benchmark()` | `BenchmarkInfo`, with mark durations in Kotlin's (Swift's has none); `loraConfig` and `repetitionPenaltyConfig` in Kotlin's | `LlmBenchmarkResult`, plus the whole create's time, the backend and the GPU activation type; `loraConfig` and `repetitionPenaltyConfig` as Kotlin's; no mark durations (no C API getter); no media contents |
 | EmbeddingGemma 2 | text, images, audio | the same, text with images and audio in one vector, per-SoC NPU bundles |
+| Embedding options | `EmbeddingOptions` per request: `normalize`, `insertSpecialTokens`, `outputSize`, `visionTokensPerImage` | the same; a request's vision budget is 70 or 140, at most the engine's, and on the web the engine's own |
+| `EmbeddingEngineConfig` | `maxInputLength` (Kotlin and Swift), `activationDataType` and `modelFd` (Kotlin) | `maxInputLength`; `activationDataType` natively; no `modelFd`: LiteRT-LM's C API creates embedding settings from a path only, and the bundle is read by path before the engine exists |
+| `computeEmbeddingBatch` | Kotlin and Swift | none: one `computeEmbedding` per input (batching was measured no faster) |
 | LoRA | `LoraConfig` on the conversation and the session (Kotlin), `loraPath` and `loraRank` (Swift) | `ConversationConfig.loraConfig` (`LoraConfig`), `EngineConfig.loraRank`; the native libraries carry a text LoRA backport (LiteRT-LM PR #2508) |
 | Tool choice | `ToolChoice` per message, first round only (Kotlin and Swift) | per message, first round only; `auto` sends no choice |
 

@@ -308,6 +308,11 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       // The previous singleton session is closed before the next one is
       // built: its conversation goes, and the new one starts empty.
       await _session?.close();
+      // The model may have closed meanwhile, and its teardown nulls the
+      // engine: refuse as the other paths do, before touching it.
+      if (_isClosed) {
+        throw StateError('Model was closed while creating a session');
+      }
       await _ensureEngine();
       final conversation = await _buildConversation(
         explicit: explicit,

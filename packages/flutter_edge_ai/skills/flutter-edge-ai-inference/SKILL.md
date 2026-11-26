@@ -354,7 +354,7 @@ try {
 }
 ```
 
-On web, the `.litertlm` engine takes images and audio with Gemma 4 E2B's GPU export (`LiteRtLmModels.gemma4E2bIt.webGpu`, `@litert-lm/core` 0.19.0, installed with `WebStorageMode.streaming`) when the model loads with `supportImage`/`supportAudio`; a conversation reserves one image unless `maxNumImages` says more. A MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` (the flutter-edge-ai-mediapipe skill) also takes images, but on it Gemma 4 has no thinking, and its tools never reach the model.
+On web, the `.litertlm` engine takes images and audio with Gemma 4 E2B's GPU export (`LiteRtLmModels.gemma4E2bIt.webGpu`, `@litert-lm/core` 0.20.0, installed with `WebStorageMode.streaming`) when the model loads with `supportImage`/`supportAudio`; a conversation reserves one image unless `maxNumImages` says more. A MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` (the flutter-edge-ai-mediapipe skill) also takes images, but on it Gemma 4 has no thinking, and its tools never reach the model.
 
 ## Audio
 

@@ -1,3 +1,18 @@
+## 0.20.0
+- LiteRT-LM 0.20.0 on `native-v0.20.0`; web on `@litert-lm/core` 0.20.0.
+- Breaking (web): the page hands over `@litert-lm/core` once as `window.litertLm`; see the README.
+- Breaking: `SpeculativeDecodingConfig` (mode, lenience) replaces `SpeculativeDecodingMode`; `benchmark()` takes it.
+- `ToolChoice` per message on `sendMessage`/`sendMessageStream` (native).
+- Text and audio LoRA: `ConversationConfig.loraConfig`, `EngineConfig.loraRank`/`audioLoraRank`.
+- `EngineConfig.selectedSignatures`.
+- Tool calls constrained with LLGuidance; Google's prebuilt constraint provider no longer ships.
+- Each native CPU/GPU conversation keeps its own sampler (LiteRT-LM #2080 fixed).
+- macOS needs no companions: the `macos_companions` define and the Podfile stager block are no-ops.
+- Windows: `libLiteRt.dll` needs no Visual C++ runtime.
+- Android Qualcomm NPU on QNN 2.52.0; Linux arm64 on QAIRT 2.51.1.
+- Windows Intel GPU: prefill ~2x slower than 0.19 (E2B 1.1-1.4x) to keep Gemma 4 12B answering.
+- `LlmBenchmarkResult.initTime` counts the engine creation only, as in LiteRT-LM 0.20.
+
 ## 0.19.1+4
 - Plain Dart programs (`dart run`, `dart test`, `dart build cli`) on every backend; see the README.
 

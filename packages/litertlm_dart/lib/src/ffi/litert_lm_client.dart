@@ -44,7 +44,7 @@ import 'stderr_redirect.dart';
 import 'windows_std_handles.dart';
 import 'thinking_context.dart';
 import 'send_options.dart';
-import '../api/backend.dart' show SpeculativeDecodingMode;
+import '../api/backend.dart' show SpeculativeDecodingConfig;
 import '../runtime/load_errors.dart';
 import '../runtime/litert_lm_log_level.dart';
 
@@ -250,7 +250,6 @@ const windowsPreloadLibraries = [
 @visibleForTesting
 const linuxGlobalLibraries = [
   'libLiteRt.so',
-  'libGemmaModelConstraintProvider.so',
   'libLiteRtWebGpuAccelerator.so',
   'libLiteRtLm.so',
 ];
@@ -1018,11 +1017,16 @@ class EngineCreateRequest {
     this.maxNumImages = 0,
     this.enableSpeculativeDecoding,
     this.speculativeDecodingMode,
+    this.speculativeDecodingLenience,
+    this.selectedSignatures,
+    this.loraRank,
+    this.audioLoraRank,
     this.numThreads,
     this.activationDataType,
     this.nativeLogLevel,
     this.dispatchLibDir,
     this.useHwMaskingForNpu,
+    this.npuExecutorFlags,
     this.kernelBatchSize,
     this.blockSigprof = false,
     this.listWeightBanks = false,
@@ -1061,6 +1065,20 @@ class EngineCreateRequest {
   /// config (adaptive has no boolean); null sets none.
   final int? speculativeDecodingMode;
 
+  /// The speculative decoding config's lenience, set with
+  /// [speculativeDecodingMode]; null leaves LiteRT-LM's.
+  final double? speculativeDecodingLenience;
+
+  /// `engine_settings_set_selected_signatures`; null runs every signature.
+  final List<String>? selectedSignatures;
+
+  /// `engine_settings_set_lora_rank`, with `set_supported_lora_ranks([rank])`
+  /// when above 0, as Swift does; null sets none.
+  final int? loraRank;
+
+  /// The audio setters' counterpart of [loraRank].
+  final int? audioLoraRank;
+
   /// The CPU executor's threads; null leaves LiteRT-LM's default.
   final int? numThreads;
 
@@ -1075,8 +1093,13 @@ class EngineCreateRequest {
   final String? dispatchLibDir;
 
   /// What `use_hw_masking_for_npu` is set to (`npuHwMasking` decides); null
-  /// leaves LiteRT-LM's default.
+  /// leaves LiteRT-LM's resolution (bundle metadata, else off).
   final bool? useHwMaskingForNpu;
+
+  /// The other three NPU executor flags (`npuExecutorFlags` on an NPU load);
+  /// null off the NPU, which leaves LiteRT-LM's resolution.
+  final ({bool neonGreedySampling, bool hwCacheUpdate, bool hwPle})?
+  npuExecutorFlags;
 
   /// Flushes the GPU command queue every N ops (#364); null leaves the
   /// engine's default.
@@ -1293,6 +1316,16 @@ EngineCreateResult createEngineWith(
               LiteRtLmSpeculativeDecodingMode.fromValue(speculativeMode),
             ),
           );
+          final lenience = r.speculativeDecodingLenience;
+          if (lenience != null) {
+            setter(
+              'litert_lm_speculative_decoding_config_set_lenience',
+              b.litert_lm_speculative_decoding_config_set_lenience(
+                config,
+                lenience,
+              ),
+            );
+          }
           setter(
             'litert_lm_engine_settings_set_speculative_decoding_config',
             b.litert_lm_engine_settings_set_speculative_decoding_config(
@@ -1302,6 +1335,59 @@ EngineCreateResult createEngineWith(
           );
         } finally {
           b.litert_lm_speculative_decoding_config_delete(config);
+        }
+      }
+      final selected = r.selectedSignatures;
+      if (selected != null && selected.isNotEmpty) {
+        final names = calloc<Pointer<Char>>(selected.length);
+        try {
+          for (var i = 0; i < selected.length; i++) {
+            names[i] = selected[i].toNativeUtf8(allocator: calloc).cast();
+          }
+          setter(
+            'litert_lm_engine_settings_set_selected_signatures',
+            b.litert_lm_engine_settings_set_selected_signatures(
+              settings,
+              names,
+              selected.length,
+            ),
+          );
+        } finally {
+          for (var i = 0; i < selected.length; i++) {
+            if (names[i] != nullptr) calloc.free(names[i]);
+          }
+          calloc.free(names);
+        }
+      }
+      // LoRA ranks as Swift sets them (Engine.swift): the rank, and above 0
+      // the one-rank supported list. LiteRT-LM keeps that list only for
+      // GPU_ARTISAN and logs an ERROR line on every other backend.
+      for (final (rank, setRank, rankName, setSupported, supportedName) in [
+        (
+          r.loraRank,
+          b.litert_lm_engine_settings_set_lora_rank,
+          'litert_lm_engine_settings_set_lora_rank',
+          b.litert_lm_engine_settings_set_supported_lora_ranks,
+          'litert_lm_engine_settings_set_supported_lora_ranks',
+        ),
+        (
+          r.audioLoraRank,
+          b.litert_lm_engine_settings_set_audio_lora_rank,
+          'litert_lm_engine_settings_set_audio_lora_rank',
+          b.litert_lm_engine_settings_set_supported_audio_lora_ranks,
+          'litert_lm_engine_settings_set_supported_audio_lora_ranks',
+        ),
+      ]) {
+        if (rank == null) continue;
+        setter(rankName, setRank(settings, rank));
+        if (rank > 0) {
+          final ranks = calloc<Int>(1);
+          try {
+            ranks[0] = rank;
+            setter(supportedName, setSupported(settings, ranks, 1));
+          } finally {
+            calloc.free(ranks);
+          }
         }
       }
       final numThreads = r.numThreads;
@@ -1336,6 +1422,30 @@ EngineCreateResult createEngineWith(
           b.litert_lm_engine_settings_set_use_hw_masking_for_npu(
             settings,
             useHwMasking,
+          ),
+        );
+      }
+      final npuFlags = r.npuExecutorFlags;
+      if (npuFlags != null) {
+        setter(
+          'litert_lm_engine_settings_set_enable_neon_for_npu_greedy_sampling',
+          b.litert_lm_engine_settings_set_enable_neon_for_npu_greedy_sampling(
+            settings,
+            npuFlags.neonGreedySampling,
+          ),
+        );
+        setter(
+          'litert_lm_engine_settings_set_use_hw_cache_update_for_npu',
+          b.litert_lm_engine_settings_set_use_hw_cache_update_for_npu(
+            settings,
+            npuFlags.hwCacheUpdate,
+          ),
+        );
+        setter(
+          'litert_lm_engine_settings_set_use_hw_ple_for_npu',
+          b.litert_lm_engine_settings_set_use_hw_ple_for_npu(
+            settings,
+            npuFlags.hwPle,
           ),
         );
       }
@@ -1672,9 +1782,17 @@ class LiteRtLmFfiClient {
   int? get thinkingTokenBudget => _thinkingTokenBudget;
   int? _thinkingTokenBudget;
 
-  /// The sampler of the engine's first generation, which LiteRT-LM keeps for
-  /// every later conversation (google-ai-edge/LiteRT-LM#2080).
+  /// The sampler of the engine's first generation, which LiteRT-LM 0.19 (C
+  /// API 1.0) keeps for every later conversation
+  /// (google-ai-edge/LiteRT-LM#2080). LiteRT-LM 0.20 builds each
+  /// conversation's own ([liteRtLmSamplerFixedAtFirstGeneration]), so the
+  /// latch says nothing on a library of C API 1.1 or later.
   final _samplerLatch = EngineSamplerLatch();
+
+  /// Whether the loaded library keeps the sampler of an engine's first
+  /// generation ([liteRtLmSamplerFixedAtFirstGeneration]); read when the
+  /// library loads.
+  bool _samplerFixedAtFirstGeneration = true;
   bool _warnedNpuSampling = false;
 
   /// The sampler each live conversation was created with, so the first
@@ -2042,11 +2160,11 @@ class LiteRtLmFfiClient {
       preload(proxyPath);
       proxyLib = DynamicLibrary.open(proxyPath);
     } else if (Platform.isMacOS && liteRtLmOutsideFlutter) {
-      // A plain Dart program: its code assets, when its build bundled the
-      // companion there (macos_load_error.dart); refused, naming why, before
-      // anything is loaded otherwise (a preload of the framework's name could
-      // load a stray copy). Absolute paths, so the preload and the open are
-      // one image; checked all the same.
+      // A plain Dart program: its code assets (macos_load_error.dart);
+      // refused, naming why, before anything is loaded when there are none
+      // or they are an older release's build (a preload of the framework's
+      // name could load a stray copy). Absolute paths, so the preload and the
+      // open are one image; checked all the same.
       final assets = macOSCodeAssetsHere;
       final dir = switch (assets) {
         MacOSPlainDartAssets(:final dir) => dir,
@@ -2064,10 +2182,6 @@ class LiteRtLmFfiClient {
       proxyLib = DynamicLibrary.open(assetProxyPath);
       requireSameLoadedLibrary(preloadedAssetProxy, proxyLib, assetProxyPath);
     } else if (Platform.isMacOS) {
-      // An app built with the plain-Dart define is refused before anything
-      // loads (macos_load_error.dart).
-      final misuse = macOSFlutterCodeAssetsMisuse();
-      if (misuse != null) throw ArgumentError(misuse);
       // Relative paths: dyld resolves the preload's through its caller's and
       // the main executable's rpaths, the open's through FlutterMacOS's, so
       // the two are checked to be one image.
@@ -2114,8 +2228,6 @@ class LiteRtLmFfiClient {
       // Preload sequence:
       // - libLiteRt.so first (provides LiteRt C API used by the WebGPU
       //   accelerator at registration)
-      // - libGemmaModelConstraintProvider.so (libLiteRtLm.so has a
-      //   SONAME-level dependency on it)
       // - libLiteRtWebGpuAccelerator.so so gpu_registry.cc:162 can find it
       //   via the loader's already-loaded modules table when it does
       //   basename-only dlopen
@@ -2315,6 +2427,9 @@ class LiteRtLmFfiClient {
       _hasTurnEndRecord = lib.providesSymbol(
         'litert_lm_conversation_get_last_turn_end',
       );
+      _samplerFixedAtFirstGeneration = liteRtLmSamplerFixedAtFirstGeneration(
+        readLiteRtLmCApiVersion(lib),
+      );
       _proxyDestroy = proxyLib
           .lookupFunction<
             Void Function(Pointer<Void>),
@@ -2450,6 +2565,10 @@ class LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? speculativeDecodingMode,
+    double? speculativeDecodingLenience,
+    List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     int? numThreads,
     int? activationDataType,
     GpuActivationReason? gpuActivationReason,
@@ -2518,8 +2637,16 @@ class LiteRtLmFfiClient {
     // mask update path off, except for a bundle whose NPU-compiled mask graphs
     // are known to be wrong (Intel's public Gemma 4 26B for Panther Lake).
     final useHwMasking = backend == 'npu' ? npuDispatch!.useHwMasking : null;
+    final npuFlags = backend == 'npu' ? npuExecutorFlags : null;
     if (useHwMasking != null) {
       runtimeLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=$useHwMasking');
+    }
+    if (npuFlags != null) {
+      runtimeLog(
+        '[LiteRtLmFfi] NPU: enable_neon_for_npu_greedy_sampling='
+        '${npuFlags.neonGreedySampling} use_hw_cache_update_for_npu='
+        '${npuFlags.hwCacheUpdate} use_hw_ple_for_npu=${npuFlags.hwPle}',
+      );
     }
 
     if (npuDispatchDir != null) {
@@ -2581,11 +2708,16 @@ class LiteRtLmFfiClient {
         maxNumImages: maxNumImages,
         enableSpeculativeDecoding: enableSpeculativeDecoding,
         speculativeDecodingMode: speculativeDecodingMode,
+        speculativeDecodingLenience: speculativeDecodingLenience,
+        selectedSignatures: selectedSignatures,
+        loraRank: loraRank,
+        audioLoraRank: audioLoraRank,
         numThreads: numThreads,
         activationDataType: activationDataType,
         nativeLogLevel: nativeLogLevel,
         dispatchLibDir: npuDispatchDir,
         useHwMaskingForNpu: useHwMasking,
+        npuExecutorFlags: npuFlags,
         kernelBatchSize: kernelBatchSize,
         // The QNN backend's init fails under the debug VM's SIGPROF sampling
         // on Linux (see withSigprofBlocked); Android's FastRPC client
@@ -2714,12 +2846,16 @@ class LiteRtLmFfiClient {
   }
 
   /// Reports what LiteRT-LM#2080 means for [conv]'s generation (see
-  /// [EngineSamplerLatch]). The engine builds its sampler at its first
-  /// generation, not when a conversation is created.
+  /// [EngineSamplerLatch]). A LiteRT-LM 0.19 engine builds its sampler at its
+  /// first generation, not when a conversation is created; from 0.20 (C API
+  /// 1.1) each conversation's sampler is its own on the CPU and the GPU, and
+  /// nothing is said.
   void _noteGeneration(Pointer<LiteRtLmConversation> conv) {
     final entry = _conversationSampling[conv];
     // The NPU executor never reads a sampler; its own warning covers it.
-    if (entry == null || _backend == 'npu') return;
+    if (entry == null || _backend == 'npu' || !_samplerFixedAtFirstGeneration) {
+      return;
+    }
     final note = _samplerLatch.onGeneration(entry.$1, explicit: entry.$2);
     if (note == null) return;
     if (!note.warn) {
@@ -2959,6 +3095,26 @@ class LiteRtLmFfiClient {
         if (speculative != null) {
           _setSessionSpeculativeDecoding(sessionConfig, speculative, check);
         }
+        for (final (name, path, set) in [
+          (
+            'litert_lm_session_config_set_lora_path',
+            extras.loraPath,
+            b.litert_lm_session_config_set_lora_path,
+          ),
+          (
+            'litert_lm_session_config_set_audio_lora_path',
+            extras.audioLoraPath,
+            b.litert_lm_session_config_set_audio_lora_path,
+          ),
+        ]) {
+          if (path == null) continue;
+          final pathPtr = path.toNativeUtf8();
+          try {
+            check(name, set(sessionConfig, pathPtr.cast()));
+          } finally {
+            malloc.free(pathPtr);
+          }
+        }
 
         // No-argument create + setter chain: the session config carries
         // everything the native side needs.
@@ -3119,7 +3275,7 @@ class LiteRtLmFfiClient {
   /// Sets [mode] on a session config through a speculative decoding config.
   void _setSessionSpeculativeDecoding(
     Pointer<LiteRtLmSessionConfig> sessionConfig,
-    SpeculativeDecodingMode mode,
+    SpeculativeDecodingConfig speculative,
     void Function(String name, int code) check,
   ) {
     final b = _bindings!;
@@ -3133,9 +3289,19 @@ class LiteRtLmFfiClient {
         'litert_lm_speculative_decoding_config_set_mode',
         b.litert_lm_speculative_decoding_config_set_mode(
           config,
-          LiteRtLmSpeculativeDecodingMode.fromValue(mode.index),
+          LiteRtLmSpeculativeDecodingMode.fromValue(speculative.mode.index),
         ),
       );
+      final lenience = speculative.lenience;
+      if (lenience != null) {
+        check(
+          'litert_lm_speculative_decoding_config_set_lenience',
+          b.litert_lm_speculative_decoding_config_set_lenience(
+            config,
+            lenience,
+          ),
+        );
+      }
       check(
         'litert_lm_session_config_set_speculative_decoding_config',
         b.litert_lm_session_config_set_speculative_decoding_config(

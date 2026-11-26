@@ -34,24 +34,24 @@ await engine.close();
 
 ```yaml
 dependencies:
-  litertlm_dart: '>=0.19.1+4 <0.19.2'
+  litertlm_dart: '>=0.20.0 <0.20.1'
 ```
 
 The version is the upstream LiteRT-LM version this package is built from:
 the first release on an upstream version carries it as is (`0.20.0`), and
-each later one adds its number (`0.20.0+1`, `0.20.0+2`). The releases on
-LiteRT-LM 0.19.1 started at `0.19.1+1`. Within one upstream version the Dart API stays compatible,
-with one exception: `EmbeddingEngineConfig.cacheDir` became a `String?` in
-0.19.1+2 (it was a `String`).
+each later one adds its number (`0.20.0+1`, `0.20.0+2`). Within one upstream
+version the Dart API stays compatible; a new upstream version may change it
+(0.20.0: `SpeculativeDecodingConfig` replaces `SpeculativeDecodingMode`, and a
+web page hands over `@litert-lm/core` as `window.litertLm`).
 This release runs:
 
 | | |
 |---|---|
-| Native | LiteRT-LM 0.19.1, our build `native-v0.19.1-c` |
-| Web | `@litert-lm/core` 0.19.0 |
+| Native | LiteRT-LM 0.20.0, our build `native-v0.20.0` |
+| Web | `@litert-lm/core` 0.20.0 |
 
-`dart pub add litertlm_dart` writes `^0.19.1+4`, which for a 0.x
-version also takes later 0.19.x releases; those follow newer LiteRT-LM
+`dart pub add litertlm_dart` writes `^0.20.0`, which for a 0.x
+version also takes later 0.20.x releases; those follow newer LiteRT-LM
 releases and may change the Dart API, so bound it at the next upstream patch,
 as above, to stay on one.
 
@@ -209,13 +209,58 @@ final engine = await Engine.create(
   EngineConfig(
     modelPath: modelPath,
     backend: const Backend.gpu(),
-    speculativeDecoding: SpeculativeDecodingMode.on, // or .adaptive, .off
+    speculativeDecoding: SpeculativeDecodingConfig(
+      mode: SpeculativeDecodingMode.on, // or .adaptive, .off
+      lenience: 0.1, // optional, in [0, 1]; null is LiteRT-LM's (exact)
+    ),
   ),
 );
 ```
 
-A conversation can override it with `ConversationConfig.speculativeDecoding`.
-Unset, it is LiteRT-LM's default (off).
+A conversation can override it with `ConversationConfig.speculativeDecoding`,
+and `benchmark()` takes one too. Unset, it is LiteRT-LM's default (off). The
+NPU executor ignores the lenience and stays exact.
+
+## Selected signatures
+
+`EngineConfig.selectedSignatures` compiles and runs only the main model's
+signatures named, for example `['prefill_128', 'decode']` (keep a prefill
+signature and `decode`, and `verify` with speculative decoding). Each name is
+checked against the model before the engine is created; one it does not have
+is an `ArgumentError`. Refused on the web.
+
+## LoRA
+
+A conversation takes LoRA adapters, as Kotlin's `LoraConfig`: `.tflite` LoRA
+weights for the text model and, on a bundle with an audio encoder, for the
+audio encoder. The model must be exported with LoRA input signatures
+(LiteRT-LM's LoRA Colab, step 3); a conversation without an adapter on such a
+model runs the base weights.
+
+```dart
+final engine = await Engine.create(
+  EngineConfig(modelPath: '/path/functiongemma_270m_dynamic_lora.litertlm'),
+);
+final tuned = await engine.createConversation(
+  ConversationConfig(loraConfig: LoraConfig(loraPath: '/path/task_lora.tflite')),
+);
+final base = await engine.createConversation(); // the same engine, no adapter
+```
+
+Before the conversation is created, a file that is not there, a model whose
+`decode` signature has no LoRA inputs (LiteRT-LM would take the adapter and
+leave it without effect) and an NPU engine are refused; the web takes no
+adapter. A conversation with an adapter always has its own native
+conversation. `EngineConfig.loraRank` / `audioLoraRank` are Swift's: LoRA on
+the CPU and the GPU needs no rank, and a rank above 0 is passed with
+`set_supported_lora_ranks`, which LiteRT-LM keeps for GPU_ARTISAN only and
+reports with an ERROR log line elsewhere.
+
+LiteRT-LM's public source refuses every text LoRA ("Lora is not supported.");
+the native libraries this package fetches carry a backport of LiteRT-LM PR
+#2508 that loads it (`native/litert_lm/patch_c_api.sh` section 33). A
+libLiteRtLm built without it is refused with an `UnsupportedError` that says
+so.
 
 ## Multimodality
 
@@ -348,6 +393,31 @@ while (reply.toolCalls.isNotEmpty) {
 print(reply.text);
 ```
 
+### Tool choice
+
+`sendMessage` and `sendMessageStream` take a `toolChoice` for one message, as
+Kotlin's and Swift's `ToolChoice`: `ToolChoice.auto` (the default),
+`ToolChoice.none`, `ToolChoice.required`, `ToolChoice.forcedFunction(name)` and
+`ToolChoice.allowedTools(names, required: ...)`. It applies to that message's
+first round only; the rounds that answer tool results run `auto`, so
+`required` cannot loop.
+
+```dart
+import 'package:litertlm_dart/litertlm_dart.dart';
+
+Future<Message> askWeather(Conversation conversation) =>
+    conversation.sendMessage(
+      Message.user("What's the weather like in London?"),
+      toolChoice: const ToolChoice.forcedFunction('get_weather'),
+    );
+```
+
+A choice other than `auto` needs a conversation with tools and no response
+format, and must name tools the conversation has; otherwise it is an
+`ArgumentError`. With `ToolChoice.none` the model cannot call a tool, but may
+still write what a call would look like as text. Refused on the web, whose
+runtime has no tool choice.
+
 ## Thinking
 
 ```dart
@@ -383,10 +453,11 @@ and `enableThinking: false` here), caps the first channel the bundle declares
 - **`SamplerConfig(topK:, topP:, temperature:, seed:)`** (`seed` is 0 when
   not given). With no `SamplerConfig`, a conversation uses the sampler the
   model file carries, field by field, then 0.8 / 40 / 0.95 / seed 1.
-  LiteRT-LM fixes the sampler at the engine's first generation (LiteRT-LM
-  #2080); a later conversation that asks for another one is told so once. On
-  the NPU the executor decodes greedily whatever is sent, and an explicit
-  sampler there prints a warning.
+  Natively each conversation gets its own sampler on the CPU and the GPU
+  (LiteRT-LM 0.20 fixed #2080). On the web `@litert-lm/core` still fixes the
+  sampler at the engine's first generation; a later conversation that asks
+  for another one is told so once. On the NPU the executor decodes greedily
+  whatever is sent, and an explicit sampler there prints a warning.
 - **`ResponseFormat.json(schema)`** and **`ResponseFormat.regex(pattern)`**
   constrain every reply while it is decoded. They run on the hosts and
   backends where constrained decoding was qualified: elsewhere
@@ -542,7 +613,8 @@ so compare runs with the same `run.maxNumTokens`.
 | Constrained decoding | C++ API | `ResponseFormat.json`, `.regex` |
 | `benchmark()` | `BenchmarkInfo` with mark durations | `LlmBenchmarkResult`, plus the whole create's time, the backend and the GPU activation type; no media contents |
 | EmbeddingGemma 2 | text, images, audio | the same, text with images and audio in one vector, per-SoC NPU bundles |
-| LoRA, `tool_choice`, the LiteRT-LM 0.20 additions | | not yet |
+| LoRA | `LoraConfig` on the conversation and the session (Kotlin), `loraPath` and `loraRank` (Swift) | `ConversationConfig.loraConfig` (`LoraConfig`), `EngineConfig.loraRank`; the native libraries carry a text LoRA backport (LiteRT-LM PR #2508) |
+| Tool choice | per message (Kotlin; Swift has none) | per message, `ToolChoice` |
 
 ## Where it runs today
 
@@ -558,12 +630,14 @@ Linux (x64 and arm64) and Windows, and on the web. What an app does itself:
   Google Tensor, and MediaTek's NeuroPilot libraries for MediaTek. For
   `Backend.npu`, pass a `dispatchDir` holding one vendor's dispatch
   libraries, copied out of the APK by the app.
-- **macOS:** in an app, two companion frameworks,
-  `GemmaModelConstraintProvider` and `LiteRtLmMetalAccelerator` (on the
-  `native-v*` release as xcframework zips), must be embedded in the app's
-  `Frameworks`; the hook does not embed them. Without them the engine does
-  not load. A plain Dart program uses the `macos_companions: code_assets`
-  define instead (see [In a plain Dart program](#in-a-plain-dart-program)).
+- **macOS and iOS:** nothing. The hook bundles `LiteRtLm` and
+  `StreamProxy`, and that is all there is: the tool-call constraints are
+  built into `libLiteRtLm` (LLGuidance) and so is the Metal accelerator. A
+  macOS Podfile that still carries the `[flutter_gemma] Setup LiteRT-LM
+  macOS` block keeps building: the hook replaces the stager that block runs
+  (`~/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh`,
+  only when it is one of ours) with a no-op that says the block can be
+  removed.
 - **One `libLiteRtLm` per app:** another package that bundles its own
   `libLiteRtLm` through a build hook leaves which build runs undefined.
 
@@ -593,39 +667,24 @@ Linux the program itself is `lib/libdartaot*.so`, run by the executable in
   program's pubspec.yaml (Build options below). The raw LiteRT bindings
   (`litert_bindings.dart`) open the same libraries and reach the GPU
   accelerator the same way as in an app.
-- **macOS:** the define below bundles the companion library as a code asset
-  instead of a Flutter app's framework. It goes in the pubspec.yaml of the
-  package you run, the root of its pub resolution, and never in a
-  resolution that also holds a Flutter app (a pub workspace with an app in
-  it): give the command-line program its own pubspec. A Flutter app built
-  with it refuses to load LiteRT-LM, naming the define. The Metal
-  accelerator framework is not bundled and not needed: libLiteRtLm carries
-  its own.
-
-  ```yaml
-  hooks:
-    user_defines:
-      litertlm_dart:
-        macos_companions: code_assets
-  ```
-
-- **macOS, `dart run` and `dart test`:** the Dart SDK writes each library's
-  path into the library, and Google's prebuilt constraint provider has room
-  for a short one only. Dart 3.14 and later put the libraries in a fresh
-  temporary directory, which (`$TMPDIR`, symbolic links resolved) must be 65
-  characters or shorter: macOS's default fits, otherwise run with
-  `TMPDIR=/tmp`. Dart 3.12 and 3.13 put them in the package's
-  `.dart_tool/lib/`, so the package's path must be 80 characters or
-  shorter. The build hook refuses a longer one, naming the fix. `dart build
-  cli` is not affected.
+- **No define on any platform:** a plain Dart program on macOS needs no
+  `hooks: user_defines` entry. `macos_companions`, which litertlm_dart
+  0.19.1+4 needed there, is obsolete: the build hook ignores it and prints a
+  warning naming it.
 - **Copies:** each `dart run` and `dart test` copies the libraries into the
-  temporary directory (Dart 3.14 and later): about 50 MB on macOS, 96 MB on
+  temporary directory (Dart 3.14 and later): about 40 MB on macOS; 96 MB on
   Linux and 243 MB on Windows, whose libraries include the Intel NPU stack
-  (OpenVINO and TBB, 120 MB) and the DirectX shader compiler. A `dart build
-  cli` bundle carries the same.
+  (OpenVINO and TBB, 120 MB) and the DirectX shader compiler, measured with
+  native-v0.19.1-c, which also carried the constraint provider (22 MB on
+  Linux, 13 MB under each of two names on Windows) that no longer ships. A
+  `dart build cli` bundle carries the same.
 - **Linux and Windows:** the GPU accelerator and Dawn (on Windows also the
   DirectX shader compiler) load with LiteRT-LM whatever the backend; they
   need no GPU to load, and nothing runs on them until a GPU engine does.
+- **Windows, Intel GPU:** prefill takes about twice as long as with 0.19
+  (Gemma 4 12B; E2B 1.1-1.4x), decode is unchanged. LiteRT-LM 0.20 dropped
+  the guard that keeps Intel GPUs off the int8 dot-product path, on which
+  Gemma 4 12B answers with empty text (LiteRT-LM #4083); this build restores it.
 - `dart compile exe` runs no build hooks, so it cannot bundle LiteRT-LM; use
   `dart build cli`.
 
@@ -641,12 +700,10 @@ hooks:
       qualcomm_npu: true       # bundle Qualcomm's QNN runtime (Android, Linux arm64)
       google_tensor_npu: true  # Google Tensor G5/G6
       mediatek_npu: true       # MediaTek Dimensity
-      macos_companions: code_assets  # plain Dart on macOS only
 ```
 
-`macos_companions: code_assets` is for a plain Dart program on macOS and
-never goes in a Flutter app's resolution; see
-[In a plain Dart program](#in-a-plain-dart-program).
+`macos_companions`, read up to litertlm_dart 0.19.1+4, is obsolete and
+ignored, with a warning.
 
 On the MediaTek NPU every turn runs in a fresh native conversation that
 replays the history: there a conversation answers its second message empty
@@ -661,16 +718,15 @@ fix (`native/litert_lm/patch_c_api.sh`).
 ## On the web
 
 The same `Engine`, `Conversation` and `EmbeddingEngine` run in a browser over
-`@litert-lm/core` 0.19.0, which the page loads itself. Add to
+`@litert-lm/core` 0.20.0, which the page loads itself. Add to
 `web/index.html`:
 
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
-  window.Engine = m.Engine;
-  window.EmbeddingEngine = m.EmbeddingEngine;
-  return m.Engine;
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
+  window.litertLm = m;
+  return m;
 })();
 </script>
 ```
@@ -684,12 +740,27 @@ empty reply on 0.19.0. Import exactly the version above: this release is
 measured on it, and another is said once with `print`, before the engine is
 created, when the page fetched it by a versioned URL (0.18.0 refuses the GPU
 export: "Unsupported backend: 2", and the create failure names the page's
-version). A page that does not load the module, lacks
-`window.Engine`, or loads a runtime without a call this release makes is
-refused with a `StateError` naming what is missing and the version above.
+version). `window.litertLm = m;` hands over the whole module, once: each
+member this release calls is read from it when it is called (`Engine` when an
+engine is created, `EmbeddingEngine` when an embedding engine is, `Backend`
+for both), so all of them come from the one module the page loaded, and a
+later release that calls more of it needs no new line. The backend ids sent
+and read back are the module's own `Backend` (0.20.0 renumbered them). A page
+that does not set `window.litertLm` is refused with a `StateError` quoting the
+line to add (on a page that still sets `window.Engine` or
+`window.EmbeddingEngine`, the lines it replaces); a module without a member
+this release calls, or with a `Backend` it cannot read, is refused naming the
+member and the version above (an `EmbedderLoadException` for an embedding
+engine). A self-hosted or bundled runtime (`import * as m from
+'@litert-lm/core';` in the app's own module) is handed over with the same
+lines. Another library that loads its own copy of `@litert-lm/core` (from
+another URL) puts a second runtime in the page: this release reads only
+`window.litertLm`, but two runtimes sharing the GPU and the page's memory is
+not tested.
 
-What differs on the web, measured on `@litert-lm/core` 0.19.0 with Gemma 4
-E2B's GPU export in Chrome 157 (2026-11-23):
+What differs on the web, measured with Gemma 4 E2B's GPU export on
+`@litert-lm/core` 0.20.0 in Chrome 158 (2026-11-25), and on 0.19.0 in
+Chrome 157 before it (2026-11-23):
 
 - **Images and audio** run with a `visionBackend` (GPU or CPU) and an
   `audioBackend` (CPU or GPU). A part goes as its bytes (`Content.imageBytes`,
@@ -697,7 +768,8 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   it. `maxNumImages` counts the images of a whole conversation, not of a
   message as natively: the model reserves their space up front, unset is 1
   with a vision encoder, and an image past it is refused before it is sent
-  (the runtime fails it: "Image index 1 must be less than 1.").
+  (0.19.0 failed it: "Image index 1 must be less than 1."; 0.20.0 answers
+  it).
 - **A stop mid-reply is a rebuild.** After `cancel()` (or a cancelled
   subscription) stops a reply before its end, the runtime refuses every later
   send on that conversation ("Task cancelled"), so the next message goes to a
@@ -713,7 +785,7 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   `TurnFailedException` that says to open a new one.
 - **A message that does not fit.** When the runtime refuses a message for
   its size ("Input token ids are too long." or "Max number of tokens
-  reached, the context window is full.", 0.19.0), the turn fails with
+  reached, the context window is full.", 0.19.0 and 0.20.0), the turn fails with
   `ContextFullException`, as natively, and the message is left out: the next
   message goes to a conversation rebuilt without it, so a shorter one is
   answered. When the history alone fills the window (the conversation held
@@ -731,7 +803,7 @@ E2B's GPU export in Chrome 157 (2026-11-23):
   room within that bound plus one token as none. The bound is low by the
   bytes a token spans, so a conversation one or two tokens from that point
   may be told to send a shorter message once more before it ends. A reply that fills the window ends normally (0.19.0
-  reports nothing), so the turn after it is the one refused. A stopped generation that
+  and 0.20.0 report nothing), so the turn after it is the one refused. A stopped generation that
   does not end within 30 s, after a stop or a close, makes the page unusable
   for LiteRT-LM (the module may still be suspended in it): the turn,
   `close()` and every later call fail and say so.
@@ -744,18 +816,23 @@ E2B's GPU export in Chrome 157 (2026-11-23):
 - **The context window** (`maxNumTokens`) is passed through as given (unset:
   the bundle's, 8192 for the GPU export); the 1024-token floor of the native
   CPU and GPU executors does not apply, nor does the native float32 rule for
-  Gemma 4 on the GPU above 2,048 tokens: the web runtime takes no activation
-  type and uses its own.
-- **Refused:** the NPU, `cacheDir`, `activationDataType`, the tokenizer,
+  Gemma 4 on the GPU above 2,048 tokens: the web takes no activation type
+  (below), and the runtime uses the bundle's (FP16 for the GPU export).
+- **Refused:** the NPU, `cacheDir`, `activationDataType` (0.20.0 takes it,
+  but its effect on the web export is measured on one prompt only),
+  speculative decoding (accepted by 0.20.0, but the web export has no
+  drafter and the runtime runs without one, silently), the tokenizer,
   option scoring, `benchmark()`, `Conversation.getBenchmarkInfo()`,
   `readBundleInfo`, `readBundleGenericData`. `Backend.cpu` (WebAssembly), the
   default of `EngineConfig`, is handed to the runtime, but Gemma 4's GPU
   export fails at the first send there ("Environment was not initialized
   during streaming."): pass `Backend.gpu()`.
 - **EmbeddingGemma 2** runs on WebGPU only: the CPU (WebAssembly) path of
-  `@litert-lm/core` cannot read the bundles' external weights ("Failed to get
-  external weight"), so `Backend.cpu` — the default of `EmbeddingEngineConfig`
-  — is refused; pass `backend: Backend.gpu()`. `cacheDir` and
+  `@litert-lm/core` 0.20.0 loads the bundles but is too slow to use (load
+  110-225 s, then 9-12 s per short text on the page's main thread, about 80
+  times WebGPU; 0.19.0 could not load them at all), so `Backend.cpu` — the
+  default of `EmbeddingEngineConfig` — is refused; pass
+  `backend: Backend.gpu()`. `cacheDir` and
   `requireWeightCache` are refused (the web keeps no weight cache). A page
   without WebGPU is refused before anything loads. Images on the 270m and
   audio on the 270m or the 440m are refused from the bundle's header: the

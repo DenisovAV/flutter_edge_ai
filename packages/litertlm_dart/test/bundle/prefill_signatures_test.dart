@@ -17,7 +17,10 @@ import 'dart:typed_data';
 
 import 'package:litertlm_dart/src/bundle/litertlm_bundle_reader.dart';
 import 'package:litertlm_dart/src/bundle/litertlm_npu_target.dart'
-    show readLiteRtLmLinearAttentionState, readLiteRtLmPrefillLengths;
+    show
+        readLiteRtLmLinearAttentionState,
+        readLiteRtLmLoraInputCount,
+        readLiteRtLmPrefillLengths;
 import 'package:litertlm_dart/src/bundle/litertlm_bundle_sampler.dart'
     show executorMetadataHasLinearAttention;
 import 'package:test/test.dart';
@@ -305,6 +308,95 @@ void main() {
         throwsA(anyOf(isA<RangeError>(), isA<FormatException>())),
       );
     });
+  });
+
+  group('readLiteRtLmLoraInputCount', () {
+    Future<int> countOf(Uint8List model) async {
+      final dir = Directory.systemTemp.createTempSync('lora_inputs');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = File('${dir.path}/model.tflite')..writeAsBytesSync(model);
+      final open = await file.open();
+      try {
+        return await readLiteRtLmLoraInputCount(
+          open,
+          model.length,
+          0,
+          model.length,
+        );
+      } finally {
+        await open.close();
+      }
+    }
+
+    test("each of LiteRT-LM's LoRA input names counts in decode", () async {
+      for (final name in [
+        'lora_atten_q_a_prime_weight_0',
+        'lora_atten_o_b_prime_weight_17',
+        'query_w_prime_left_3',
+        'post_w_prime_right12',
+        'transformer.layer_5.attn.attn_vec_einsum.w_prime_left',
+        'transformer.layer_0.attn.q.w_prime_right',
+      ]) {
+        expect(
+          await countOf(
+            _tflite([
+              ('prefill_128', 'input_pos', [1, 128]),
+              ('decode', name, [1, 32, 640]),
+            ]),
+          ),
+          1,
+          reason: name,
+        );
+      }
+    });
+
+    test('near misses, the lora_param_tensor and other signatures do not '
+        'count', () async {
+      for (final name in [
+        'lora_param_tensor',
+        'lora_atten_q_a_prime_weight_',
+        'query_w_prime_left',
+        'lora_atten_x_a_prime_weight_0',
+        'transformer.layer_5.attn.mlp.w_prime_left',
+        'kv_cache_k_0',
+      ]) {
+        expect(
+          await countOf(
+            _tflite([
+              ('decode', name, [1, 32, 640]),
+            ]),
+          ),
+          0,
+          reason: name,
+        );
+      }
+      // A LoRA input only in a prefill signature: LiteRT-LM's LoRA manager is
+      // made on decode, so the model takes no adapter.
+      expect(
+        await countOf(
+          _tflite([
+            ('prefill_128', 'lora_atten_q_a_prime_weight_0', [1, 32, 640]),
+            ('decode', 'input_pos', [1, 1]),
+          ]),
+        ),
+        0,
+      );
+      expect(await countOf((_Fb()..table('model', [3])).finish('model')), 0);
+    });
+
+    // FUNCTIONGEMMA_LORA_LITERTLM: FunctionGemma 270M exported with LoRA
+    // input signatures (LiteRT-LM's LoRA Colab, step 3; 144 LoRA inputs per
+    // signature, as the Colab's step 4 checks). FUNCTIONGEMMA_LITERTLM: the
+    // registry's FunctionGemma, exported without them.
+    for (final (env, count) in [
+      ('FUNCTIONGEMMA_LORA_LITERTLM', 144),
+      ('FUNCTIONGEMMA_LITERTLM', 0),
+    ]) {
+      final path = _env(env);
+      test('$env: $count LoRA inputs', () async {
+        expect(await readLiteRtLmMainLoraInputCount(path!), count);
+      }, skip: path == null ? '$env is not set' : null);
+    }
   });
 
   group('readLiteRtLmLinearAttentionState', () {

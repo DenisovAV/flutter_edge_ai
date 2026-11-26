@@ -179,6 +179,34 @@ Future<NpuStamp?> _stampOf(_FileReader file, int begin, int end) async {
   return null;
 }
 
+/// The signature keys of the TFLite model in `[begin, end)` of the open
+/// [file] of [length] bytes, in the model's order (`prefill_1024`, `decode`,
+/// ...). Throws [FormatException] or [RangeError] for a model it cannot walk.
+Future<List<String>> readLiteRtLmSignatureKeys(
+  RandomAccessFile file,
+  int length,
+  int begin,
+  int end,
+) async {
+  if (end <= begin || end > length) {
+    throw RangeError('TFLiteModel section $begin..$end');
+  }
+  final model = _AsyncTable(_FileReader(file, length), begin, end);
+  final root = await model.ref(0);
+  final signatures = await model.table(root, 7); // Model.signature_defs
+  if (signatures == null) return const [];
+  final count = await model.length(signatures);
+  if (count > _maxMetadataEntries) {
+    throw RangeError.range(count, 0, _maxMetadataEntries, 'signatures');
+  }
+  return [
+    for (var i = 0; i < count; i++)
+      if (await model.string(await model.element(signatures, i), 2)
+          case final key?) // SignatureDef.signature_key
+        key,
+  ];
+}
+
 /// The prefill lengths of the TFLite model in `[begin, end)` of the open
 /// [file] of [length] bytes, as LiteRT-LM's CPU/GPU executor derives them
 /// (`GetPrefillRunnerSetFromSignatures`, v0.19.0): for each signature whose
@@ -292,6 +320,63 @@ Future<bool> readLiteRtLmLinearAttentionState(
     }
   }
   return false;
+}
+
+/// The input names LiteRT-LM binds LoRA weights to (`kLoRAInputNamePattern`,
+/// runtime/util/lora_util.cc, v0.20.0):
+/// `{query,key,value,post}_w_prime_{left,right}[_]N`,
+/// `lora_atten_{q,k,v,o}_{a,b}_prime_weight_N` and
+/// `transformer.layer_N.attn.{q,k,v,attn_vec_einsum}.w_prime_{left,right}`,
+/// N a number.
+final liteRtLmLoraInputName = RegExp(
+  r'^(?:(?:query|key|value|post)_w_prime_(?:left|right)_?\d+|'
+  r'lora_atten_(?:q|k|v|o)_(?:a|b)_prime_weight_\d+)$|'
+  r'^transformer\.layer_\d+\.attn\.'
+  r'(?:q|k|v|attn_vec_einsum)\.w_prime_(?:left|right)$',
+);
+
+/// How many inputs of the `decode` signature of the TFLite model in
+/// `[begin, end)` of the open [file] of [length] bytes are LoRA weights
+/// ([liteRtLmLoraInputName]): zero for a model exported without LoRA input
+/// signatures, on which LiteRT-LM accepts an adapter and it has no effect.
+/// Zero too when the model has no `decode` signature. Throws
+/// [FormatException] or [RangeError] for a model it cannot walk.
+Future<int> readLiteRtLmLoraInputCount(
+  RandomAccessFile file,
+  int length,
+  int begin,
+  int end,
+) async {
+  if (end <= begin || end > length) {
+    throw RangeError('TFLiteModel section $begin..$end');
+  }
+  final model = _AsyncTable(_FileReader(file, length), begin, end);
+  final root = await model.ref(0);
+  final signatures = await model.table(root, 7); // Model.signature_defs
+  if (signatures == null) return 0;
+  final count = await model.length(signatures);
+  if (count > _maxMetadataEntries) {
+    throw RangeError.range(count, 0, _maxMetadataEntries, 'signatures');
+  }
+  for (var i = 0; i < count; i++) {
+    final signature = await model.element(signatures, i);
+    // SignatureDef.signature_key
+    if (await model.string(signature, 2) != 'decode') continue;
+    final inputs = await model.table(signature, 0); // SignatureDef.inputs
+    if (inputs == null) return 0;
+    final inputCount = await model.length(inputs);
+    if (inputCount > _maxMetadataEntries) {
+      throw RangeError.range(inputCount, 0, _maxMetadataEntries, 'inputs');
+    }
+    var lora = 0;
+    for (var j = 0; j < inputCount; j++) {
+      final input = await model.element(inputs, j);
+      final name = await model.string(input, 0); // TensorMap.name
+      if (name != null && liteRtLmLoraInputName.hasMatch(name)) lora++;
+    }
+    return lora;
+  }
+  return 0;
 }
 
 /// [length], when it is the size of a stamp this reader knows. Only LiteRT's

@@ -7,7 +7,7 @@ description: "LiteRT-LM in pure Dart for Flutter apps and plain Dart programs (C
 # release carries are in the README. Breaking Dart API changes ride an
 # upstream version change, except EmbeddingEngineConfig.cacheDir (String? in
 # 0.19.1+2).
-version: 0.19.1+4
+version: 0.20.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/litertlm_dart
 topics: [litert, llm, ffi, on-device, gemma]

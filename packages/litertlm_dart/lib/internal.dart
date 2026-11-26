@@ -134,9 +134,14 @@ export 'src/web/web_embedder.dart'
         LiteRtLmWebRuntimeState,
         LiteRtLmWebText,
         liteRtLmWebAudioBackend,
-        liteRtLmWebShimLine,
         requireLiteRtLmWebAudioEncoder,
         requireLiteRtLmWebAudioEncoderFor;
+export 'src/web/web_backend_ids.dart' show LiteRtLmWebBackendEnumError;
+export 'src/web/web_module_shim.dart'
+    show
+        LiteRtLmWebModuleError,
+        liteRtLmWebModuleShim,
+        liteRtLmWebModuleShimLine;
 export 'src/web/web_runtime_version.dart'
     show
         liteRtLmWebModuleUrl,

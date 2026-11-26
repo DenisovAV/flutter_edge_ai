@@ -468,10 +468,10 @@ window.LlmInference = LlmInference;
 ```
 
 **`flutter_edge_ai_litertlm`** (`.litertlm` web models — early preview, on
-`@litert-lm/core` 0.19.0). Only builds made for the web load: Gemma 4 E2B's GPU
+`@litert-lm/core` 0.20.0). Only builds made for the web load: Gemma 4 E2B's GPU
 export (`LiteRtLmModels.gemma4E2bIt.webGpu`, text, images and audio; 2.34 GB,
 so install it with `WebStorageMode.streaming`) and Gemma 3n's `-web.litertlm`
-exports (documented on 0.18.0, not measured on 0.19.0); a native `.litertlm`
+exports (documented on 0.18.0, not measured since); a native `.litertlm`
 installs on web and then fails at the first generation. The
 `@litert-lm/core` ESM doesn't assign window globals and module scripts are
 deferred, so Dart must await `window.litertLmReady` before any static interop:
@@ -479,18 +479,21 @@ deferred, so Dart must await `window.litertLmReady` before any static interop:
 ```
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
-  window.Engine = m.Engine;
-  window.EmbeddingEngine = m.EmbeddingEngine;
-  return m.Engine;
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
+  window.litertLm = m;
+  return m;
 })();
 </script>
 ```
 
-`window.Engine` runs `.litertlm` LLMs. `window.EmbeddingEngine` (litertlm
-1.13.1+) runs EmbeddingGemma 2 `.litertlm` embedders on WebGPU — text and
-images, and from 1.13.2 audio and combined inputs; without that line such an embedder fails to load with an
-`EmbeddingLoadException` that names it. Both need a browser with WebGPU: the
+`window.litertLm` is the whole module: its `Engine` runs `.litertlm` LLMs, its
+`EmbeddingEngine` runs EmbeddingGemma 2 `.litertlm` embedders on WebGPU (text,
+images, audio and combined inputs), and its `Backend` enum gives the backend
+ids sent. Each is read when it is used, so a later release that uses more of
+the module needs no new line. A page without `window.litertLm` fails the
+model's or the embedder's load with an error that quotes the line; a page
+that still sets the old `window.Engine` global is told what to replace (see
+[Migration](/docs/migration)). Both need a browser with WebGPU: the
 CPU (WebAssembly) path of `@litert-lm/core` cannot read the EmbeddingGemma
 2 bundles' external weights, so without WebGPU the embedder's load fails with an
 `EmbeddingLoadException` that says so — there is no CPU fallback.

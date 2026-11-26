@@ -8,8 +8,7 @@
 //   dart build cli
 //   build/cli/<os>_<arch>/bundle/bin/litertlm_chat <model.litertlm> [prompt]
 //
-// litertlm_dart's build hook bundles libLiteRtLm; on macOS this package's
-// pubspec.yaml sets the `macos_companions: code_assets` define it needs.
+// litertlm_dart's build hook bundles libLiteRtLm; no hooks define is needed.
 import 'dart:io';
 
 import 'package:litertlm_dart/litertlm_dart.dart';

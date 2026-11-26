@@ -79,6 +79,29 @@ INTENTIONAL_DROPS=(
   "ios_arm64:libLiteRtMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtMetalAccelerator.dylib"
   "macos_arm64:libLiteRtMetalAccelerator.dylib"
+  # native-v0.20.0 (decision D1): the Metal accelerator companion is gone.
+  # LiteRT-LM v0.20.0 removed the prebuilt it was renamed from (c57b9ae0), and
+  # libLiteRtLm has linked a static Metal accelerator since v0.19.0, which
+  # LiteRT's gpu_registry registers before it looks for any library.
+  "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
+  "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
+  "macos_arm64:libLiteRtLmMetalAccelerator.dylib"
+  # native-v0.20.0: upstream deleted libwebgpu_dawn.dll (cea62fa2). Dawn
+  # ships once, as webgpu_dawn.dll, which the accelerator imports (a
+  # delay-load through runtime/components/BUILD's stub import library).
+  "windows_x86_64:libwebgpu_dawn.dll"
+  # native-v0.20.0: Google's prebuilt Gemma constraint provider (FST) is
+  # gone. The tool-call constraints are built with LLGuidance from source
+  # (patch_c_api.sh section 29) and libLiteRtLm links no provider; FORBIDDEN
+  # below keeps a stale copy out of every archive.
+  "android_arm64:libGemmaModelConstraintProvider.so"
+  "ios_arm64:libGemmaModelConstraintProvider.dylib"
+  "ios_sim_arm64:libGemmaModelConstraintProvider.dylib"
+  "macos_arm64:libGemmaModelConstraintProvider.dylib"
+  "linux_x86_64:libGemmaModelConstraintProvider.so"
+  "linux_arm64:libGemmaModelConstraintProvider.so"
+  "windows_x86_64:libGemmaModelConstraintProvider.dll"
+  "windows_x86_64:GemmaModelConstraintProvider.dll"
 )
 
 _is_intentional() {
@@ -274,10 +297,13 @@ FORBIDDEN=(
   # never bundled.
   "android_arm64:libmtk_litert_dispatch_legacy.so"
   "android_arm64:libLiteRtCompilerPlugin_MediaTek*"
-  # Linked into libLiteRtLm.so since native-v0.19.0-a (section 19): a separate
-  # copy would be a second OpenCL accelerator in the process.
+  # Linked into libLiteRtLm.so: the OpenCL accelerator and sampler since
+  # native-v0.19.0-a (section 19), upstream's OpenCL + OpenGL accelerator from
+  # native-v0.20.0 (decision D2, LiteRT-LM 6cf79561). A separate copy of any
+  # would be a second GPU accelerator in the process.
   "android_arm64:libLiteRtOpenClAccelerator.so"
   "android_arm64:libLiteRtTopKOpenClSampler.so"
+  "android_arm64:libLiteRtClGlAccelerator.so"
   # Need libwebgpu_dawn.so, which no Android bundle carries (native-v0.18.0).
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
@@ -291,6 +317,26 @@ FORBIDDEN=(
   "ios_arm64:libLiteRtMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtMetalAccelerator.dylib"
   "macos_arm64:libLiteRtMetalAccelerator.dylib"
+  # Decision D1 (native-v0.20.0): no Metal accelerator companion. A copy
+  # left in prebuilt/ would be a second ML Drift Metal in the process beside
+  # the static one in libLiteRtLm. The SwiftPM zips are checked below.
+  "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
+  "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
+  "macos_arm64:libLiteRtLmMetalAccelerator.dylib"
+  # Retired by upstream (cea62fa2): a stale Dawn under the old name proves
+  # nothing about the webgpu_dawn.dll the accelerator imports.
+  "windows_x86_64:libwebgpu_dawn.dll"
+  # native-v0.20.0: no Gemma constraint provider in any archive. The
+  # tool-call constraints are LLGuidance's, compiled into libLiteRtLm
+  # (patch_c_api.sh section 29); a copy left in prebuilt/ is dead weight that
+  # an older hook would still bundle. The SwiftPM zips are checked below.
+  "android_arm64:*GemmaModelConstraintProvider*"
+  "ios_arm64:*GemmaModelConstraintProvider*"
+  "ios_sim_arm64:*GemmaModelConstraintProvider*"
+  "macos_arm64:*GemmaModelConstraintProvider*"
+  "linux_x86_64:*GemmaModelConstraintProvider*"
+  "linux_arm64:*GemmaModelConstraintProvider*"
+  "windows_x86_64:*GemmaModelConstraintProvider*"
 )
 REQUIRED=(
   # Google Tensor G5/G6 AOT bundles use LiteRT's generic NPU executor plus
@@ -313,13 +359,28 @@ REQUIRED=(
   # without it; it ships because Intel's own kit does, and intelNpuLibs
   # bundles it.
   "windows_x86_64:openvino_intel_npu_vm_runtime.dll"
-  "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
-  "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
-  "macos_arm64:libLiteRtLmMetalAccelerator.dylib"
-  # From LiteRT-LM v0.19.0 libLiteRtLm links a static GPU accelerator (section
-  # 19: Metal on Apple). The Apple framework above stays until an iPhone and a
-  # macOS run without it: shipping one by mistake costs a few MB, dropping one
-  # by mistake costs a native cut.
+  # From LiteRT-LM v0.20.0 upstream's prebuilt/ has no LiteRT runtime and no
+  # GPU accelerator (c57b9ae0): the Linux and Windows workflows build both
+  # from LiteRT at the tag's pin. Dynamic link mode makes them hard runtime
+  # dependencies of libLiteRtLm. Linux: checked below to be this build's,
+  # not Google's. Dawn stays Google's prebuilt.
+  "linux_x86_64:libLiteRt.so"
+  "linux_x86_64:libLiteRtWebGpuAccelerator.so"
+  "linux_x86_64:libwebgpu_dawn.so"
+  "linux_arm64:libLiteRt.so"
+  "linux_arm64:libLiteRtWebGpuAccelerator.so"
+  "linux_arm64:libwebgpu_dawn.so"
+  # Windows ships each LiteRT companion under both names: lib* for the PE
+  # imports (LiteRtLm.dll imports libLiteRt.dll), prefixless for Native
+  # Assets (LiteRt.dll is what LiteRtBindings and the preload open). Dawn
+  # once, as webgpu_dawn.dll.
+  "windows_x86_64:libLiteRt.dll"
+  "windows_x86_64:LiteRt.dll"
+  "windows_x86_64:libLiteRtWebGpuAccelerator.dll"
+  "windows_x86_64:LiteRtWebGpuAccelerator.dll"
+  "windows_x86_64:webgpu_dawn.dll"
+  "windows_x86_64:dxil.dll"
+  "windows_x86_64:dxcompiler.dll"
 )
 echo
 echo "==> Checking files that must, and must not, ship"
@@ -347,6 +408,18 @@ for new in "$DIST_DIR"/litertlm-*.tar.gz; do
       content_fail=1
     fi
   done
+done
+# No macOS companion is left for a SwiftPM zip (native-v0.20.0): not the
+# Metal accelerator (decision D1), not the constraint provider (section 29).
+# Up to native-v0.19.1 the release carried both as xcframework zips beside a
+# checksums_spm_macos.txt; none of them may come back.
+for f in "$DIST_DIR"/*; do
+  [[ -e "$f" ]] || continue
+  case "$(basename "$f")" in
+    *LiteRtLmMetalAccelerator*|*GemmaModelConstraintProvider*|checksums_spm_macos.txt)
+      echo "  [FAIL] release asset must not ship (no macOS companion from native-v0.20.0): $(basename "$f")"
+      content_fail=1 ;;
+  esac
 done
 if [[ $content_fail -eq 1 ]]; then
   fail=1
@@ -447,6 +520,111 @@ for d in "$align_tmp"/litertlm-android_*; do
   fi
 done
 
+# Android's libLiteRtLm.so must link the OpenCL-only GPU accelerator
+# (patch_c_api.sh section 19, decision D2): its name "GPU OpenCL", never the
+# OpenCL + OpenGL one ("LiteRT GPU", which switches to OpenGL silently when
+# OpenCL does not load). Read from the bytes, as build_android.sh does.
+for d in "$align_tmp"/litertlm-android_*; do
+  [[ -d "$d" ]] || continue
+  lib="$d/libLiteRtLm.so"
+  [[ -f "$lib" ]] || continue
+  if ! python3 - "$lib" <<'PYANDROIDGPU'
+import sys
+data = open(sys.argv[1], "rb").read()
+cl = b"\0GPU OpenCL\0" in data
+clgl = b"\0LiteRT GPU\0" in data or b"Using OpenGL instead" in data
+if not cl or clgl:
+    print(f"  FAIL: {sys.argv[1]}: GPU accelerator is not the OpenCL-only one "
+          f"(GPU OpenCL: {cl}, OpenCL+OpenGL markers: {clgl})")
+    sys.exit(1)
+print(f"  ok: {sys.argv[1]}: OpenCL-only GPU accelerator")
+PYANDROIDGPU
+  then
+    fail=1
+  fi
+done
+
+echo
+echo "==> Checking the Linux LiteRT runtime and accelerator are this build's"
+# From native-v0.20.0 both are built by the Linux jobs from LiteRT's source,
+# with clang-17 against Ubuntu 22.04's libstdc++, so each NEEDs
+# libstdc++.so.6. Google's prebuilts of them (up to native-v0.19.1-c) linked
+# their own libc++ and NEEDed only libc/libm/libdl/libpthread/librt: one of
+# those in the archive means a stale prebuilt/ shipped instead of the build.
+# The full link-closure and symbol check runs in the workflow
+# (check_linux_bundle.py), where the build's own system libraries are.
+for d in "$align_tmp"/litertlm-linux_*; do
+  [[ -d "$d" ]] || continue
+  if ! python3 - "$d" "$(basename "$d")" <<'PYLINUX'
+import os, struct, sys
+
+def needed(path):
+    d = open(path, "rb").read()
+    if d[:4] != b"\x7fELF" or d[4] != 2 or d[5] != 1:
+        raise ValueError("not a 64-bit little-endian ELF")
+    phoff, = struct.unpack_from("<Q", d, 0x20)
+    phentsize, phnum = struct.unpack_from("<HH", d, 0x36)
+    loads, dyn = [], None
+    for i in range(phnum):
+        p = phoff + i * phentsize
+        typ, = struct.unpack_from("<I", d, p)
+        off, vaddr, _, filesz = struct.unpack_from("<QQQQ", d, p + 8)
+        if typ == 1:
+            loads.append((vaddr, off, filesz))
+        elif typ == 2:
+            dyn = (off, filesz)
+    if dyn is None:
+        raise ValueError("no PT_DYNAMIC")
+    entries, strtab = [], None
+    for o in range(dyn[0], dyn[0] + dyn[1], 16):
+        tag, val = struct.unpack_from("<qQ", d, o)
+        if tag == 0:
+            break
+        if tag == 5:
+            strtab = val
+        entries.append((tag, val))
+    if strtab is None:
+        raise ValueError("no DT_STRTAB")
+    for vaddr, off, filesz in loads:
+        if vaddr <= strtab < vaddr + filesz:
+            base = off + strtab - vaddr
+            break
+    else:
+        raise ValueError("DT_STRTAB in no PT_LOAD")
+    def s(o):
+        return d[base + o:d.index(b"\0", base + o)].decode()
+    return [s(v) for t, v in entries if t == 1]
+
+root, label = sys.argv[1], sys.argv[2]
+bad = False
+for name in ("libLiteRt.so", "libLiteRtWebGpuAccelerator.so"):
+    path = os.path.join(root, name)
+    if not os.path.exists(path):
+        print(f"  [FAIL] {label} — {name} is missing")
+        bad = True
+        continue
+    try:
+        got = needed(path)
+    except (ValueError, struct.error, IndexError) as e:
+        print(f"  [FAIL] {label} — cannot read the NEEDED entries of {name}: {e}")
+        bad = True
+        continue
+    if "libstdc++.so.6" not in got:
+        print(f"  [FAIL] {label} — {name} NEEDs {got}: no libstdc++.so.6, so it is "
+              f"not this build (Google's prebuilt?)")
+        bad = True
+    else:
+        print(f"  [ok]   {label} — {name} is this build (NEEDs {', '.join(got)})")
+sys.exit(1 if bad else 0)
+PYLINUX
+  then
+    echo
+    echo "❌ LINUX RUNTIME CHECK FAILED — the archive does not carry the LiteRT"
+    echo "   runtime and accelerator the workflow built from source."
+    exit 1
+  fi
+done
+
 echo
 echo "==> Checking every bundle exports the C functions the Dart code binds"
 # check_embedding_exports.py holds each bundle to the functions the code looks
@@ -469,8 +647,8 @@ if [[ $emb_fail -eq 1 ]]; then
   echo "❌ EXPORTS CHECK FAILED — a function the Dart code binds is missing on that"
   echo "   platform (the [FAIL] lines above name it and the library). Export it"
   echo "   (libLiteRtLm on Windows: LITERT_LM_C_API_EXPORT or a .def entry; the"
-  echo "   LiteRT C functions come from libLiteRt.so / LiteRt.dll as shipped by"
-  echo "   Google on Linux and Windows) and rebuild."
+  echo "   LiteRT C functions come from libLiteRt.so / LiteRt.dll, which the Linux"
+  echo "   and Windows workflows build from LiteRT's source from v0.20.0) and rebuild."
   exit 1
 fi
 
@@ -668,13 +846,18 @@ for path in dlls:
 clean = len(dlls) - len(crt)
 print(f"    {len(dlls)} DLL(s): {clean} import no C++ runtime, {len(crt)} do")
 
-# 1. The library we build must carry its own runtime. Windows filenames are
+# 1. The libraries we build must carry their own runtime: LiteRtLm.dll, and
+#    from v0.20.0 libLiteRt.dll (and its LiteRt.dll copy) and the WebGPU
+#    accelerator, built from LiteRT's source /MT
+#    (patches/litert_libLiteRt_static_crt.patch, D9). Windows filenames are
 #    case-insensitive, so match that way.
-litertlm = [n for n in crt if os.path.basename(n).lower() == "litertlm.dll"]
-if litertlm:
-    print(f"  [FAIL] {litertlm[0]} imports {', '.join(crt[litertlm[0]])} —"
-          " static_link_msvcrt did not apply")
-    fail = True
+STATIC = {"litertlm.dll", "liblitert.dll", "litert.dll",
+          "liblitertwebgpuaccelerator.dll"}
+for n in sorted(crt):
+    if os.path.basename(n).lower() in STATIC:
+        print(f"  [FAIL] {n} imports {', '.join(crt[n])} —"
+              " static_link_msvcrt did not apply")
+        fail = True
 if not any(os.path.basename(p).lower() == "litertlm.dll" for p in dlls):
     print("  [FAIL] no LiteRtLm.dll in the Windows tarball — the assertion about"
           " it cannot have been checked")

@@ -48,9 +48,10 @@ final class EmbeddingEngine {
     if (config.backend is CpuBackend) {
       throw UnsupportedError(
         'EmbeddingGemma 2 runs on WebGPU only on the web: the CPU '
-        '(WebAssembly) path of $liteRtLmWebRuntime cannot read the bundles\' '
-        'external weights ("Failed to get external weight", measured '
-        '2026-11-23). Pass backend: Backend.gpu().',
+        '(WebAssembly) path of $liteRtLmWebRuntime loads the bundles but is '
+        'too slow to use (measured on 0.20.0 in Chrome 158, 2026-11-25: '
+        'load 110-225 s, then 9-12 s per short text on the page\'s main '
+        'thread, about 80 times WebGPU). Pass backend: Backend.gpu().',
       );
     }
     final backend = _webBackend(config.backend, 'backend');

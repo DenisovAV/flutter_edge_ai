@@ -116,6 +116,23 @@ void checkLiteRtLmCApiVersion(
   }
 }
 
+/// The C API version [library] reports (`litert_lm_get_api_version`); call
+/// only on a library [requireOwnLiteRtLmBuild] passed.
+({int code, int major, int minor, int patch}) readLiteRtLmCApiVersion(
+  DynamicLibrary library,
+) => _readApiVersion(library);
+
+/// Whether a native engine of a library on C API [version] keeps the sampler
+/// of its first generation for every later conversation on the CPU and the
+/// GPU (google-ai-edge/LiteRT-LM#2080): C API 1.0 (LiteRT-LM 0.19) does, 1.1
+/// (LiteRT-LM 0.20.0) builds each conversation's sampler from its own config,
+/// measured on macOS CPU and Metal, Windows CPU and D3D12, Adreno 830 and
+/// Mali-G715 (GPU and CPU) and the iOS simulator CPU. A version that cannot be
+/// read is taken to keep it.
+bool liteRtLmSamplerFixedAtFirstGeneration(
+  ({int code, int major, int minor, int patch}) version,
+) => version.code != 0 || (version.major == 1 && version.minor < 1);
+
 /// Both checks every open of libLiteRtLm makes, in order:
 /// [checkOwnLiteRtLmBuild], then [checkLiteRtLmCApiVersion].
 void checkLiteRtLmLibrary(

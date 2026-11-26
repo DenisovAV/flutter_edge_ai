@@ -76,11 +76,21 @@ Uri _url(HttpServer s, String path) =>
     Uri.parse('http://${s.address.address}:${s.port}$path');
 
 void main() {
-  test('the Linux build is the release the Android runtime pins', () {
-    // The dispatch is built against one QAIRT release; both platforms' QNN
-    // runtimes must be that release, or one of them fails on hardware.
-    expect(qairtBuild, startsWith('$qnnRuntimeVersion.'));
-  });
+  test(
+    'the Linux runtime is the release the Linux dispatch is built against',
+    () {
+      // Per target since the D3 split: Android pairs its dispatch with the
+      // Maven runtime (qnnRuntimeVersion), Linux with the QAIRT zip
+      // (qairtBuild). The Linux dispatch compiles against
+      // fetch_qairt_sdk_slim.py's slice, so that slice and the hook's
+      // libraries must come from one zip.
+      final slim = File(
+        'native/litert_lm/fetch_qairt_sdk_slim.py',
+      ).readAsStringSync();
+      expect(slim, contains('BUILD = "$qairtBuild"'));
+      expect(slim, contains('LENGTH = $qairtZipLength'));
+    },
+  );
 
   test('every Linux library has a pin, and nothing else does', () {
     expect(qairtLinuxSha256.keys.toSet(), qairtLinuxFileNames.toSet());

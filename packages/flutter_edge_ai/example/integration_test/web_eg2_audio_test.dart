@@ -675,7 +675,9 @@ void main() {
       await _releaseActive();
       final held = await _active(audio: false);
       final created = <String>[];
-      final engine = globalContext['EmbeddingEngine']! as JSObject;
+      final engine =
+          (globalContext['litertLm']! as JSObject)['EmbeddingEngine']!
+              as JSObject;
       final create = engine['create'];
       engine['create'] = ((JSAny settings) {
         created.add('create');

@@ -140,9 +140,9 @@ models via OPFS streaming.
 <Info>
 
 On Web, `.litertlm` images and audio need Gemma 4 E2B's GPU export on
-`@litert-lm/core` 0.19.0, loaded with `supportImage`/`supportAudio`; a
+`@litert-lm/core` 0.20.0, loaded with `supportImage`/`supportAudio`; a
 compatible MediaPipe `.task` build also takes images. A page on 0.18.0 fails
-the GPU export at load ("Unsupported backend: 2"): import 0.19.0.
+the GPU export at load ("Unsupported backend: 2"): import 0.20.0.
 
 </Info>
 
@@ -452,7 +452,7 @@ hooks:
 ## Embeddings
 
 - **`EmbeddingLoadException` naming `web/litert_embeddings.js`** on web, at the first `getActiveEmbedder()` after upgrading to `flutter_edge_ai_litertlm` 1.13.0. The LiteRT.js bundle changed its API, and your app's `web/` still holds the copy of an earlier version. Copy all four files again from the package's `web/` (`litert_embeddings.js`, `sentencepiece.js`, `litert.js`, `tensorflow.js`). See [Installation → Web](/docs/installation#web).
-- **`EmbeddingLoadException: window.EmbeddingEngine is not set`** on web, when an EmbeddingGemma 2 (`.litertlm`) embedder loads. Since `flutter_edge_ai_litertlm` 1.13.1 it runs on `@litert-lm/core`'s `EmbeddingEngine`, which your `web/index.html` does not expose yet. Add `window.EmbeddingEngine = m.EmbeddingEngine;` next to `window.Engine = m.Engine;` in the `@litert-lm/core` module script. See [Installation → Web](/docs/installation#web).
+- **`window.litertLm is not set`** on web (a `StateError`, or an `EmbeddingLoadException` for an EmbeddingGemma 2 embedder), when a `.litertlm` model or embedder loads. The runtime reads `@litert-lm/core` from `window.litertLm`, the whole module, which your `web/index.html` does not hand over. In its `@litert-lm/core` module script, replace `window.Engine = m.Engine;`, `window.EmbeddingEngine = m.EmbeddingEngine;` and `return m.Engine;` with `window.litertLm = m;` and `return m;`. See [Installation → Web](/docs/installation#web) and [Migration](/docs/migration).
 - **`EmbeddingLoadException: EmbeddingGemma 2 on the web needs WebGPU`** on web, when an EmbeddingGemma 2 (`.litertlm`) embedder loads in a browser without WebGPU — no `navigator.gpu`, or no GPU adapter (WebGPU switched off, a blocklisted driver, a headless browser without a GPU). On the web EmbeddingGemma 2 runs on WebGPU only: the CPU (WebAssembly) path of `@litert-lm/core` 0.19.0 fails on these bundles with "Failed to get external weight" (as 0.18.0 did), so there is nothing to fall back to. Use a browser with WebGPU enabled; check `navigator.gpu` and `await navigator.gpu.requestAdapter()` in its console. See [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
 - **`EmbeddingInputTooLongException`** from `embed`, `embedAll` or `RagIndex.add`/`search`. The input is longer than the model's `maxInputTokens`, task prefix, BOS and EOS included; since 2.3.0 it is refused instead of silently truncated. Split the text into smaller chunks — at most 512 tokens for EmbeddingGemma 2, whose limit is 1024. See [Embeddings & RAG](/docs/embeddings-and-rag#embedding-api).
 - **`EmbeddingLoadException` … `No embedding tokenizer is configured`** from `getActiveEmbedder()`, for a `.tflite` or ONNX embedder (an EmbeddingGemma 2 `.litertlm` carries its own and needs none). Since `flutter_gemma` 1.9.0 an embedding backend no longer carries a tokenizer: which family a model needs (Gemma SentencePiece, BERT WordPiece) is a property of the model, not of the engine that runs it, so the app registers it once. Add `flutter_edge_ai_embeddings` to `pubspec.yaml`, import it, and pass `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` to `FlutterEdgeAi.initialize()` beside `embeddingBackends:`. The error text names the package and the parameter. See [Embeddings & RAG](/docs/embeddings-and-rag).

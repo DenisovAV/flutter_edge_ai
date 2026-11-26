@@ -28,6 +28,10 @@ typedef _Create = ({
   String audioBackend,
   bool? enableSpeculativeDecoding,
   int? speculativeDecodingMode,
+  double? speculativeDecodingLenience,
+  List<String>? selectedSignatures,
+  int? loraRank,
+  int? audioLoraRank,
   int? numThreads,
   int? activationDataType,
   GpuActivationReason? gpuActivationReason,
@@ -131,6 +135,10 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? speculativeDecodingMode,
+    double? speculativeDecodingLenience,
+    List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     required int? numThreads,
     required int? activationDataType,
     required GpuActivationReason? gpuActivationReason,
@@ -153,6 +161,10 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
       audioBackend: audioBackend,
       enableSpeculativeDecoding: enableSpeculativeDecoding,
       speculativeDecodingMode: speculativeDecodingMode,
+      speculativeDecodingLenience: speculativeDecodingLenience,
+      selectedSignatures: selectedSignatures,
+      loraRank: loraRank,
+      audioLoraRank: audioLoraRank,
       numThreads: numThreads,
       activationDataType: activationDataType,
       gpuActivationReason: gpuActivationReason,
@@ -241,7 +253,8 @@ void main() {
     Backend? audioBackend,
     int? maxNumTokens,
     ActivationDataType? activation,
-    SpeculativeDecodingMode? speculative,
+    SpeculativeDecodingConfig? speculative,
+    List<String>? selectedSignatures,
   }) => Engine.create(
     EngineConfig(
       modelPath: path,
@@ -251,6 +264,7 @@ void main() {
       maxNumTokens: maxNumTokens,
       activationDataType: activation,
       speculativeDecoding: speculative,
+      selectedSignatures: selectedSignatures,
     ),
   );
 
@@ -667,30 +681,48 @@ void main() {
     expect(host.creates, isEmpty);
   });
 
-  test('speculative decoding: off and on keep the boolean, adaptive goes '
-      'through the config; the thread count reaches the CPU only', () async {
-    final path = write('g.litertlm', _bundle());
-    for (final mode in [
-      SpeculativeDecodingMode.off,
-      SpeculativeDecodingMode.on,
-      SpeculativeDecodingMode.adaptive,
-      null,
-    ]) {
-      await (await create(path, speculative: mode)).close();
-    }
-    expect(
-      host.creates.map(
-        (c) => (c.enableSpeculativeDecoding, c.speculativeDecodingMode),
-      ),
-      [(false, null), (true, null), (null, 2), (null, null)],
-    );
-    await (await create(
-      path,
-      backend: const Backend.cpu(threadCount: 3),
-    )).close();
-    await (await create(path, backend: const Backend.gpu())).close();
-    expect(host.creates.skip(4).map((c) => c.numThreads), [3, null]);
-  });
+  test(
+    'speculative decoding: off and on keep the boolean, adaptive or a '
+    'lenience go through the config; the thread count reaches the CPU only',
+    () async {
+      final path = write('g.litertlm', _bundle());
+      for (final speculative in [
+        SpeculativeDecodingConfig(mode: SpeculativeDecodingMode.off),
+        SpeculativeDecodingConfig(mode: SpeculativeDecodingMode.on),
+        SpeculativeDecodingConfig(mode: SpeculativeDecodingMode.adaptive),
+        null,
+        SpeculativeDecodingConfig(
+          mode: SpeculativeDecodingMode.on,
+          lenience: 0.25,
+        ),
+      ]) {
+        await (await create(path, speculative: speculative)).close();
+      }
+      expect(
+        host.creates.map(
+          (c) => (
+            c.enableSpeculativeDecoding,
+            c.speculativeDecodingMode,
+            c.speculativeDecodingLenience,
+          ),
+        ),
+        [
+          (false, null, null),
+          (true, null, null),
+          (null, 2, null),
+          (null, null, null),
+          (null, 1, 0.25),
+        ],
+      );
+      host.creates.clear();
+      await (await create(
+        path,
+        backend: const Backend.cpu(threadCount: 3),
+      )).close();
+      await (await create(path, backend: const Backend.gpu())).close();
+      expect(host.creates.map((c) => c.numThreads), [3, null]);
+    },
+  );
 
   test(
     'the NPU: a prepared directory is used as it is, else the vendor '
@@ -790,6 +822,23 @@ void main() {
     await withReader.close();
     await plain.close();
   });
+
+  test(
+    'the LoRA ranks reach the engine settings as given; null sends none',
+    () async {
+      final path = write('g.litertlm', _bundle());
+      final engine = await Engine.create(
+        EngineConfig(modelPath: path, loraRank: 32, audioLoraRank: 8),
+      );
+      expect(host.creates.last.loraRank, 32);
+      expect(host.creates.last.audioLoraRank, 8);
+      await engine.close();
+      final plain = await Engine.create(EngineConfig(modelPath: path));
+      expect(host.creates.last.loraRank, isNull);
+      expect(host.creates.last.audioLoraRank, isNull);
+      await plain.close();
+    },
+  );
 
   test('a CPU thread count below 1 is refused before any engine', () async {
     final path = write('g.litertlm', _bundle());

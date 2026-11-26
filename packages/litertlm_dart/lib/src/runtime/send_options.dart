@@ -8,7 +8,7 @@ import 'dart:convert' show jsonEncode;
 
 import 'package:meta/meta.dart' show immutable;
 
-import '../api/backend.dart' show SpeculativeDecodingMode;
+import '../api/backend.dart' show SpeculativeDecodingConfig;
 import '../api/config.dart' show NoRepeatNgramConfig, RepetitionPenaltyConfig;
 import '../ffi/thinking_context.dart';
 
@@ -42,6 +42,7 @@ final class SendOptions {
     this.suppressTokens,
     this.thinkingTokenBudget,
     this.unconstrained = false,
+    this.toolChoiceJson,
   });
 
   /// Template variables for this message, merged under the thinking switch.
@@ -58,6 +59,10 @@ final class SendOptions {
   /// Kotlin's and Swift's `resolveResponseFormat`.
   final bool unconstrained;
 
+  /// This send's tool choice as the C API's JSON (tool_choice_json.dart);
+  /// null leaves the model's default.
+  final String? toolChoiceJson;
+
   static const none = SendOptions();
 }
 
@@ -67,13 +72,22 @@ final class ConversationExtras {
   const ConversationExtras({
     this.extraContext = const {},
     this.speculativeDecoding,
+    this.loraPath,
+    this.audioLoraPath,
   });
 
   /// `conversation_config_set_extra_context`; empty sets nothing.
   final Map<String, Object?> extraContext;
 
   /// The session's speculative decoding; null leaves the engine's.
-  final SpeculativeDecodingMode? speculativeDecoding;
+  final SpeculativeDecodingConfig? speculativeDecoding;
+
+  /// `session_config_set_lora_path`: the text LoRA weights; null sets none.
+  final String? loraPath;
+
+  /// `session_config_set_audio_lora_path`: the audio encoder's LoRA weights;
+  /// null sets none.
+  final String? audioLoraPath;
 
   static const none = ConversationExtras();
 }

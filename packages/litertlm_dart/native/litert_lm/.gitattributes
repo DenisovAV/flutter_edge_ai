@@ -1,0 +1,6 @@
+# patch_c_api.sh applies these with `git apply`. On a Windows runner
+# (core.autocrlf=true) a CRLF checkout of a patch no longer matches a file that
+# an earlier section rewrote with LF line endings: section 30 failed that way
+# on CI (2026-11-25), section 31 in a local reproduction. LF patches apply to
+# both a CRLF checkout and an LF-rewritten file.
+*.patch text eol=lf

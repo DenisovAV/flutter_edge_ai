@@ -12,7 +12,8 @@
 ///   `maxNumImages`) and an image part (`data`); a second image in the same
 ///   conversation; an image as base64 `blob` in a message and in a preface;
 ///   the history after an image, and a conversation rebuilt from it with the
-///   image as base64;
+///   image as base64; four different images in one conversation of an engine
+///   reserving one (`maxNumImages: 1`);
 /// - audio engines (`audioBackend` CPU and GPU) and an audio part, and the
 ///   history after it; vision and audio in one engine;
 /// - `backendConfig.number_of_threads` on the CPU (WebAssembly) backend;
@@ -23,7 +24,17 @@
 /// - `cancel()` with nothing in flight, then a send;
 /// - a stop at the very end: every chunk read, `cancel()`, then the stream's
 ///   end, and whether the completed exchange is in `getHistory()`;
-/// - `backend: GPU` and `GPU_ARTISAN` named explicitly.
+/// - `backend: GPU` and `GPU_ARTISAN` named explicitly;
+/// - a malformed message (unknown role, unknown part, a tool response with
+///   no tools): does its stream reject or close empty, and does the next send
+///   answer;
+/// - the text model's `activationDataType` (unset, FP16, FP32) read back,
+///   and a prompt of about 3,200 tokens at each;
+/// - speculative decoding (`speculativeDecodingConfig` ON and ADAPTIVE) on
+///   this export, with the benchmark's MTP counters.
+/// Every backend id is read from the module the page hands over
+/// (`window.litertLm.Backend`, recorded as `backendEnum`), never written here:
+/// 0.20.0 renumbered it.
 /// The model (2.34 GB) is fetched for every `Engine.create` and handed to it
 /// as the response's ReadableStream: a Blob of it would need a `blob:` fetch
 /// past Chrome's limit. A local copy (LLM_MODEL_URL) keeps that cheap.
@@ -59,10 +70,22 @@ const _modelUrl = String.fromEnvironment(
 // The GPU engines leave `backend` out (the runtime's default, GPU); the
 // explicit forms are probed on their own.
 const _probe = r'''
-window.__litertlmProbe = async (url, image, audio) => {
+window.__litertlmProbe = async (url, image, audio, shapes) => {
   await window.litertLmReady;
-  const Engine = window.Engine;
+  const m = window.litertLm;
+  if (!m) {
+    throw new Error('window.litertLm is not set: add window.litertLm = m; to '
+      + 'the module script of web/index.html');
+  }
+  const Engine = m.Engine;
+  // The module's own Backend ids: 0.20.0 renumbered them (0.19.0: GPU_ARTISAN
+  // 2, CPU 3, GPU 4; 0.20.0: 1, 2, 3).
+  const B = m.Backend;
+  if (!B || ![B.CPU, B.GPU, B.GPU_ARTISAN].every(Number.isInteger)) {
+    throw new Error('window.litertLm.Backend is not the module\'s Backend enum');
+  }
   const r = {};
+  r.backendEnum = {...B};
   const attempt = async (name, fn) => {
     try { r[name] = {ok: true, value: await fn()}; }
     catch (e) { r[name] = {ok: false, error: String((e && e.message) || e)}; }
@@ -209,6 +232,33 @@ window.__litertlmProbe = async (url, image, audio) => {
       {role: 'assistant', content: [{type: 'text', text: ''}]}], 'Say yes.'));
     // N3: an empty reply that succeeds, and a reply that fails mid-decode:
     // what each leaves in the history.
+    // 0.20.0's sendMessageStreaming drops what sendMessageAsync returns: a
+    // message the runtime refuses before it generates (its template, the
+    // history) may close the stream with no chunk instead of rejecting it.
+    // Each malformed message, then a plain send on the same conversation.
+    for (const [name, message] of [
+      ['unknown_role', {role: 'narrator', content: [{type: 'text', text: 'Say yes.'}]}],
+      ['unknown_part', {role: 'user', content: [{type: 'no_such_part', text: 'Say yes.'}]}],
+      ['tool_response_without_tools', {role: 'tool', content: [{type: 'tool_response', name: 'nothing', response: {}}]}],
+    ]) {
+      await attempt('malformed_' + name, async () => {
+        const k = await e.createConversation(greedy);
+        try {
+          let chunks = 0, end;
+          try {
+            for await (const _ of k.sendMessageStreaming(message)) chunks++;
+            end = 'done';
+          } catch (err) { end = 'rejected: ' + ((err && err.message) || err); }
+          let history;
+          try { history = JSON.stringify(await k.getHistory()).slice(0, 400); }
+          catch (err) { history = 'getHistory rejected: ' + ((err && err.message) || err); }
+          let next;
+          try { next = 'answered: ' + await text(k, 'Say yes.'); }
+          catch (err) { next = 'rejected: ' + ((err && err.message) || err); }
+          return {chunks, end, history, next};
+        } finally { await k.delete(); }
+      });
+    }
     await attempt('history_after_empty_reply', async () => {
       const k = await e.createConversation({...greedy, sessionConfig: {...greedy.sessionConfig, maxOutputTokens: 0}});
       let reply;
@@ -329,14 +379,14 @@ window.__litertlmProbe = async (url, image, audio) => {
 
   // P4: the GPU named explicitly.
   await attempt('explicit_gpu_backend', async () => {
-    const x = await Engine.create({model: await stream(), backend: 4});
+    const x = await Engine.create({model: await stream(), backend: B.GPU});
     const s = {backend: x.settings.backend};
     await x.delete();
     return s;
   });
 
   await attempt('explicit_gpu_artisan_backend', async () => {
-    const x = await Engine.create({model: await stream(), backend: 2});
+    const x = await Engine.create({model: await stream(), backend: B.GPU_ARTISAN});
     const s = {backend: x.settings.backend};
     await x.delete();
     return s;
@@ -361,11 +411,80 @@ window.__litertlmProbe = async (url, image, audio) => {
   });
   if (t) await t.delete();
 
+  // 0.20.0: the text model's activation type (unset, FP16, FP32) read back,
+  // and a prompt past 2,048 tokens at each: natively Gemma 4 at FP16 loses
+  // its rotary positions there (LiteRT-LM #4001). Three facts from a list of
+  // 140 (about 3,200 tokens; 180 did not fit in 4,096), asked after it.
+  const AD = m.ActivationDataType;
+  r.activationDataTypeEnum = AD ? {...AD} : null;
+  const cities = ['Paris', 'Lima', 'Oslo', 'Cairo', 'Quito', 'Hanoi', 'Dakar', 'Perth', 'Tunis', 'Sofia'];
+  const lines = [];
+  for (let i = 0; i < 140; i++) {
+    lines.push('Entry ' + i + ': the locker code of ' + cities[i % 10] + ' office ' + i + ' is ' + (1000 + i * 37) + '.');
+  }
+  const asks = [5, 70, 130];
+  const longPrompt = lines.join('\n') + '\n\nAnswer with the three numbers only, separated by commas: what are the locker codes of entries '
+    + asks.join(', ') + '?';
+  const expected = asks.map((i) => String(1000 + i * 37));
+  for (const [name, adt] of [
+    ['activation_unset', undefined],
+    ['activation_fp16', AD && AD.FLOAT16],
+    ['activation_fp32', AD && AD.FLOAT32],
+  ]) {
+    await attempt(name, async () => {
+      const settings = {model: await stream(), mainExecutorSettings: {maxNumTokens: 4096}};
+      if (adt !== undefined) settings.activationDataType = adt;
+      const x = await Engine.create(settings);
+      try {
+        const out = {asked: adt === undefined ? null : adt,
+                     readBack: x.settings.activationDataType === undefined ? 'undefined' : x.settings.activationDataType,
+                     backend: x.settings.backend};
+        const c = await x.createConversation(greedy);
+        out.short = await text(c, 'Say hello in five words.');
+        await c.delete();
+        const l = await x.createConversation(greedy);
+        const t0 = performance.now();
+        // The reply's text itself: numbers stream digit by digit.
+        try {
+          let t = '';
+          for await (const chunk of l.sendMessageStreaming(longPrompt)) {
+            for (const part of chunk.content || []) if (part.type === 'text') t += part.text;
+          }
+          out.long = t.slice(0, 200);
+        } catch (err) { out.long = 'rejected: ' + ((err && err.message) || err); }
+        out.longMs = Math.round(performance.now() - t0);
+        out.longTokens = await l.getTokenCount();
+        out.longCorrect = expected.filter((v) => out.long.includes(v)).length;
+        out.expected = expected;
+        await l.delete();
+        return out;
+      } finally { await x.delete(); }
+    });
+  }
+
+  // 0.20.0: speculative decoding (MTP). Does this export carry a drafter:
+  // ON at the engine loads it or refuses the create.
+  const SD = m.SpeculativeDecodingMode;
+  r.speculativeDecodingModeEnum = SD ? {...SD} : null;
+  for (const [name, mode] of [['speculative_decoding_on', SD && SD.ON], ['speculative_decoding_adaptive', SD && SD.ADAPTIVE]]) {
+    await attempt(name, async () => {
+      const x = await Engine.create({model: await stream(), benchmarkEnabled: true, speculativeDecodingConfig: {mode}});
+      try {
+        const out = {settings: JSON.parse(JSON.stringify(x.settings.speculativeDecodingConfig === undefined ? null : x.settings.speculativeDecodingConfig))};
+        const c = await x.createConversation(greedy);
+        out.reply = await text(c, 'Count from 1 to 20, separated by commas.');
+        out.benchmark = JSON.parse(JSON.stringify(await c.getBenchmarkInfo()));
+        await c.delete();
+        return out;
+      } finally { await x.delete(); }
+    });
+  }
+
   // Vision: GPU_ARTISAN models reserve image space up front (maxNumImages).
   for (const [name, settings] of [
-    ['vision_gpu', {visionBackend: 4, mainExecutorSettings: {maxNumImages: 1}}],
-    ['vision_gpu_no_max_images', {visionBackend: 4}],
-    ['vision_cpu', {visionBackend: 3, mainExecutorSettings: {maxNumImages: 1}}],
+    ['vision_gpu', {visionBackend: B.GPU, mainExecutorSettings: {maxNumImages: 1}}],
+    ['vision_gpu_no_max_images', {visionBackend: B.GPU}],
+    ['vision_cpu', {visionBackend: B.CPU, mainExecutorSettings: {maxNumImages: 1}}],
   ]) {
     let v;
     await attempt('create_' + name, async () => {
@@ -455,9 +574,41 @@ window.__litertlmProbe = async (url, image, audio) => {
     }
   }
 
+  // Images past maxNumImages: 0.19.0 failed the second image of a
+  // conversation reserving one ("Image index 1 must be less than 1.").
+  // Four different shapes in one conversation of an engine reserving one,
+  // each asked for, then the history replayed as a preface.
+  await attempt('images_past_max_num_images', async () => {
+    const x = await Engine.create({model: await stream(), visionBackend: B.GPU,
+      mainExecutorSettings: {maxNumImages: 1}});
+    try {
+      const k = await x.createConversation(greedy);
+      const answers = [];
+      for (const [name, bytes] of shapes) {
+        let a;
+        try { a = await text(k, {role: 'user', content: [{type: 'image', data: bytes},
+          {type: 'text', text: 'Which shape is drawn in this image? One word.'}]}); }
+        catch (err) { a = 'rejected: ' + ((err && err.message) || err); }
+        answers.push([name, a]);
+      }
+      let recall;
+      try { recall = await text(k, 'List the shapes of the images I showed you, in order. Words only.'); }
+      catch (err) { recall = 'rejected: ' + ((err && err.message) || err); }
+      const h = await k.getHistory();
+      await k.delete();
+      let rebuilt;
+      try {
+        const r7 = await x.createConversation({...greedy, preface: {messages: toBase64(h)}});
+        rebuilt = await text(r7, 'Which shape was in the second image? One word.');
+        await r7.delete();
+      } catch (err) { rebuilt = 'rejected: ' + ((err && err.message) || err); }
+      return {answers, recall, roles: h.map((m) => m.role), rebuilt};
+    } finally { await x.delete(); }
+  });
+
   for (const [name, settings] of [
-    ['audio_cpu', {audioBackend: 3}],
-    ['audio_gpu', {audioBackend: 4}],
+    ['audio_cpu', {audioBackend: B.CPU}],
+    ['audio_gpu', {audioBackend: B.GPU}],
   ]) {
     let a;
     await attempt('create_' + name, async () => {
@@ -492,8 +643,8 @@ window.__litertlmProbe = async (url, image, audio) => {
   // Vision and audio in one engine, as a native multimodal load.
   let va;
   await attempt('create_vision_and_audio', async () => {
-    va = await Engine.create({model: await stream(), visionBackend: 4,
-      audioBackend: 3, mainExecutorSettings: {maxNumImages: 1}});
+    va = await Engine.create({model: await stream(), visionBackend: B.GPU,
+      audioBackend: B.CPU, mainExecutorSettings: {maxNumImages: 1}});
     return JSON.parse(JSON.stringify(va.settings));
   });
   if (va) {
@@ -506,7 +657,7 @@ window.__litertlmProbe = async (url, image, audio) => {
   }
 
   await attempt('cpu_default', async () => {
-    const x = await Engine.create({model: await stream(), backend: 3});
+    const x = await Engine.create({model: await stream(), backend: B.CPU});
     const c = await x.createConversation(greedy);
     const s = {backend: x.settings.backend, reply: await text(c, 'Say hi.')};
     await c.delete();
@@ -514,7 +665,7 @@ window.__litertlmProbe = async (url, image, audio) => {
     return s;
   });
   await attempt('cpu_number_of_threads', async () => {
-    const x = await Engine.create({model: await stream(), backend: 3,
+    const x = await Engine.create({model: await stream(), backend: B.CPU,
       mainExecutorSettings: {backendConfig: {number_of_threads: 2}}});
     const s = {backend: x.settings.backend,
                backendConfig: JSON.parse(JSON.stringify(x.settings.mainExecutorSettings.backendConfig))};
@@ -557,12 +708,17 @@ void main() {
     final result = await tester.runAsync(() async {
       final image = await _asset('assets/eg2_vision/circle.png');
       final audio = await _asset('assets/eg2_audio/kitchen_lights.wav');
+      final shapes = [
+        for (final name in ['circle', 'square', 'triangle', 'stop_sign'])
+          [name.toJS, await _asset('assets/eg2_vision/$name.png')].toJS,
+      ].toJS;
       return globalContext
           .callMethod<JSPromise<JSString>>(
             '__litertlmProbe'.toJS,
             _modelUrl.toJS,
             image,
             audio,
+            shapes,
           )
           .toDart;
     });
@@ -611,6 +767,15 @@ void main() {
       'rebuilt_from_history_with_audio_as_base64',
       'cpu_default',
       'cpu_number_of_threads',
+      'images_past_max_num_images',
+      'malformed_unknown_role',
+      'malformed_unknown_part',
+      'malformed_tool_response_without_tools',
+      'activation_unset',
+      'activation_fp16',
+      'activation_fp32',
+      'speculative_decoding_on',
+      'speculative_decoding_adaptive',
     ]) {
       expect(record, contains(probe), reason: '$probe never ran');
     }
@@ -669,16 +834,20 @@ void main() {
       ),
       hasLength(1),
     );
-    // M1/N1: the failed message stays at the end of the history with no
-    // reply, a rebuild with it fails again, and one without it answers.
-    final failed =
-        (record['history_after_failed_turn']! as Map)['value'] as Map;
-    final roles = (failed['roles']! as List).cast<String>();
-    expect(roles.sublist(roles.length - 2), ['assistant', 'user']);
-    expect(
-      (record['rebuilt_after_failed_turn']! as Map)['ok'],
-      isFalse,
-      reason: 'a rebuild that replays the failed message answered',
-    );
+    // M1/N1: when the second image fails (0.19.0: "Image index 1 must be
+    // less than 1."; 0.20.0 answers it), the failed message stays at the end
+    // of the history with no reply, a rebuild with it fails again, and one
+    // without it answers.
+    if ((record['second_image_same_conversation']! as Map)['ok'] == false) {
+      final failed =
+          (record['history_after_failed_turn']! as Map)['value'] as Map;
+      final roles = (failed['roles']! as List).cast<String>();
+      expect(roles.sublist(roles.length - 2), ['assistant', 'user']);
+      expect(
+        (record['rebuilt_after_failed_turn']! as Map)['ok'],
+        isFalse,
+        reason: 'a rebuild that replays the failed message answered',
+      );
+    }
   }, timeout: const Timeout(Duration(minutes: 60)));
 }

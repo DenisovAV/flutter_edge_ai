@@ -1,11 +1,14 @@
 // JS interop for the `@litert-lm/core` LLM API ([liteRtLmWebRuntimeVersion]),
 // the surface the web `Engine` and its conversations drive.
 //
-// The page's module script must expose `Engine` on the global scope
-// (`window.Engine = m.Engine`): `dart:js_interop` static interop resolves
-// against the global, and the ESM export needs that explicit shim. It also
-// sets `window.litertLmReady`, a Promise that settles once the module loaded
-// (module scripts are deferred, so Dart can run first).
+// The page's module script hands over the whole module once, as
+// `window.litertLm` ([liteRtLmWebModuleShim]), and sets `window.litertLmReady`,
+// a Promise that settles once the module loaded (module scripts are deferred,
+// so Dart can run first). [readLiteRtLmWebModule] reads it; each member this
+// release calls (`Engine`, `EmbeddingEngine`, `Backend`) is read from it when
+// it is called and refused by name when missing. The classes are reached
+// through extension types over the objects read from the module, never
+// through global `@JS` names, so dart2js and dart2wasm resolve them alike.
 //
 // API surface mirrored, as published (`dist/engine.d.ts`, `conversation.d.ts`,
 // `conversation_config.d.ts`, `engine_settings.d.ts`):
@@ -27,19 +30,118 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import '../runtime/runtime_log.dart';
+import 'web_backend_ids.dart';
+import 'web_module_shim.dart';
 import 'web_runtime_version.dart';
 
-/// `Backend` of `@litert-lm/core` (`wasm_binding_types.js`): `CPU: 3`,
-/// `GPU: 4`, for the version the page pins ([liteRtLmWebRuntimeVersion]).
-const liteRtLmWebBackendCpu = 3;
-const liteRtLmWebBackendGpu = 4;
+export 'web_backend_ids.dart'
+    show LiteRtLmWebBackendEnumError, LiteRtLmWebBackendIds;
+export 'web_module_shim.dart'
+    show
+        LiteRtLmWebModuleError,
+        liteRtLmWebModuleShim,
+        liteRtLmWebModuleShimLine;
 
-/// `Backend.GPU_ARTISAN`: what `engine.settings.backend` reports for a
-/// Gemma 4 web or GPU export asked for the GPU (0.18.0 and 0.19.0, measured
-/// 2026-11-23): the same WebGPU, through the runtime's legacy executor.
-/// 0.19.0 takes `backend: GPU` (or GPU_ARTISAN) for it; 0.18.0 refused
-/// `backend: GPU` ("Unsupported backend: 2").
-const liteRtLmWebBackendGpuArtisan = 2;
+/// Whether the page has a `window.litertLm` at all.
+bool get hasLiteRtLmWebModule =>
+    !(globalContext['litertLm']?.isUndefinedOrNull ?? true);
+
+/// The page's `@litert-lm/core` module, as its module script hands it over
+/// (`window.litertLm = m;`). Any object is accepted (a bundler may hand over
+/// a plain object instead of a module namespace); its members are checked
+/// when they are read. Throws [LiteRtLmWebModuleError] when it is not set,
+/// naming the old lines to replace on a page that still sets
+/// `window.Engine`, or when it is not an object.
+LiteRtLmWebModule readLiteRtLmWebModule() {
+  final module = globalContext['litertLm'];
+  if (module == null || module.isUndefinedOrNull) {
+    bool isFunction(String name) =>
+        globalContext[name]?.typeofEquals('function') ?? false;
+    throw LiteRtLmWebModuleError(
+      liteRtLmWebModuleMissingMessage(
+        legacyPage: isFunction('Engine') || isFunction('EmbeddingEngine'),
+      ),
+    );
+  }
+  if (!module.typeofEquals('object') && !module.typeofEquals('function')) {
+    throw LiteRtLmWebModuleError(
+      liteRtLmWebModuleMissingMessage(
+        legacyPage: false,
+        what: 'a value of type ${_typeOf(module)}',
+      ),
+    );
+  }
+  return module as LiteRtLmWebModule;
+}
+
+/// `window.litertLm`: the page's `@litert-lm/core` module.
+extension type LiteRtLmWebModule._(JSObject _) implements JSObject {
+  /// The module's `Engine` class. Throws [LiteRtLmWebModuleError] naming it
+  /// when the module has none.
+  JsLiteRtLmEngineClass get engineClass =>
+      classNamed('Engine') as JsLiteRtLmEngineClass;
+
+  /// The module's class [name] (`Engine`, `EmbeddingEngine`): a function.
+  /// Throws [LiteRtLmWebModuleError] naming it when the module has none, or
+  /// something else under that name.
+  JSObject classNamed(String name) {
+    final value = this[name];
+    if (value == null || !value.typeofEquals('function')) {
+      throw LiteRtLmWebModuleError(
+        liteRtLmWebModuleMemberMessage(name, _describeMember(this, name)),
+      );
+    }
+    return value as JSObject;
+  }
+
+  /// The module's `Backend` ids, read at each engine and embedding engine
+  /// create, before anything is sent. Throws [LiteRtLmWebBackendEnumError]
+  /// when the module has no `Backend`, or one that is not the enum.
+  LiteRtLmWebBackendIds get backendIds =>
+      LiteRtLmWebBackendIds.parse(_enumEntries(this['Backend']));
+}
+
+/// What [object]'s member [name] is, for a refusal: `a value of type
+/// undefined` when it has none.
+String _describeMember(JSObject object, String name) {
+  final value = object[name];
+  if (value == null) {
+    return object.has(name) ? 'null' : 'a value of type undefined';
+  }
+  return 'a value of type ${_typeOf(value)}';
+}
+
+/// [value]'s own enumerable entries, a number as a [num] and anything else
+/// as its `typeof`; a description of [value] when it is not a plain object,
+/// null when it is not set.
+Object? _enumEntries(JSAny? value) {
+  if (value == null || value.isUndefinedOrNull) return null;
+  if (!value.typeofEquals('object')) {
+    return 'a value of type ${_typeOf(value)}';
+  }
+  final object = value as JSObject;
+  final keys = (globalContext['Object']! as JSObject)
+      .callMethod<JSArray<JSString>>('keys'.toJS, object)
+      .toDart;
+  return <String, Object?>{
+    for (final key in keys)
+      key.toDart: switch (object[key.toDart]) {
+        final JSAny entry when entry.isA<JSNumber>() =>
+          (entry as JSNumber).toDartDouble,
+        final entry => entry == null ? 'undefined' : _typeOf(entry),
+      },
+  };
+}
+
+String _typeOf(JSAny value) => [
+  'string',
+  'number',
+  'boolean',
+  'bigint',
+  'symbol',
+  'function',
+  'object',
+].firstWhere(value.typeofEquals, orElse: () => 'unknown');
 
 /// What the page's `Engine` (or `EmbeddingEngine`) constructor lacks of what
 /// this release calls ([members] on its prototype, `create` on itself); empty
@@ -153,16 +255,16 @@ Future<void> awaitIfThenable(JSAny? result) async {
   }
 }
 
-/// `@JS('Engine')` makes the static `create` resolve against
-/// `globalThis.Engine.create` (where the page's `window.Engine = m.Engine`
-/// shim puts it) instead of the Dart-side type name.
-@JS('Engine')
-extension type JsLiteRtLmEngine._(JSObject _) implements JSObject {
+/// The module's `Engine` class ([LiteRtLmWebModule.engineClass]).
+extension type JsLiteRtLmEngineClass._(JSObject _) implements JSObject {
   /// `Engine.create(engineSettings)`: `{model, backend?,
   /// mainExecutorSettings?: {maxNumTokens?}}`. `model` is a URL string, a
   /// `Blob` or a `ReadableStream<Uint8Array>`.
-  external static JSPromise<JsLiteRtLmEngine> create(JSObject settings);
+  external JSPromise<JsLiteRtLmEngine> create(JSObject settings);
+}
 
+/// An `Engine` the runtime created.
+extension type JsLiteRtLmEngine._(JSObject _) implements JSObject {
   /// What the engine resolved: `{backend, mainExecutorSettings: {maxNumTokens,
   /// ...}, ...}`.
   external JSObject? get settings;
@@ -183,8 +285,8 @@ extension type JsLiteRtLmConversation._(JSObject _) implements JSObject {
   external JSObject sendMessageStreaming(JSAny message);
 
   /// Asks the generation in flight to stop (`cancelProcess()`). Measured on
-  /// 0.18.0 and 0.19.0 (2026-11-23, web_litertlm_runtime_probe_test.dart): a
-  /// generation
+  /// 0.18.0 and 0.19.0 (2026-11-23) and 0.20.0 (2026-11-25,
+  /// web_litertlm_runtime_probe_test.dart): a generation
   /// stopped before its end rejects with "Task cancelled", and so does every
   /// later send on this conversation, so it is replaced by one rebuilt from
   /// [getHistory]; with nothing in flight, or after the last chunk, the
@@ -192,9 +294,10 @@ extension type JsLiteRtLmConversation._(JSObject _) implements JSObject {
   external void cancel();
 
   /// The conversation's completed exchanges, without its preface (0.18.0 and
-  /// 0.19.0, measured 2026-11-23): a cancelled turn is not in it. A user
-  /// message sent as a string comes back with its content as that string,
-  /// and an image or audio part's bytes as `blob: {bytes: [...]}` (0.19.0).
+  /// 0.19.0, measured 2026-11-23; 0.20.0, 2026-11-25): a cancelled turn is
+  /// not in it. A user message sent as a string comes back with its content
+  /// as that string, and an image or audio part's bytes as
+  /// `blob: {bytes: [...]}` (0.19.0 and 0.20.0).
   external JSPromise<JSArray<JSObject>> getHistory();
 
   /// The conversation's token count. It runs on the engine's executor mutex,

@@ -96,10 +96,10 @@ for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 devices. The Simulator stays CPU-only because Metal sim has a 256 MB
 single-allocation cap.
 
-² Web `.litertlm` is an **early preview** via `@litert-lm/core` 0.19.0. A
+² Web `.litertlm` is an **early preview** via `@litert-lm/core` 0.20.0. A
 language model runs only from a build for the web — Gemma 4 E2B's GPU export
 (images and audio too) and Gemma 3n's web exports (documented on 0.18.0, not
-measured on 0.19.0); a native language-model
+measured since); a native language-model
 `.litertlm` installs on web and then fails at the first generation. EmbeddingGemma 2 is
 the exception: its generic `.litertlm` bundles embed text and images on web
 through WebGPU, and the 740m audio from litertlm 1.13.2 (see

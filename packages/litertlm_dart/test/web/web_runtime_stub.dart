@@ -1,6 +1,6 @@
 // A stub `@litert-lm/core` LLM runtime for the browser tests, defined on the
-// page in plain JS: `window.Engine` (with the prototype members the release
-// calls) and conversations whose `sendMessageStreaming` returns a real
+// page in plain JS: the module the page hands over, `window.litertLm`, with
+// its `Engine` (with the prototype members the release calls) and conversations whose `sendMessageStreaming` returns a real
 // `ReadableStream` the test feeds chunk by chunk. It does what 0.19.0 was
 // measured to do (2026-11-23, web_litertlm_runtime_probe_test.dart):
 // - `cancel()` while a stream is generating rejects it with "Task cancelled",
@@ -11,7 +11,14 @@
 //   user message sent as a string comes back with that string as content;
 // - `getTokenCount()` runs on the engine's executor mutex: a test can hold
 //   it, as a generation that rejected but has not left the module does;
-// - an engine's `delete()` is a Promise, a conversation's returns nothing.
+// - an engine's `delete()` is a Promise, a conversation's returns nothing;
+// - a send the runtime refuses before it generates ([refuseNextSend]) closes
+//   its stream with no chunk, as 0.20.0 does (`sendMessageStreaming` drops
+//   the result of `sendMessageAsync`), the message kept at the end of the
+//   history with no reply.
+// The page sets no other global of the runtime: the module's `Backend` enum
+// (`window.litertLm.Backend`) is the pinned release's ([pinnedBackends])
+// unless a test installs another layout ([backends019], [backends020]).
 library;
 
 import 'dart:async';
@@ -28,7 +35,7 @@ const _stub = r'''
     createSettings: [], conversationOptions: [], sent: [],
     cancels: 0, conversationDeletes: 0, engineDeletes: 0, streams: [],
     tokenCounts: 0, fences: [], histories: [], conversations: [],
-    resolvedBackend: 4, maxNumTokens: 4096,
+    resolvedBackend: 3, maxNumTokens: 4096,
     createError: null, conversationError: null, conversationErrorAfter: null,
     historyError: null, holdFence: false, holdHistory: false,
     stuckOnCancel: false, deleteError: null, missingMember: null,
@@ -48,6 +55,14 @@ const _stub = r'''
                images: preface.reduce((n, m) => n + images(m), 0)};
     c.sendMessageStreaming = (message) => {
       p.sent.push(message);
+      // As 0.20.0 for a send `sendMessageAsync` refuses synchronously: the
+      // message stays in the history, nothing is generated, the stream
+      // closes empty.
+      if (p.refuseNextSend) {
+        p.refuseNextSend = false;
+        if (!p.refusedBeforeHistory) c.history.push(asHistory(message));
+        return new ReadableStream({start(ctl) { queueMicrotask(() => ctl.close()); }});
+      }
       // A bare iterator (no Symbol.asyncIterator) whose step has no `done`.
       if (p.malformed) return {next: async () => ({value: 1})};
       // A stream whose iterator cannot be read.
@@ -142,6 +157,17 @@ const _stub = r'''
     if (s.toolCalls) reply.tool_calls = s.toolCalls;
     s.conversation.history.push(asHistory(s.message), reply);
   };
+  // A reply that ends with no chunk: the model answered nothing, and the
+  // history holds the message and an empty assistant entry.
+  window.__emptyReply = () => {
+    const s = open();
+    s.generated = true;
+    s.conversation.prefilled = true;
+    s.conversation.history.push(asHistory(s.message),
+      {role: 'assistant', content: [{type: 'text', text: ''}]});
+    s.closed = true;
+    s.controller.close();
+  };
   window.__step = (text) => {
     const s = open();
     s.conversation.prefilled = true;
@@ -198,10 +224,10 @@ const _stub = r'''
   window.__releaseFences = () => { for (const f of p.fences.splice(0)) f(); };
   window.__releaseHistories = () => { for (const f of p.histories.splice(0)) f(); };
   window.__releaseConversations = () => { for (const f of p.conversations.splice(0)) f(); };
-  window.Engine = function Engine() {};
-  window.Engine.prototype.createConversation = function () {};
-  window.Engine.prototype.delete = function () {};
-  window.Engine.create = async (settings) => {
+  const Engine = function Engine() {};
+  Engine.prototype.createConversation = function () {};
+  Engine.prototype.delete = function () {};
+  Engine.create = async (settings) => {
     p.createSettings.push(settings);
     if (p.createError) throw new Error(p.createError);
     const settingsOut = {mainExecutorSettings: {}};
@@ -230,7 +256,9 @@ const _stub = r'''
       },
     };
   };
-  window.litertLmReady = Promise.resolve(window.Engine);
+  // Beside whatever another stub of the same page put in the module.
+  window.litertLm = Object.assign(window.litertLm || {}, {Engine});
+  window.litertLmReady = Promise.resolve(window.litertLm);
 })();
 ''';
 
@@ -243,10 +271,52 @@ void js(String name, [String? arg]) => arg == null
     ? globalContext.callMethod(name.toJS)
     : globalContext.callMethod(name.toJS, arg.toJS);
 
-void installRuntime() => globalContext.callMethod('eval'.toJS, _stub.toJS);
+/// `Backend` of `@litert-lm/core` 0.19.0 (`wasm_binding_types.js`).
+const backends019 = {
+  'UNSPECIFIED': 0,
+  'CPU_ARTISAN': 1,
+  'GPU_ARTISAN': 2,
+  'CPU': 3,
+  'GPU': 4,
+  'GOOGLE_TENSOR_ARTISAN': 5,
+  'NPU': 6,
+};
+
+/// `Backend` of `@litert-lm/core` 0.20.0: CPU_ARTISAN removed, the rest
+/// renumbered.
+const backends020 = {
+  'UNSPECIFIED': 0,
+  'GPU_ARTISAN': 1,
+  'CPU': 2,
+  'GPU': 3,
+  'GOOGLE_TENSOR_ARTISAN': 4,
+  'NPU': 5,
+};
+
+/// `Backend` of the release litertlm_dart pins
+/// (`liteRtLmWebRuntimeVersion`), the stub's unless a test installs another.
+const pinnedBackends = backends020;
+
+/// The pinned release's id for [name] (`CPU`, `GPU`, `GPU_ARTISAN`, …).
+int backendId(String name) => pinnedBackends[name]!;
+
+/// Installs the stub with [backends] as the module's `Backend` (none when
+/// null); the engine resolves to its `GPU`.
+void installRuntime({Map<String, int>? backends = pinnedBackends}) {
+  globalContext.callMethod('eval'.toJS, _stub.toJS);
+  if (backends != null) {
+    stubModule['Backend'] = backends.jsify();
+    setOnPage('resolvedBackend', backends['GPU']);
+  } else {
+    stubModule.delete('Backend'.toJS);
+  }
+}
+
+/// The page's `window.litertLm`, as the stub sets it.
+JSObject get stubModule => globalContext['litertLm']! as JSObject;
 
 void removeRuntime() {
-  for (final key in ['litertLmReady', 'Engine', '__page']) {
+  for (final key in ['litertLmReady', 'litertLm', '__page']) {
     globalContext.delete(key.toJS);
   }
 }

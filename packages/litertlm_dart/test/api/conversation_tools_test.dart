@@ -618,6 +618,58 @@ void main() {
     expect(handle.sends, hasLength(1));
   });
 
+  test("a tool choice goes with the message's own send only: the round "
+      'answering the tool results runs the default', () async {
+    final handle = _Handle();
+    final conversation = _conversation(handle, [_tool('t', [])]);
+    unawaited(
+      conversation.sendMessage(
+        Message.user('x'),
+        toolChoice: ToolChoice.required,
+      ),
+    );
+    await pumpEventQueue();
+    handle.sends.single
+      ..chunk(_call('t'))
+      ..finished();
+    await pumpEventQueue();
+    expect(handle.options.map((o) => o.toolChoiceJson), ['"required"', null]);
+  });
+
+  test('ToolChoice.auto and no choice send none; a choice the conversation '
+      'cannot take is an ArgumentError before anything is sent', () async {
+    for (final choice in [null, ToolChoice.auto]) {
+      final handle = _Handle();
+      _conversation(
+        handle,
+        [_tool('t', [])],
+      ).sendMessageStream(Message.user('x'), toolChoice: choice).listen((_) {});
+      await pumpEventQueue();
+      expect(handle.options.single.toolChoiceJson, isNull);
+    }
+    for (final (tools, format, choice) in [
+      (<Tool>[], null, ToolChoice.none),
+      (
+        [_tool('t', [])],
+        ResponseFormat.json(const {'type': 'object'}),
+        ToolChoice.required,
+      ),
+      ([_tool('t', [])], null, const ToolChoice.forcedFunction('other')),
+      ([_tool('t', [])], null, const ToolChoice.allowedTools([])),
+    ]) {
+      final handle = _Handle();
+      final conversation = _conversation(handle, tools, responseFormat: format);
+      expect(
+        () => conversation.sendMessageStream(
+          Message.user('x'),
+          toolChoice: choice,
+        ),
+        throwsArgumentError,
+      );
+      expect(handle.sends, isEmpty);
+    }
+  });
+
   test('with a response format, a message goes without it while some tool '
       'has execute; tool responses keep it', () async {
     final handle = _Handle();

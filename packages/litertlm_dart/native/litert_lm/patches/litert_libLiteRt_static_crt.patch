@@ -1,0 +1,10 @@
+--- a/litert/c/BUILD
++++ b/litert/c/BUILD
+@@ -1015,7 +1015,6 @@
+ # Target for windows libLiteRt.dll.
+ cc_binary(
+     name = "libLiteRt",
+-    features = ["-static_link_msvcrt"],
+     linkshared = 1,
+     tags = [
+         "nobuilder",

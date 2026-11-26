@@ -137,3 +137,39 @@ enum SpeculativeDecodingMode {
   /// backends that cannot adapt speculate on every step.
   adaptive,
 }
+
+/// LiteRT-LM's speculative decoding (MTP) settings: Kotlin's and Swift's
+/// `SpeculativeDecodingConfig`.
+@immutable
+final class SpeculativeDecodingConfig {
+  /// [lenience] must be in [0, 1]; null leaves LiteRT-LM's (the engine's, 0
+  /// by default). An [ArgumentError] otherwise.
+  SpeculativeDecodingConfig({required this.mode, this.lenience}) {
+    final l = lenience;
+    if (l != null && !(l >= 0 && l <= 1)) {
+      throw ArgumentError.value(l, 'lenience', 'must be in [0, 1]');
+    }
+  }
+
+  /// Whether and how to speculate.
+  final SpeculativeDecodingMode mode;
+
+  /// How far a drafted token may stray from what the model would choose and
+  /// still be accepted, in [0, 1]: 0 accepts only exact matches. The NPU
+  /// executor stays exact whatever is set (LiteRT-LM logs a warning).
+  final double? lenience;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SpeculativeDecodingConfig &&
+      other.mode == mode &&
+      other.lenience == lenience;
+
+  @override
+  int get hashCode => Object.hash(mode, lenience);
+
+  @override
+  String toString() =>
+      'SpeculativeDecodingConfig(mode: ${mode.name}'
+      '${lenience == null ? '' : ', lenience: $lenience'})';
+}

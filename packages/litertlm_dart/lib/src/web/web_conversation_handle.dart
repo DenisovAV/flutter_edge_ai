@@ -26,6 +26,15 @@
 //   runs the JSPI build, where that is harmless; the Asyncify builds (no
 //   JSPI) hold one suspended call per module, and another call entering then
 //   would corrupt it.
+// - A stream that ends with no chunk on a turn nobody stopped is either an
+//   empty reply or a send the runtime refused before it generated anything:
+//   0.20.0's `sendMessageStreaming` drops the result of `sendMessageAsync`,
+//   so such a refusal closes the stream empty instead of rejecting it, and
+//   leaves the message at the end of the runtime's history with no reply.
+//   `getHistory()` tells them apart, still under the turn's page lease: an
+//   empty assistant entry after the message is an empty reply; anything else
+//   is a refused send, which fails the turn with a [LiteRtLmNativeException]
+//   and is left out of the conversation by the rebuild the next turn runs.
 // - A generation stopped before its end leaves the runtime conversation
 //   refusing every later send ("Task cancelled"); the next turn replaces it
 //   by one built from the preface, the exchanges kept so far and
@@ -34,8 +43,9 @@
 //   conversation (its `preface.extra_context`), not per message, and has no
 //   per-message decoding options: a send that asks for either differently is
 //   an [UnsupportedError], never silently ignored. Images and audio go as
-//   their bytes in base64 (`blob`), the form 0.19.0 takes in a message and in
-//   a preface (measured 2026-11-23); a file path is refused, and so is media
+//   their bytes in base64 (`blob`), the form 0.19.0 and 0.20.0 take in a
+//   message and in a preface (measured 2026-11-23 and 2026-11-25); a file
+//   path is refused, and so is media
 //   for an encoder the engine did not load.
 
 import 'dart:async';
@@ -109,13 +119,13 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// The tokens the conversation this one was rebuilt from held, read when
   /// it was replaced: the runtime prefills a preface only at the first send,
-  /// so a new conversation counts 0 until then (N5, 0.19.0).
+  /// so a new conversation counts 0 until then (N5, 0.19.0 and 0.20.0).
   int _replayedTokens = 0;
 
   /// Whether the runtime conversation was rebuilt here: until something is
   /// prefilled on it (it counts 0 until then, N5), its first send prefills
   /// the replayed history with the message, and a refusal's count holds both
-  /// (N7, 0.19.0).
+  /// (N7, 0.19.0 and 0.20.0).
   bool _rebuilt = false;
 
   /// Whether [_replayedTokens] is a count the runtime gave: set once a
@@ -139,7 +149,8 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// The message of the last turn the runtime failed (not a stop): the
   /// runtime keeps it at the end of its history with no reply (M1, N1,
-  /// 0.19.0), and the rebuild leaves it out.
+  /// 0.19.0; a send 0.20.0 refuses before it generates, whose stream closes
+  /// empty), and the rebuild leaves it out.
   Map<String, Object?>? _failed;
 
   /// Why the conversation must be rebuilt, for the errors of a rebuild.
@@ -147,7 +158,8 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// Set once the history alone fills the context window: the runtime
   /// refused a message for its size ("Max number of tokens reached, the
-  /// context window is full." or "Input token ids are too long.", 0.19.0)
+  /// context window is full." or "Input token ids are too long.", 0.19.0
+  /// and 0.20.0)
   /// while the conversation already held [_maxTokens] tokens (N6: 128 of
   /// 128), so a rebuild replaying that history is refused too. Every later
   /// turn fails with [ContextFullException] without being sent, as natively
@@ -441,6 +453,10 @@ final class WebConversationHandle implements ConversationHandle {
             // after a stop that came after the last chunk).
             if (turn.asked || turn.fault != null) {
               finishAsked(StackTrace.current);
+            } else if (!turn.chunked) {
+              // An empty reply, or a send the runtime refused: its history
+              // says which.
+              _settleEmptyTurn(turn, finish, finishAsked);
             } else {
               finish();
             }
@@ -448,6 +464,7 @@ final class WebConversationHandle implements ConversationHandle {
           }
           try {
             final value = step.getProperty<JSAny?>('value'.toJS);
+            if (value != null) turn.chunked = true;
             if (value != null && turn.fault == null) {
               final json = _stringify(value);
               // Bookkeeping for a stop only: a chunk it cannot read keeps
@@ -485,8 +502,8 @@ final class WebConversationHandle implements ConversationHandle {
         void onError(Object error, StackTrace stack) {
           if (turn.finished) return;
           // A rejected stream: the runtime conversation refuses every later
-          // send ("Task cancelled" after a stop, measured on 0.18.0 and
-          // 0.19.0).
+          // send ("Task cancelled" after a stop, measured on 0.18.0, 0.19.0
+          // and 0.20.0).
           _mustRebuild = true;
           if (turn.stopAsked) _rebuildCause = 'a stopped reply';
           if (turn.stopAsked && turn.streamed) {
@@ -611,6 +628,105 @@ final class WebConversationHandle implements ConversationHandle {
     return controller.stream;
   }
 
+  /// Ends [turn], whose stream ended with no chunk and no stop, as an empty
+  /// reply or as a refused send, from the runtime's history: an empty
+  /// assistant entry right after the message is an empty reply ([finish]
+  /// with nothing); anything else means the runtime generated nothing for it
+  /// (0.20.0 closes a refused send's stream empty, the message kept at the
+  /// end of its history), and the turn fails with a
+  /// [LiteRtLmNativeException]; the next turn rebuilds the conversation
+  /// without it. Runs while [turn] still holds the page; a history read that
+  /// never ends poisons it, as a stopped generation does. A stop or close
+  /// asked meanwhile ends the turn as asked ([finishAsked]).
+  void _settleEmptyTurn(
+    _Turn turn,
+    void Function({Object? error, StackTrace? stack}) finish,
+    void Function(StackTrace stack) finishAsked,
+  ) {
+    _armDrain(turn, 'its reply ended with no chunk');
+    Future<List<Object?>> read() async => [
+      for (final entry in (await _conversation.getHistory().toDart).toDart)
+        entry.dartify(),
+    ];
+    read().then(
+      (history) {
+        if (turn.finished) return;
+        if (_isEmptyReply(history, turn.message)) {
+          if (turn.asked) {
+            finishAsked(StackTrace.current);
+          } else {
+            finish();
+          }
+          return;
+        }
+        // The runtime refused the send: the conversation is rebuilt without
+        // the message, which it may keep at the end of its history.
+        _mustRebuild = true;
+        _failed = turn.message;
+        _rebuildCause = 'a message the runtime refused';
+        if (turn.asked) {
+          finishAsked(StackTrace.current);
+          return;
+        }
+        finish(
+          error: LiteRtLmNativeException(
+            '$liteRtLmWebRuntime refused the message without a reason: its '
+            'reply ended before any chunk, and the conversation\'s history '
+            'holds no reply to it. The message is left out of the '
+            'conversation.',
+          ),
+          stack: StackTrace.current,
+        );
+      },
+      onError: (Object e, StackTrace st) {
+        if (turn.finished) return;
+        if (turn.asked) {
+          finishAsked(st);
+          return;
+        }
+        finish(
+          error: LiteRtLmNativeException(
+            'The reply of $liteRtLmWebRuntime ended before any chunk, and the '
+            'conversation\'s history, which tells an empty reply from a '
+            'refused message, could not be read: $e',
+          ),
+          stack: st,
+        );
+      },
+    );
+  }
+
+  /// Whether [history] ends with [message] answered by an empty assistant
+  /// entry (no text, no tool call): the model's own empty reply.
+  static bool _isEmptyReply(
+    List<Object?> history,
+    Map<String, Object?> message,
+  ) {
+    if (history.length < 2) return false;
+    final reply = history.last;
+    if (reply is! Map || reply['role'] != 'assistant') return false;
+    if (reply['tool_calls'] case final List<Object?> calls
+        when calls.isNotEmpty) {
+      return false;
+    }
+    final empty = switch (reply['content']) {
+      null => true,
+      final String text => text.isEmpty,
+      final List<Object?> parts => parts.every(
+        (part) => part is Map && part['type'] == 'text' && part['text'] == '',
+      ),
+      _ => false,
+    };
+    if (!empty) return false;
+    final Object? sent;
+    try {
+      sent = _replayable(history[history.length - 2]);
+    } on FormatException {
+      return false;
+    }
+    return _jsonEquals(_asSent(sent), _asSent(message));
+  }
+
   /// A runtime error as the typed exception the shared `Conversation` maps;
   /// errors already typed pass as they are.
   static Object _typed(Object error) =>
@@ -668,6 +784,7 @@ final class WebConversationHandle implements ConversationHandle {
       if (options.noRepeatNgram != null) 'noRepeatNgramConfig',
       if (options.suppressTokens != null) 'suppressTokens',
       if (options.thinkingTokenBudget != null) 'a thinking token budget',
+      if (options.toolChoiceJson != null) 'tool choice (toolChoice)',
     ];
     if (perMessage.isNotEmpty) {
       return UnsupportedError(
@@ -730,7 +847,7 @@ final class WebConversationHandle implements ConversationHandle {
 
   /// Marks every live turn stopped and stops the one streaming, if it was
   /// sent. With nothing in flight the runtime is not asked: a cancel there
-  /// changes nothing (0.18.0 and 0.19.0, measured).
+  /// changes nothing (0.18.0, 0.19.0 and 0.20.0, measured).
   @override
   void cancelGeneration() {
     for (final turn in _liveTurns) {
@@ -798,11 +915,13 @@ final class WebConversationHandle implements ConversationHandle {
         '$_rebuildCause ($e). $_untilRebuilt',
       );
     }
-    // The runtime's history holds no preface (P1, 0.18.0 and 0.19.0
+    // The runtime's history holds no preface (P1, 0.18.0, 0.19.0 and 0.20.0
     // measured): it is the exchanges since this conversation was created. A
     // turn the runtime failed (not a stop) stays at its end as the user
     // message with no reply, and replaying it fails again (M1, 0.19.0: an
-    // image past maxNumImages), while the history without it answers (N1):
+    // image past maxNumImages, which 0.20.0 answers; a send 0.20.0 refuses
+    // before it generates stays there too), while the history without it
+    // answers (N1):
     // that message, and only it, is left out.
     final exchanges = [...history];
     if (_failed case final failed?
@@ -941,7 +1060,8 @@ bool _isBytes(Object? blob) =>
 /// that is work on the UI thread at the next message. 0.19.0 returns an
 /// image or audio part's bytes as `blob: {bytes: [...]}`, which a preface
 /// aborts the module on; the base64 `blob` of a message replays it (measured
-/// 2026-11-23, web_litertlm_runtime_probe_test.dart).
+/// 2026-11-23, web_litertlm_runtime_probe_test.dart; the history's form and
+/// the base64 replay again on 0.20.0, 2026-11-25).
 Object? _replayable(Object? message) {
   if (message case {'content': final List<Object?> parts}) {
     return {
@@ -1015,6 +1135,9 @@ final class _Turn {
 
   /// A chunk with text, a thought or a tool call has arrived.
   bool streamed = false;
+
+  /// Any chunk has arrived, empty or not.
+  bool chunked = false;
 
   /// `sendMessageStreaming` was called for it.
   bool sent = false;

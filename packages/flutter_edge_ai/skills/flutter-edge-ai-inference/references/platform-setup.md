@@ -278,8 +278,8 @@ shader compiler and NPU runtime — are bundled at build time.
 
 - Windows: `x64` only — no Windows on Arm build. End users need no VC++
   redistributable installed. (In the legacy `flutter_gemma_litertlm` package
-  this arrived in 1.7.1.) Measured on `native-v0.19.0-a`:
-  15 of the bundle's 23 DLLs import no C++ runtime; the other eight, the Intel
+  this arrived in 1.7.1.) Measured on `native-v0.20.0`:
+  12 of the bundle's 20 DLLs import no C++ runtime; the other eight, the Intel
   NPU stack, import only `msvcp140`, `vcruntime140` and `vcruntime140_1`,
   which every Flutter Windows app already resolves.
 - Windows Intel NPU: a bundle whose NPU blobs carry no weights (Intel's Gemma 4
@@ -307,20 +307,20 @@ shader compiler and NPU runtime — are bundled at build time.
 
 All script tags go in `web/index.html` `<head>`, before Flutter boots.
 
-`.litertlm` engine (LLMs through `window.Engine`; EmbeddingGemma 2 embedders,
-flutter_edge_ai_litertlm 1.13.1+, through `window.EmbeddingEngine` — a page
-without that line fails the embedder's load with an `EmbeddingLoadException`
-naming it). Both run on WebGPU; for EmbeddingGemma 2 there is no CPU fallback
+`.litertlm` engine: the script hands over the whole `@litert-lm/core` module as
+`window.litertLm`, whose `Engine` runs LLMs and whose `EmbeddingEngine` runs
+EmbeddingGemma 2 embedders (a page without `window.litertLm` fails the model's
+or the embedder's load with an error that quotes the line; one that still sets
+the old `window.Engine` global is told what to replace). Both run on WebGPU; for EmbeddingGemma 2 there is no CPU fallback
 on Web, so a browser without WebGPU fails the embedder's load with an
 `EmbeddingLoadException` that says so:
 
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
-  window.Engine = m.Engine;
-  window.EmbeddingEngine = m.EmbeddingEngine;
-  return m.Engine;
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
+  window.litertLm = m;
+  return m;
 })();
 </script>
 ```
@@ -349,7 +349,7 @@ GPU export, `LiteRtLmModels.gemma4E2bIt.webGpu`
 (`gemma-4-E2B-it-gpu.litertlm`, 2.34 GB, so install it with
 `WebStorageMode.streaming`), not `gemma-4-E2B-it.litertlm`. The older
 `gemma-4-E2B-it-web.litertlm` and the E4B web build are withheld: on
-`@litert-lm/core` 0.19.0 the E2B one answers a tool result with an empty
+the 0.19.0 runtime the E2B one answers a tool result with an empty
 reply. With `supportImage`/`supportAudio` it takes images and audio as
 natively; without them an image or audio message throws `UnsupportedError`.
 LoRA is not supported on any `.litertlm` path, native

@@ -33,8 +33,9 @@ void main() {
       'the runtime creates anything', () {
     for (final member in ['createConversation', 'delete']) {
       test(member, () async {
-        ((globalContext['Engine']! as JSObject)['prototype']! as JSObject)
-            .delete(member.toJS);
+        ((stubModule['Engine']! as JSObject)['prototype']! as JSObject).delete(
+          member.toJS,
+        );
 
         await expectLater(Engine.create(webConfig()), _incomplete(member));
 
@@ -43,7 +44,7 @@ void main() {
     }
 
     test('create', () async {
-      (globalContext['Engine']! as JSObject).delete('create'.toJS);
+      (stubModule['Engine']! as JSObject).delete('create'.toJS);
 
       await expectLater(Engine.create(webConfig()), _incomplete('create'));
     });
@@ -89,8 +90,8 @@ void main() {
   );
 
   group('the resolved settings', () {
-    test('backend 4 (GPU) is Backend.gpu', () async {
-      setOnPage('resolvedBackend', 4);
+    test('the module\'s GPU is Backend.gpu', () async {
+      setOnPage('resolvedBackend', backendId('GPU'));
 
       final engine = await Engine.create(webConfig());
 

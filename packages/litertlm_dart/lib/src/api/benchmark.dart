@@ -34,7 +34,8 @@ export 'benchmark_result.dart';
 /// leaves the context window to LiteRT-LM (the bundle's own), which
 /// [LlmBenchmarkResult.maxNumTokens] reports; it changes prefill and decode
 /// speed, so compare runs with the same window.
-/// [samplerConfig] null uses the model's own sampler.
+/// [samplerConfig] null uses the model's own sampler; [speculativeDecoding]
+/// null leaves LiteRT-LM's (off).
 ///
 /// Throws what [Engine.create] throws, an [ArgumentError] for a count below
 /// 1, and a [StateError] when LiteRT-LM reports no prefill or no decode.
@@ -50,6 +51,7 @@ Future<LlmBenchmarkResult> benchmark({
   int? maxNumTokens,
   String? cacheDir,
   SamplerConfig? samplerConfig,
+  SpeculativeDecodingConfig? speculativeDecoding,
 }) async {
   if (prefillTokens < 1) {
     throw ArgumentError.value(prefillTokens, 'prefillTokens', 'must be 1+');
@@ -68,6 +70,7 @@ Future<LlmBenchmarkResult> benchmark({
       audioBackend: audioBackend,
       maxNumTokens: maxNumTokens,
       cacheDir: cacheDir,
+      speculativeDecoding: speculativeDecoding,
     ),
     (prefill: prefillTokens, decode: decodeTokens),
   );

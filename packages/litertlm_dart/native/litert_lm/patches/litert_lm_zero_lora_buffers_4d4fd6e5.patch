@@ -1,0 +1,1155 @@
+From 4d4fd6e5c4092c182a07e0c09a8b74fa244e3d7a Mon Sep 17 00:00:00 2001
+From: Google AI Edge <ai-edge-bot@google.com>
+Date: Tue, 17 Nov 2026 08:21:07 -0800
+Subject: [PATCH] Populate `lora_param_tensor` when no LoRA adapter is active,
+ fixing GPU output corruption (OpenCL and Metal) when running LoRA-capable
+ models without an active adapter (`rank=0`).
+
+LiteRT-LM-PiperOrigin-RevId: 1023757177
+---
+ runtime/components/lora.cc                    |  83 +-----------
+ runtime/executor/BUILD                        |   2 +
+ .../audio_litert_compiled_model_executor.cc   |   5 +-
+ ...dio_litert_compiled_model_executor_test.cc | 124 ++++++++++++++++++
+ .../llm_litert_compiled_model_executor.cc     |  75 +++++++++++
+ .../llm_litert_compiled_model_executor.h      |  13 ++
+ ...ed_model_executor_checksum_fake_lm_test.cc |  80 +++++++++++
+ runtime/testdata/checksum_fake_lm_lora.tflite | Bin 0 -> 9848 bytes
+ runtime/testdata/dummy_audio_lora.litertlm    | Bin 0 -> 21156 bytes
+ runtime/util/BUILD                            |  18 +++
+ runtime/util/lora_util.cc                     | 119 ++++++++++++++++-
+ runtime/util/lora_util.h                      |  44 +++++++
+ runtime/util/lora_util_test.cc                | 117 ++++++++++++++++-
+ 13 files changed, 598 insertions(+), 82 deletions(-)
+ create mode 100644 runtime/testdata/checksum_fake_lm_lora.tflite
+ create mode 100644 runtime/testdata/dummy_audio_lora.litertlm
+
+diff --git a/runtime/components/lora.cc b/runtime/components/lora.cc
+index 527542d4..8340c00f 100644
+--- a/runtime/components/lora.cc
++++ b/runtime/components/lora.cc
+@@ -38,7 +38,6 @@
+ // sourcing LoRA.
+ #include "litert/cc/litert_compiled_model.h"  // from @litert
+ #include "litert/cc/litert_macros.h"  // from @litert
+-#include "litert/cc/litert_model.h"  // from @litert
+ #include "litert/cc/litert_tensor_buffer.h"  // from @litert
+ #include "runtime/util/lora_data.h"
+ #include "runtime/util/lora_util.h"
+@@ -48,11 +47,6 @@ namespace litert::lm {
+ 
+ namespace {
+ 
+-// Input of GPU models exported with runtime-BMM LoRA. It holds the channel
+-// range of the LoRA BMM ops (see ml_drift::LlmRuntimeParams) and is not a LoRA
+-// weight.
+-constexpr absl::string_view kLoRAParamTensorName = "lora_param_tensor";
+-
+ }  // namespace
+ 
+ absl::StatusOr<std::unique_ptr<LoRA>> LoRA::Create(
+@@ -112,60 +106,6 @@ absl::Status LoRA::Init() {
+     return tensor_buffer;
+   };
+ 
+-  // GPU models exported with runtime-BMM LoRA read the channel range of every
+-  // LoRA BMM op from `lora_param_tensor`: element 0 is the start index and the
+-  // others are end indices. Without this the range is unset, so the LoRA ops
+-  // compute on garbage ranges (no effect, wrong output or out-of-bounds
+-  // access). Set the ends to the largest non-rank extent of any LoRA input
+-  // (all dimensions but the rank, multiplied, since the ops may reshape e.g.
+-  // [rank, heads, head_dim] to [rank, heads * head_dim]), so that every op
+-  // covers all of its channels. The rank is the model's LoRA rank (a LoRA with
+-  // a smaller rank is zero padded to it), i.e. the dimension that every LoRA
+-  // input has.
+-  int64_t lora_param_end = 0;
+-  if (std::find(input_names.begin(), input_names.end(),
+-                kLoRAParamTensorName) != input_names.end()) {
+-    std::vector<std::vector<int32_t>> lora_dims;
+-    for (const auto& input_name : input_names) {
+-      if (!IsLoRAInputName(input_name)) {
+-        continue;
+-      }
+-      LITERT_ASSIGN_OR_RETURN(
+-          auto tensor_type,
+-          compiled_model_.GetInputTensorType(signature_name_, input_name));
+-      const auto dims = tensor_type.Layout().Dimensions();
+-      lora_dims.emplace_back(dims.begin(), dims.end());
+-    }
+-    RET_CHECK(!lora_dims.empty())
+-        << kLoRAParamTensorName << " is an input but there are no LoRA inputs.";
+-
+-    // Candidates for the rank: dimensions of the first input that every other
+-    // input also has. Use the smallest one.
+-    int32_t model_rank = 0;
+-    for (int32_t candidate : lora_dims[0]) {
+-      if (candidate <= 0 || (model_rank > 0 && candidate >= model_rank)) {
+-        continue;
+-      }
+-      if (std::all_of(lora_dims.begin(), lora_dims.end(),
+-                      [candidate](const std::vector<int32_t>& dims) {
+-                        return std::find(dims.begin(), dims.end(),
+-                                         candidate) != dims.end();
+-                      })) {
+-        model_rank = candidate;
+-      }
+-    }
+-    RET_CHECK_GT(model_rank, 0)
+-        << "Could not find a LoRA rank shared by all LoRA inputs.";
+-
+-    for (const auto& dims : lora_dims) {
+-      int64_t num_elements = 1;
+-      for (int32_t dim : dims) {
+-        num_elements *= dim;
+-      }
+-      lora_param_end = std::max(lora_param_end, num_elements / model_rank);
+-    }
+-  }
+-
+   // Creates a TensorBuffer for `input_name` of `signature`: the channel range
+   // for `lora_param_tensor`, the LoRA weights otherwise.
+   auto create_buffer =
+@@ -177,20 +117,8 @@ absl::Status LoRA::Init() {
+     LITERT_ASSIGN_OR_RETURN(
+         TensorBuffer param_buffer,
+         compiled_model_.CreateInputBuffer(signature, kLoRAParamTensorName));
+-    {
+-      LITERT_ASSIGN_OR_RETURN(
+-          auto lock_and_addr,
+-          litert::TensorBufferScopedLock::Create(
+-              param_buffer, TensorBuffer::LockMode::kWrite));
+-      LITERT_ASSIGN_OR_RETURN(auto param_size, param_buffer.PackedSize());
+-      // Element 0 is the start index; at least one end index must follow.
+-      RET_CHECK_GE(param_size, 2 * sizeof(int32_t))
+-          << "Unexpected size of " << kLoRAParamTensorName;
+-      int32_t* params = static_cast<int32_t*>(lock_and_addr.second);
+-      std::fill(params, params + param_size / sizeof(int32_t),
+-                static_cast<int32_t>(lora_param_end));
+-      params[0] = 0;
+-    }
++    ABSL_RETURN_IF_ERROR(
++        PopulateLoRAParamTensor(compiled_model_, signature, param_buffer));
+     return param_buffer;
+   };
+ 
+@@ -236,10 +164,9 @@ absl::Status LoRA::Init() {
+         << " LoRA inputs of signature '" << signature_name_
+         << "' have no matching tensor in the LoRA data and are filled with "
+            "zeros, e.g. "
+-        << absl::StrJoin(
+-               absl::MakeConstSpan(unmatched_input_names)
+-                   .subspan(0, kMaxNamesToLog),
+-               ", ");
++        << absl::StrJoin(absl::MakeConstSpan(unmatched_input_names)
++                             .subspan(0, kMaxNamesToLog),
++                         ", ");
+   }
+ 
+   // Other signatures may require different buffer types for the same LoRA
+diff --git a/runtime/executor/BUILD b/runtime/executor/BUILD
+index f9256835..6fe2610b 100644
+--- a/runtime/executor/BUILD
++++ b/runtime/executor/BUILD
+@@ -582,6 +582,7 @@ cc_test(
+         ":llm_executor_settings",
+         ":llm_litert_compiled_model_executor",
+         "@com_google_googletest//:gtest_main",
++        "@com_google_absl//absl/container:flat_hash_map",
+         "@com_google_absl//absl/memory",
+         "@com_google_absl//absl/status",
+         "@com_google_absl//absl/status:status_macros",
+@@ -593,6 +594,7 @@ cc_test(
+         "@litert//litert/cc:litert_environment",
+         "@litert//litert/cc:litert_macros",
+         "@litert//litert/cc:litert_model",
++        "@litert//litert/cc:litert_tensor_buffer",
+         "@litert//litert/test:matchers",
+         "//runtime/components:model_resources",
+         "//runtime/components:sampler_params_util",
+diff --git a/runtime/executor/audio_litert_compiled_model_executor.cc b/runtime/executor/audio_litert_compiled_model_executor.cc
+index 06002152..6c0bf367 100644
+--- a/runtime/executor/audio_litert_compiled_model_executor.cc
++++ b/runtime/executor/audio_litert_compiled_model_executor.cc
+@@ -422,7 +422,8 @@ absl::Status AudioLiteRtCompiledModelExecutor::AudioEncoder::UseLoRA(
+       input_buffer = std::move(zero_buffer);
+     }
+   }
+-  return absl::OkStatus();
++  return InitLoRAParamTensorIfPresent(compiled_model_, signature.Key(),
++                                      input_buffers_map_);
+ }
+ 
+ absl::StatusOr<std::unique_ptr<AudioContext>> AudioStreamingContext::Clone()
+@@ -472,6 +473,8 @@ absl::Status AudioLiteRtCompiledModelExecutor::AudioEncoder::InitializeBuffers(
+     input_buffers_map_.insert_or_assign(input_names_[i],
+                                         std::move(input_buffers[i]));
+   }
++  ABSL_RETURN_IF_ERROR(InitLoRAParamTensorIfPresent(
++      compiled_model_, signature.Key(), input_buffers_map_));
+ 
+   // Bind pointers to specific buffers only after the map is fully populated so
+   // `flat_hash_map` rehashing cannot invalidate them.
+diff --git a/runtime/executor/audio_litert_compiled_model_executor_test.cc b/runtime/executor/audio_litert_compiled_model_executor_test.cc
+index b7c367b2..ba79ad20 100644
+--- a/runtime/executor/audio_litert_compiled_model_executor_test.cc
++++ b/runtime/executor/audio_litert_compiled_model_executor_test.cc
+@@ -63,6 +63,16 @@ constexpr absl::string_view kTestAudioStreamingModelPath =
+     "litert_lm/runtime/testdata/dummy_audio_streaming.litertlm";
+ constexpr absl::string_view kTestAudioNoMaskModelPath =
+     "litert_lm/runtime/testdata/dummy_audio_no_mask.litertlm";
++// Audio encoder with runtime-BMM LoRA inputs; see
++// testdata/generate_dummy_audio_lora.py.
++constexpr absl::string_view kTestAudioLoRAModelPath =
++    "litert_lm/runtime/testdata/dummy_audio_lora.litertlm";
++constexpr absl::string_view kTestAllOnesLoRAPath =
++    "litert_lm/runtime/testdata/test_lora_rank32_f16_all_ones.tflite";
++// End channel in `lora_param_tensor` of `kTestAudioLoRAModelPath`: its LoRA
++// inputs are `[1, 32, 1, 2048]` and `[1, 32, 1, 512]` with rank 32, so the
++// largest non-rank extent is 2048.
++constexpr int32_t kLoRAModelParamEnd = 2048;
+ constexpr int kNoMaskEmbeddingDimensions = 5;
+ constexpr int kSpectrogramFrequencySlots = 8;
+ constexpr int kSpectrogramSequenceLength = 10;
+@@ -71,8 +81,10 @@ constexpr int kEmbeddingDimensions = 6;
+ 
+ using ::testing::Each;
+ using ::testing::ElementsAre;
++using ::testing::FloatNear;
+ using ::testing::HasSubstr;
+ using ::testing::Not;
++using ::testing::Pointwise;
+ using ::testing::status::StatusIs;
+ 
+ template <typename T>
+@@ -194,6 +206,41 @@ absl::Status WriteStreamingModelWithPrevMaskInput(
+   return absl::OkStatus();
+ }
+ 
++// Returns the features that `kTestAudioLoRAModelPath` computes for all-ones
++// spectrogram frames: the fixed projection of the frames plus `lora_delta`, the
++// max of each LoRA weight input (0 for zeroed LoRA weights and 2 for the
++// all-ones LoRA). A wrong `lora_param_tensor` adds 1000.
++std::vector<float> ExpectedLoRAModelFeatures(float lora_delta) {
++  std::vector<float> expected;
++  expected.reserve(kEmbeddingSequenceLength * kNoMaskEmbeddingDimensions);
++  for (int token = 0; token < kEmbeddingSequenceLength; ++token) {
++    for (int dim = 0; dim < kNoMaskEmbeddingDimensions; ++dim) {
++      expected.push_back(60.0f + 1.6f * dim + lora_delta);
++    }
++  }
++  return expected;
++}
++
++// Encodes all-ones spectrogram frames with `kTestAudioLoRAModelPath` and
++// returns the projected audio embeddings.
++absl::StatusOr<std::vector<float>> EncodeOnesWithLoRAModel(
++    AudioLiteRtCompiledModelExecutor& audio_executor) {
++  std::vector<float> mel_spectrogram_data(
++      kSpectrogramSequenceLength * kSpectrogramFrequencySlots, 1.0f);
++  ABSL_ASSIGN_OR_RETURN(
++      auto mel_spectrogram_tensor_buffer,
++      CreateTensorBuffer<const float>(
++          mel_spectrogram_data,
++          RankedTensorType(GetElementType<float>(),
++                           Layout(Dimensions({1, kSpectrogramSequenceLength,
++                                              kSpectrogramFrequencySlots})))));
++  ABSL_ASSIGN_OR_RETURN(auto audio_data,
++                        audio_executor.Encode(mel_spectrogram_tensor_buffer));
++  ABSL_ASSIGN_OR_RETURN(auto projected_audio_embeddings_ptr,
++                        audio_data.GetMutableProjectedAudioEmbeddingsPtr());
++  return GetDataAsVector<float>(*projected_audio_embeddings_ptr);
++}
++
+ }  // namespace
+ 
+ class AudioLiteRtCompiledModelExecutorTest : public ::testing::Test {
+@@ -2213,6 +2260,83 @@ TEST_F(AudioLiteRtCompiledModelExecutorTest, ProfilingCollectsAudioStats) {
+   EXPECT_TRUE(stats.GetLatency("Audio adapter inference").has_value());
+ }
+ 
++TEST_F(AudioLiteRtCompiledModelExecutorTest,
++       InitializeBuffersPopulatesLoRAParamTensorWithoutLoRA) {
++  ASSERT_OK_AND_ASSIGN(
++      auto audio_executor,
++      CreateAudioExecutor(*env_,
++                          (std::filesystem::path(::testing::SrcDir()) /
++                           std::string(kTestAudioLoRAModelPath))
++                              .string(),
++                          /*max_sequence_length=*/0, Backend::CPU));
++
++  // Without a LoRA, `lora_param_tensor` holds the LoRA channel range rather
++  // than zeros, which would make GPU runtime-BMM LoRA ops skip writing their
++  // intermediate outputs.
++  auto& input_buffers_map = GetMutableEncoderInputBuffersMap(*audio_executor);
++  ASSERT_TRUE(input_buffers_map.contains("lora_param_tensor"));
++  ASSERT_OK_AND_ASSIGN(
++      std::vector<int32_t> lora_params,
++      GetDataAsVector<int32_t>(input_buffers_map.at("lora_param_tensor")));
++  EXPECT_THAT(
++      lora_params,
++      ElementsAre(0, kLoRAModelParamEnd, kLoRAModelParamEnd, kLoRAModelParamEnd,
++                  kLoRAModelParamEnd, kLoRAModelParamEnd, kLoRAModelParamEnd));
++
++  // The model adds a penalty to its output for any other `lora_param_tensor`,
++  // and the zeroed LoRA weights add nothing.
++  ASSERT_OK_AND_ASSIGN(auto embeddings,
++                       EncodeOnesWithLoRAModel(*audio_executor));
++  EXPECT_THAT(embeddings,
++              Pointwise(FloatNear(1e-4f), ExpectedLoRAModelFeatures(
++                                              /*lora_delta=*/0.0f)));
++}
++
++TEST_F(AudioLiteRtCompiledModelExecutorTest,
++       UseLoRANulloptRepopulatesLoRAParamTensor) {
++  ASSERT_OK_AND_ASSIGN(
++      auto audio_executor,
++      CreateAudioExecutor(*env_,
++                          (std::filesystem::path(::testing::SrcDir()) /
++                           std::string(kTestAudioLoRAModelPath))
++                              .string(),
++                          /*max_sequence_length=*/0, Backend::CPU));
++  ASSERT_OK_AND_ASSIGN(
++      ModelAssets lora_assets,
++      ModelAssets::Create((std::filesystem::path(::testing::SrcDir()) /
++                           std::string(kTestAllOnesLoRAPath))
++                              .string()));
++  ASSERT_OK(audio_executor->LoadLoRA(/*lora_id=*/1, lora_assets));
++  ASSERT_OK(audio_executor->UseLoRA(/*lora_id=*/1));
++
++  // The all-ones LoRA weights add 2, and the LoRA's `lora_param_tensor` holds
++  // the LoRA channel range.
++  ASSERT_OK_AND_ASSIGN(auto lora_embeddings,
++                       EncodeOnesWithLoRAModel(*audio_executor));
++  EXPECT_THAT(lora_embeddings,
++              Pointwise(FloatNear(1e-4f), ExpectedLoRAModelFeatures(
++                                              /*lora_delta=*/2.0f)));
++
++  // Deactivating the LoRA rebinds zeroed LoRA weights and a new
++  // `lora_param_tensor`, which must hold the LoRA channel range again.
++  ASSERT_OK(audio_executor->UseLoRA(std::nullopt));
++  auto& input_buffers_map = GetMutableEncoderInputBuffersMap(*audio_executor);
++  ASSERT_TRUE(input_buffers_map.contains("lora_param_tensor"));
++  ASSERT_OK_AND_ASSIGN(
++      std::vector<int32_t> lora_params,
++      GetDataAsVector<int32_t>(input_buffers_map.at("lora_param_tensor")));
++  EXPECT_THAT(
++      lora_params,
++      ElementsAre(0, kLoRAModelParamEnd, kLoRAModelParamEnd, kLoRAModelParamEnd,
++                  kLoRAModelParamEnd, kLoRAModelParamEnd, kLoRAModelParamEnd));
++
++  ASSERT_OK_AND_ASSIGN(auto base_embeddings,
++                       EncodeOnesWithLoRAModel(*audio_executor));
++  EXPECT_THAT(base_embeddings,
++              Pointwise(FloatNear(1e-4f), ExpectedLoRAModelFeatures(
++                                              /*lora_delta=*/0.0f)));
++}
++
+ }  // namespace
+ 
+ }  // namespace litert::lm
+diff --git a/runtime/executor/llm_litert_compiled_model_executor.cc b/runtime/executor/llm_litert_compiled_model_executor.cc
+index eb57d957..4f28e8d0 100644
+--- a/runtime/executor/llm_litert_compiled_model_executor.cc
++++ b/runtime/executor/llm_litert_compiled_model_executor.cc
+@@ -928,6 +928,12 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::RunSignature(
+     absl::flat_hash_map<absl::string_view, TensorBuffer>& input_buffers,
+     absl::flat_hash_map<absl::string_view, TensorBuffer>& output_buffers,
+     bool async) {
++  // Tracks whether the internal-only LoRA manager bound an active adapter so
++  // OSS builds (where the block below is stripped) still bind zero buffers.
++  bool bound_active_lora = false;
++  if (!bound_active_lora) {
++    ABSL_RETURN_IF_ERROR(BindZeroLoRABuffers(signature, input_buffers));
++  }
+ 
+   ABSL_ASSIGN_OR_RETURN(const int current_step, GetCurrentStep());
+   if (pre_graph_run_callback_) {
+@@ -2270,6 +2276,75 @@ LlmLiteRtCompiledModelExecutorBase::GetProfileSummary() {
+   return summary;
+ }
+ 
++absl::Status LlmLiteRtCompiledModelExecutorBase::BindZeroLoRABuffers(
++    absl::string_view signature_name,
++    absl::flat_hash_map<absl::string_view, TensorBuffer>& input_buffers) {
++  auto sig_it = zero_lora_buffers_by_signature_.find(signature_name);
++  if (sig_it == zero_lora_buffers_by_signature_.end()) {
++    LITERT_ASSIGN_OR_RETURN(
++        auto signature_input_names,
++        compiled_model_->GetSignatureInputNames(signature_name));
++    absl::flat_hash_map<std::string, TensorBuffer> signature_buffers;
++    for (const auto& input_name : signature_input_names) {
++      if (!IsLoRABufferInputName(input_name)) {
++        continue;
++      }
++      const TensorBuffer* reusable = nullptr;
++      auto requirements = compiled_model_->GetInputBufferRequirements(
++          signature_name, input_name);
++      if (requirements) {
++        auto supported_types = requirements->SupportedTypes();
++        if (supported_types) {
++          for (const auto& [other_sig, other_buffers] :
++               zero_lora_buffers_by_signature_) {
++            auto other_it = other_buffers.find(input_name);
++            if (other_it != other_buffers.end()) {
++              auto buffer_type = other_it->second.BufferType();
++              if (buffer_type &&
++                  std::find(supported_types->begin(), supported_types->end(),
++                            *buffer_type) != supported_types->end()) {
++                reusable = &other_it->second;
++                break;
++              }
++            }
++          }
++        }
++      }
++      if (reusable != nullptr) {
++        LITERT_ASSIGN_OR_RETURN(auto dup, reusable->Duplicate());
++        signature_buffers.insert_or_assign(input_name, std::move(dup));
++      } else if (input_name == kLoRAParamTensorName) {
++        LITERT_ASSIGN_OR_RETURN(
++            TensorBuffer buffer,
++            compiled_model_->CreateInputBuffer(signature_name, input_name));
++        ABSL_RETURN_IF_ERROR(
++            PopulateLoRAParamTensor(*compiled_model_, signature_name, buffer));
++        signature_buffers.insert_or_assign(input_name, std::move(buffer));
++      } else {
++        LITERT_ASSIGN_OR_RETURN(
++            TensorBuffer buffer,
++            compiled_model_->CreateInputBuffer(signature_name, input_name));
++        {
++          LITERT_ASSIGN_OR_RETURN(auto lock_and_addr,
++                                  litert::TensorBufferScopedLock::Create(
++                                      buffer, TensorBuffer::LockMode::kWrite));
++          LITERT_ASSIGN_OR_RETURN(auto packed_size, buffer.PackedSize());
++          memset(lock_and_addr.second, 0, packed_size);
++        }
++        signature_buffers.insert_or_assign(input_name, std::move(buffer));
++      }
++    }
++    sig_it = zero_lora_buffers_by_signature_
++                 .emplace(signature_name, std::move(signature_buffers))
++                 .first;
++  }
++  for (const auto& [lora_name, lora_buffer] : sig_it->second) {
++    LITERT_ASSIGN_OR_RETURN(auto dup, lora_buffer.Duplicate());
++    input_buffers.insert_or_assign(lora_name, std::move(dup));
++  }
++  return absl::OkStatus();
++}
++
+ /* ===========================================================================*/
+ /* LlmLiteRtCompiledModelExecutorStatic */
+ /* ===========================================================================*/
+diff --git a/runtime/executor/llm_litert_compiled_model_executor.h b/runtime/executor/llm_litert_compiled_model_executor.h
+index 229a0135..6fe5dfe4 100644
+--- a/runtime/executor/llm_litert_compiled_model_executor.h
++++ b/runtime/executor/llm_litert_compiled_model_executor.h
+@@ -427,6 +427,13 @@ class LlmLiteRtCompiledModelExecutorBase : public LlmExecutor {
+   // `RunSignature()`.
+   LlmLiteRtVerifier::PassRunner CreateVerifyPassRunner();
+ 
++  // Binds zero-initialized LoRA weight buffers (and a populated
++  // lora_param_tensor channel range) in `signature_name` when no LoRA is
++  // active.
++  absl::Status BindZeroLoRABuffers(
++      absl::string_view signature_name,
++      absl::flat_hash_map<absl::string_view, TensorBuffer>& input_buffers);
++
+   // Creates Prefill input buffers for a given signature.
+   absl::Status CreatePrefillInputBuffers(
+       absl::string_view prefill_signature, int sequence_length,
+@@ -580,6 +587,12 @@ class LlmLiteRtCompiledModelExecutorBase : public LlmExecutor {
+   // The embedding lookup for the optional per layer embedder model.
+   std::unique_ptr<EmbeddingLookupManager> per_layer_embedding_lookup_;
+ 
++  // Cached zero-initialized LoRA buffers per signature used when no LoRA is
++  // active on a LoRA-capable model.
++  absl::flat_hash_map<std::string,
++                      absl::flat_hash_map<std::string, TensorBuffer>>
++      zero_lora_buffers_by_signature_;
++
+   // Whether to use FP16 precision for the calculation.
+   bool use_fp16_precision_;
+ 
+diff --git a/runtime/executor/llm_litert_compiled_model_executor_checksum_fake_lm_test.cc b/runtime/executor/llm_litert_compiled_model_executor_checksum_fake_lm_test.cc
+index 5b98e7ba..11250d0b 100644
+--- a/runtime/executor/llm_litert_compiled_model_executor_checksum_fake_lm_test.cc
++++ b/runtime/executor/llm_litert_compiled_model_executor_checksum_fake_lm_test.cc
+@@ -21,6 +21,7 @@
+ 
+ #include <array>
+ #include <atomic>
++#include <cstddef>
+ #include <cstdint>
+ #include <filesystem>  // NOLINT(build/c++17)
+ #include <limits>
+@@ -33,6 +34,7 @@
+ 
+ #include <gmock/gmock.h>
+ #include <gtest/gtest.h>
++#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+ #include "absl/memory/memory.h"  // from @com_google_absl
+ #include "absl/status/status.h"  // from @com_google_absl
+ #include "absl/status/status_macros.h"  // from @com_google_absl
+@@ -45,6 +47,7 @@
+ #include "litert/cc/litert_environment.h"  // from @litert
+ #include "litert/cc/litert_macros.h"  // from @litert
+ #include "litert/cc/litert_model.h"  // from @litert
++#include "litert/cc/litert_tensor_buffer.h"  // from @litert
+ #include "litert/test/matchers.h"  // from @litert
+ #include "runtime/components/constrained_decoding/constrained_decoder.h"
+ #include "runtime/components/constrained_decoding/constraint.h"
+@@ -815,6 +818,9 @@ INSTANTIATE_TEST_SUITE_P(
+         FakeLmTestCase{.name = "TokenInputWithoutVerify",
+                        .model_file = "checksum_fake_lm_no_verify.tflite",
+                        .supports_draft_verification = false},
++        FakeLmTestCase{.name = "TokenInputWithLoraParamTensor",
++                       .model_file = "checksum_fake_lm_lora.tflite",
++                       .supports_draft_verification = false},
+         // Invalid verify signatures disturb neither decoding nor the valid
+         // verify signature.
+         FakeLmTestCase{.name = "TokenInputWithInvalidVerify",
+@@ -826,6 +832,80 @@ INSTANTIATE_TEST_SUITE_P(
+       return info.param.name;
+     });
+ 
++// Verifies that running a LoRA-capable model without an active LoRA adapter
++// binds zeroed LoRA weight buffers and populates `lora_param_tensor` with the
++// expected channel range on every prefill and decode pass.
++TEST(FakeLmLoraParamTensorTest, ZeroLoraBuffersFillLoraParamTensorRange) {
++  ASSERT_OK_AND_ASSIGN(auto resources, FakeLmModelResources::Create(
++                                           "checksum_fake_lm_lora.tflite",
++                                           /*embedder_file=*/std::nullopt));
++  ASSERT_OK_AND_ASSIGN(
++      auto model_assets,
++      ModelAssets::Create(FakeLmModelPath("checksum_fake_lm_lora.tflite")));
++  ASSERT_OK_AND_ASSIGN(auto settings, LlmExecutorSettings::CreateDefault(
++                                          model_assets, Backend::CPU));
++  settings.SetCacheDir(":nocache");
++  settings.SetMaxNumTokens(kFakeLmContextSize);
++  CpuConfig cpu_config;
++  cpu_config.number_of_threads = 1;
++  settings.SetBackendConfig(cpu_config);
++  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
++  ASSERT_OK_AND_ASSIGN(
++      auto executor,
++      LlmLiteRtCompiledModelExecutorStatic::Create(settings, env, *resources));
++
++  int prefill_checks = 0;
++  int decode_checks = 0;
++  executor->UpdatePreGraphRunCallback(
++      [&](absl::string_view signature_name, int current_step,
++          absl::flat_hash_map<absl::string_view, TensorBuffer>&
++              tensor_buffers) {
++        auto param_it = tensor_buffers.find("lora_param_tensor");
++        ASSERT_NE(param_it, tensor_buffers.end());
++        auto param_span = ReferTensorBufferAsSpan<int32_t>(param_it->second);
++        ASSERT_TRUE(param_span);
++        // Element 0 is the start index (0); the rest are the largest non-rank
++        // extent across LoRA inputs: max(4 * 16, 48) = 64.
++        EXPECT_THAT(*param_span, ElementsAre(0, 64, 64, 64, 64, 64, 64))
++            << "signature: " << signature_name;
++
++        for (absl::string_view weight_name :
++             {"key_w_prime_left_0", "query_w_prime_right_0"}) {
++          auto weight_it = tensor_buffers.find(weight_name);
++          ASSERT_NE(weight_it, tensor_buffers.end()) << weight_name;
++          LITERT_ASSERT_OK_AND_ASSIGN(size_t packed_size,
++                                      weight_it->second.PackedSize());
++          LITERT_ASSERT_OK_AND_ASSIGN(
++              auto lock_and_ptr,
++              litert::TensorBufferScopedLock::Create<const uint16_t>(
++                  weight_it->second, litert::TensorBuffer::LockMode::kRead));
++          absl::Span<const uint16_t> weight_span(
++              lock_and_ptr.second, packed_size / sizeof(uint16_t));
++          EXPECT_THAT(weight_span, ::testing::Each(0)) << weight_name;
++        }
++        if (signature_name == "decode") {
++          ++decode_checks;
++        } else {
++          ++prefill_checks;
++        }
++      });
++
++  const std::vector<int> prompt = {3, 1, 4};
++  LITERT_ASSERT_OK_AND_ASSIGN(
++      auto tokens_buffer,
++      CopyToTensorBuffer<int>(prompt, {1, static_cast<int>(prompt.size())}));
++  ExecutorInputs inputs;
++  inputs.SetTextData(ExecutorTextData(std::move(tokens_buffer)));
++  ASSERT_OK(executor->Prefill(inputs));
++  ASSERT_OK_AND_ASSIGN(auto output_tokens, executor->Decode());
++  // Confirm the pre-graph callback ran and checked LoRA bindings on prefill.
++  EXPECT_GT(prefill_checks, 0);
++  // Confirm the pre-graph callback ran and checked LoRA bindings on decode.
++  EXPECT_GT(decode_checks, 0);
++  // Confirm zeroed LoRA weights leave the base model's checksum output intact.
++  EXPECT_THAT(output_tokens, ElementsAre(ElementsAre(FakeLmNextToken(prompt))));
++}
++
+ INSTANTIATE_TEST_SUITE_P(
+     FakeLms, FakeLmDraftVerificationTest,
+     ::testing::Values(
+diff --git a/runtime/testdata/checksum_fake_lm_lora.tflite b/runtime/testdata/checksum_fake_lm_lora.tflite
+new file mode 100644
+index 0000000000000000000000000000000000000000..837f507b11f8831dac87359be2738c8f7c9dedd8
+GIT binary patch
+literal 9848
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/runtime/testdata/dummy_audio_lora.litertlm b/runtime/testdata/dummy_audio_lora.litertlm
+new file mode 100644
+index 0000000000000000000000000000000000000000..6e116d9dd5b801fa74e0cb83bf9cae19f2ac0a69
+GIT binary patch
+literal 21156
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/runtime/util/BUILD b/runtime/util/BUILD
+index 215fcd07..45937a97 100644
+--- a/runtime/util/BUILD
++++ b/runtime/util/BUILD
+@@ -700,11 +700,19 @@ cc_library(
+         ":litert_status_util",
+         ":memory_mapped_file",
+         ":scoped_file",
++        "@com_google_absl//absl/container:flat_hash_map",
+         "@com_google_absl//absl/memory",
++        "@com_google_absl//absl/status",
+         "@com_google_absl//absl/status:status_macros",
+         "@com_google_absl//absl/status:statusor",
+         "@com_google_absl//absl/strings:string_view",
++        "@com_google_absl//absl/types:span",
+         "@litert//litert/cc:litert_buffer_ref",
++        "@litert//litert/cc:litert_compiled_model",
++        "@litert//litert/cc:litert_layout",
++        "@litert//litert/cc:litert_macros",
++        "@litert//litert/cc:litert_ranked_tensor_type",
++        "@litert//litert/cc:litert_tensor_buffer",
+         "@com_googlesource_code_re2//:re2",
+     ],
+ )
+@@ -712,14 +720,24 @@ cc_library(
+ cc_test(
+     name = "lora_util_test",
+     srcs = ["lora_util_test.cc"],
++    data = ["//runtime/testdata:checksum_fake_lm_models"],
+     deps = [
+         ":lora_util",
+         ":memory_mapped_file",
+         ":scoped_file",
+         ":test_utils",
+         "@com_google_googletest//:gtest_main",
++        "@com_google_absl//absl/container:flat_hash_map",
++        "@com_google_absl//absl/status",
+         "@com_google_absl//absl/status:statusor",
+         "@com_google_absl//absl/strings:string_view",
++        "@com_google_absl//absl/types:span",
++        "@litert//litert/cc:litert_common",
++        "@litert//litert/cc:litert_compiled_model",
++        "@litert//litert/cc:litert_environment",
++        "@litert//litert/cc:litert_options",
++        "@litert//litert/cc:litert_tensor_buffer",
++        "@litert//litert/test:matchers",
+     ],
+ )
+ 
+diff --git a/runtime/util/lora_util.cc b/runtime/util/lora_util.cc
+index 4672a563..57791683 100644
+--- a/runtime/util/lora_util.cc
++++ b/runtime/util/lora_util.cc
+@@ -14,15 +14,26 @@
+ 
+ #include "runtime/util/lora_util.h"
+ 
++#include <algorithm>
+ #include <cstddef>
+ #include <cstdint>
++#include <limits>
+ #include <memory>
+ #include <utility>
++#include <vector>
+ 
++#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+ #include "absl/memory/memory.h"  // from @com_google_absl
++#include "absl/status/status.h"  // from @com_google_absl
+ #include "absl/status/status_macros.h"  // from @com_google_absl
+ #include "absl/status/statusor.h"  // from @com_google_absl
+ #include "absl/strings/string_view.h"  // from @com_google_absl
++#include "absl/types/span.h"  // from @com_google_absl
++#include "litert/cc/litert_compiled_model.h"  // from @litert
++#include "litert/cc/litert_layout.h"  // from @litert
++#include "litert/cc/litert_macros.h"  // from @litert
++#include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
++#include "litert/cc/litert_tensor_buffer.h"  // from @litert
+ #include "runtime/util/memory_mapped_file.h"
+ #include "runtime/util/scoped_file.h"
+ #include "runtime/util/status_macros.h"
+@@ -84,7 +95,113 @@ bool IsLoRAInputName(absl::string_view name) {
+ }
+ 
+ bool IsLoRABufferInputName(absl::string_view name) {
+-  return IsLoRAInputName(name) || name == "lora_param_tensor";
++  return IsLoRAInputName(name) || name == kLoRAParamTensorName;
++}
++
++// GPU models exported with runtime-BMM LoRA read the channel range of every
++// LoRA BMM op from `lora_param_tensor`: element 0 is the start index and the
++// others are end indices. Without this the range is unset, so the LoRA ops
++// compute on garbage ranges (no effect, wrong output or out-of-bounds access).
++// Set the ends to the largest non-rank extent of any LoRA input (all dimensions
++// but the rank, multiplied, since the ops may reshape e.g. [rank, heads,
++// head_dim] to [rank, heads * head_dim]), so that every op covers all of its
++// channels. The rank is the model's LoRA rank (a LoRA with a smaller rank is
++// zero padded to it), i.e. the dimension that every LoRA input has.
++absl::StatusOr<int32_t> ComputeLoRAParamTensorEnd(
++    absl::Span<const std::vector<int32_t>> lora_input_dims) {
++  RET_CHECK(!lora_input_dims.empty())
++      << kLoRAParamTensorName << " is an input but there are no LoRA inputs.";
++
++  auto find_shared_rank = [&](int32_t min_candidate) -> int32_t {
++    int32_t rank = 0;
++    for (int32_t candidate : lora_input_dims[0]) {
++      if (candidate < min_candidate || (rank > 0 && candidate >= rank)) {
++        continue;
++      }
++      if (std::all_of(lora_input_dims.begin(), lora_input_dims.end(),
++                      [candidate](const std::vector<int32_t>& dims) {
++                        return std::find(dims.begin(), dims.end(), candidate) !=
++                               dims.end();
++                      })) {
++        rank = candidate;
++      }
++    }
++    return rank;
++  };
++
++  // Prefer shared dimensions > 1 so singleton batch/spatial dimensions (e.g.
++  // [1, 32, 1, 1536]) do not shadow the actual LoRA rank.
++  int32_t model_rank = find_shared_rank(/*min_candidate=*/2);
++  if (model_rank == 0) {
++    model_rank = find_shared_rank(/*min_candidate=*/1);
++  }
++  RET_CHECK_GT(model_rank, 0)
++      << "Could not find a LoRA rank shared by all LoRA inputs.";
++
++  int64_t max_extent = 0;
++  for (const auto& dims : lora_input_dims) {
++    RET_CHECK(!dims.empty()) << "LoRA input has empty dimensions.";
++    int64_t num_elements = 1;
++    for (int32_t dim : dims) {
++      RET_CHECK_GT(dim, 0) << "LoRA input has non-positive dimension: " << dim;
++      num_elements *= dim;
++    }
++    max_extent = std::max(max_extent, num_elements / model_rank);
++  }
++  RET_CHECK_LE(max_extent, std::numeric_limits<int32_t>::max());
++  return static_cast<int32_t>(max_extent);
++}
++
++absl::Status FillLoRAParamTensorValues(
++    absl::Span<const std::vector<int32_t>> lora_input_dims,
++    absl::Span<int32_t> params) {
++  // Element 0 is the start index; at least one end index must follow.
++  RET_CHECK_GE(params.size(), 2)
++      << "Unexpected size of " << kLoRAParamTensorName;
++  ABSL_ASSIGN_OR_RETURN(const int32_t lora_param_end,
++                        ComputeLoRAParamTensorEnd(lora_input_dims));
++  std::fill(params.begin(), params.end(), lora_param_end);
++  params[0] = 0;
++  return absl::OkStatus();
++}
++
++absl::Status PopulateLoRAParamTensor(
++    const litert::CompiledModel& compiled_model,
++    absl::string_view signature_name, litert::TensorBuffer& param_buffer) {
++  LITERT_ASSIGN_OR_RETURN(
++      auto input_names, compiled_model.GetSignatureInputNames(signature_name));
++  std::vector<std::vector<int32_t>> lora_dims;
++  for (const auto& input_name : input_names) {
++    if (!IsLoRAInputName(input_name)) {
++      continue;
++    }
++    LITERT_ASSIGN_OR_RETURN(
++        auto tensor_type,
++        compiled_model.GetInputTensorType(signature_name, input_name));
++    const auto dims = tensor_type.Layout().Dimensions();
++    lora_dims.emplace_back(dims.begin(), dims.end());
++  }
++  LITERT_ASSIGN_OR_RETURN(
++      auto lock_and_addr,
++      litert::TensorBufferScopedLock::Create<int32_t>(
++          param_buffer, litert::TensorBuffer::LockMode::kWrite));
++  LITERT_ASSIGN_OR_RETURN(size_t packed_size, param_buffer.PackedSize());
++  return FillLoRAParamTensorValues(
++      lora_dims,
++      absl::MakeSpan(lock_and_addr.second, packed_size / sizeof(int32_t)));
++}
++
++absl::Status InitLoRAParamTensorIfPresent(
++    const litert::CompiledModel& compiled_model,
++    absl::string_view signature_name,
++    absl::flat_hash_map<absl::string_view, litert::TensorBuffer>&
++        input_buffers_map) {
++  auto param_it = input_buffers_map.find(kLoRAParamTensorName);
++  if (param_it == input_buffers_map.end()) {
++    return absl::OkStatus();
++  }
++  return PopulateLoRAParamTensor(compiled_model, signature_name,
++                                 param_it->second);
+ }
+ 
+ }  // namespace litert::lm
+diff --git a/runtime/util/lora_util.h b/runtime/util/lora_util.h
+index e24e3027..f8ad1b6f 100644
+--- a/runtime/util/lora_util.h
++++ b/runtime/util/lora_util.h
+@@ -18,10 +18,16 @@
+ #include <cstdint>
+ #include <memory>
+ #include <utility>
++#include <vector>
+ 
++#include "absl/container/flat_hash_map.h"  // from @com_google_absl
++#include "absl/status/status.h"  // from @com_google_absl
+ #include "absl/status/statusor.h"  // from @com_google_absl
+ #include "absl/strings/string_view.h"  // from @com_google_absl
++#include "absl/types/span.h"  // from @com_google_absl
+ #include "litert/cc/litert_buffer_ref.h"  // from @litert
++#include "litert/cc/litert_compiled_model.h"  // from @litert
++#include "litert/cc/litert_tensor_buffer.h"  // from @litert
+ #include "runtime/util/memory_mapped_file.h"
+ #include "runtime/util/scoped_file.h"
+ 
+@@ -79,6 +85,11 @@ class MmapBufferRef : public litert::BufferRef<ByteT> {
+   std::unique_ptr<MemoryMappedFileWithAutoAlignment> mapped_file_;
+ };
+ 
++// Input of GPU models exported with runtime-BMM LoRA. It holds the channel
++// range of the LoRA BMM ops (see ml_drift::LlmRuntimeParams) and is not a LoRA
++// weight.
++inline constexpr absl::string_view kLoRAParamTensorName = "lora_param_tensor";
++
+ // Returns true if the given name is a LoRA input name for the model.
+ // The LoRA name is in the format of
+ // "(query|key|value|post)_w_prime_(left|right)_[0-num_layers)" or
+@@ -91,6 +102,39 @@ bool IsLoRAInputName(absl::string_view name);
+ // so they must not be cleared or overwritten when resetting model inputs.
+ bool IsLoRABufferInputName(absl::string_view name);
+ 
++// Helpers for populating `lora_param_tensor` (`[1, 1, 1, 7]` int32) on GPU
++// models exported with `odml.runtime_bmm` LoRA ops:
++//   - `lora_param_tensor`: holds `[start, end, ...]` channel bounds read by
++//     each LoRA op (ML Drift clamps per op to `min(end, op_channels)`).
++//   - `lora_input_dims`: shapes of all LoRA weight inputs in the signature.
++//   - End-channel value: the largest non-rank product across `lora_input_dims`,
++//     ensuring no LoRA op is truncated (e.g. `{1, 32, 1, 1536}` and
++//     `{1, 8, 256, 32}` share rank 32, giving `max(1536, 8 * 256) = 2048`).
++
++// Computes the end-channel value from `lora_input_dims`.
++absl::StatusOr<int32_t> ComputeLoRAParamTensorEnd(
++    absl::Span<const std::vector<int32_t>> lora_input_dims);
++
++// Fills `params` (`lora_param_tensor` elements) with `[0, end, ...]`.
++absl::Status FillLoRAParamTensorValues(
++    absl::Span<const std::vector<int32_t>> lora_input_dims,
++    absl::Span<int32_t> params);
++
++// Populates `param_buffer` (`kLoRAParamTensorName`) with the LoRA channel
++// range computed from the LoRA weight inputs of `signature_name` in
++// `compiled_model`.
++absl::Status PopulateLoRAParamTensor(
++    const litert::CompiledModel& compiled_model,
++    absl::string_view signature_name, litert::TensorBuffer& param_buffer);
++
++// Populates `lora_param_tensor` (`kLoRAParamTensorName`) in `input_buffers_map`
++// using PopulateLoRAParamTensor() when that entry is present; otherwise no-op.
++absl::Status InitLoRAParamTensorIfPresent(
++    const litert::CompiledModel& compiled_model,
++    absl::string_view signature_name,
++    absl::flat_hash_map<absl::string_view, litert::TensorBuffer>&
++        input_buffers_map);
++
+ }  // namespace litert::lm
+ 
+ #endif  // THIRD_PARTY_ODML_LITERT_LM_RUNTIME_UTIL_LORA_UTIL_H_
+diff --git a/runtime/util/lora_util_test.cc b/runtime/util/lora_util_test.cc
+index 899c8434..04f3e148 100644
+--- a/runtime/util/lora_util_test.cc
++++ b/runtime/util/lora_util_test.cc
+@@ -15,16 +15,28 @@
+ #include "runtime/util/lora_util.h"
+ 
+ #include <cstddef>
++#include <cstdint>
+ #include <filesystem>  // NOLINT: Required for path manipulation.
+ #include <fstream>
+ #include <ios>
+ #include <memory>
+ #include <string>
++#include <utility>
++#include <vector>
+ 
+ #include <gmock/gmock.h>
+ #include <gtest/gtest.h>
++#include "absl/container/flat_hash_map.h"  // from @com_google_absl
++#include "absl/status/status.h"  // from @com_google_absl
+ #include "absl/status/statusor.h"  // from @com_google_absl
+ #include "absl/strings/string_view.h"  // from @com_google_absl
++#include "absl/types/span.h"  // from @com_google_absl
++#include "litert/cc/litert_common.h"  // from @litert
++#include "litert/cc/litert_compiled_model.h"  // from @litert
++#include "litert/cc/litert_environment.h"  // from @litert
++#include "litert/cc/litert_options.h"  // from @litert
++#include "litert/cc/litert_tensor_buffer.h"  // from @litert
++#include "litert/test/matchers.h"  // from @litert
+ #include "runtime/util/memory_mapped_file.h"
+ #include "runtime/util/scoped_file.h"
+ #include "runtime/util/test_utils.h"  // IWYU pragma: keep
+@@ -227,8 +239,7 @@ TEST(IsLoRABufferInputNameTest, MatchesLoRAWeightInputs) {
+   EXPECT_TRUE(IsLoRABufferInputName("query_w_prime_left_0"));
+   EXPECT_TRUE(IsLoRABufferInputName("lora_atten_o_b_prime_weight_12"));
+   EXPECT_TRUE(IsLoRABufferInputName("value_w_prime_right3"));
+-  EXPECT_TRUE(
+-      IsLoRABufferInputName("transformer.layer_0.attn.q.w_prime_left"));
++  EXPECT_TRUE(IsLoRABufferInputName("transformer.layer_0.attn.q.w_prime_left"));
+ }
+ 
+ TEST(IsLoRABufferInputNameTest, MatchesLoRAParamTensor) {
+@@ -243,5 +254,107 @@ TEST(IsLoRABufferInputNameTest, RejectsOtherModelInputs) {
+   EXPECT_FALSE(IsLoRABufferInputName(""));
+ }
+ 
++TEST(LoRAParamTensorTest, ComputesLargestNonRankExtentAcross2DAnd3DShapes) {
++  // Rank 32 is the only shared dimension across {32, 4, 16} and {48, 32};
++  // largest non-rank extent is max(4 * 16, 48) = 64.
++  const std::vector<std::vector<int32_t>> lora_dims = {
++      {32, 4, 16},
++      {48, 32},
++  };
++  ASSERT_OK_AND_ASSIGN(int32_t end, ComputeLoRAParamTensorEnd(lora_dims));
++  EXPECT_EQ(end, 64);
++
++  std::vector<int32_t> params(7, -1);
++  ASSERT_OK(FillLoRAParamTensorValues(lora_dims, absl::MakeSpan(params)));
++  EXPECT_THAT(params, ::testing::ElementsAre(0, 64, 64, 64, 64, 64, 64));
++}
++
++TEST(LoRAParamTensorTest, IgnoresSingletonBatchDimensionsWhenFindingRank) {
++  // Both inputs have singleton 1 dimensions and rank 32; rank must resolve to
++  // 32 rather than 1, giving max(1536, 8 * 256) = 2048.
++  const std::vector<std::vector<int32_t>> lora_dims = {
++      {1, 32, 1, 1536},
++      {1, 8, 256, 32},
++  };
++  ASSERT_OK_AND_ASSIGN(int32_t end, ComputeLoRAParamTensorEnd(lora_dims));
++  EXPECT_EQ(end, 2048);
++}
++
++TEST(LoRAParamTensorTest, FailsOnInvalidInputs) {
++  EXPECT_FALSE(ComputeLoRAParamTensorEnd({}).ok());
++  const std::vector<std::vector<int32_t>> unshared_rank = {{32, 64}, {16, 48}};
++  EXPECT_FALSE(ComputeLoRAParamTensorEnd(unshared_rank).ok());
++
++  const std::vector<std::vector<int32_t>> valid_dims = {{32, 64}};
++  std::vector<int32_t> too_short_params(1, 0);
++  EXPECT_FALSE(
++      FillLoRAParamTensorValues(valid_dims, absl::MakeSpan(too_short_params))
++          .ok());
++}
++
++std::string GetChecksumFakeLmLoraPath() {
++  auto path = std::filesystem::path(::testing::SrcDir()) /
++              "litert_lm/runtime/testdata/checksum_fake_lm_lora.tflite";
++  return path.string();
++}
++
++TEST(LoRAParamTensorTest, PopulatesBufferFromCompiledModelSignature) {
++  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
++  LITERT_ASSERT_OK_AND_ASSIGN(auto options, litert::Options::Create());
++  options.SetHardwareAccelerators(litert::HwAccelerators::kCpu);
++  LITERT_ASSERT_OK_AND_ASSIGN(
++      auto compiled_model,
++      litert::CompiledModel::Create(env, GetChecksumFakeLmLoraPath(), options));
++
++  for (absl::string_view signature : {"prefill_8", "decode"}) {
++    LITERT_ASSERT_OK_AND_ASSIGN(
++        auto param_buffer,
++        compiled_model.CreateInputBuffer(signature, kLoRAParamTensorName));
++    ASSERT_OK(PopulateLoRAParamTensor(compiled_model, signature, param_buffer));
++
++    LITERT_ASSERT_OK_AND_ASSIGN(
++        auto lock_and_ptr,
++        litert::TensorBufferScopedLock::Create<const int32_t>(
++            param_buffer, litert::TensorBuffer::LockMode::kRead));
++    EXPECT_THAT(
++        absl::MakeConstSpan(lock_and_ptr.second, 7),
++        ::testing::ElementsAre(0, 64, 64, 64, 64, 64, 64))
++        << "signature: " << signature;
++  }
++}
++
++TEST(LoRAParamTensorTest, InitLoRAParamTensorIfPresentHandlesPresentAndAbsent) {
++  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
++  LITERT_ASSERT_OK_AND_ASSIGN(auto options, litert::Options::Create());
++  options.SetHardwareAccelerators(litert::HwAccelerators::kCpu);
++  LITERT_ASSERT_OK_AND_ASSIGN(
++      auto compiled_model,
++      litert::CompiledModel::Create(env, GetChecksumFakeLmLoraPath(), options));
++
++  absl::flat_hash_map<absl::string_view, litert::TensorBuffer> buffers_map;
++  // No-op when `lora_param_tensor` is absent from the map.
++  ASSERT_OK(
++      InitLoRAParamTensorIfPresent(compiled_model, "decode", buffers_map));
++  EXPECT_TRUE(buffers_map.empty());
++
++  // Populates `lora_param_tensor` in-place when present in the map.
++  LITERT_ASSERT_OK_AND_ASSIGN(
++      auto param_buffer,
++      compiled_model.CreateInputBuffer("decode", kLoRAParamTensorName));
++  LITERT_ASSERT_OK(param_buffer.Clear());
++  buffers_map.insert_or_assign(kLoRAParamTensorName, std::move(param_buffer));
++
++  ASSERT_OK(
++      InitLoRAParamTensorIfPresent(compiled_model, "decode", buffers_map));
++  auto it = buffers_map.find(kLoRAParamTensorName);
++  ASSERT_NE(it, buffers_map.end());
++  LITERT_ASSERT_OK_AND_ASSIGN(
++      auto lock_and_ptr,
++      litert::TensorBufferScopedLock::Create<const int32_t>(
++          it->second, litert::TensorBuffer::LockMode::kRead));
++  EXPECT_THAT(absl::MakeConstSpan(lock_and_ptr.second, 7),
++              ::testing::ElementsAre(0, 64, 64, 64, 64, 64, 64));
++}
++
+ }  // namespace
+ }  // namespace litert::lm
+-- 
+2.54.0 (Apple Git-157)
+

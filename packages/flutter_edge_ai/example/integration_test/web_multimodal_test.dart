@@ -1,8 +1,8 @@
 /// Images and audio on the web `.litertlm` path, through core: Gemma 4 E2B's
-/// GPU export on @litert-lm/core 0.19.0, loaded with its vision encoder on
+/// GPU export on @litert-lm/core 0.20.0, loaded with its vision encoder on
 /// WebGPU and its audio encoder on the CPU. Measured below the packages in
-/// web_litertlm_runtime_probe_test.dart (2026-11-23): an image and a clip are
-/// answered; the runtime's history returns an image's bytes as
+/// web_litertlm_runtime_probe_test.dart (2026-11-23; 0.20.0, 2026-11-25): an
+/// image and a clip are answered; the runtime's history returns an image's bytes as
 /// `blob: {bytes: [...]}`, which a preface aborts the module on, so a
 /// conversation stopped after an image is rebuilt with the image as base64.
 ///

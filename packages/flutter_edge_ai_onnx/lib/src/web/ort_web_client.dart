@@ -8,7 +8,7 @@
 // index.html contract: a `window.ortReady` Promise (resolving once the
 // `onnxruntime-web` ESM module has loaded) AND `window.ort` set to the
 // resolved module — same readiness-handshake shape as
-// `flutter_edge_ai_litertlm`'s `window.litertLmReady`/`window.Engine`. See
+// `flutter_edge_ai_litertlm`'s `window.litertLmReady`/`window.litertLm`. See
 // `example/web/index.html`.
 @JS()
 library;

@@ -4,7 +4,7 @@
 
 import 'dart:ffi';
 
-import 'package:ffi/ffi.dart' show calloc;
+import 'package:ffi/ffi.dart' show StringUtf8Pointer, calloc;
 
 import '../runtime/send_options.dart';
 import 'litert_lm_bindings.dart';
@@ -105,6 +105,21 @@ void applySendOptions(
       );
     } finally {
       b.litert_lm_no_repeat_ngram_config_delete(config);
+    }
+  }
+  final toolChoice = options.toolChoiceJson;
+  if (toolChoice != null) {
+    final json = toolChoice.toNativeUtf8(allocator: calloc);
+    try {
+      set(
+        'litert_lm_conversation_optional_args_set_tool_choice',
+        b.litert_lm_conversation_optional_args_set_tool_choice(
+          optionalArgs,
+          json.cast(),
+        ),
+      );
+    } finally {
+      calloc.free(json);
     }
   }
   final suppress = options.suppressTokens;

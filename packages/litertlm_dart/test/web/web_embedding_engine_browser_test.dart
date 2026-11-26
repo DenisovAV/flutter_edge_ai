@@ -129,7 +129,7 @@ void main() {
       (
         'the CPU text tower, with the measured reason',
         _config(backend: const Backend.cpu()),
-        'Failed to get external weight',
+        'loads the bundles but is too slow to use',
       ),
       ('the NPU', _config(backend: const Backend.npu()), 'only natively'),
       (

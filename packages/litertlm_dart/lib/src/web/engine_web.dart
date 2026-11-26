@@ -163,9 +163,7 @@ final class Engine {
       );
     }
     if (c.speculativeDecoding != null) {
-      throw UnsupportedError(
-        'The web runtime ($liteRtLmWebRuntime) has no speculative decoding.',
-      );
+      throw UnsupportedError(_webSpeculativeDecodingRefusal);
     }
     if (c.loraConfig != null) {
       throw UnsupportedError(
@@ -642,18 +640,38 @@ void _refuseOnWeb(EngineConfig config) {
     if (config.visionBackend is NpuBackend) 'an NPU vision encoder',
     if (config.audioBackend is NpuBackend) 'an NPU audio encoder',
     if (config.cacheDir != null) 'a cache directory (cacheDir)',
-    if (config.activationDataType != null) 'an activationDataType',
-    if (config.speculativeDecoding != null) 'speculative decoding',
     if (config.selectedSignatures != null) 'selected signatures',
     if (config.loraRank != null) 'a LoRA rank (loraRank)',
     if (config.audioLoraRank != null) 'an audio LoRA rank (audioLoraRank)',
   ];
-  if (refused.isEmpty) return;
-  throw UnsupportedError(
-    'The web Engine ($liteRtLmWebRuntime) has no ${refused.join(', ')}: '
-    'leave ${refused.length == 1 ? 'it' : 'them'} unset on the web.',
-  );
+  if (refused.isNotEmpty) {
+    throw UnsupportedError(
+      'The web Engine ($liteRtLmWebRuntime) has no ${refused.join(', ')}: '
+      'leave ${refused.length == 1 ? 'it' : 'them'} unset on the web.',
+    );
+  }
+  if (config.activationDataType != null) {
+    throw UnsupportedError(
+      'The web Engine ($liteRtLmWebRuntime) refuses an activationDataType: '
+      '0.20.0 takes one and reads it back (measured 2026-11-25), but what it '
+      'does to the web export was measured on one prompt only (a '
+      '3,200-token recall, FP32 3/3 against FP16 2/3). Leave it unset on '
+      'the web.',
+    );
+  }
+  if (config.speculativeDecoding != null) {
+    throw UnsupportedError(_webSpeculativeDecodingRefusal);
+  }
 }
+
+/// Why the web refuses speculative decoding, on the engine and on a
+/// conversation.
+const _webSpeculativeDecodingRefusal =
+    'The web runtime ($liteRtLmWebRuntime) refuses speculative decoding: '
+    '0.20.0 accepts the config (on and adaptive read back), but the web '
+    'export has no drafter, and the runtime then decodes without one and '
+    'says nothing (every MTP counter 0, measured 2026-11-25). Leave it unset '
+    'on the web.';
 
 /// Waits for the page's module script (`window.litertLmReady`) to have
 /// loaded `@litert-lm/core`, and returns the module it handed over

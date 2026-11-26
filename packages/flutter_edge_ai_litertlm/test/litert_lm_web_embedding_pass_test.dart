@@ -446,7 +446,8 @@ void main() {
                 contains('There is no CPU fallback'),
                 contains(
                   'the CPU (WebAssembly) path of $liteRtLmWebRuntime '
-                  'cannot read the external weights',
+                  'loads the EmbeddingGemma 2 .litertlm bundles but is too '
+                  'slow to use',
                 ),
               ),
             ).having((e) => e.cause, 'cause', isNull),
@@ -493,8 +494,8 @@ void main() {
     });
 
     test('CPU, selected only by the drive suite\'s record: WebGPU is not '
-        'asked, and a create failure says why the CPU path cannot load the '
-        'EmbeddingGemma 2 bundles', () async {
+        'asked, and a create failure says the CPU path is for measurement '
+        'only', () async {
       final runtime = _FakeRuntime()
         ..gpu = LiteRtLmWebGpuSupport.noWebGpu
         ..createError = StateError(
@@ -513,10 +514,10 @@ void main() {
               contains('(cpu)'),
               contains('Failed to get external weight'),
               contains(
-                'The CPU (WebAssembly) path of $liteRtLmWebRuntime cannot '
-                'read the external weights of the EmbeddingGemma 2 .litertlm '
-                'bundles; they load on WebGPU',
+                'The CPU (WebAssembly) path of $liteRtLmWebRuntime is for '
+                'measurement only',
               ),
+              contains('they run on WebGPU, the default backend'),
             ),
           ),
         ),

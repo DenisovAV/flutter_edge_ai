@@ -4,9 +4,9 @@
 /// flutter_edge_ai_litertlm's web `.litertlm` pass → litertlm_dart's web
 /// embedder → `@litert-lm/core`'s `EmbeddingEngine` (the version litertlm_dart
 /// pins) on WebGPU, with `WebStorageMode.cacheApi`. WebGPU because the
-/// runtime's CPU (WebAssembly) path cannot load these bundles ("Failed to get
-/// external weight for buffer id …", 0.18.0 and 0.19.0 alike); there is no CPU
-/// fallback.
+/// runtime's CPU (WebAssembly) path could not load these bundles on 0.18.0 and
+/// 0.19.0 ("Failed to get external weight for buffer id …") and is too slow to
+/// use on 0.20.0 (load 110-225 s, 9-12 s per text); there is no CPU fallback.
 ///
 /// What it holds the browser to:
 /// - 768 dimensions, unit norm, finite; `maxInputTokens` 1024; `{text}`; GPU;
@@ -1276,7 +1276,7 @@ void main() {
         startsWith('EmbeddingGemma 2 on the web needs WebGPU'),
         contains('this browser has no WebGPU'),
         contains('There is no CPU fallback'),
-        contains('cannot read the external weights'),
+        contains('is too slow to use'),
       ),
     );
     expect(created, isEmpty, reason: 'EmbeddingEngine.create was called');

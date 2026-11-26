@@ -8,6 +8,7 @@
 - Tool-call constraints built with LLGuidance; Google's prebuilt constraint provider no longer ships.
 - macOS needs no `macos_companions` define; the hook ignores it with a warning.
 - Native CPU/GPU conversations each get their own sampler (LiteRT-LM #2080 fixed); no warning there.
+- Web refusals (EmbeddingGemma 2 on CPU, activation type, speculative decoding) give the 0.20.0 reasons.
 
 ## 0.19.1+4
 - Plain Dart programs (`dart run`, `dart test`, `dart build cli`) on every backend; see the README.

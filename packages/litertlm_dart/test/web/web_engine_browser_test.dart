@@ -61,7 +61,7 @@ void main() {
             modelPath: 'blob:x',
             activationDataType: ActivationDataType.float32,
           ),
-          'an activationDataType',
+          'refuses an activationDataType: 0.20.0 takes one',
         ),
         (
           'speculative decoding',
@@ -71,7 +71,7 @@ void main() {
               mode: SpeculativeDecodingMode.on,
             ),
           ),
-          'speculative decoding',
+          'the web export has no drafter',
         ),
       ]) {
         test(what, () async {
@@ -650,7 +650,7 @@ void main() {
               ),
             ),
           ),
-          refusal('no speculative decoding'),
+          refusal('the web export has no drafter'),
         );
         expect(list('conversationOptions'), isEmpty);
       });

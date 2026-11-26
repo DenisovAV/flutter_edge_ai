@@ -738,9 +738,10 @@ final class LiteRtLmWebEmbedder {
   String _webGpuRefusal(String why) =>
       'EmbeddingGemma 2 on the web needs WebGPU, and $why, so $_file was not '
       'loaded. There is no CPU fallback: the CPU (WebAssembly) path of '
-      '$liteRtLmWebRuntime cannot read the external weights of the '
-      'EmbeddingGemma 2 .litertlm bundles. Use a browser with WebGPU enabled '
-      'and a GPU it can use.';
+      '$liteRtLmWebRuntime loads the EmbeddingGemma 2 .litertlm bundles but '
+      'is too slow to use (measured on 0.20.0: load 110-225 s, then 9-12 s '
+      'per short text on the page\'s main thread). Use a browser with WebGPU '
+      'enabled and a GPU it can use.';
 
   /// Creates the engine for [url] into [_engine] and returns the settings it
   /// got.
@@ -775,12 +776,15 @@ final class LiteRtLmWebEmbedder {
           'the page\'s @litert-lm/core WebAssembly module has 4 GB of memory, '
           'and the vision encoder does not fit in it next to an LLM such as '
           'Gemma 4 E2B.';
-      // Every EmbeddingGemma 2 bundle fails here on the CPU, with "Failed to
-      // get external weight for buffer id …": say why, whatever the message.
+      // The CPU path is selected only by the drive suite's record. On 0.19.0
+      // every EmbeddingGemma 2 bundle failed here ("Failed to get external
+      // weight for buffer id …"); 0.20.0 loads them (measured), so a failure
+      // on the CPU is something else, and the hint only says where they run.
       const cpuHint =
-          '. The CPU (WebAssembly) path of $liteRtLmWebRuntime cannot read '
-          'the external weights of the EmbeddingGemma 2 .litertlm bundles; '
-          'they load on WebGPU, the default backend.';
+          '. The CPU (WebAssembly) path of $liteRtLmWebRuntime is for '
+          'measurement only (it loads the EmbeddingGemma 2 .litertlm bundles '
+          'but is too slow to use); they run on WebGPU, the default '
+          'backend.';
       final cpu = _config.backend == LiteRtLmWebBackend.cpu;
       final towers = [
         if (images) 'its vision encoder',

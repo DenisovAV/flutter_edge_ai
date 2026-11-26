@@ -809,16 +809,21 @@ Chrome 157 before it (2026-11-23):
   CPU and GPU executors does not apply, nor does the native float32 rule for
   Gemma 4 on the GPU above 2,048 tokens: the web takes no activation type
   (below), and the runtime uses the bundle's (FP16 for the GPU export).
-- **Refused:** the NPU, `cacheDir`, `activationDataType`, the tokenizer,
+- **Refused:** the NPU, `cacheDir`, `activationDataType` (0.20.0 takes it,
+  but its effect on the web export is measured on one prompt only),
+  speculative decoding (accepted by 0.20.0, but the web export has no
+  drafter and the runtime runs without one, silently), the tokenizer,
   option scoring, `benchmark()`, `Conversation.getBenchmarkInfo()`,
   `readBundleInfo`, `readBundleGenericData`. `Backend.cpu` (WebAssembly), the
   default of `EngineConfig`, is handed to the runtime, but Gemma 4's GPU
   export fails at the first send there ("Environment was not initialized
   during streaming."): pass `Backend.gpu()`.
 - **EmbeddingGemma 2** runs on WebGPU only: the CPU (WebAssembly) path of
-  `@litert-lm/core` cannot read the bundles' external weights ("Failed to get
-  external weight"), so `Backend.cpu` — the default of `EmbeddingEngineConfig`
-  — is refused; pass `backend: Backend.gpu()`. `cacheDir` and
+  `@litert-lm/core` 0.20.0 loads the bundles but is too slow to use (load
+  110-225 s, then 9-12 s per short text on the page's main thread, about 80
+  times WebGPU; 0.19.0 could not load them at all), so `Backend.cpu` — the
+  default of `EmbeddingEngineConfig` — is refused; pass
+  `backend: Backend.gpu()`. `cacheDir` and
   `requireWeightCache` are refused (the web keeps no weight cache). A page
   without WebGPU is refused before anything loads. Images on the 270m and
   audio on the 270m or the 440m are refused from the bundle's header: the

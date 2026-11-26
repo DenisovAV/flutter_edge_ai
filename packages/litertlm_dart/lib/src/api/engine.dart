@@ -570,6 +570,27 @@ final class Engine {
     );
     final maxTokens = resolved.context;
 
+    // Integer activations on the GPU: LiteRT-LM 0.20.0 creates the engine and
+    // decodes nonsense for the float bundles measured (Gemma 4 E2B and
+    // FunctionGemma 270M on Metal, native-v0.20.0), with no error to pass on.
+    final asked = config.activationDataType;
+    if (kind == BackendKind.gpu &&
+        (asked == ActivationDataType.int16 ||
+            asked == ActivationDataType.int8)) {
+      final family = await _readFamily(path);
+      if (family == LlmModelFamily.gemma4 ||
+          family == LlmModelFamily.functionGemma) {
+        throw ArgumentError.value(
+          asked,
+          'activationDataType',
+          '${asked!.name} on the GPU: LiteRT-LM 0.20.0 creates the engine for '
+              'this ${family!.name} bundle and then decodes nonsense (measured '
+              'on Metal with native-v0.20.0); it is a float model. Use '
+              'ActivationDataType.float16 or float32.',
+        );
+      }
+    }
+
     // Only the GPU executor reads the activation type: the caller's wins, else
     // the engine's rule for a GPU load.
     var activation = config.activationDataType;

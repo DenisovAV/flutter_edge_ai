@@ -555,6 +555,31 @@ void main() {
     await gpu.close();
   });
 
+  test('integer activations on the GPU are refused for Gemma 4 and '
+      'FunctionGemma (measured nonsense on Metal); the CPU and other families '
+      'pass them on', () async {
+    final g4 = write('g4.litertlm', _bundle(family: 8));
+    final fg = write('fg.litertlm', _bundle(family: 3));
+    for (final path in [g4, fg]) {
+      for (final type in [ActivationDataType.int16, ActivationDataType.int8]) {
+        await expectLater(
+          create(path, backend: const Backend.gpu(), activation: type),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => '${e.message}',
+              'message',
+              contains('decodes nonsense'),
+            ),
+          ),
+        );
+      }
+    }
+    expect(host.creates, isEmpty, reason: 'refused before create');
+    final cpu = await create(g4, activation: ActivationDataType.int8);
+    await cpu.close();
+    expect(host.creates, hasLength(1));
+  });
+
   test('Gemma 4 on the GPU above 2,048 tokens runs float32; the CPU and a '
       'set value are left alone', () async {
     final path = write('g4.litertlm', _bundle(family: 8));

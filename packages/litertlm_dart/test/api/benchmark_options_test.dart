@@ -73,6 +73,7 @@ class _Host extends EngineHost {
     required String modelPath,
     required String backend,
     required int? maxTokens,
+    int? maxVisionTokensPerImage,
     int? contextWindow,
     required String? cacheDir,
     required bool enableVision,

@@ -23,7 +23,8 @@ enum BackendKind { cpu, gpu, npu }
 /// CPU every type gives the float32 reply; on Metal LiteRT-LM 0.20.0
 /// accepts [int16] and [int8] for Gemma 4 E2B and FunctionGemma 270M,
 /// creates the engine, and decodes nonsense with both: those bundles are
-/// float models.
+/// float models, so `Engine.create` refuses [int16] and [int8] on the GPU for
+/// a Gemma 4 or FunctionGemma bundle (an `ArgumentError` naming the reason).
 enum ActivationDataType {
   float32,
   float16,

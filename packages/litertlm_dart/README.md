@@ -632,7 +632,12 @@ Linux (x64 and arm64) and Windows, and on the web. What an app does itself:
   libraries, copied out of the APK by the app.
 - **macOS and iOS:** nothing. The hook bundles `LiteRtLm` and
   `StreamProxy`, and that is all there is: the tool-call constraints are
-  built into `libLiteRtLm` (LLGuidance) and so is the Metal accelerator.
+  built into `libLiteRtLm` (LLGuidance) and so is the Metal accelerator. A
+  macOS Podfile that still carries the `[flutter_gemma] Setup LiteRT-LM
+  macOS` block keeps building: the hook replaces the stager that block runs
+  (`~/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh`,
+  only when it is one of ours) with a no-op that says the block can be
+  removed.
 - **One `libLiteRtLm` per app:** another package that bundles its own
   `libLiteRtLm` through a build hook leaves which build runs undefined.
 

@@ -7,6 +7,7 @@
 - Text and audio LoRA: `ConversationConfig.loraConfig` (`LoraConfig`), `EngineConfig.loraRank`/`audioLoraRank`.
 - Tool-call constraints built with LLGuidance; Google's prebuilt constraint provider no longer ships.
 - macOS needs no `macos_companions` define; the hook ignores it with a warning.
+- macOS: the old Podfile stager block still builds; it now runs a no-op that says it can go.
 - Native CPU/GPU conversations each get their own sampler (LiteRT-LM #2080 fixed); no warning there.
 - Web refusals (EmbeddingGemma 2 on CPU, activation type, speculative decoding) give the 0.20.0 reasons.
 

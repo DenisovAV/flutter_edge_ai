@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:litertlm_dart/src/hook/download.dart';
 import 'package:litertlm_dart/src/hook/legacy_user_defines.dart';
 import 'package:litertlm_dart/src/hook/macos_companions.dart';
+import 'package:litertlm_dart/src/hook/macos_stager_stub.dart';
 import 'package:litertlm_dart/src/hook/mediatek_runtime.dart';
 import 'package:litertlm_dart/src/hook/qairt_linux.dart';
 import 'package:litertlm_dart/src/hook/qnn_runtime.dart';
@@ -1367,6 +1368,8 @@ void main(List<String> args) async {
     final dirName = _prebuiltDirName(os, arch, iOSSdk: iOSSdk);
     if (dirName == null) return; // Unsupported arch (e.g. arm32), skip.
 
+    if (os == OS.macOS) _replaceMacOSStager(input, output);
+
     for (final bundle in _bundles) {
       await _processBundle(
         bundle: bundle,
@@ -1377,6 +1380,44 @@ void main(List<String> args) async {
       );
     }
   });
+}
+
+/// Puts the no-op stub where the Podfile block apps pasted runs the macOS
+/// companion stager (macos_stager_stub.dart), replacing a stager of an
+/// earlier release, so the block neither fails nor stages old companions.
+///
+/// The block names the arm64 directory whatever the target architecture. A
+/// file that cannot be written is said, never a failed build: the stub is
+/// for apps that still carry the block.
+void _replaceMacOSStager(BuildInput input, BuildOutputBuilder output) {
+  final file = File(
+    '${_cacheBasePath('flutter_gemma')}/macos_arm64/$macOSStagerFileName',
+  );
+  final pubspec = File.fromUri(input.packageRoot.resolve('pubspec.yaml'));
+  final version =
+      RegExp(
+        r'^version:\s*(\S+)',
+        multiLine: true,
+      ).firstMatch(pubspec.readAsStringSync())?.group(1) ??
+      'unknown';
+  final bool written;
+  try {
+    written = writeMacOSStagerStub(file, version);
+  } on Exception catch (e) {
+    stderr.writeln(
+      '[$_packageName] could not write the no-op macOS stager to '
+      '${file.path}: $e',
+    );
+    return;
+  }
+  if (written) {
+    // An older plugin's hook on this machine may write its stager back.
+    output.dependencies.add(file.uri);
+  } else {
+    stderr.writeln(
+      '[$_packageName] ${file.path} is not a stager of ours; left as it is.',
+    );
+  }
 }
 
 /// Byte-for-byte comparison of two existing files.

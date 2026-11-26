@@ -166,13 +166,24 @@ final _litertlmBundle = _NativeBundle(
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
-  // One directory per release tag (`<cacheBase>/native-v0.19.1-c/<platform>`),
+  // One directory per release tag (`<cacheBase>/native-v0.20.0/<platform>`),
   // so two tags never share files. Up to litertlm_dart 0.19.1+4 the hook also
   // mirrored the macOS companions and their stager into the old flat
   // `flutter_gemma/native/macos_arm64` for the Podfile block apps pasted;
   // from native-v0.20.0 there is no macOS companion, and nothing is put
   // there.
   useFlatLayout: true,
+  // 0.20.0: LiteRT-LM v0.20.0 (95df4c2a, LiteRT bf49eb62), C API 1.1, built
+  // from branch feat/litertlm-0.20 at c603c38b5 (Linux and Windows: CI run
+  // 45767868141; Apple and Android: local builds of the same commit). Tool
+  // calls are constrained with LLGuidance (patch_c_api.sh sections 29 and 31),
+  // so no archive carries Google's prebuilt constraint provider; Apple links
+  // the Metal accelerator into libLiteRtLm (no accelerator framework);
+  // libLiteRt and the WebGPU accelerator are built from LiteRT's source on
+  // Linux and Windows, /MT on Windows, with LiteRT #11120 re-applied
+  // (patches/litert_intel_webgpu_no_dp4a.patch). Android's Qualcomm dispatch
+  // is built against QAIRT 2.52.0, Linux arm64's against 2.51.1.
+  //
   // 0.19.1-c changes the Android archive and nothing else: it adds
   // libLiteRtDispatch_MediaTek.so, our adapter (mediatek_dispatch_compat.c)
   // that gives Google's legacy MediaTek dispatch the versioned dispatch ABI
@@ -309,19 +320,19 @@ final _litertlmBundle = _NativeBundle(
   // while debugging a mismatch (#316).
   checksums: {
     'litertlm-linux_x86_64.tar.gz':
-        'fde4a418818747f740795e95e65821f31bb48a104ffe89844f6f7303f6f05799',
+        '207691315ba167e894c784db489ab740a7e3b86b8e378fa83740af263270727e',
     'litertlm-linux_arm64.tar.gz':
-        '812b465e77cd30ce6c1ca144e48158eb364e08b5af4aca546052c42b391f4750',
+        'e3f5a0ba6eb1e31c5baab680f1ebf95575d8395ae7a397613da8725742ef969c',
     'litertlm-windows_x86_64.tar.gz':
-        'c114569468a5bbe8a68ca48ba1c5ff31a5c96d635042b71ab84cf56ed3c3a1dc',
+        'ff8da8c4c7757b4d0bbcd40206e6866bcd8fb6fb92dd4a44b0199ebea5b9b95e',
     'litertlm-macos_arm64.tar.gz':
-        '698c48bcc01633a49640af5c51c85a2ee850bed81789a91c24efc8926080d170',
+        'e820e3acc547edbbb11380c02958d1c95160a79147b437ec3f2b1a5f9f361fa6',
     'litertlm-ios_arm64.tar.gz':
-        'b477c3fad86dcfaab62ea87e327556fdfb2f4b61ce03351d71828b9e9f8f848f',
+        'd94c23c97f86fd2b30b597d2a9fdde08c526060457ac36a8b3b4fa77c7e6f680',
     'litertlm-ios_sim_arm64.tar.gz':
-        'cc2c2de4195692ce89c73451924ac6617bfe7557afddb3fdd81df9022795b5a2',
+        '5d9c7129fb60f32f7671f65c2a5f978e69a22ee9df0029b5b363e29c14f97bef',
     'litertlm-android_arm64.tar.gz':
-        'b96972aa2fcab97572cdcf7b76e6f4d36412886220b133c85d54a7bc99d61169',
+        'dbce6e6d333fcc4aa3dce086a832dc2ed5df7eeeb9b06e2a863f1d535c006bf3',
   },
   // Up to native-v0.19.1 also Google's prebuilt GemmaModelConstraintProvider
   // (every platform) and, on Apple, the Metal accelerator as

@@ -306,6 +306,43 @@ void main() {
     await model.close();
   });
 
+  test(
+    'a legacy createSession that waits for the previous session\'s close '
+    'while the model closes fails with the closed-model StateError',
+    () async {
+      final engine = _Engine();
+      final model = _model(engine, ModelType.gemmaIt);
+      // ignore: deprecated_member_use
+      await model.createSession();
+      final handle = engine.handles.single..closeGate = Completer<void>();
+
+      // ignore: deprecated_member_use
+      final second = model.createSession().then<Object?>(
+        (_) => null,
+        onError: (Object e) => e,
+      );
+      await pumpEventQueue();
+      final closing = model.close();
+      await pumpEventQueue();
+      handle.closeGate!.complete();
+      await closing;
+
+      expect(
+        await second,
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Model was closed while'),
+        ),
+      );
+      expect(
+        engine.handles,
+        hasLength(1),
+        reason: 'no conversation after close',
+      );
+    },
+  );
+
   test('an engine that fails to load reaches core with the line in core\'s '
       'terms, as natively', () async {
     final model = LiteRtLmWebInferenceModel(

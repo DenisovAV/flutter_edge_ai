@@ -315,6 +315,12 @@ class LiteRtLmEngine
         npuVendor: engineNpuVendor(engine),
         androidGpu: androidGpu,
       ),
+      toolChoiceRefusal: liteRtLmToolChoiceRefusal(
+        abi: host.abi,
+        backend: activeBackend,
+        npuVendor: engineNpuVendor(engine),
+        androidGpu: androidGpu,
+      ),
       onClose: () {}, // no-op: core resets its own state via addCloseListener
     );
   }

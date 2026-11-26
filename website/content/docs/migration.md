@@ -1,10 +1,29 @@
 ---
 title: Migration
-description: Upgrade to Flutter Edge AI 2.7 (Hugging Face resolvers per role, the litertlm_dart runtime and its user_defines key), 2.6 (engine session/chat/turn SPI, decider SPI on InferenceModel, typed responses and failed-turn rollback), 2.5 (openModel and embedding providers), and earlier releases.
+description: Upgrade to flutter_edge_ai_litertlm 1.22.0 (litertlm_dart 0.20.0, the web module line), Flutter Edge AI 2.7 (Hugging Face resolvers per role, the litertlm_dart runtime and its user_defines key), 2.6 (engine session/chat/turn SPI, decider SPI on InferenceModel, typed responses and failed-turn rollback), 2.5 (openModel and embedding providers), and earlier releases.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
+
+## flutter_edge_ai_litertlm 1.22.0 and litertlm_dart 0.20.0: one web shim line
+
+**Web: one shim line replaces three.** `flutter_edge_ai_litertlm` 1.22.0 (on `litertlm_dart` 0.20.0, LiteRT-LM 0.20.0) reads `@litert-lm/core` from `window.litertLm`, the whole module, instead of `window.Engine` and `window.EmbeddingEngine`. The backend ids it sends now come from the module's own `Backend` enum, because 0.20.0 renumbered them. In `web/index.html`, inside the `litertLmReady` module script, replace
+```
+window.Engine = m.Engine;
+window.EmbeddingEngine = m.EmbeddingEngine;
+return m.Engine;
+```
+with
+```
+window.litertLm = m;
+return m;
+```
+and import `@litert-lm/core@0.20.0`. A 0.19.0 page with the new line still runs, with a one-time version note. A page without the line is refused at create, quoting the line to add: a language model with a `StateError`, an EmbeddingGemma 2 embedder with an `EmbeddingLoadException`. Later releases that use more of the module need no further page edit.
+
+**macOS: no companion libraries.** `libLiteRtLm` now carries the tool-call constraints (LLGuidance) and the Metal accelerator itself, so nothing is staged next to it. A `macos/Podfile` with the `[flutter_gemma] Setup LiteRT-LM macOS` block that runs the stager keeps building: the stager is now a no-op that says the block can be removed. An older inline block of the same name, which copies `libGemmaModelConstraintProvider.dylib` itself, fails the build: delete that build phase from the Podfile's `post_install` and from the Runner target. Apps still target macOS 14.0.
+
+**`user_defines`:** an NPU define under the old `flutter_edge_ai_litertlm:` key now fails the build; put it under `hooks: user_defines: litertlm_dart:`.
 
 ## flutter_edge_ai_litertlm 1.21.1: web on `@litert-lm/core` 0.19.0
 
@@ -849,7 +868,7 @@ dependencies:
 ```
 dependencies:
   flutter_edge_ai: ^2.7.2                 # core — always required
-  flutter_edge_ai_litertlm: ^1.21.3       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai_litertlm: ^1.22.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
   flutter_edge_ai_mediapipe: ^1.3.1       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.3.3      # add if you compute embeddings with a tokenizer file (needs a backend, see above)
   flutter_edge_ai_rag: ^1.3.0             # add for on-device RAG (RagIndex) + one store below

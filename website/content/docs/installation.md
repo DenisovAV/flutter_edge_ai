@@ -18,7 +18,7 @@ dependencies:
   flutter_edge_ai: ^2.7.2                      # Core — always required (no engine on its own)
 
   # Inference engines — add at least one:
-  flutter_edge_ai_litertlm: ^1.21.3            # .litertlm models (FFI; mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_litertlm: ^1.22.0            # .litertlm models (FFI; mobile + desktop + web) + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.3.1            # .task / .bin models (MediaPipe; mobile + web)
   flutter_edge_ai_builtin_ai: ^0.4.3           # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS 26+) / Windows AI Foundry / Chrome Prompt API (Web)
   flutter_edge_ai_onnx: ^0.10.1                 # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
@@ -34,7 +34,7 @@ dependencies:
   # flutter_edge_ai_any: ^0.1.0             # experimental: any-sync store synced between a user's devices; native only, LAN for now
 
   # Optional — on-device speech (STT + TTS):
-  flutter_edge_ai_speech: ^0.6.2               # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
+  flutter_edge_ai_speech: ^0.6.3               # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
 
   # Optional — on-device agent skills:
   flutter_edge_ai_agent: ^0.4.4                # agent skills the model runs itself (text / JS / native-intent / MCP)
@@ -204,8 +204,7 @@ its native layer is `flutter_local_ai`, which builds from **iOS 13.0 / macOS
 raises the floor from 10.15 to 12.0**, and a lower deployment target fails
 resolution with a message naming the `flutter_local_ai` pod rather than the
 package you added. `flutter_edge_ai_litertlm` (and so speech) needs **macOS
-14.0**, from 1.19.0 by declaration; its companion libraries are built for
-macOS 14.
+14.0**, from 1.19.0 by declaration.
 
 **Where you set it depends on the dependency manager.** Swift Package Manager is the
 default since Flutter 3.44 (opt-in before that), and an SPM-only app has no `Podfile` at all.
@@ -468,10 +467,10 @@ window.LlmInference = LlmInference;
 ```
 
 **`flutter_edge_ai_litertlm`** (`.litertlm` web models — early preview, on
-`@litert-lm/core` 0.19.0). Only builds made for the web load: Gemma 4 E2B's GPU
+`@litert-lm/core` 0.20.0). Only builds made for the web load: Gemma 4 E2B's GPU
 export (`LiteRtLmModels.gemma4E2bIt.webGpu`, text, images and audio; 2.34 GB,
 so install it with `WebStorageMode.streaming`) and Gemma 3n's `-web.litertlm`
-exports (documented on 0.18.0, not measured on 0.19.0); a native `.litertlm`
+exports (documented on 0.18.0, not measured since); a native `.litertlm`
 installs on web and then fails at the first generation. The
 `@litert-lm/core` ESM doesn't assign window globals and module scripts are
 deferred, so Dart must await `window.litertLmReady` before any static interop:
@@ -479,18 +478,21 @@ deferred, so Dart must await `window.litertLmReady` before any static interop:
 ```
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
-  window.Engine = m.Engine;
-  window.EmbeddingEngine = m.EmbeddingEngine;
-  return m.Engine;
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
+  window.litertLm = m;
+  return m;
 })();
 </script>
 ```
 
-`window.Engine` runs `.litertlm` LLMs. `window.EmbeddingEngine` (litertlm
-1.13.1+) runs EmbeddingGemma 2 `.litertlm` embedders on WebGPU — text and
-images, and from 1.13.2 audio and combined inputs; without that line such an embedder fails to load with an
-`EmbeddingLoadException` that names it. Both need a browser with WebGPU: the
+`window.litertLm` is the whole module: its `Engine` runs `.litertlm` LLMs, its
+`EmbeddingEngine` runs EmbeddingGemma 2 `.litertlm` embedders on WebGPU (text,
+images, audio and combined inputs), and its `Backend` enum gives the backend
+ids sent. Each is read when it is used, so a later release that uses more of
+the module needs no new line. A page without `window.litertLm` fails the
+model's or the embedder's load with an error that quotes the line; a page
+that still sets the old `window.Engine` global is told what to replace (see
+[Migration](/docs/migration)). Both need a browser with WebGPU: the
 CPU (WebAssembly) path of `@litert-lm/core` cannot read the EmbeddingGemma
 2 bundles' external weights, so without WebGPU the embedder's load fails with an
 `EmbeddingLoadException` that says so — there is no CPU fallback.
@@ -538,8 +540,8 @@ changed the bundle's API, and a copy from an earlier version fails
 `getActiveEmbedder()` with an `EmbeddingLoadException` that names
 `litert_embeddings.js`. These four files serve `.tflite` embedding models;
 EmbeddingGemma 2 `.litertlm` embedders (flutter_edge_ai_litertlm 1.13.1+) need
-none of them, only the `window.EmbeddingEngine` line in the `@litert-lm/core`
-script above.
+none of them, only the `@litert-lm/core` module script above
+(`window.litertLm = m;`).
 
 The WASM runtime underneath comes from a pinned CDN copy by default
 (`flutter_edge_ai_litertlm`) — nothing else to install. To serve it
@@ -583,14 +585,13 @@ a packaged app); not on Linux. What
 holds across all of desktop: there is no MediaPipe engine on desktop — `.task` /
 `.bin` models are **NOT compatible** with desktop.
 
-**macOS:** a deployment target of 14.0. With Swift Package Manager on
-(Flutter's default) that is all, from `flutter_edge_ai_litertlm` 1.19.0. With it
-off (`enable-swift-package-manager: false`), replace the `post_install` block of
-`macos/Podfile` — see [Desktop → macOS](/docs/desktop#macos). Without it the
-build succeeds and the first model load fails.
+**macOS:** a deployment target of 14.0. From `flutter_edge_ai_litertlm` 1.22.0
+that is all, with Swift Package Manager on or off; a `macos/Podfile` block
+from an earlier release keeps building and can be removed — see
+[Desktop → macOS](/docs/desktop#macos).
 
 See [Desktop Support](/docs/desktop) for the full per-platform reference (macOS
-companion libraries, entitlements, Windows DLL loading — no VC++
+deployment target, entitlements, Windows DLL loading — no VC++
 redistributable needed — Linux Vulkan driver, and known limitations).
 
 ## Platform & architecture support

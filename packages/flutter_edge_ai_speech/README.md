@@ -11,7 +11,7 @@ push-to-talk voice loop.
 
 This package depends on `litertlm_dart`, which owns the shared `libLiteRtLm`
 native bundle and exposes the LiteRT C API bindings (`LiteRtBindings`) used here,
-and on `flutter_edge_ai_litertlm` (1.21.0 or later) for the catalog's NPU targets.
+and on `flutter_edge_ai_litertlm` (1.22.0 or later) for the catalog's NPU targets.
 
 ## Status
 

@@ -24,8 +24,7 @@ that same 270M model on the four tools this codelab declares and produces a
 `.litertlm` you open from disk. Step 5 pays **2.59 GB** for **Gemma 4 E2B**,
 for the thing a 270M model cannot do at all: reason out loud before it chooses
 which function to call. It reaches the runtime's tool path the same way
-FunctionGemma does, which is where `toolChoice` stops behaving the way its
-three names suggest.
+FunctionGemma does, and there the runtime also applies `toolChoice`.
 
 That is the idea worth taking away:
 
@@ -60,8 +59,8 @@ call. That is the rule the loop in Step 3 exists to keep.
   `generateChatResponseWithTools` with `maxToolTurns` as the stop condition
 * why every committed call must be answered on every exit path, including the
   ones you did not plan for
-* what `toolChoice` actually changes — and, on both models here, what it does
-  not: neither can be forced to call, and on a `.litertlm` for the same reason
+* what `toolChoice` changes on a `.litertlm`: `none` hides the tools, and
+  `required` forces a call natively (not in the browser)
 * how to fine-tune a 270M model on your own tools with **litetune**, convert it
   to `.litertlm`, and measure what the conversion cost
 * that a model you tuned loads through the same API as one you downloaded —
@@ -619,8 +618,8 @@ available on [GitHub](https://github.com/DenisovAV/litetune).
 The measurements below were taken with litetune 0.4.1, whose verifier ran
 LiteRT-LM 0.18; litetune 0.9.1 verifies on LiteRT-LM 0.19.1, and its changelog
 reports the same numbers on 0.18.0 and 0.19.1 for every family it measured. The
-completed Flutter app uses `flutter_edge_ai_litertlm` 1.21.0 and runs LiteRT-LM
-0.19.1 through `litertlm_dart`; the verifier version is not the app runtime.
+completed Flutter app uses `flutter_edge_ai_litertlm` 1.22.0 and runs LiteRT-LM
+0.20.0 through `litertlm_dart`; the verifier version is not the app runtime.
 
 Converted with litetune 0.3.0 on Python 3.10 or 3.11? Convert again: with a
 relative `--output-dir`, as below, that version wrote a bundle without its GPU
@@ -947,74 +946,97 @@ that was cut off. An empty `properties` map is the other wrong answer: the
 runtime prints it and the model's own chat template omits it, so the same
 declaration renders two ways.
 
-### toolChoice, and what it cannot do
+### toolChoice
 
-`ToolChoice` has three values, and on a `.litertlm` the honest summary is that
-`none` is weaker than its name for **both** models here:
+`ToolChoice` has three values. On a `.litertlm` the runtime renders the
+declarations for both models here, and from `flutter_edge_ai_litertlm` 1.22.0
+it applies the choice too:
 
 ```dart
-        // Whether the model may, must, or must not call. On a `.litertlm` the
-        // runtime holds the declarations for both families — `openChat`
-        // passes `tools` into the underlying session regardless of this — so
-        // `none` cannot take them back out. What it switches off is the SDK's
-        // suppression of tool-call JSON, which is why a call made under `none`
-        // can arrive as raw markup in the bubble. On a `.task` FunctionGemma
-        // the SDK writes the declarations into the prompt itself, and there
-        // `none` really does leave them out.
+        // Whether the model may, must, or must not call. On a `.litertlm`
+        // the runtime renders the declarations for both families: from
+        // flutter_edge_ai_litertlm 1.22.0 `none` opens the session without
+        // them, and `required` reaches the runtime with each of your messages
+        // (natively; the web runtime takes no per-message tool choice). On a
+        // `.task` FunctionGemma the SDK writes the declarations into the
+        // prompt itself, and `none` leaves them out there too.
         toolChoice: _toolChoice,
 ```
 
-Switch to `none` and ask the multiplication question again. The declarations
-are still with the session, so the model may still call; what changes is that
-the SDK stops swallowing the call turn, and you see the raw
-`{"role":"assistant","tool_calls":[…]}` in the reply bubble instead of prose.
-Worth doing once — it is the clearest possible look at what the passthrough
-format actually puts on the wire.
+Switch to `none` and ask the multiplication question again. The session is
+opened without the declarations, so the model does not know the tools exist
+and answers in prose. Before 1.22.0 `none` could not take them back out, and a
+call made under it arrived as raw `{"role":"assistant","tool_calls":[…]}` in
+the reply bubble.
 
-On a `.task` FunctionGemma through MediaPipe it is a different story: there the
-SDK writes the declarations into the prompt text itself, so `none` really does
-leave them out and the model never learns the tools exist. Same switch, two
-meanings, decided by the file type and the family together. The fourth
-combination is the one to know about: a `.task` Gemma 4 is a passthrough model
-on a runtime that has no tool path, and MediaPipe never forwards `tools` to the
+A `.task` Gemma 4 is the combination to know about: a passthrough model on a
+runtime that has no tool path, and MediaPipe never forwards `tools` to the
 session — so its declarations are written by nobody, whatever `toolChoice`
 says.
 
-Switch to `required` and **neither** model obeys it. The app says so rather
-than leaving you to wonder:
+Switch to `required` and the model calls a tool even for a message no tool
+answers: measured on macOS (CPU and Metal), Gemma 4 E2B answered "Tell me a
+short joke about cats." in text with `auto` and called `get_weather` with
+`required`. The choice goes with each of your messages and never with the one
+that carries the tool results, so the model can still answer them. A
+`required` chat with no tools is refused with an `ArgumentError`, and where
+LiteRT-LM cannot apply a tool choice (every NPU, Linux arm64, an Android GPU
+that is neither Adreno, Mali nor PowerVR) the chat is refused at open with an
+`UnsupportedError`. In the browser the runtime takes no per-message tool
+choice, so `required` behaves as `auto` there, and the app says so:
 
 ```dart
       _notice =
           _toolChoice == ToolChoice.required &&
               !widget.model.supportsRequiredToolChoice
-          ? '${widget.model.label} cannot be forced to call a tool — nothing '
-                'in the prompt it is given can say "you must", so `required` '
-                'behaves as "auto".'
+          ? '${widget.model.label} cannot be forced to call a tool in the '
+                'browser — its LiteRT-LM runtime takes no per-message tool '
+                'choice, so `required` behaves as "auto".'
           : null;
 ```
-
-That is not a bug in either model, and on a `.litertlm` the reason is the same
-one for both. The only "you must call a function" text the SDK owns lives on
-the path where it writes the declarations itself, and neither model here takes
-that path — the runtime holds their declarations, and the `tools_json` it is
-handed carries no `tool_choice` field. So `required` is silently `auto`, for
-both, with no warning to tell you.
-
-Which is why the answer is recorded per checkpoint rather than assumed from
-size. Today it is `false` for both, and the bigger model is not the exception:
 
 ```dart
   /// Can this model be *forced* to call a tool?
   ///
-  /// `ToolChoice.required` needs a way to say "you must call a function" in
-  /// the prompt the model actually reads, and neither of these has one. On a
-  /// `.litertlm` both families hand their declarations to the runtime as
-  /// `tools_json`, which carries no `tool_choice`, so `required` is `auto` for
-  /// both — and the SDK's old FunctionGemma warning is not even reached, since
-  /// that lived on the path where the SDK wrote the declarations itself.
-  /// Reasonable behaviour, and very confusing to watch if the app does not
-  /// say so.
+  /// On a `.litertlm` both families hand their declarations to the runtime,
+  /// and from `flutter_edge_ai_litertlm` 1.22.0 `ToolChoice.required` reaches
+  /// it natively as LiteRT-LM's per-message tool choice, sent with each of
+  /// your messages. The browser's `@litert-lm/core` takes no per-message tool
+  /// choice, so on the web `required` behaves as `auto`, and the app says so.
+  /// Where the native runtime cannot apply a tool choice either, opening the
+  /// chat with `required` is refused; the chat page shows why and keeps the
+  /// previous choice ([openKeepingPrevious]).
   final bool supportsRequiredToolChoice;
+```
+
+Both models set it to `!kIsWeb`. The devices where the runtime refuses a
+tool choice are the engine's to know, not the app's, so the chat page does not
+list them: it tries the new setting, and when the engine refuses it with an
+`UnsupportedError` it reopens the chat with the setting that worked and shows
+the refusal as the notice:
+
+```dart
+/// Opens a chat with the [next] tool choice and thinking setting. When the
+/// engine refuses them with an [UnsupportedError] — `ToolChoice.required` on a
+/// device whose runtime cannot apply a tool choice, for one — it opens one
+/// with the [previous] settings instead and returns the refusal, so the page
+/// can say why and the chat keeps working. Any other failure is thrown.
+Future<({T chat, (ToolChoice, bool) settings, String? refusal})>
+openKeepingPrevious<T>(
+  Future<T> Function(ToolChoice choice, bool thinking) open, {
+  required (ToolChoice, bool) next,
+  required (ToolChoice, bool) previous,
+}) async {
+  try {
+    return (chat: await open(next.$1, next.$2), settings: next, refusal: null);
+  } on UnsupportedError catch (error) {
+    return (
+      chat: await open(previous.$1, previous.$2),
+      settings: previous,
+      refusal: '${error.message ?? error}',
+    );
+  }
+}
 ```
 
 ### Thinking mode, and what the 2.59 GB buys

@@ -30,3 +30,21 @@ StructuredOutputSupport liteRtLmStructuredOutputSupport({
       ? const StructuredOutputSupport(keywords: ResponseFormat.dialect)
       : StructuredOutputSupport.none(refusal);
 }
+
+/// Why LiteRT-LM cannot apply a per-message tool choice on this row, or null
+/// where it can: litertlm_dart refuses a tool choice wherever it refuses
+/// constrained decoding ([liteRtLmConstrainedDecodingRefusal]), before
+/// anything is sent.
+String? liteRtLmToolChoiceRefusal({
+  required String abi,
+  required PreferredBackend? backend,
+  AndroidGpuFamily? androidGpu,
+  NpuStack? npuVendor,
+}) => backend == null
+    ? 'LiteRT-LM did not report the backend that loaded this model.'
+    : liteRtLmConstrainedDecodingRefusal(
+        abi: abi,
+        backend: backend.toRuntime,
+        androidGpu: androidGpu,
+        npuVendor: npuVendor,
+      );

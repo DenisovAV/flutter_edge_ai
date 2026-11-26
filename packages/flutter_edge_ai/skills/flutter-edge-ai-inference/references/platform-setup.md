@@ -88,7 +88,7 @@ debug builds: Gemma 4 E2B text, images and audio, EmbeddingGemma 2 270m and
 MediaTek takes `mediatek_npu: true` in the same block: the build fetches
 Google's `litert-npu-runtime-mediatek` AAR from Google Maven and bundles its
 dispatch (about 330 KB) behind our adapter from the native release
-(`native-v0.19.1-c`), which gives it the entry point the LiteRT of LiteRT-LM
+(since `native-v0.19.1-c`), which gives it the entry point the LiteRT of LiteRT-LM
 0.19 loads; the NeuroPilot runtime it drives is part of the phone. A bundle
 compiled for a MediaTek SoC (Google publishes Gemma 3 1B, Gemma 3 270M, Qwen3
 0.6B and EmbeddingGemma 2 ones; no Gemma 4; the Qwen3 0.6B one fails on its
@@ -144,8 +144,8 @@ simulator build) and cannot run GPU inference; use CPU there, or a real device.
 Apple Silicon (`arm64`) only: there is no native library for Intel (`x86_64`)
 Macs. The deployment target must be **macOS 14.0**: set Minimum Deployments on
 the Runner target in Xcode (`MACOSX_DEPLOYMENT_TARGET = 14.0`), and
-`platform :osx, '14.0'` in `macos/Podfile` if the app has one. LiteRT-LM's
-companion libraries are built for macOS 14; below it the build fails with
+`platform :osx, '14.0'` in `macos/Podfile` if the app has one
+(`flutter_edge_ai_litertlm` declares it); below it the build fails with
 `requires minimum platform version 14.0` (Swift Package Manager) or `required a
 higher minimum deployment target` (CocoaPods).
 
@@ -166,9 +166,13 @@ entitlements that require signing with a development certificate`, and a
 team-signed build silently drops them. A `.litertlm` model loads on macOS
 without them.
 
-`.litertlm` on macOS also needs two companion libraries in the app
-(`GemmaModelConstraintProvider`, `LiteRtLmMetalAccelerator`), which the package
-keeps out of Native Assets. How they get there depends on Swift Package Manager:
+From `flutter_edge_ai_litertlm` 1.22.0 `.litertlm` on macOS needs nothing
+more: `libLiteRtLm` carries the tool-call constraints and the Metal
+accelerator. A `macos/Podfile` block from an earlier release (below) keeps
+building, its script now a no-op, and can be removed. Up to 1.21.3 it needed
+two companion libraries in the app (`GemmaModelConstraintProvider`,
+`LiteRtLmMetalAccelerator`), which the package kept out of Native Assets. How
+they got there depended on Swift Package Manager:
 
 - **On** (the default since Flutter 3.44), with `flutter_edge_ai_litertlm`
   1.19.0 or later: nothing to add. Its Swift package brings them, and Xcode
@@ -184,8 +188,8 @@ keeps out of Native Assets. How they get there depends on Swift Package Manager:
   intentional compatibility identifiers used by the current package; do not
   rename them.
 
-A green build proves nothing: without the libraries the first model load fails
-with an error that contains
+Up to 1.21.3 a green build proved nothing: without the libraries the first
+model load failed with an error that contains
 `litertlm_dart: LiteRT-LM did not load on macOS` and names the fix.
 
 ```ruby
@@ -352,11 +356,13 @@ GPU export, `LiteRtLmModels.gemma4E2bIt.webGpu`
 the 0.19.0 runtime the E2B one answers a tool result with an empty
 reply. With `supportImage`/`supportAudio` it takes images and audio as
 natively; without them an image or audio message throws `UnsupportedError`.
-LoRA is not supported on any `.litertlm` path, native
-included: a session `loraPath` throws `UnsupportedError`, and an adapter
-installed with `withLora…` is downloaded but not applied. LoRA needs a MediaPipe
-`.task` model (flutter-edge-ai-mediapipe) or, natively, a `.gguf` model
-through `flutter_edge_ai_llama`. Gemma 4 thinking works.
+On the web a `.litertlm` session's `loraPath` throws `UnsupportedError`.
+Natively (`flutter_edge_ai_litertlm` 1.22.0+) it applies a `.tflite` LoRA
+adapter to a `.litertlm` exported with LoRA input signatures; a model without
+them and the NPU are refused. An adapter installed with `withLora…` is
+downloaded but not applied by itself. LoRA also runs on a MediaPipe `.task`
+model (flutter-edge-ai-mediapipe) and, natively, on a `.gguf` model through
+`flutter_edge_ai_llama`. Gemma 4 thinking works.
 
 A `--dart-define` token is compiled into `main.dart.js`, where every visitor can
 read it. Serve web users a model from a repo that needs no token.

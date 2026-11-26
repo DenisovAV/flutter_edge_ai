@@ -12,8 +12,8 @@ no engine by default — you opt in by registering `LiteRtLmEngine()`.) It runs
 JVM, no gRPC — and it is the **primary desktop engine** (macOS, Windows, Linux);
 [ONNX Runtime](/docs/onnx) also runs on desktop, and macOS and Windows can additionally
 use [Built-in AI](/docs/builtin-ai). The native library is fetched at build time via
-**Native Assets** (SHA256-verified, from the `native-v0.19.1-c` GitHub release,
-containing LiteRT-LM 0.19.1 and C API 1.0), so there is no manual native setup.
+**Native Assets** (SHA256-verified, from the `native-v0.20.0` GitHub release,
+containing LiteRT-LM 0.20.0), so there is no manual native setup.
 
 From 1.21.0 the runtime and the native build live in
 [litertlm_dart](https://pub.dev/packages/litertlm_dart), which this package
@@ -35,9 +35,9 @@ EmbeddingGemma 1 / Gecko
 | iOS | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in via `qualcomm_npu`) |
 | Windows | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
-| Web | ⚠️ early preview via `@litert-lm/core` 0.19.0 (images and audio with Gemma 4 E2B's GPU export) |
+| Web | ⚠️ early preview via `@litert-lm/core` 0.20.0 (images and audio with Gemma 4 E2B's GPU export) |
 
-> **Web is a preview.** It runs through `@litert-lm/core` 0.19.0 (WebGPU) and
+> **Web is a preview.** It runs through `@litert-lm/core` 0.20.0 (WebGPU) and
 > supports function calling and thinking; core parses `<think>` tags from any
 > model that emits them. Gemma 4 E2B runs from its GPU export
 > (`LiteRtLmModels.gemma4E2bIt.webGpu`, 2.34 GB, installed with
@@ -45,10 +45,12 @@ EmbeddingGemma 1 / Gecko
 > `supportImage`/`supportAudio`; `maxNumImages` counts a whole conversation's
 > images there. Gemma 4's older `-web.litertlm` exports are withheld (the E2B
 > one answers a tool result with an empty reply on 0.19.0). A native
-> `.litertlm` installs on web and then fails at the first generation. LoRA is not supported on any `.litertlm` path: a session
-> `loraPath` throws `UnsupportedError`, and an adapter installed with
-> `withLora…` is not applied. Use a MediaPipe `.task` model, or natively a
-> `.gguf` through [llama.cpp](/docs/llama). On web you
+> `.litertlm` installs on web and then fails at the first generation. Natively
+> a session's `loraPath` applies a `.tflite` LoRA adapter to a `.litertlm`
+> exported with LoRA input signatures (LiteRT-LM's LoRA Colab, step 3); a
+> model without them is refused, and so are the NPU and the web, where
+> `loraPath` throws `UnsupportedError`. An adapter installed with `withLora…`
+> is not applied by itself. On web you
 > also need the JS handshake in `web/index.html` (see [Web setup](#web-setup)).
 
 ## Setup
@@ -59,7 +61,7 @@ engines your app uses:
 ```
 dependencies:
   flutter_edge_ai: ^2.7.2
-  flutter_edge_ai_litertlm: ^1.21.3   # .litertlm inference engine
+  flutter_edge_ai_litertlm: ^1.22.0   # .litertlm inference engine
 ```
 
 ```dart
@@ -198,7 +200,7 @@ checksum and bundles its `libLiteRtDispatch_MediaTek.so` (Apache 2.0, about
 330 KB) as `libmtk_litert_dispatch_legacy.so`. It is not in our release
 because building it needs MediaTek's NeuroPilot SDK, whose licence lets it
 reach users only inside an app. In front of it sits our own
-`libLiteRtDispatch_MediaTek.so` (8 KB, from native-v0.19.1-c): the LiteRT of
+`libLiteRtDispatch_MediaTek.so` (8 KB, since native-v0.19.1-c): the LiteRT of
 LiteRT-LM 0.19 loads a dispatch only through `LiteRtDispatchQueryInterface`,
 which Google's build does not export, so ours exports it and hands LiteRT
 Google's tables. The
@@ -401,7 +403,7 @@ info.hasMtpDrafter;            // can decode speculatively
 ## Response formats
 
 `openSession(responseFormat:)` and `openChat(responseFormat:)` install
-LiteRT-LM 0.19's LLGuidance provider on that conversation and apply the JSON
+LiteRT-LM's LLGuidance provider on that conversation and apply the JSON
 schema to every structured send. Decoding is constrained to core's full
 `ResponseFormat` dialect, and core validates the completed reply as a second
 check. Call `model.refusalFor(format)` before opening the session; an unsupported
@@ -419,7 +421,7 @@ exception. Formats cannot be combined with tools or thinking.
 | iOS arm64 CPU / Metal | ✅ |
 | NPU, Web, and every unlisted row | ❌ refused |
 
-The Web `.litertlm` runtime (`@litert-lm/core` 0.19.0) has no constraint
+The Web `.litertlm` runtime (`@litert-lm/core` 0.20.0) has no constraint
 API. NPU support is refused per vendor until that exact row passes a
 discriminating device run; support never silently falls back to unconstrained
 decoding.
@@ -462,28 +464,28 @@ third session onward (the first two reused freed memory). Set
 
 ## Web setup
 
-`.litertlm` web inference runs via `@litert-lm/core` 0.19.0 (0.18.0 refuses
+`.litertlm` web inference runs via `@litert-lm/core` 0.20.0 (0.18.0 refuses
 the GPU export: "Unsupported backend: 2"). The ESM doesn't assign
 window globals, so add this handshake to your `web/index.html` `<head>` — Dart
-awaits `window.litertLmReady` (which resolves to the `Engine` constructor):
+awaits `window.litertLmReady` and reads the module from `window.litertLm`:
 
 ```
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
-  window.Engine = m.Engine;
-  window.EmbeddingEngine = m.EmbeddingEngine;
-  return m.Engine;
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
+  window.litertLm = m;
+  return m;
 })();
 </script>
 ```
 
-`window.EmbeddingEngine` (1.13.1) is what EmbeddingGemma 2 embedders run on in
-the browser, on WebGPU — text and images, and from 1.13.2 audio and combined
-inputs. A page without it fails the
-embedder's load with an `EmbeddingLoadException` naming the line, and so does a
-browser without WebGPU: there is no CPU fallback, because the CPU (WebAssembly)
-path of `@litert-lm/core` cannot read these bundles' external weights.
+The module's `EmbeddingEngine` is what EmbeddingGemma 2 embedders run on in
+the browser, on WebGPU — text, images, audio and combined inputs. A page
+without `window.litertLm` fails the embedder's load with an
+`EmbeddingLoadException` naming the line, and so does a browser without
+WebGPU: there is no CPU fallback, because the CPU (WebAssembly) path of
+`@litert-lm/core` 0.20.0 takes 110–225 s to load these bundles and 9–12 s per
+short text.
 An LLM and an embedder on the same page share one WebAssembly module and one
 WebGPU device, and take turns: an embedding waits while a reply is being
 generated, and a reply waits for an embedding in progress. The module has 4 GB

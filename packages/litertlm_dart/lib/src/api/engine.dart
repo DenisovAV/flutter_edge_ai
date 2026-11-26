@@ -456,6 +456,16 @@ final class Engine {
         'must be 1 or more',
       );
     }
+    if ((config.audioLoraRank ?? 0) > 0 && config.audioBackend == null) {
+      // Native refuses it at create, as FailedPrecondition "Audio executor
+      // settings not configured": the rank has no audio encoder to go to.
+      throw ArgumentError.value(
+        config.audioLoraRank,
+        'audioLoraRank',
+        'needs an audio encoder: set audioBackend, or leave audioLoraRank '
+            'unset',
+      );
+    }
     final kind = backendKindOf(config.backend);
     final path = config.modelPath;
     final platform =
@@ -990,15 +1000,33 @@ final class Engine {
   }
 
   /// Refuses [lora] before any native call: on an NPU (LiteRT-LM's NPU
-  /// executor takes no adapter), for a file that is not there, and on a model
-  /// whose `decode` signature has no LoRA inputs (LiteRT-LM would take the
-  /// adapter and leave it without effect).
+  /// executor takes no adapter), an audio adapter on an engine that loaded
+  /// no audio encoder, for a file that is not there, and on a model whose
+  /// `decode` signature has no LoRA inputs (LiteRT-LM would take the adapter
+  /// and leave it without effect).
   Future<void> _checkLora(LoraConfig lora) async {
     if (backendKindOf(backend) == BackendKind.npu) {
       throw UnsupportedError(
         'LoRA adapters are not supported on the NPU: LiteRT-LM\'s NPU '
         'executor refuses them. Load the model on the CPU or the GPU.',
       );
+    }
+    if (lora.audioLoraPath != null) {
+      final info = bundleInfo;
+      final why = audioBackend == null
+          ? 'this engine loaded no audio encoder (EngineConfig.audioBackend '
+                'is unset)'
+          : info != null && !_hasAudioEncoderSection(info)
+          ? '$_modelPath has no audio encoder (no tf_lite_audio_encoder '
+                'section)'
+          : null;
+      if (why != null) {
+        throw ArgumentError.value(
+          lora.audioLoraPath,
+          'audioLoraPath',
+          'cannot apply: $why. An audio LoRA adapts the audio encoder',
+        );
+      }
     }
     for (final (name, path) in [
       ('loraPath', lora.loraPath),
@@ -1010,9 +1038,16 @@ final class Engine {
     }
     final model = _modelPath;
     if (lora.loraPath == null || model == null) return;
-    final inputs = await (_loraInputCount ??= readLiteRtLmMainLoraInputCount(
-      model,
-    ));
+    final pending = _loraInputCount ??= readLiteRtLmMainLoraInputCount(model);
+    final int inputs;
+    try {
+      inputs = await pending;
+    } on Object {
+      // A failed read is not the model's answer: the next conversation reads
+      // the file again.
+      if (identical(_loraInputCount, pending)) _loraInputCount = null;
+      rethrow;
+    }
     if (inputs == 0) {
       throw ArgumentError.value(
         lora.loraPath,
@@ -1032,15 +1067,29 @@ final class Engine {
   ) async {
     try {
       return await open();
-    } on Object catch (e) {
+    } on Object catch (e, stack) {
       if (lora == null || !'$e'.contains('Lora is not supported')) rethrow;
-      throw UnsupportedError(
-        'This libLiteRtLm cannot load a text LoRA ("Lora is not supported."): '
-        'it is built from LiteRT-LM\'s public source without the text LoRA '
-        'backport (litertlm_dart native/litert_lm/patch_c_api.sh section 33).',
+      Error.throwWithStackTrace(
+        UnsupportedError(
+          'This libLiteRtLm cannot load a text LoRA ("Lora is not '
+          'supported."): it is built from LiteRT-LM\'s public source without '
+          'the text LoRA backport (litertlm_dart '
+          'native/litert_lm/patch_c_api.sh section 33). Native error: $e',
+        ),
+        stack,
       );
     }
   }
+
+  /// Whether [info] has a `TFLiteModel` section of an audio encoder
+  /// (`tf_lite_audio_encoder…`).
+  static bool _hasAudioEncoderSection(BundleInfo info) => info.sections.any(
+    (section) =>
+        section.dataType == 'TFLiteModel' &&
+        (section.modelType ?? '').toLowerCase().startsWith(
+          'tf_lite_audio_encoder',
+        ),
+  );
 
   /// Said once per engine: a thinking budget on a bundle that declares no
   /// output channel caps nothing.
@@ -1257,15 +1306,17 @@ Engine engineForTest(
   NpuStack? npuVendor,
   String? constraintRefusal,
   String? modelPath,
+  Backend? audioBackend,
+  BundleInfo? bundleInfo,
 }) => Engine._(
   client: client,
   backend: backend,
   visionBackend: null,
-  audioBackend: null,
+  audioBackend: audioBackend,
   maxNumTokens: maxNumTokens,
   activationDataType: null,
   npuVendor: npuVendor,
-  bundleInfo: null,
+  bundleInfo: bundleInfo,
   backing: backing,
   linearAttentionState: linearAttentionState,
   constraintRefusal: constraintRefusal,

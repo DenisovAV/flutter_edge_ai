@@ -117,6 +117,7 @@ void main() {
       client,
       backing: OpenSessionBacking.virtual,
       modelPath: loraModel,
+      audioBackend: const Backend.cpu(),
     );
     final audio = '${dir.path}/audio_lora.tflite';
     File(audio).writeAsBytesSync([0]);
@@ -138,7 +139,11 @@ void main() {
 
   test('a file that is not there is refused before any native call', () async {
     final client = _LoraClient();
-    final engine = engineForTest(client, modelPath: loraModel);
+    final engine = engineForTest(
+      client,
+      modelPath: loraModel,
+      audioBackend: const Backend.cpu(),
+    );
     for (final config in [
       LoraConfig(loraPath: '${dir.path}/missing.tflite'),
       LoraConfig(loraPath: adapter, audioLoraPath: '${dir.path}/no.tflite'),
@@ -154,7 +159,11 @@ void main() {
   test('a model without LoRA inputs is refused, because LiteRT-LM would '
       'take the adapter and leave it without effect', () async {
     final client = _LoraClient();
-    final engine = engineForTest(client, modelPath: plainModel);
+    final engine = engineForTest(
+      client,
+      modelPath: plainModel,
+      audioBackend: const Backend.cpu(),
+    );
     await expectLater(
       engine.createConversation(
         ConversationConfig(loraConfig: LoraConfig(loraPath: adapter)),
@@ -209,11 +218,21 @@ void main() {
         ConversationConfig(loraConfig: LoraConfig(loraPath: adapter)),
       ),
       throwsA(
-        isA<UnsupportedError>().having(
-          (e) => e.message,
-          'message',
-          contains('section 33'),
-        ),
+        isA<UnsupportedError>()
+            .having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('section 33'),
+                // The native error itself, and where it was thrown.
+                contains('INVALID_ARGUMENT (3)'),
+              ),
+            )
+            .having(
+              (e) => '${e.stackTrace}',
+              'stackTrace',
+              contains('createConversationHandle'),
+            ),
       ),
     );
     final failing = engineForTest(
@@ -226,5 +245,64 @@ void main() {
       ),
       throwsA(isA<StateError>()),
     );
+  });
+
+  test('an audio adapter on an engine without an audio encoder is refused '
+      'before any native call', () async {
+    final client = _LoraClient();
+    // No audio encoder loaded.
+    final noEncoder = engineForTest(client, modelPath: loraModel);
+    await expectLater(
+      noEncoder.createConversation(
+        ConversationConfig(loraConfig: LoraConfig(audioLoraPath: adapter)),
+      ),
+      throwsA(
+        isA<ArgumentError>()
+            .having((e) => e.name, 'name', 'audioLoraPath')
+            .having((e) => '${e.message}', 'message', contains('audioBackend')),
+      ),
+    );
+    // An audio backend, but a bundle with no audio encoder section.
+    final noSection = engineForTest(
+      client,
+      modelPath: loraModel,
+      audioBackend: const Backend.cpu(),
+      bundleInfo: await readBundleInfo(loraModel),
+    );
+    await expectLater(
+      noSection.createConversation(
+        ConversationConfig(loraConfig: LoraConfig(audioLoraPath: adapter)),
+      ),
+      throwsA(
+        isA<ArgumentError>().having(
+          (e) => '${e.message}',
+          'message',
+          contains('no audio encoder'),
+        ),
+      ),
+    );
+    expect(client.extras, isEmpty);
+    // A text adapter alone needs no audio encoder.
+    final text = await noEncoder.createConversation(
+      ConversationConfig(loraConfig: LoraConfig(loraPath: adapter)),
+    );
+    expect(client.extras.single.loraPath, adapter);
+    await text.close();
+  });
+
+  test('a failed read of the LoRA inputs is not kept: the next conversation '
+      'reads the file again', () async {
+    final client = _LoraClient();
+    final later = '${dir.path}/later.litertlm';
+    final engine = engineForTest(client, modelPath: later);
+    final config = ConversationConfig(
+      loraConfig: LoraConfig(loraPath: adapter),
+    );
+    await expectLater(engine.createConversation(config), throwsA(anything));
+    expect(client.extras, isEmpty);
+    File(later).writeAsBytesSync(_bundle('lora_atten_q_a_prime_weight_0'));
+    final conversation = await engine.createConversation(config);
+    expect(client.extras.single.loraPath, adapter);
+    await conversation.close();
   });
 }

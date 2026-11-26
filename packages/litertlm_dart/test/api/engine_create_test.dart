@@ -828,7 +828,12 @@ void main() {
     () async {
       final path = write('g.litertlm', _bundle());
       final engine = await Engine.create(
-        EngineConfig(modelPath: path, loraRank: 32, audioLoraRank: 8),
+        EngineConfig(
+          modelPath: path,
+          audioBackend: const Backend.cpu(),
+          loraRank: 32,
+          audioLoraRank: 8,
+        ),
       );
       expect(host.creates.last.loraRank, 32);
       expect(host.creates.last.audioLoraRank, 8);
@@ -839,6 +844,25 @@ void main() {
       await plain.close();
     },
   );
+
+  test('an audio LoRA rank without an audio encoder is refused before any '
+      'engine; 0 is none and passes', () async {
+    final path = write('g.litertlm', _bundle());
+    await expectLater(
+      Engine.create(EngineConfig(modelPath: path, audioLoraRank: 8)),
+      throwsA(
+        isA<ArgumentError>()
+            .having((e) => e.name, 'name', 'audioLoraRank')
+            .having((e) => '${e.message}', 'message', contains('audioBackend')),
+      ),
+    );
+    expect(host.creates, isEmpty);
+    final none = await Engine.create(
+      EngineConfig(modelPath: path, audioLoraRank: 0),
+    );
+    expect(host.creates.single.audioLoraRank, 0);
+    await none.close();
+  });
 
   test('a CPU thread count below 1 is refused before any engine', () async {
     final path = write('g.litertlm', _bundle());

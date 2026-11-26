@@ -7,8 +7,8 @@
 // each with `vector` from our macOS arm64 libLiteRtLm (CPU),
 // `vector_python_wheel` from Google's litert-lm wheel and `vector_st_fp32`
 // (Sentence Transformers, fp32). `vector` and `vector_python_wheel` were
-// re-recorded on LiteRT-LM 0.20 (a local macOS arm64 build of
-// feat/litertlm-0.20, wheel 0.20.0) on 2026-11-25 by
+// re-recorded on LiteRT-LM 0.20 (native-v0.20.0's macOS arm64
+// libLiteRtLm, wheel 0.20.0) on 2026-11-26 by
 // integration_test/tools/eg2_text_golden_vectors.py, bit-identical to the
 // LiteRT-LM 0.19 vectors (native-v0.19.0-a, wheel 0.19.0, 2026-11-04), which
 // replaced native-v0.18.0-d's and wheel 0.18.0's. A JSON file next to a test is not readable

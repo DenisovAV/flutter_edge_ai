@@ -21,9 +21,9 @@
  },
  "native_library": {
   "what": "vector_native: flutter_edge_ai's own libLiteRtLm build, same settings, over ctypes",
-  "build": "local build of feat/litertlm-0.20 (LiteRT-LM v0.20.0, build_macos.sh), macOS arm64",
+  "build": "native-v0.20.0 (litertlm-macos_arm64.tar.gz), macOS arm64",
   "file": "libLiteRtLm.dylib",
-  "sha256": "368a4d1a49b6b8da7f5a877cb61c59899990f96b4a8933b45378549b5cc433c4",
+  "sha256": "14a38a8074475714744e76d1279ce7625425e17338c81c88cf0e20ca70f966ad",
   "host": "Darwin arm64",
   "spread": {
    "clips": {

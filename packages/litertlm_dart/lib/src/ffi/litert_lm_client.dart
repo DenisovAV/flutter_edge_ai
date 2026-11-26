@@ -1782,9 +1782,17 @@ class LiteRtLmFfiClient {
   int? get thinkingTokenBudget => _thinkingTokenBudget;
   int? _thinkingTokenBudget;
 
-  /// The sampler of the engine's first generation, which LiteRT-LM keeps for
-  /// every later conversation (google-ai-edge/LiteRT-LM#2080).
+  /// The sampler of the engine's first generation, which LiteRT-LM 0.19 (C
+  /// API 1.0) keeps for every later conversation
+  /// (google-ai-edge/LiteRT-LM#2080). LiteRT-LM 0.20 builds each
+  /// conversation's own ([liteRtLmSamplerFixedAtFirstGeneration]), so the
+  /// latch says nothing on a library of C API 1.1 or later.
   final _samplerLatch = EngineSamplerLatch();
+
+  /// Whether the loaded library keeps the sampler of an engine's first
+  /// generation ([liteRtLmSamplerFixedAtFirstGeneration]); read when the
+  /// library loads.
+  bool _samplerFixedAtFirstGeneration = true;
   bool _warnedNpuSampling = false;
 
   /// The sampler each live conversation was created with, so the first
@@ -2419,6 +2427,9 @@ class LiteRtLmFfiClient {
       _hasTurnEndRecord = lib.providesSymbol(
         'litert_lm_conversation_get_last_turn_end',
       );
+      _samplerFixedAtFirstGeneration = liteRtLmSamplerFixedAtFirstGeneration(
+        readLiteRtLmCApiVersion(lib),
+      );
       _proxyDestroy = proxyLib
           .lookupFunction<
             Void Function(Pointer<Void>),
@@ -2835,12 +2846,16 @@ class LiteRtLmFfiClient {
   }
 
   /// Reports what LiteRT-LM#2080 means for [conv]'s generation (see
-  /// [EngineSamplerLatch]). The engine builds its sampler at its first
-  /// generation, not when a conversation is created.
+  /// [EngineSamplerLatch]). A LiteRT-LM 0.19 engine builds its sampler at its
+  /// first generation, not when a conversation is created; from 0.20 (C API
+  /// 1.1) each conversation's sampler is its own on the CPU and the GPU, and
+  /// nothing is said.
   void _noteGeneration(Pointer<LiteRtLmConversation> conv) {
     final entry = _conversationSampling[conv];
     // The NPU executor never reads a sampler; its own warning covers it.
-    if (entry == null || _backend == 'npu') return;
+    if (entry == null || _backend == 'npu' || !_samplerFixedAtFirstGeneration) {
+      return;
+    }
     final note = _samplerLatch.onGeneration(entry.$1, explicit: entry.$2);
     if (note == null) return;
     if (!note.warn) {

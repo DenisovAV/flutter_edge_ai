@@ -7,6 +7,7 @@
 - Text and audio LoRA: `ConversationConfig.loraConfig` (`LoraConfig`), `EngineConfig.loraRank`/`audioLoraRank`.
 - Tool-call constraints built with LLGuidance; Google's prebuilt constraint provider no longer ships.
 - macOS needs no `macos_companions` define; the hook ignores it with a warning.
+- Native CPU/GPU conversations each get their own sampler (LiteRT-LM #2080 fixed); no warning there.
 
 ## 0.19.1+4
 - Plain Dart programs (`dart run`, `dart test`, `dart build cli`) on every backend; see the README.

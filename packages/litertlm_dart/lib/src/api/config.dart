@@ -479,10 +479,11 @@ final class ConversationConfig {
   final List<Tool> tools;
 
   /// The caller's sampler; null takes the model file's sampler, field by
-  /// field, then 0.8 / 40 / 0.95 / seed 1. Set, it is the caller's choice:
-  /// when it differs from the sampler the engine's first generation fixed
-  /// (LiteRT-LM#2080), the conversation says so once. On the web the file's
-  /// sampler cannot be read, so null is 0.8 / 40 / 0.95 / seed 1.
+  /// field, then 0.8 / 40 / 0.95 / seed 1. Natively each conversation's
+  /// sampler is its own on the CPU and the GPU; the NPU decodes greedily. On
+  /// the web the engine's first generation fixes the sampler
+  /// (LiteRT-LM#2080), and a set one that differs is said once; the file's
+  /// sampler cannot be read there, so null is 0.8 / 40 / 0.95 / seed 1.
   final SamplerConfig? samplerConfig;
 
   /// The most tokens a reply may have, thinking included.

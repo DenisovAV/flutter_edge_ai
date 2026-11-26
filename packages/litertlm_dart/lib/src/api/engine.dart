@@ -1217,9 +1217,9 @@ Future<Conversation> createOwnConversation(
 /// [Engine.createConversation] with the model's own sampler default when the
 /// config sets none: the values flutter_edge_ai_litertlm resolves (the file's
 /// sampler, then the family's published defaults, then the fallback), which
-/// never count as the caller's choice (LiteRT-LM#2080's one-time warning
-/// fires only for a sampler the caller set). Null takes the file's sampler,
-/// then 0.8 / 40 / 0.95 / seed 1.
+/// never count as the caller's choice (the web's LiteRT-LM#2080 one-time
+/// warning fires only for a sampler the caller set). Null takes the file's
+/// sampler, then 0.8 / 40 / 0.95 / seed 1.
 Future<Conversation> createConversationWithDefault(
   Engine engine,
   ConversationConfig config,

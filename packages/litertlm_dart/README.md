@@ -453,10 +453,11 @@ and `enableThinking: false` here), caps the first channel the bundle declares
 - **`SamplerConfig(topK:, topP:, temperature:, seed:)`** (`seed` is 0 when
   not given). With no `SamplerConfig`, a conversation uses the sampler the
   model file carries, field by field, then 0.8 / 40 / 0.95 / seed 1.
-  LiteRT-LM fixes the sampler at the engine's first generation (LiteRT-LM
-  #2080); a later conversation that asks for another one is told so once. On
-  the NPU the executor decodes greedily whatever is sent, and an explicit
-  sampler there prints a warning.
+  Natively each conversation gets its own sampler on the CPU and the GPU
+  (LiteRT-LM 0.20 fixed #2080). On the web `@litert-lm/core` still fixes the
+  sampler at the engine's first generation; a later conversation that asks
+  for another one is told so once. On the NPU the executor decodes greedily
+  whatever is sent, and an explicit sampler there prints a warning.
 - **`ResponseFormat.json(schema)`** and **`ResponseFormat.regex(pattern)`**
   constrain every reply while it is decoded. They run on the hosts and
   backends where constrained decoding was qualified: elsewhere

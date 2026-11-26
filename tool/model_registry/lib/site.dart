@@ -577,9 +577,30 @@ Cell? _proven(
   return Cell(
     current(run) ? 'verified' : 'stale',
     source: 'evidence/${run.file}',
-    note: '${run.device}, ${run.date}, $package ${run.packages[package]}',
+    note: runNote(inputs, run, package),
     log: run.logUrl,
   );
+}
+
+/// What a cell's note says a [run] ran: its device and date, then the
+/// runtime it ran on — the run's litertlm_dart and the native release whose
+/// archive it ran, when the run recorded litertlm_dart — else [package] at
+/// the version the run recorded. A native build no release names (pub.dev's
+/// or the workspace's) is left out rather than guessed.
+String runNote(SiteInputs inputs, EvidenceRun run, String package) {
+  final runtime = run.packages['litertlm_dart'];
+  if (runtime == null) {
+    return '${run.device}, ${run.date}, $package ${run.packages[package]}';
+  }
+  final pin = inputs.pin;
+  final workspace = workspaceLitertlmDart(inputs.repoRoot);
+  final tag = pin != null && pin.nativeFor(run.host) == run.native
+      ? pin.nativeRelease
+      : workspace != null && workspace.archives[run.host] == run.native
+      ? workspace.tag
+      : null;
+  return '${run.device}, ${run.date}, litertlm_dart $runtime'
+      '${tag == null ? '' : ', $tag'}';
 }
 
 /// Problems with the recorded runs: an unknown host, a variant that does not

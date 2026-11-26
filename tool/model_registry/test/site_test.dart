@@ -249,6 +249,7 @@ Map<String, Object?> _run({
   String host = 'macos_arm64',
   String? native,
   String version = '1.16.1',
+  String? litertlmDart,
   String date = '2026-10-20',
   int schema = 2,
   Map<String, Object?> cells = const {
@@ -262,7 +263,10 @@ Map<String, Object?> _run({
   'host': host,
   'device': 'Test Mac',
   'commit': 'c' * 40,
-  'packages': {'flutter_edge_ai_litertlm': version},
+  'packages': {
+    'flutter_edge_ai_litertlm': version,
+    'litertlm_dart': ?litertlmDart,
+  },
   'native': native ?? _macNative,
   'log_sha256': 'd' * 64,
   'log_url': null,
@@ -702,6 +706,32 @@ void main() {
       expect(
         status(published, [_run(native: 'e' * 64, date: '2026-01-01'), _run()]),
         'verified',
+      );
+    });
+
+    test("a cell's note names the run's litertlm_dart and its native "
+        'release when the run recorded litertlm_dart, else the package', () {
+      Cell cell(List<Map<String, Object?>> runs) {
+        final problems = <Problem>[];
+        final all = cells(
+          _repo('[]', problems, pin: _pinYaml(), evidence: runs).$1,
+          [_llm()],
+        );
+        return all['tiny/generic']!['macos_arm64']!['gpu']!;
+      }
+
+      expect(
+        cell([_run(litertlmDart: '0.1.0')]).note,
+        'Test Mac, 2026-10-20, litertlm_dart 0.1.0, native-v0.1.0',
+      );
+      // A native build no release names: the release is left out.
+      expect(
+        cell([_run(litertlmDart: '0.2.0', native: '9' * 64)]).note,
+        'Test Mac, 2026-10-20, litertlm_dart 0.2.0',
+      );
+      expect(
+        cell([_run()]).note,
+        'Test Mac, 2026-10-20, flutter_edge_ai_litertlm 1.16.1',
       );
     });
 

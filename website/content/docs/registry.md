@@ -362,7 +362,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 - Verified on Android: Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-19, flutter_edge_ai_litertlm 1.21.0.
 - Verified on iOS: iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-19, flutter_edge_ai_litertlm 1.21.0.
 - Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-19, flutter_edge_ai_litertlm 1.21.0.
-- Stale on Windows x64: Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-26, flutter_edge_ai_litertlm 1.21.3.
+- Stale on Windows x64: Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-26, litertlm_dart 0.20.0, native-v0.20.0.
 - Verified on Windows x64: Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-19, flutter_edge_ai_litertlm 1.21.0.
 - Verified on Linux x64: GCE flutter-gemma-linux (Tesla T4), 2026-11-19, flutter_edge_ai_litertlm 1.21.0.
 - Documented: [PR #688](https://github.com/DenisovAV/flutter_edge_ai/pull/688), device matrix (native-v0.18.0-f).

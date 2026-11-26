@@ -523,7 +523,7 @@
        "gpu": {
         "status": "stale",
         "source": "evidence/2026-11-26_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-2.json",
-        "note": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-26, flutter_edge_ai_litertlm 1.21.3"
+        "note": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-26, litertlm_dart 0.20.0, native-v0.20.0"
        },
        "cpu": {
         "status": "verified",

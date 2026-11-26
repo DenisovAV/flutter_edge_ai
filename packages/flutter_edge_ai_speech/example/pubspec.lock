@@ -209,7 +209,7 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.21.1"
+    version: "1.21.3"
   flutter_edge_ai_speech:
     dependency: "direct main"
     description:
@@ -494,7 +494,7 @@ packages:
       path: "../../litertlm_dart"
       relative: true
     source: path
-    version: "0.19.1+2"
+    version: "0.20.0"
   logging:
     dependency: transitive
     description:

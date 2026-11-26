@@ -51,7 +51,7 @@ dependencies:
   # The LiteRT-LM runtime and its build hook (libLiteRtLm and the NPU
   # stacks). Pinned exactly: macos/flutter_edge_ai_litertlm/Package.swift
   # fetches the companions of one native tag, the one this build's hook uses.
-  litertlm_dart: 0.19.1+4
+  litertlm_dart: 0.20.0
   ffi: ^2.1.0
   mutex: ^3.1.0
   crypto: ^3.0.6

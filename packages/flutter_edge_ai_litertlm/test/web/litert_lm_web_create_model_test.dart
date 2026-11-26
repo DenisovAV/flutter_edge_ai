@@ -46,6 +46,7 @@ List<Map<String, Object?>> _installEngine() {
           '''(() => {
             function Engine() {}
             Engine.prototype.createConversation = function () {};
+            Engine.prototype.createSession = function () {};
             Engine.prototype.delete = function () {};
             return Engine;
           })()'''

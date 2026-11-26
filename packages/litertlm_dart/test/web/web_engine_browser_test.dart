@@ -758,6 +758,12 @@ void main() {
     });
 
     test('a tool result goes as the role-tool object', () async {
+      // A conversation that declares the tool: a tool result on one that
+      // declares none is refused before anything is sent.
+      await conversation.close();
+      conversation = await engine.createConversation(
+        ConversationConfig(tools: [Tool(name: 'f')]),
+      );
       final done = conversation
           .sendMessageStream(
             Message.tool([

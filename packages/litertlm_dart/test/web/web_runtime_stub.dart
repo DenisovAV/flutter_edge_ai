@@ -38,7 +38,6 @@ const _stub = r'''
     resolvedBackend: 3, maxNumTokens: 4096,
     createError: null, conversationError: null, conversationErrorAfter: null,
     historyError: null, holdFence: false, holdHistory: false,
-    holdHistorySkip: 0,
     stuckOnCancel: false, deleteError: null, missingMember: null,
     noSettingsBackend: false, noSettingsTokens: false,
     resolvedVisionBackend: null, resolvedAudioBackend: null,
@@ -115,15 +114,13 @@ const _stub = r'''
       s.controller.error(new Error('Task cancelled'));
     };
     c.getHistory = () => {
+      p.historyReads = (p.historyReads || 0) + 1;
       if (p.historyError) return Promise.reject(new Error(p.historyError));
       if (p.oddMediaInHistory) {
         return Promise.resolve([...c.history, {role: 'user', content: [
           {type: 'image', blob: 42}]}, {role: 'assistant', content: 'x'}]);
       }
-      // holdHistorySkip: reads let through before holdHistory holds one.
-      if (p.holdHistory && p.holdHistorySkip > 0) {
-        p.holdHistorySkip--;
-      } else if (p.holdHistory) {
+      if (p.holdHistory) {
         return new Promise((resolve) => p.histories.push(() => resolve(c.history)));
       }
       return Promise.resolve([...c.history, ...(p.historyTail || [])]);
@@ -151,23 +148,42 @@ const _stub = r'''
     if (p.missingMember) delete c[p.missingMember];
     return c;
   };
-  // 0.20.0's Session: text prefill, whole-reply decode.
+  // 0.20.0's Session: text prefill, whole-reply decode. `p.ops` records
+  // each call in order; `p.holdPrefill` / `p.holdClone` hold the next one
+  // until `__releaseHeld()`; `p.missingSessionMember` and
+  // `p.missingResponsesMember` leave a member out.
+  const held = [];
+  const hold = async () => { await new Promise((resolve) => held.push(resolve)); };
+  window.__releaseHeld = () => { for (const f of held.splice(0)) f(); };
+  const op = (name) => { p.ops = p.ops || []; p.ops.push(name); };
   const session = (config) => {
     const s = {prefills: []};
     p.sessions = p.sessions || [];
     p.sessions.push(s);
-    s.runPrefill = async (inputs) => { s.prefills.push(inputs); };
-    s.runDecode = async () => ({
-      getTexts: () => ['decoded ' + s.prefills.length],
-      delete: () => {},
-    });
+    s.runPrefill = async (inputs) => {
+      op('prefill');
+      if (p.holdPrefill) { p.holdPrefill = false; await hold(); }
+      s.prefills.push(inputs);
+    };
+    s.runDecode = async () => {
+      op('decode');
+      const r = {
+        getTexts: () => ['decoded ' + s.prefills.length],
+        delete: () => { p.responsesDeletes = (p.responsesDeletes || 0) + 1; },
+      };
+      if (p.missingResponsesMember) delete r[p.missingResponsesMember];
+      return r;
+    };
     s.cancel = () => { p.sessionCancels = (p.sessionCancels || 0) + 1; };
     s.clone = async () => {
+      op('clone');
+      if (p.holdClone) { p.holdClone = false; await hold(); }
       const copy = session(config);
       copy.prefills = [...s.prefills];
       return copy;
     };
     s.delete = async () => { p.sessionDeletes = (p.sessionDeletes || 0) + 1; };
+    if (p.missingSessionMember) delete s[p.missingSessionMember];
     return s;
   };
   // Every chunk generated, the stream not ended yet.
@@ -257,6 +273,7 @@ const _stub = r'''
   window.__releaseConversations = () => { for (const f of p.conversations.splice(0)) f(); };
   const Engine = function Engine() {};
   Engine.prototype.createConversation = function () {};
+  Engine.prototype.createSession = function () {};
   Engine.prototype.delete = function () {};
   Engine.create = async (settings) => {
     p.createSettings.push(settings);
@@ -284,6 +301,7 @@ const _stub = r'''
       createSession: async (config) => {
         p.sessionConfigs = p.sessionConfigs || [];
         p.sessionConfigs.push(config);
+        if (p.holdSession) { p.holdSession = false; await hold(); }
         return session(config);
       },
       delete: async () => {

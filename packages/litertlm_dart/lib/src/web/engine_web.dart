@@ -363,11 +363,16 @@ final class Engine {
   /// The open sessions ([createSession]); [close] closes them.
   final _sessions = <WebSessionHandle>{};
 
+  late final WebSessionOwner _sessionOwner = _EngineSessionOwner(this);
+
   /// A low-level session: `@litert-lm/core` 0.20.0's
   /// `Engine.createSession(sessionConfig)`, as Kotlin's `Engine.createSession`
   /// natively. Text prefill and whole-reply decode only (see [Session]); a
   /// [SessionConfig] with LoRA or speculative decoding is refused, as for a
-  /// conversation.
+  /// conversation. A page whose runtime has no `createSession`, or makes a
+  /// session without a member this release calls, is a [StateError] naming
+  /// the module line to load. Its sampler is fixed by the engine's first
+  /// generation, as a conversation's (LiteRT-LM#2080).
   Future<Session> createSession([SessionConfig? config]) async {
     if (_closed) throw StateError('The engine is closed.');
     final c = config ?? SessionConfig();
@@ -380,22 +385,29 @@ final class Engine {
       throw UnsupportedError(_webSpeculativeDecodingRefusal);
     }
     final sampling = samplerFor(c.samplerConfig, const BundleSampler());
-    final js = await _pageLock.run(() async {
-      if (_closed) throw StateError('The engine is closed.');
-      try {
-        return await _js
-            .createSession(webSessionConfig(sampling).jsify()! as JSObject)
-            .toDart;
-      } catch (e) {
-        throw LiteRtLmNativeException(
-          '$liteRtLmWebRuntime refused the session: $e',
+    final handle = await _sessionOwner.pendingCreate(
+      () => _pageLock.run(() async {
+        if (_closed) throw StateError('The engine is closed.');
+        final JsLiteRtLmSession js;
+        try {
+          js = await _js
+              .createSession(webSessionConfig(sampling).jsify()! as JSObject)
+              .toDart;
+        } catch (e) {
+          throw LiteRtLmNativeException(
+            '$liteRtLmWebRuntime refused the session: $e',
+          );
+        }
+        return WebSessionHandle.adopt(
+          js,
+          _pageLock,
+          _sessionOwner,
+          sampling: sampling,
+          explicitSampler: c.samplerConfig != null,
         );
-      }
-    });
-    return newSession(
-      WebSessionHandle(js, _pageLock, _sessions),
-      () => _closed,
+      }),
     );
+    return newSession(handle, () => _closed);
   }
 
   /// Reports what LiteRT-LM#2080 means for a generation with [sampling], as
@@ -481,14 +493,20 @@ final class Engine {
   }
 }
 
-/// The members of a runtime conversation this release calls.
+/// The members of a runtime conversation this release calls
+/// (`Conversation.clone()` since 0.20.0).
 const webConversationMembers = [
   'sendMessageStreaming',
   'cancel',
   'getHistory',
   'getTokenCount',
+  'clone',
   'delete',
 ];
+
+/// The members of the runtime's `Engine` this release calls, on its
+/// prototype (`Engine.createSession` since 0.20.0).
+const webEngineMembers = ['createConversation', 'createSession', 'delete'];
 
 /// Why a page's `@litert-lm/core` cannot be driven: its [what] lacks
 /// [missing].
@@ -529,8 +547,11 @@ Future<Engine> createWebEngine(
     settings['audioBackend'] = _webBackendValue(audio, ids).toJS;
   }
   // EngineConfig.visualTokenBudget: the runtime's own engine setting. The
-  // page cannot read the file's vision budgets, so a budget the encoder
-  // lacks is the runtime's to refuse.
+  // page cannot read the file's vision budgets, and 0.20.0 refuses none:
+  // with Gemma 4 E2B's GPU export, 70 and 100 (no signature of its encoder)
+  // were both read back and answered, an image then taking about that many
+  // tokens; unset resolves to 280 (measured 2026-11-26, Chrome 158,
+  // web_litertlm_runtime_probe_test.dart).
   if (config.visualTokenBudget case final budget?) {
     if (config.visionBackend == null) {
       throw ArgumentError.value(
@@ -794,12 +815,42 @@ Future<LiteRtLmWebModule> _awaitRuntime() async {
 /// ([noteOtherWebRuntimeVersion]).
 JsLiteRtLmEngineClass _engineClassOf(LiteRtLmWebModule module) {
   final engineClass = module.engineClass;
-  final missing = liteRtLmWebRuntimeMissing(engineClass, const [
-    'createConversation',
-    'delete',
-  ]);
+  final missing = liteRtLmWebRuntimeMissing(engineClass, webEngineMembers);
   if (missing.isNotEmpty) {
     throw StateError(_incompleteRuntime('Engine', missing));
   }
   return engineClass;
+}
+
+/// The engine's side of its sessions ([WebSessionOwner]).
+final class _EngineSessionOwner implements WebSessionOwner {
+  _EngineSessionOwner(this._engine);
+
+  final Engine _engine;
+
+  @override
+  Set<WebSessionHandle> get sessions => _engine._sessions;
+
+  @override
+  bool get closed => _engine._closed;
+
+  @override
+  Future<T> pendingCreate<T>(Future<T> Function() body) async {
+    final pending = Completer<void>();
+    _engine._pendingCreates.add(pending.future);
+    try {
+      return await body();
+    } finally {
+      _engine._pendingCreates.remove(pending.future);
+      pending.complete();
+    }
+  }
+
+  @override
+  void noteGeneration(Sampler sampling, {required bool explicit}) =>
+      _engine._noteGeneration(sampling, explicit: explicit);
+
+  @override
+  String incompleteRuntime(String what, List<String> missing) =>
+      _incompleteRuntime(what, missing);
 }

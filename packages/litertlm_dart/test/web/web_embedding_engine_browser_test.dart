@@ -183,6 +183,27 @@ void main() {
       );
       expect(_list('settings'), isEmpty);
     });
+
+    test('a maxInputLength above the longest text signature, 8192, as '
+        'natively', () async {
+      await expectLater(
+        EmbeddingEngine.create(
+          EmbeddingEngineConfig(
+            modelPath: 'blob:https://example.com/eg2',
+            backend: const Backend.gpu(),
+            maxInputLength: 8193,
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => '${e.message}',
+            'message',
+            contains('128, 256, 512, 1024, 2048, 8192'),
+          ),
+        ),
+      );
+      expect(_list('settings'), isEmpty);
+    });
   });
 
   test('loads with both towers on WebGPU and reports the pinned limit; '

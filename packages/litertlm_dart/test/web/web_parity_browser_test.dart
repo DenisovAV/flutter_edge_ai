@@ -8,6 +8,8 @@
 @TestOn('browser')
 library;
 
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
 import 'package:litertlm_dart/internal_web.dart' as web;
@@ -112,6 +114,38 @@ void main() {
     expect(count('conversationDeletes'), 2);
   });
 
+  test('getTokenCount after a stopped reply rebuilds the conversation first '
+      'and counts what it holds, not the 0 a rebuilt one says until its next '
+      'send', () async {
+    final engine = await webEngine();
+    final conversation = await engine.createConversation();
+    await exchange(conversation, 'My name is Ada.', 'OK.');
+    await stoppedExchange(conversation, 'Count to 300.', '1, 2');
+    expect(list('conversationOptions'), hasLength(1));
+    expect(await conversation.getTokenCount(), 7);
+    // Rebuilt by the count, not left for the next send.
+    expect(list('conversationOptions'), hasLength(2));
+    await engine.close();
+  });
+
+  test("no send reads the runtime's history first; an empty reply after a "
+      'rebuild is still told from a refused send', () async {
+    final engine = await webEngine();
+    final conversation = await engine.createConversation();
+    await exchange(conversation, 'one', 'One.');
+    await exchange(conversation, 'two', 'Two.');
+    expect(page['historyReads'].dartify(), isNull);
+    await stoppedExchange(conversation, 'three', 'Th');
+    // The rebuild reads the stopped conversation's history, once.
+    await exchange(conversation, 'four', 'Four.');
+    expect(page['historyReads'].dartify(), 1);
+    final empty = conversation.sendMessageStream(Message.user('five')).toList();
+    await settle();
+    js('__emptyReply');
+    expect(await empty, isEmpty);
+    await engine.close();
+  });
+
   test('a Session prefills text and decodes on the runtime; media and a '
       'streamed decode are refused by name; the engine closes it', () async {
     final engine = await webEngine();
@@ -124,8 +158,10 @@ void main() {
     );
     final clone = await session.clone();
     expect(await clone.runDecode(), 'decoded 2');
-    await expectLater(
-      session.runPrefill([InputData.image(Uint8List(1))]),
+    // Refused before the runtime, as natively (LiteRT-LM 0.20.0 refuses
+    // raw media in a session).
+    expect(
+      () => session.runPrefill([InputData.image(Uint8List(1))]),
       throwsWith<UnsupportedError>('text only'),
     );
     await expectLater(

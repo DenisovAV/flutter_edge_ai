@@ -12,6 +12,7 @@ import '../api/message.dart';
 import '../embedder/embedder_constants.dart'
     show
         liteRtLmDefaultVisionTokensPerImage,
+        liteRtLmEg2TextSignatures,
         liteRtLmMaxInputLength,
         liteRtLmVisionTokenBudgets;
 import '../embedder/embedder_types.dart';
@@ -40,9 +41,22 @@ final class EmbeddingEngine {
   /// Throws [UnsupportedError] for what does not run here: the CPU text
   /// tower, the NPU, a CPU thread count, a `cacheDir` or `requireWeightCache`
   /// (the web runtime keeps no weight cache), an `activationDataType` (its
-  /// `EmbeddingEngine` settings take none); [EmbedderLoadException] for a
-  /// bundle or a page that cannot run as asked.
+  /// `EmbeddingEngine` settings take none); [ArgumentError] for a
+  /// `maxInputLength` above the longest EmbeddingGemma 2 text signature,
+  /// 8192, as natively above the bundle's longest (the page cannot read the
+  /// bundle's own); [EmbedderLoadException] for a bundle or a page that
+  /// cannot run as asked.
   static Future<EmbeddingEngine> create(EmbeddingEngineConfig config) async {
+    if (config.maxInputLength case final length?
+        when length > liteRtLmEg2TextSignatures.last) {
+      throw ArgumentError.value(
+        length,
+        'maxInputLength',
+        'must be from 1 to the longest text signature, '
+            '${liteRtLmEg2TextSignatures.last} (signatures: '
+            '${liteRtLmEg2TextSignatures.join(', ')})',
+      );
+    }
     if (config.activationDataType != null) {
       throw UnsupportedError(
         'The web runtime ($liteRtLmWebRuntime) takes no activation type for '

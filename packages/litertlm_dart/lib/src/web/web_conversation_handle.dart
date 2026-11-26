@@ -130,6 +130,14 @@ final class WebConversationHandle
   /// so a new conversation counts 0 until then (N5, 0.19.0 and 0.20.0).
   int _replayedTokens = 0;
 
+  /// The entries of the runtime conversation's history (`getHistory()`),
+  /// kept here instead of read before every send: two per exchange it
+  /// completed, one per message it refused and kept (M1, N5), none for a
+  /// stopped turn, which it drops; 0 for a rebuilt conversation, whose
+  /// replayed exchanges are its preface, which the history leaves out (P1).
+  /// Set from the history itself when a reply with no chunk reads it.
+  int _historyLength = 0;
+
   /// Whether the runtime conversation was rebuilt here: until something is
   /// prefilled on it (it counts 0 until then, N5), its first send prefills
   /// the replayed history with the message, and a refusal's count holds both
@@ -460,12 +468,16 @@ final class WebConversationHandle
             // Ended on its own: the runtime conversation keeps working (also
             // after a stop that came after the last chunk).
             if (turn.asked || turn.fault != null) {
+              // The stream ended `done`: the runtime completed the exchange
+              // (a stop after its last chunk changes nothing).
+              _historyLength += 2;
               finishAsked(StackTrace.current);
             } else if (!turn.chunked) {
               // An empty reply, or a send the runtime refused: its history
               // says which.
               _settleEmptyTurn(turn, finish, finishAsked);
             } else {
+              _historyLength += 2;
               finish();
             }
             return;
@@ -527,6 +539,7 @@ final class WebConversationHandle
             // The runtime keeps a refused message at the end of its history
             // (M1, N5): the rebuild leaves it out.
             _failed = turn.message;
+            _historyLength += 1;
             if (_isContextFull(error)) {
               _rebuildCause = 'a message too long for the context window';
               _lastTurnEnd = NativeLastTurnEnd.contextFull;
@@ -623,22 +636,11 @@ final class WebConversationHandle
         finish(error: refusal, stack: StackTrace.current);
         return;
       }
-      // The history's length before the send: a reply that ends with no
-      // chunk is the model's empty reply only if the history then grew by
-      // exactly the message and an empty answer ([_settleEmptyTurn]).
-      try {
-        turn.historyBefore = (await _conversation.getHistory().toDart).length;
-      } catch (e) {
-        runtimeLog(
-          '[WebConversationHandle] could not read the history before a send '
-          '($e): an empty reply is told from a refused send by its tail '
-          'alone',
-        );
-      }
-      if (turn.asked) {
-        finishAsked(StackTrace.current);
-        return;
-      }
+      // The history's length before the send, kept here rather than read
+      // from the runtime before every send: a reply that ends with no chunk
+      // is the model's empty reply only if the history then grew by exactly
+      // the message and an empty answer ([_settleEmptyTurn]).
+      turn.historyBefore = _historyLength;
       try {
         start();
       } catch (e, st) {
@@ -675,6 +677,8 @@ final class WebConversationHandle
     read().then(
       (history) {
         if (turn.finished) return;
+        // What the runtime holds, read anyway: the count kept here follows it.
+        _historyLength = history.length;
         if (_isEmptyReply(history, turn.message, before: turn.historyBefore)) {
           if (turn.asked) {
             finishAsked(StackTrace.current);
@@ -1003,6 +1007,8 @@ final class WebConversationHandle
     }
     _rebuilt = true;
     _conversation = next;
+    // The replayed exchanges are its preface, which its history leaves out.
+    _historyLength = 0;
     _replayed = replay;
     _images = _imagesIn([..._preface, ...replay]);
     _mustRebuild = false;
@@ -1057,12 +1063,15 @@ final class WebConversationHandle
   Future<void> close() => _closedFuture ??= _close();
 
   /// `@litert-lm/core`'s `Conversation.getTokenCount()`, holding the page
-  /// lock. A conversation rebuilt after a stop counts 0 until its next
-  /// message, which prefills the replayed history with it (N5), as natively
-  /// a rebuilt conversation does.
+  /// lock, after the conversation is rebuilt from a stop or failure that left
+  /// it refusing sends (as [cloneHandle] does). A rebuilt conversation counts
+  /// 0 until its next message, which prefills the replayed history with it
+  /// (N5): until then its count is the one of the conversation it replaced,
+  /// which holds that history.
   @override
   Future<int> kvTokenCount() => _pageLock.run(() async {
     if (_closed) throw StateError('Conversation handle is closed');
+    if (_mustRebuild && _deadEnd() == null) await _rebuildConversation();
     final count = await _conversation.getTokenCount().toDart;
     // A JS number is a double under dart2wasm.
     if (!count.isA<JSNumber>()) {
@@ -1070,7 +1079,8 @@ final class WebConversationHandle
         '$liteRtLmWebRuntime gave a token count that is not a number.',
       );
     }
-    return count.toDartDouble.toInt();
+    final held = count.toDartDouble.toInt();
+    return _rebuilt ? max(held, _replayedTokens) : held;
   });
 
   @override
@@ -1099,13 +1109,8 @@ final class WebConversationHandle
       if (_closed) throw StateError('Conversation handle is closed');
       if (_deadEnd() case final error?) throw error;
       if (_mustRebuild) await _rebuildConversation();
-      final missing = liteRtLmWebObjectMissing(_conversation, const ['clone']);
-      if (missing.isNotEmpty) {
-        throw UnsupportedError(
-          "The page's @litert-lm/core conversation has no clone(): this "
-          'release clones on $liteRtLmWebRuntime.',
-        );
-      }
+      // clone() is checked when the conversation is created
+      // (webConversationMembers).
       final JSObject cloned;
       try {
         cloned = await _conversation.clone().toDart;
@@ -1119,6 +1124,7 @@ final class WebConversationHandle
         .._replayedTokens = _replayedTokens
         .._replayedKnown = _replayedKnown
         .._rebuilt = _rebuilt
+        .._historyLength = _historyLength
         .._overheadAtLeast = _overheadAtLeast
         .._images = _images;
       return handle;
@@ -1255,8 +1261,8 @@ final class _Turn {
   /// `sendMessageStreaming` was called for it.
   bool sent = false;
 
-  /// How many entries the runtime's history held right before the send;
-  /// null when it could not be read.
+  /// How many entries the runtime's history held right before the send
+  /// ([WebConversationHandle._historyLength]).
   int? historyBefore;
 
   bool stopAsked = false;

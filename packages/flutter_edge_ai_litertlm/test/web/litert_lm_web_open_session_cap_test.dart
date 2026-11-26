@@ -37,6 +37,7 @@ JSObject _engineConstructor(JSObject engine) =>
         '''(() => {
           function Engine() {}
           Engine.prototype.createConversation = function () {};
+          Engine.prototype.createSession = function () {};
           Engine.prototype.delete = function () {};
           return Engine;
         })()'''
@@ -46,13 +47,14 @@ JSObject _engineConstructor(JSObject engine) =>
         engine,
       ).toJS).toJS;
 
-/// A runtime conversation with the members litertlm_dart calls on 0.19.0;
+/// A runtime conversation with the members litertlm_dart calls on 0.20.0;
 /// [onDelete] counts its deletes.
 JSObject _conversation({void Function()? onDelete}) => JSObject()
   ..['sendMessageStreaming'] = ((JSAny? message) => JSObject()).toJS
   ..['cancel'] = (() {}).toJS
   ..['getHistory'] = (() => Future.value(JSArray<JSObject>()).toJS).toJS
   ..['getTokenCount'] = (() => Future.value(0.toJS).toJS).toJS
+  ..['clone'] = (() => Future.value(JSObject()).toJS).toJS
   ..['delete'] = (() {
     onDelete?.call();
     return Future<void>.value().toJS;

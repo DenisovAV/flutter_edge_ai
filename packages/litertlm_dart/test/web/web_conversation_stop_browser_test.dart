@@ -589,9 +589,8 @@ void main() {
       'a stop asked while the history is read ends the turn normally',
       () async {
         setOnPage('refuseNextSend', true);
-        // The read after the empty stream, not the one before the send.
+        // The read after the empty stream: no send reads the history first.
         setOnPage('holdHistory', true);
-        setOnPage('holdHistorySkip', 1);
         final turn = conversation
             .sendMessageStream(Message.user('Bad'))
             .drain<void>();

@@ -1,3 +1,6 @@
+## 0.20.0+1
+- Pub analysis: a signature list uses a null-aware element (no lint info left).
+
 ## 0.20.0
 - LiteRT-LM 0.20.0 on `native-v0.20.0`; web on `@litert-lm/core` 0.20.0.
 - Breaking (web): the page hands over `@litert-lm/core` once as `window.litertLm`; see the README.

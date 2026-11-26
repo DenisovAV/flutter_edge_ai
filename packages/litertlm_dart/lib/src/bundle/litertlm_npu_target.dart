@@ -201,9 +201,8 @@ Future<List<String>> readLiteRtLmSignatureKeys(
   }
   return [
     for (var i = 0; i < count; i++)
-      if (await model.string(await model.element(signatures, i), 2)
-          case final key?) // SignatureDef.signature_key
-        key,
+      // SignatureDef.signature_key; a signature without one is skipped.
+      ?await model.string(await model.element(signatures, i), 2),
   ];
 }
 

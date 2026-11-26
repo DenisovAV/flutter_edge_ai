@@ -682,7 +682,7 @@ Linux the program itself is `lib/libdartaot*.so`, run by the executable in
   DirectX shader compiler) load with LiteRT-LM whatever the backend; they
   need no GPU to load, and nothing runs on them until a GPU engine does.
 - **Windows, Intel GPU:** prefill takes about twice as long as with 0.19
-  (Gemma 4 12B; E2B about 1.5x), decode is unchanged. LiteRT-LM 0.20 dropped
+  (Gemma 4 12B; E2B 1.1-1.4x), decode is unchanged. LiteRT-LM 0.20 dropped
   the guard that keeps Intel GPUs off the int8 dot-product path, on which
   Gemma 4 12B answers with empty text (LiteRT-LM #4083); this build restores it.
 - `dart compile exe` runs no build hooks, so it cannot bundle LiteRT-LM; use

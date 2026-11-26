@@ -111,6 +111,42 @@ void main() {
     expect((await reply).text, 'Sunny');
   });
 
+  test('a result in initialMessages is user text in the preface, and stays '
+      'so after a rebuild', () async {
+    final conversation = await engine.createConversation(
+      ConversationConfig(
+        tools: [_weather([])],
+        initialMessages: [
+          Message.user('Weather?'),
+          Message(
+            role: Role.model,
+            toolCalls: [
+              ToolCall('weather', {'city': 'London'}),
+            ],
+          ),
+          Message.tool([
+            Content.toolResponse('weather', {'temp': 25}),
+          ]),
+        ],
+      ),
+    );
+    final preface = [
+      userPart('Weather?'),
+      {'role': 'assistant', 'tool_calls': _weatherCalls},
+      _toolText,
+    ];
+    expect(prefaceMessages(0), preface);
+
+    await stoppedExchange(conversation, 'More', 'It');
+    await exchange(conversation, 'Thanks', 'Welcome');
+    expect(list('conversationOptions'), hasLength(2));
+    expect(prefaceMessages(1), [
+      ...preface,
+      userPart('More'),
+      assistantPart('It'),
+    ]);
+  });
+
   test('a call id goes with its result as text', () async {
     final conversation = await engine.createConversation(
       ConversationConfig(tools: [_weather([])]),

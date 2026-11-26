@@ -986,8 +986,8 @@ Chrome 157 before it (2026-11-23):
   158). A runtime older than 0.20.0, which might keep the tool message,
   lacks members this release calls and is refused before anything is sent.
   The runtime's history then holds the user message, and a rebuilt
-  conversation replays it. Tool messages in `initialMessages` go as they
-  are.
+  conversation replays it. A tool response in `initialMessages` goes the
+  same way.
 - **Per conversation, not per message:** thinking and the template variables
   (`extraContext`). Repetition penalties, no-repeat n-grams, suppressed
   tokens, a thinking token budget, response formats and speculative decoding

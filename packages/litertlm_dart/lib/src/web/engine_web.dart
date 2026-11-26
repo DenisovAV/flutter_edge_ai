@@ -37,6 +37,7 @@ import 'web_embedder.dart' show LiteRtLmWebBackend;
 import 'web_runtime_version.dart';
 import 'web_session.dart';
 import 'web_session_config.dart';
+import 'web_tool_responses.dart';
 import '../api/session.dart';
 
 /// One `.litertlm` model loaded by the page's `@litert-lm/core` runtime.
@@ -219,7 +220,12 @@ final class Engine {
     final base = <Map<String, Object?>>[
       if (c.systemInstruction case final system? when system.isNotEmpty)
         {'role': 'system', 'content': system},
-      for (final m in c.initialMessages) messageJson(m),
+      // A tool response goes as user text here too, as every sent one does
+      // (web_tool_responses.dart): this preface is also the one a rebuild
+      // replays its history after.
+      for (final m in c.initialMessages)
+        if (messageJson(m) case final json)
+          webToolResponseAsUserText(json) ?? json,
     ];
     final tools = toolsJson(c.tools);
     JSObject options(List<Object?> replay) {

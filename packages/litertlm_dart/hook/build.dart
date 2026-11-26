@@ -1339,6 +1339,9 @@ Future<Directory> _ensureQairtLinux(
 // Entry point
 // ============================================================================
 
+/// The obsolete `macos_companions` define's warning, said once per run.
+final _macOSCompanionsNotice = ObsoleteMacOSCompanionsNotice();
+
 void main(List<String> args) async {
   await build(args, (input, output) async {
     if (!input.config.buildCodeAssets) return;
@@ -1359,9 +1362,10 @@ void main(List<String> args) async {
 
     final codeConfig = input.config.code;
     final os = codeConfig.targetOS;
-    // Obsolete since 0.20.0: said, never refused.
-    final obsolete = obsoleteMacOSCompanionsWarning(
+    // Obsolete since 0.20.0: said on a macOS target, once, never refused.
+    final obsolete = _macOSCompanionsNotice.take(
       input.userDefines[macOSCompanionsDefine],
+      macOSTarget: os == OS.macOS,
     );
     if (obsolete != null) stderr.writeln(obsolete);
 

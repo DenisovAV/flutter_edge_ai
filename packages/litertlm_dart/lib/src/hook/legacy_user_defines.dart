@@ -15,6 +15,8 @@ import 'dart:io';
 
 import 'package:yaml/yaml.dart';
 
+import 'macos_companions.dart' show macOSCompanionsDefine;
+
 /// The package whose `user_defines` key this hook still reads.
 const legacyUserDefinesPackage = 'flutter_edge_ai_litertlm';
 
@@ -67,16 +69,34 @@ Object? _plain(Object? value) => switch (value) {
 
 /// Why the build stops when [legacy] (the defines under
 /// [legacyUserDefinesPackage] in [pubspec]) is not empty; null when it is.
+///
+/// Each define is to be moved to `litertlm_dart:`, except
+/// [macOSCompanionsDefine], which no release reads any more: that one is to
+/// be deleted.
 String? legacyUserDefinesRefusal(Map<String, Object?> legacy, String pubspec) {
   if (legacy.isEmpty) return null;
   final keys = legacy.keys.toList()..sort();
-  return 'litertlm_dart: $pubspec sets ${keys.map((k) => 'hooks.user_defines.'
-          '$legacyUserDefinesPackage.$k').join(', ')}. That key is no longer read '
-      '(since litertlm_dart 0.20.0): move ${keys.length == 1 ? 'it' : 'them'} '
-      'to hooks.user_defines.litertlm_dart '
-      '(${keys.map((k) => 'litertlm_dart: $k').join(', ')}) in the same '
-      'pubspec.yaml.';
+  final move = [
+    for (final k in keys)
+      if (k != macOSCompanionsDefine) k,
+  ];
+  final obsolete = keys.contains(macOSCompanionsDefine);
+  return [
+    'litertlm_dart: $pubspec sets ${keys.map((k) => 'hooks.user_defines.'
+            '$legacyUserDefinesPackage.$k').join(', ')}. That key is no longer '
+        'read (since litertlm_dart 0.20.0).',
+    if (move.isNotEmpty)
+      'Move ${move.length == 1 ? '${_old(move.single)}' : 'the others'} to '
+          'hooks.user_defines.litertlm_dart '
+          '(${move.map((k) => 'litertlm_dart: $k').join(', ')}) in the same '
+          'pubspec.yaml.',
+    if (obsolete)
+      'Delete ${_old(macOSCompanionsDefine)}: it is obsolete, macOS needs no '
+          'companion library any more.',
+  ].join(' ');
 }
+
+String _old(String key) => 'hooks.user_defines.$legacyUserDefinesPackage.$key';
 
 /// The hook's defines, from `hooks.user_defines.litertlm_dart`.
 final class HookDefines {

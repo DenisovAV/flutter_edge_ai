@@ -109,6 +109,47 @@ hooks:
     );
   });
 
+  group('legacyUserDefinesRefusal, macos_companions', () {
+    test('alone under the old key: delete it, nothing to move', () {
+      final message = legacyUserDefinesRefusal({
+        'macos_companions': 'code_assets',
+      }, '/ws/pubspec.yaml')!;
+      expect(
+        message,
+        allOf(
+          contains(
+            'Delete hooks.user_defines.flutter_edge_ai_litertlm.'
+            'macos_companions: it is obsolete',
+          ),
+          isNot(contains('Move')),
+          isNot(contains('litertlm_dart: macos_companions')),
+        ),
+      );
+    });
+
+    test('beside others: those are moved, it is deleted', () {
+      final message = legacyUserDefinesRefusal({
+        'macos_companions': 'code_assets',
+        'qualcomm_npu': true,
+      }, '/ws/pubspec.yaml')!;
+      expect(
+        message,
+        allOf(
+          contains(
+            'Move hooks.user_defines.flutter_edge_ai_litertlm.qualcomm_npu '
+            'to hooks.user_defines.litertlm_dart (litertlm_dart: '
+            'qualcomm_npu)',
+          ),
+          contains(
+            'Delete hooks.user_defines.flutter_edge_ai_litertlm.'
+            'macos_companions',
+          ),
+          isNot(contains('litertlm_dart: macos_companions')),
+        ),
+      );
+    });
+  });
+
   group('HookDefines', () {
     HookDefines defines({Map<String, Object?> current = const {}}) =>
         HookDefines(

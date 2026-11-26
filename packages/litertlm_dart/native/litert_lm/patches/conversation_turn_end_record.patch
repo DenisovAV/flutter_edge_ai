@@ -1,8 +1,8 @@
 diff --git a/c/conversation.cc b/c/conversation.cc
-index daea9e4..6093136 100644
+index 42c2f74d..3764c2f5 100644
 --- a/c/conversation.cc
 +++ b/c/conversation.cc
-@@ -49,17 +49,57 @@ namespace {
+@@ -61,17 +61,58 @@ using ::litert::lm::c::RawEnumValue;
  uint64_t BeginTurn(LiteRtLmConversation* conversation) {
    std::lock_guard<std::mutex> lock(conversation->turn_mutex);
    conversation->last_turn_end = kLiteRtLmTurnEndRunning;
@@ -14,7 +14,8 @@ index daea9e4..6093136 100644
 +// flutter_edge_ai section 23: a send refused before BeginTurn. Recorded, so
 +// get_last_turn_end does not report the send before it.
 +LiteRtLmStatusCode RefuseTurn(LiteRtLmConversation* conversation,
-+                              absl::StatusCode code, const char* message) {
++                              absl::StatusCode code,
++                              absl::string_view message) {
 +  {
 +    std::lock_guard<std::mutex> lock(conversation->turn_mutex);
 +    conversation->refused_status_code = static_cast<int>(code);
@@ -64,83 +65,81 @@ index daea9e4..6093136 100644
  }
  
  absl::AnyInvocable<void(absl::StatusOr<litert::lm::Message>)>
-@@ -75,7 +115,7 @@ CreateConversationCallback(LiteRtLmStreamCallback callback, void* user_data,
+@@ -87,7 +128,7 @@ CreateConversationCallback(LiteRtLmStreamCallback callback, void* user_data,
        EndTurn(conversation, turn, absl::OkStatus());
      }
      if (!message.ok()) {
 -      std::string error_str = message.status().ToString();
 +      std::string error_str = ForCaller(message.status()).ToString();
-       LiteRtLmStreamChunk chunk;
-       chunk.text = nullptr;
-       chunk.is_final = true;
-@@ -632,14 +672,17 @@ LiteRtLmStatusCode litert_lm_conversation_send_message(
-     return litert::lm::c::ReturnError(absl::StatusCode::kInvalidArgument,
-                                       "Invalid conversation.");
+       EmitStreamChunk(callback, user_data, /*text=*/nullptr, /*is_final=*/true,
+                       error_str.c_str());
+       return;
+@@ -725,9 +766,15 @@ LiteRtLmStatusCode litert_lm_conversation_send_message(
+   if (!IsValidConversation(conversation)) {
+     return kLiteRtLmStatusInvalidArgument;
    }
 -  LITERT_LM_C_RETURN_IF_NULL(message_json);
+-  LITERT_LM_C_ASSIGN_OR_RETURN(nlohmann::json json_message,
+-                               ParseMessageJson(message_json));
 +  if (message_json == nullptr) {
 +    return RefuseTurn(conversation, absl::StatusCode::kInvalidArgument,
 +                      "message_json is NULL.");
 +  }
-   nlohmann::json json_message =
-       nlohmann::json::parse(message_json, /*cb=*/nullptr,
-                             /*allow_exceptions=*/false);
-   if (json_message.is_discarded()) {
-     ABSL_LOG(ERROR) << "Failed to parse message JSON.";
--    return litert::lm::c::ReturnError(absl::StatusCode::kInvalidArgument,
--                                      "Failed to parse message JSON.");
-+    return RefuseTurn(conversation, absl::StatusCode::kInvalidArgument,
-+                      "Failed to parse message JSON.");
-   }
++  absl::StatusOr<nlohmann::json> json_message = ParseMessageJson(message_json);
++  if (!json_message.ok()) {
++    return RefuseTurn(conversation, json_message.status().code(),
++                      json_message.status().message());
++  }
  
    OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
-@@ -650,8 +693,9 @@ LiteRtLmStatusCode litert_lm_conversation_send_message(
-       json_message, std::move(litert_lm_optional_args));
+       conversation->conversation.get(), extra_context, optional_args);
+@@ -735,9 +782,9 @@ LiteRtLmStatusCode litert_lm_conversation_send_message(
+   const uint64_t turn = BeginTurn(conversation);
+   absl::StatusOr<litert::lm::Message> response =
+       conversation->conversation->SendMessage(
+-          json_message, std::move(litert_lm_optional_args));
++          *json_message, std::move(litert_lm_optional_args));
    EndTurn(conversation, turn, response.status());
-   if (!response.ok()) {
--    ABSL_LOG(ERROR) << "Failed to send message: " << response.status();
--    return litert::lm::c::ToCStatus(response.status());
-+    const absl::Status status = ForCaller(response.status());
-+    ABSL_LOG(ERROR) << "Failed to send message: " << status;
-+    return litert::lm::c::ToCStatus(status);
-   }
+-  LITERT_LM_C_RETURN_IF_ERROR(response.status());
++  LITERT_LM_C_RETURN_IF_ERROR(ForCaller(response.status()));
    auto c_response = std::make_unique<LiteRtLmJsonResponse>();
    c_response->json_string = response->dump();
-@@ -681,15 +725,18 @@ LiteRtLmStatusCode litert_lm_conversation_send_message_stream(
-     return litert::lm::c::ReturnError(absl::StatusCode::kInvalidArgument,
-                                       "Invalid conversation.");
+   *out_response = c_response.release();
+@@ -765,21 +812,27 @@ LiteRtLmStatusCode litert_lm_conversation_send_message_stream(
+   if (!IsValidConversation(conversation)) {
+     return kLiteRtLmStatusInvalidArgument;
    }
 -  LITERT_LM_C_RETURN_IF_NULL(message_json);
 -  LITERT_LM_C_RETURN_IF_NULL(callback);
+-  LITERT_LM_C_ASSIGN_OR_RETURN(nlohmann::json json_message,
+-                               ParseMessageJson(message_json));
 +  if (message_json == nullptr || callback == nullptr) {
 +    return RefuseTurn(conversation, absl::StatusCode::kInvalidArgument,
 +                      message_json == nullptr ? "message_json is NULL."
 +                                              : "callback is NULL.");
 +  }
-   nlohmann::json json_message =
-       nlohmann::json::parse(message_json, /*cb=*/nullptr,
-                             /*allow_exceptions=*/false);
-   if (json_message.is_discarded()) {
-     ABSL_LOG(ERROR) << "Failed to parse message JSON.";
--    return litert::lm::c::ReturnError(absl::StatusCode::kInvalidArgument,
--                                      "Failed to parse message JSON.");
-+    return RefuseTurn(conversation, absl::StatusCode::kInvalidArgument,
-+                      "Failed to parse message JSON.");
-   }
++  absl::StatusOr<nlohmann::json> json_message = ParseMessageJson(message_json);
++  if (!json_message.ok()) {
++    return RefuseTurn(conversation, json_message.status().code(),
++                      json_message.status().message());
++  }
  
    litert::lm::OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
-@@ -703,8 +750,8 @@ LiteRtLmStatusCode litert_lm_conversation_send_message_stream(
-   if (!status.ok()) EndTurn(conversation, turn, status);
+       conversation->conversation.get(), extra_context, optional_args);
  
-   if (!status.ok()) {
--    ABSL_LOG(ERROR) << "Failed to start message stream: " << status;
--    return litert::lm::c::ToCStatus(status);
-+    ABSL_LOG(ERROR) << "Failed to start message stream: " << ForCaller(status);
-+    return litert::lm::c::ToCStatus(ForCaller(status));
-   }
+   const uint64_t turn = BeginTurn(conversation);
+   absl::Status status = conversation->conversation->SendMessageAsync(
+-      json_message,
++      *json_message,
+       CreateConversationCallback(callback, callback_data, conversation, turn),
+       std::move(litert_lm_optional_args));
+   if (!status.ok()) EndTurn(conversation, turn, status);
+-  LITERT_LM_C_RETURN_IF_ERROR(status);
++  LITERT_LM_C_RETURN_IF_ERROR(ForCaller(status));
    return kLiteRtLmStatusOk;
  }
-@@ -768,6 +815,26 @@ LiteRtLmStatusCode litert_lm_conversation_cancel_process(
+ 
+@@ -827,6 +880,26 @@ LiteRtLmStatusCode litert_lm_conversation_cancel_process(
    return kLiteRtLmStatusOk;
  }
  
@@ -167,10 +166,24 @@ index daea9e4..6093136 100644
  LiteRtLmStatusCode litert_lm_conversation_rewind_cancelled_turn(
      LiteRtLmConversation* conversation, const char* messages_json,
      const char* extra_context,
-@@ -804,10 +871,18 @@ LiteRtLmStatusCode litert_lm_conversation_rewind_cancelled_turn(
-   if (!waited.ok()) {
-     return litert::lm::c::ToCStatus(waited);
+@@ -858,8 +931,11 @@ LiteRtLmStatusCode litert_lm_conversation_rewind_cancelled_turn(
+   bool ended_by_itself;
+   {
+     std::lock_guard<std::mutex> lock(conversation->turn_mutex);
+-    ended_by_itself = conversation->last_turn_end == kLiteRtLmTurnEndNone ||
+-                      conversation->last_turn_end == kLiteRtLmTurnEndCompleted;
++    const int recorded = conversation->last_turn_end;
++    ended_by_itself = recorded == kLiteRtLmTurnEndNone ||
++                      recorded == kLiteRtLmTurnEndCompleted ||
++                      recorded == kLiteRtLmTurnEndOutputLimit ||   // section 23
++                      recorded == kLiteRtLmTurnEndContextLimit;    // section 23
    }
+   if (!ended_by_itself) conversation->conversation->CancelProcess();
+   absl::Status waited = conversation->conversation->WaitUntilDone();
+@@ -870,10 +946,18 @@ LiteRtLmStatusCode litert_lm_conversation_rewind_cancelled_turn(
+   }
+   if (out_last_turn_end) *out_last_turn_end = end;
+   LITERT_LM_C_RETURN_IF_ERROR(waited);
 -  if (end == kLiteRtLmTurnEndNone || end == kLiteRtLmTurnEndCompleted) {
 +  if (end == kLiteRtLmTurnEndNone || end == kLiteRtLmTurnEndCompleted ||
 +      end == kLiteRtLmTurnEndOutputLimit ||
@@ -188,7 +201,7 @@ index daea9e4..6093136 100644
      return litert::lm::c::ReturnError(
          absl::StatusCode::kInternal,
          "The last turn failed; the conversation cannot continue.");
-@@ -824,6 +899,7 @@ LiteRtLmStatusCode litert_lm_conversation_rewind_cancelled_turn(
+@@ -890,6 +974,7 @@ LiteRtLmStatusCode litert_lm_conversation_rewind_cancelled_turn(
    {
      std::lock_guard<std::mutex> lock(conversation->turn_mutex);
      conversation->last_turn_end = kLiteRtLmTurnEndNone;
@@ -197,10 +210,10 @@ index daea9e4..6093136 100644
    return kLiteRtLmStatusOk;
  }
 diff --git a/c/conversation.h b/c/conversation.h
-index 6e61512..c365d24 100644
+index 71ca8cfa..c6b3a83f 100644
 --- a/c/conversation.h
 +++ b/c/conversation.h
-@@ -659,14 +659,47 @@ typedef enum {
+@@ -682,14 +682,47 @@ typedef enum {
    kLiteRtLmTurnEndCancelled = 2,  // cancelled; the conversation is poisoned
    kLiteRtLmTurnEndFailed = 3,     // ended with an error
    kLiteRtLmTurnEndRunning = 4,    // had not ended when the wait timed out
@@ -250,10 +263,10 @@ index 6e61512..c365d24 100644
  //   prefill, which also undoes the poisoning, and when `messages_json` is not
  //   NULL those messages (a JSON array, for example the stopped message and the
 diff --git a/c/conversation_internal.h b/c/conversation_internal.h
-index de1a879..c14051f 100644
+index 02f37142..8ec98abb 100644
 --- a/c/conversation_internal.h
 +++ b/c/conversation_internal.h
-@@ -53,6 +53,13 @@ struct LiteRtLmConversation {
+@@ -57,6 +57,13 @@ struct LiteRtLmConversation {
    std::mutex turn_mutex;
    uint64_t turn_seq = 0;
    int last_turn_end = kLiteRtLmTurnEndNone;
@@ -268,10 +281,10 @@ index de1a879..c14051f 100644
    // This field stores the result of the last call to
    // `litert_lm_conversation_render_message_to_string`. This ties the lifetime
 diff --git a/runtime/conversation/conversation.cc b/runtime/conversation/conversation.cc
-index 1b04ee7..52bbd91 100644
+index f1f1b227..aa81b42b 100644
 --- a/runtime/conversation/conversation.cc
 +++ b/runtime/conversation/conversation.cc
-@@ -101,8 +101,10 @@ absl::Status ContextWindowFullError(
+@@ -106,8 +106,10 @@ absl::Status ContextWindowFullError(
    if (!responses.ok()) {
      return responses.status();
    }
@@ -283,7 +296,7 @@ index 1b04ee7..52bbd91 100644
  }
  
  bool IsEmptyPreface(const Preface& preface) {
-@@ -607,6 +609,9 @@ absl::Status Conversation::SendMessageAsync(
+@@ -773,6 +775,9 @@ absl::Status Conversation::SendMessageAsync(
      turn_checkpoint_saved_ = false;
      turn_checkpoint_error_ = absl::OkStatus();
      last_turn_cancelled_ = false;
@@ -293,7 +306,7 @@ index 1b04ee7..52bbd91 100644
    }
    ABSL_ASSIGN_OR_RETURN(std::string single_turn_text,
                          GetSingleTurnText(message, optional_args));
-@@ -836,7 +841,9 @@ absl::Status Conversation::SendMessageAsync(
+@@ -992,7 +997,9 @@ absl::Status Conversation::SendMessageAsync(
  
    if (session_inputs.empty()) {
      auto decode_task_controller = session_->RunDecodeAsync(
@@ -304,7 +317,7 @@ index 1b04ee7..52bbd91 100644
            (*callback)(responses);
          },
          decode_config);
-@@ -878,6 +885,14 @@ absl::Status Conversation::SendMessageAsync(
+@@ -1039,6 +1046,14 @@ absl::Status Conversation::SendMessageAsync(
                // The input was not prefilled, so it is not part of the
                // conversation.
                remove_turn_from_history();
@@ -319,7 +332,7 @@ index 1b04ee7..52bbd91 100644
                (*callback)(ContextWindowFullError(responses));
              } else if (!status.ok()) {
                // Scenario 1: Prefill failed with an unexpected error.
-@@ -911,7 +926,8 @@ absl::Status Conversation::SendMessageAsync(
+@@ -1072,7 +1087,8 @@ absl::Status Conversation::SendMessageAsync(
  
                // Run decode.
                auto decode_task_controller = session_->RunDecodeAsync(
@@ -329,7 +342,7 @@ index 1b04ee7..52bbd91 100644
                      (*callback)(responses);
                    },
                    decode_config);
-@@ -935,6 +951,30 @@ absl::Status Conversation::SendMessageAsync(
+@@ -1096,6 +1112,30 @@ absl::Status Conversation::SendMessageAsync(
    return absl::OkStatus();
  };
  
@@ -360,7 +373,7 @@ index 1b04ee7..52bbd91 100644
  absl::StatusOr<Responses> Conversation::RunTextScoring(
      const std::vector<absl::string_view>& target_text,
      OptionalArgs optional_args) {
-@@ -972,7 +1012,9 @@ absl::Status Conversation::RewindCancelledTurn(
+@@ -1133,7 +1173,9 @@ absl::Status Conversation::RewindCancelledTurn(
    }
    {
      absl::MutexLock lock(history_mutex_);
@@ -371,7 +384,7 @@ index 1b04ee7..52bbd91 100644
        return absl::FailedPreconditionError("The last turn was not cancelled.");
      }
      if (!turn_checkpoint_saved_) {
-@@ -985,6 +1027,7 @@ absl::Status Conversation::RewindCancelledTurn(
+@@ -1146,6 +1188,7 @@ absl::Status Conversation::RewindCancelledTurn(
      }
      // One rewind per cancelled turn.
      last_turn_cancelled_ = false;
@@ -380,10 +393,10 @@ index 1b04ee7..52bbd91 100644
    }
    ABSL_RETURN_IF_ERROR(session_->RewindToCheckpoint(kTurnStartCheckpoint));
 diff --git a/runtime/conversation/conversation.h b/runtime/conversation/conversation.h
-index 8610fa9..26cc604 100644
+index a202c381..d2b89f0e 100644
 --- a/runtime/conversation/conversation.h
 +++ b/runtime/conversation/conversation.h
-@@ -49,6 +49,19 @@
+@@ -50,6 +50,19 @@
  
  namespace litert::lm {
  
@@ -403,7 +416,7 @@ index 8610fa9..26cc604 100644
  // Configuration for the Conversation instance. This class is used to initialize
  // the Conversation instance.
  //
-@@ -687,6 +700,18 @@ class Conversation {
+@@ -710,6 +723,18 @@ class Conversation {
        const std::optional<Message>& stopped_exchange,
        const OptionalArgs& optional_args = OptionalArgs());
  
@@ -422,7 +435,7 @@ index 8610fa9..26cc604 100644
    // Clones the conversation. The cloned conversation will be independent of the
    // original conversation, including the history, state, etc.
    //
-@@ -874,6 +899,16 @@ class Conversation {
+@@ -902,6 +927,16 @@ class Conversation {
    // Set by the last send's cancel callback, which has removed its messages
    // from the history.
    bool last_turn_cancelled_ ABSL_GUARDED_BY(history_mutex_) = false;
@@ -440,10 +453,10 @@ index 8610fa9..26cc604 100644
    // Declare the session after model_data_processor_ and other members it
    // depends on so that the session is destroyed before them. This is to avoid
 diff --git a/runtime/core/tasks.cc b/runtime/core/tasks.cc
-index 6912ae4..f8cb54a 100644
+index bd7a1c0c..d76fca79 100644
 --- a/runtime/core/tasks.cc
 +++ b/runtime/core/tasks.cc
-@@ -572,6 +572,29 @@ absl::Status PrefillLastSampledTokens(LlmExecutor& executor,
+@@ -671,6 +671,29 @@ absl::StatusOr<Responses> ScoreSingleTokenTargets(
  
  }  // namespace
  
@@ -473,7 +486,7 @@ index 6912ae4..f8cb54a 100644
  absl::StatusOr<Responses> Prefill(
      LlmExecutor& executor, ExecutorInputs& inputs, bool wait_for_completion,
      std::optional<BenchmarkInfo>& benchmark_info) {
-@@ -582,10 +605,18 @@ absl::StatusOr<Responses> Prefill(
+@@ -681,10 +704,18 @@ absl::StatusOr<Responses> Prefill(
                            text_data->GetTokenIds().TensorType());
    auto num_tokens = token_id_tensor_type.Layout().Dimensions().back();
    if (num_tokens >= max_num_tokens) {
@@ -493,7 +506,7 @@ index 6912ae4..f8cb54a 100644
    }
    // The input is appended after the tokens already in the context (e.g.
    // previous turns), so they count against the limit too. As above, at least
-@@ -594,10 +625,13 @@ absl::StatusOr<Responses> Prefill(
+@@ -693,10 +724,13 @@ absl::StatusOr<Responses> Prefill(
    // past `max_num_tokens`.
    if (auto current_step = executor.GetCurrentStep();
        current_step.ok() && *current_step + num_tokens >= max_num_tokens) {
@@ -508,7 +521,7 @@ index 6912ae4..f8cb54a 100644
    }
    size_t num_token_ids;
    {
-@@ -615,6 +649,7 @@ absl::StatusOr<Responses> Prefill(
+@@ -714,6 +748,7 @@ absl::StatusOr<Responses> Prefill(
    if (benchmark_info.has_value()) {
      ABSL_RETURN_IF_ERROR(benchmark_info->TimePrefillTurnStart());
    }
@@ -516,7 +529,7 @@ index 6912ae4..f8cb54a 100644
    ABSL_RETURN_IF_ERROR(executor.Prefill(inputs, params));
    if (benchmark_info.has_value()) {
      ABSL_RETURN_IF_ERROR(benchmark_info->TimePrefillTurnEnd(num_token_ids));
-@@ -676,6 +711,7 @@ absl::StatusOr<Responses> Decode(
+@@ -793,6 +828,7 @@ absl::StatusOr<Responses> Decode(
          benchmark_info->GetBenchmarkParams().num_decode_tokens();
      ABSL_RETURN_IF_ERROR(benchmark_info->TimeDecodeTurnStart());
    }
@@ -524,16 +537,16 @@ index 6912ae4..f8cb54a 100644
  
    // The final decoded texts for each candidate.
    std::vector<std::string> final_texts(num_output_candidates);
-@@ -739,6 +775,8 @@ absl::StatusOr<Responses> Decode(
-           benchmark_info, sampler, std::move(repetition_penalty_config),
+@@ -857,6 +893,8 @@ absl::StatusOr<Responses> Decode(
            std::move(no_repeat_ngram_config), std::move(suppress_tokens_config),
-           constraint, cancelled, speculative_decoding_config));
+           constraint, cancelled, speculative_decoding_config,
+           std::vector<int>(draft_token_ids.begin(), draft_token_ids.end())));
 +  // flutter_edge_ai section 23: whether the last step hit a stop token.
 +  bool hit_stop_tokens = false;
    while (true) {
      if (cancelled != nullptr && cancelled->load()) {
        if (benchmark_info.has_value()) {
-@@ -766,6 +804,7 @@ absl::StatusOr<Responses> Decode(
+@@ -898,6 +936,7 @@ absl::StatusOr<Responses> Decode(
      if (!all_done.ok()) {
        return all_done.status();
      }
@@ -541,7 +554,7 @@ index 6912ae4..f8cb54a 100644
      std::vector<std::string> step_texts;
      std::vector<std::vector<int>> step_token_ids;
      std::vector<float> step_scores;
-@@ -865,11 +904,19 @@ absl::StatusOr<Responses> Decode(
+@@ -997,11 +1036,19 @@ absl::StatusOr<Responses> Decode(
      ABSL_RETURN_IF_ERROR(PrefillLastSampledTokens(executor, *decoded_ids));
    }
  
@@ -562,7 +575,7 @@ index 6912ae4..f8cb54a 100644
    }
  
    // Finalize scores for non-streaming custom sampling.
-@@ -885,9 +932,12 @@ absl::StatusOr<Responses> Decode(
+@@ -1017,9 +1064,12 @@ absl::StatusOr<Responses> Decode(
    TaskState task_state = executor.GetCurrentStep().value() >= max_num_tokens
                               ? TaskState::kMaxNumTokensReached
                               : TaskState::kDone;
@@ -579,7 +592,7 @@ index 6912ae4..f8cb54a 100644
  
  absl::StatusOr<Responses> Score(
 diff --git a/runtime/engine/io_types.cc b/runtime/engine/io_types.cc
-index 546e429..435e50b 100644
+index cca0ca85..21f3c934 100644
 --- a/runtime/engine/io_types.cc
 +++ b/runtime/engine/io_types.cc
 @@ -215,6 +215,14 @@ absl::Status BenchmarkInfo::TimePrefillTurnEnd(uint64_t num_prefill_tokens) {
@@ -598,7 +611,7 @@ index 546e429..435e50b 100644
      int turn_index) const {
    if (turn_index < 0 ||
 diff --git a/runtime/engine/io_types.h b/runtime/engine/io_types.h
-index e8cc70e..455c2ec 100644
+index 2bd5649c..15a88803 100644
 --- a/runtime/engine/io_types.h
 +++ b/runtime/engine/io_types.h
 @@ -162,10 +162,20 @@ class Responses {
@@ -636,10 +649,10 @@ index e8cc70e..455c2ec 100644
    absl::Status TimeTextToTokenIdsEnd(uint64_t num_tokens);
    // Time the duration between two consecutive marks. Useful for profiling the
 diff --git a/runtime/executor/litert_compiled_model_executor_utils.cc b/runtime/executor/litert_compiled_model_executor_utils.cc
-index cbf51d7..95ea6c3 100644
+index 1ad8dccb..19bcae98 100644
 --- a/runtime/executor/litert_compiled_model_executor_utils.cc
 +++ b/runtime/executor/litert_compiled_model_executor_utils.cc
-@@ -557,9 +557,18 @@ GetOptimizedPrefillWorkGroups(
+@@ -572,9 +572,18 @@ GetOptimizedPrefillWorkGroups(
        return pair.first > max_prefill_sequence_length.value();
      });
      if (available_runner_set.empty()) {
@@ -659,7 +672,7 @@ index cbf51d7..95ea6c3 100644
      }
    }
  
-@@ -670,10 +679,14 @@ GetOptimizedPrefillWorkGroups(
+@@ -685,10 +694,14 @@ GetOptimizedPrefillWorkGroups(
    }
  
    if (input_length > 0) {
@@ -676,10 +689,10 @@ index cbf51d7..95ea6c3 100644
  
    return work_groups;
 diff --git a/runtime/executor/litert_compiled_model_executor_utils_test.cc b/runtime/executor/litert_compiled_model_executor_utils_test.cc
-index 7738369..0f6cb0b 100644
+index e20872dc..039d91a4 100644
 --- a/runtime/executor/litert_compiled_model_executor_utils_test.cc
 +++ b/runtime/executor/litert_compiled_model_executor_utils_test.cc
-@@ -541,9 +541,27 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+@@ -551,9 +551,27 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
    // input_length = 300, max_prefill_sequence_length = 256.
    // 512 runner filtered out. 256 runner covers 256 tokens, remaining 44 tokens
    // cannot fit in 0 capacity.

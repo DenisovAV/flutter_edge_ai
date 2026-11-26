@@ -30,7 +30,7 @@ spec.loader.exec_module(gate)
 main_symbols = set(gate.REQUIRED + gate.SCORING_SYMBOLS
                    + gate.THINKING_BUDGET_SYMBOLS + gate.OPTION_SYMBOLS
                    + gate.OWN_BUILD_SYMBOLS
-                   + gate.LLM_SYMBOLS)
+                   + gate.LLM_SYMBOLS + gate.SESSION_SYMBOLS)
 tables = json.loads(sys.argv[3])
 def exports(path):
     spec = tables[os.path.basename(path)]

@@ -135,8 +135,11 @@ void main() {
   });
 
   group('llmModelFamilyFrom (LlmMetadata.llm_model_type)', () {
-    test('gemma4 = 8 and function_gemma = 3 are the families with rules', () {
+    test('gemma4 = 8, function_gemma = 3, gemma3 = 4 and gemma3n = 2 are '
+        'the families with rules', () {
       expect(llmModelFamilyFrom(_metadataOfType(8)), LlmModelFamily.gemma4);
+      expect(llmModelFamilyFrom(_metadataOfType(4)), LlmModelFamily.gemma3);
+      expect(llmModelFamilyFrom(_metadataOfType(2)), LlmModelFamily.gemma3n);
       expect(
         llmModelFamilyFrom(_metadataOfType(3)),
         LlmModelFamily.functionGemma,
@@ -144,7 +147,7 @@ void main() {
     });
 
     test('any other family is other, none is null', () {
-      for (final field in [1, 2, 4, 5, 7, 9, 11, 12, 13]) {
+      for (final field in [1, 5, 7, 9, 11, 12, 13]) {
         expect(
           llmModelFamilyFrom(_metadataOfType(field)),
           LlmModelFamily.other,

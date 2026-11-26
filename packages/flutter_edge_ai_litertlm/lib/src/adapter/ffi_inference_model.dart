@@ -474,6 +474,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       late final FfiInferenceModelSession session;
       session = FfiInferenceModelSession(
         conversation: conversation,
+        declaresTools: tools.isNotEmpty,
         multimodalOrder: multimodalOrder,
         thinkingTokenBudget: thinkingTokenBudget,
         modelType: modelType,
@@ -598,6 +599,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     late final FfiInferenceModelSession session;
     session = FfiInferenceModelSession(
       conversation: conversation,
+      declaresTools: tools.isNotEmpty,
       multimodalOrder: multimodalOrder,
       thinkingTokenBudget: thinkingTokenBudget,
       modelType: modelType,
@@ -756,6 +758,7 @@ class FfiInferenceModelSession extends InferenceModelSession
     with RawSdkResponseSession {
   FfiInferenceModelSession({
     required this.conversation,
+    required this.declaresTools,
     required this.modelType,
     required this.fileType,
     required this.supportImage,
@@ -769,6 +772,12 @@ class FfiInferenceModelSession extends InferenceModelSession
 
   /// The session's conversation.
   final lm.Conversation conversation;
+
+  /// Whether the session was opened with tools. Without, a tool response is
+  /// sent as user text, as for a model whose tool calling runs in Dart:
+  /// LiteRT-LM refuses a tool message on a conversation that declares no
+  /// tools.
+  final bool declaresTools;
 
   final ModelType modelType;
   final ModelFileType fileType;
@@ -852,7 +861,9 @@ class FfiInferenceModelSession extends InferenceModelSession
     );
     _queryBuffer.write(prompt);
 
-    if (_nativeTools && message.type == MessageType.toolResponse) {
+    if (_nativeTools &&
+        declaresTools &&
+        message.type == MessageType.toolResponse) {
       final name = message.toolName;
       if (name == null) {
         throw ArgumentError.value(

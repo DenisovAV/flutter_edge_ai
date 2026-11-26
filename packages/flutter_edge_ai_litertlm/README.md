@@ -524,17 +524,12 @@ final vector = await embedder.embed(
   over Metal on macOS). Windows x64 was refused on native-v0.18.0-h, whose
   accelerator ended the process at the first load (#744); on 0.19 the 270m
   runs on the GPU on Panther Lake (Arc B390) and Lunar Lake (Arc 140V), and
-  the 270m and 740m text towers on Metal (24 ms per text, C probe,
-  2026-11-04). iOS, Android and Linux arm64 are not measured: there `gpu` is
-  not applied.
-  Measured on the 270m, 2026-10-22: Linux on a Tesla T4 32-64 ms per text vs
-  232-308 ms on its CPU (Windows on Lunar Lake, on native-v0.18.0-g: 22 ms vs
-  83-90 ms); min cos 0.997 to the
-  CPU vectors (0.998 for a ~900-token text: the GPU runs FP16 activations),
-  and the CPU's distance to Sentence Transformers fp32. A load takes 1.7-3.6 s
-  against 0.3-0.6 s on CPU; the very first also builds the GPU caches (8.2 s
-  on the T4; 5.9 s on Lunar Lake on native-v0.18.0-g). Measured in one process with a GPU LLM
-  (Gemma 4 E2B), the embedder loaded before and after it.
+  the 270m and 740m text towers on Metal. iOS, Android and Linux arm64 are not
+  measured: there `gpu` is not applied.
+  GPU vectors are close to the CPU ones but not identical, so CPU and GPU
+  vectors do not mix in one index: give each its own profile. The measured
+  speeds and cosines per host are on
+  [flutteredge.ai](https://flutteredge.ai/docs/embeddings-and-rag).
   - Only the text tower runs on the GPU. On the 440m and 740m the vision and
     audio towers run on CPU (each named `cpu` at create, declared or not), so
     images and audio embed at CPU speed and with CPU vectors. A text-only
@@ -546,10 +541,9 @@ final vector = await embedder.embed(
     embeds one probe text and refuses a non-finite or zero vector. The
     adapter is Dawn's choice, and a software one is not excluded: on a Linux
     box whose NVIDIA driver was not loaded, Vulkan offered only Mesa's
-    llvmpipe and `gpu` ran there, reported as `gpu`, with correct vectors
-    (min cos 0.997 to CPU), a 37-48 s load, and a ~900-token text failed
-    with `DEADLINE_EXCEEDED` (measured 2026-10-22). Ask for `gpu` only where
-    a real GPU driver is installed.
+    llvmpipe and `gpu` ran there, reported as `gpu`, very slowly, and a long
+    text failed with `DEADLINE_EXCEEDED`. Ask for `gpu` only where a real GPU
+    driver is installed.
   - The GPU writes its own caches beside the CPU's: ML Drift's
     `…_mldrift_weight_cache.bin` (68 MB) and `…_mldrift_program_cache.bin`
     (9 MB) for the text tower. `requireWeightCache` covers them (1.19.0):
@@ -576,15 +570,15 @@ final vector = await embedder.embed(
     Linux arm64 are not measured. `npu` is refused
     for this bundle: the NPU runs the per-SoC bundles
     ([below](#embeddinggemma-2-on-a-qualcomm-npu)). The web has no CPU path for
-  these bundles: the CPU (WebAssembly) backend of `@litert-lm/core` cannot
-  read their external weights, so a browser without WebGPU (no
+  these bundles: the CPU (WebAssembly) backend of `@litert-lm/core` 0.20.0
+  loads them but is far too slow to use, so a browser without WebGPU (no
   `navigator.gpu`, or no GPU adapter) fails `getActiveEmbedder()` with an
   `EmbeddingLoadException` that says so, before any engine is created. Web
-  vectors come from WebGPU and differ slightly from the native CPU ones:
-  measured min cos about 0.995 for text and 0.998 for images (Chrome 155,
-  Tesla T4). Retrieval across platforms holds: web text queries find natively
-  embedded images and native queries find web-embedded images, top-1 10/10 on
-  the example's ten scenes.
+  vectors come from WebGPU: close to the native CPU ones but not identical
+  (measurements on
+  [flutteredge.ai](https://flutteredge.ai/docs/embeddings-and-rag)).
+  Retrieval across platforms holds: web text queries find natively embedded
+  images and native queries find web-embedded images.
 - **Disk:** the 165 MB bundle plus a 71 MB weight cache the engine writes at
   its first load. The 440m bundle adds a 218 MB vision cache and the 740m
   bundle writes 385 MB of caches in total, even for text-only use. The cache
@@ -708,7 +702,7 @@ page.
   do, so give an image store an id that names the budget: the text profile id
   plus `-vis140` (or `-vis70`).
 - **Next to an LLM on the web** the vision encoder loads beside Gemma 4 E2B's
-  GPU export on `@litert-lm/core` 0.19.0: see
+  GPU export on `@litert-lm/core` 0.20.0: see
   [Web setup](#web-setup-early-preview).
 - **Cost** (CPU, measured): a 388 MB bundle; at every load the engine writes a
   218 MB vision weight cache next to the 71 MB text cache in the app's cache
@@ -935,7 +929,7 @@ final embedder = await FlutterEdgeAi.getActiveEmbedder(
 ## Embeddings on web
 
 EmbeddingGemma 2 (`.litertlm`) on the web needs no files from this package —
-only the `window.EmbeddingEngine` line in [Web setup](#web-setup-early-preview).
+only the module script in [Web setup](#web-setup-early-preview).
 The rest of this section is about EmbeddingGemma 1 and Gecko (`.tflite`).
 
 On web, `flutter_edge_ai_litertlm`'s `.tflite` embedding backend runs via LiteRT.js. Copy
@@ -1022,7 +1016,7 @@ Native embeddings need no web files; the platform setup under
 
 ## Web setup (early preview)
 
-`.litertlm` web inference runs via `@litert-lm/core` 0.19.0 on WebGPU, through
+`.litertlm` web inference runs via `@litert-lm/core` 0.20.0 on WebGPU, through
 [litertlm_dart](https://pub.dev/packages/litertlm_dart)'s web arm (its README,
 "On the web", lists what differs). For Gemma 4 E2B install its GPU export,
 `LiteRtLmModels.gemma4E2bIt.webGpu` (`gemma-4-E2B-it-gpu.litertlm`, 2.34 GB),
@@ -1045,31 +1039,39 @@ shorter one can follow; once the history alone fills the window, every turn
 ends that way: open a new session, or raise `maxTokens`.
 `openSession(maxOutputTokens:)` is honoured here as it is on native, and
 `maxTokens` reaches the runtime (core's default context is 1024 tokens).
-The page must import `@litert-lm/core` 0.19.0: 0.18.0 refuses the GPU export
+The page must import `@litert-lm/core` 0.20.0: 0.18.0 refuses the GPU export
 ("Unsupported backend: 2"). Add the handshake below to your app's
 `web/index.html` `<head>` — the ESM doesn't
 assign window globals and module scripts are deferred, so Dart awaits
-`window.litertLmReady` (which resolves to the `Engine` constructor):
+`window.litertLmReady`, and reads the module from `window.litertLm`:
 
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
-  window.Engine = m.Engine;
-  window.EmbeddingEngine = m.EmbeddingEngine;
-  return m.Engine;
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
+  window.litertLm = m;
+  return m;
 })();
 </script>
 ```
 
-`window.EmbeddingEngine` (1.13.1) is what EmbeddingGemma 2 `.litertlm`
-embedders run on, on WebGPU: text and images, and from 1.13.2 audio and
-combined inputs (no further line). A page without that line fails
-the embedder's load with an `EmbeddingLoadException` that names it; so does a
-browser without WebGPU, which has no fallback here (the CPU path of
-`@litert-lm/core` cannot read these bundles' external weights). The LLM
-engine does not need the line. A page whose `@litert-lm/core` lacks the calls
-litertlm_dart makes is refused, naming 0.19.0.
+`window.litertLm = m;` hands over the whole module: the `Engine` the models
+run on, the `EmbeddingEngine` EmbeddingGemma 2 `.litertlm` embedders run on
+(WebGPU: text, images, audio and combined inputs) and the `Backend` enum, so
+the backend ids sent are the page's own (the runtime's 0.20.0 release
+renumbered them). Each is read when it is used, so a later release that calls
+more of the module needs no new line. A page without `window.litertLm` fails
+the model's or the embedder's load with an error that quotes the line (on a
+page that still sets the old `window.Engine` and `window.EmbeddingEngine`
+globals, the lines it replaces; see MIGRATION.md). A browser without WebGPU
+fails the embedder's load too, with no fallback here (the CPU path of
+`@litert-lm/core` 0.20.0 loads these bundles but takes 110-225 s to load and
+9-12 s per short text). A page whose `@litert-lm/core` lacks a member or call
+litertlm_dart makes is refused, naming it and 0.20.0. Another library that
+loads its own copy of `@litert-lm/core` from another URL (llamadart's
+LiteRT-LM loader, for one) puts a second runtime in the page: only
+`window.litertLm` is read here, but two runtimes sharing the GPU and the
+page's memory is not tested.
 
 An LLM and an EmbeddingGemma 2 embedder on the same page share one WebAssembly
 module and one WebGPU device, so they take turns and their GPU memory adds up:
@@ -1092,9 +1094,9 @@ Native platforms need no web setup.
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
-| Web      | ⚠️ early preview via `@litert-lm/core` 0.19.0 (CDN; LLM text, images and audio with Gemma 4 E2B's GPU export; EmbeddingGemma 2 text, images and audio on WebGPU) |
+| Web      | ⚠️ early preview via `@litert-lm/core` 0.20.0 (CDN; LLM text, images and audio with Gemma 4 E2B's GPU export; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
-The native library (`native-v0.19.1-c`, LiteRT-LM v0.19.1) is fetched at build
+The native library (`native-v0.20.0`, LiteRT-LM v0.20.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
 entitlements, and macOS 14.0. On macOS the companion libraries come from this
@@ -1382,7 +1384,7 @@ Google Maven (checksum-pinned; `mediatek_npu_maven_url` names a mirror,
 `mediatek_npu_aar` a downloaded copy) and bundles its
 `libLiteRtDispatch_MediaTek.so` (Apache 2.0), about 330 KB, into every Android
 arm64 build of the app as `libmtk_litert_dispatch_legacy.so`, beside this
-package's `libLiteRtDispatch_MediaTek.so` (8 KB, native-v0.19.1-c). That one
+package's `libLiteRtDispatch_MediaTek.so` (8 KB, since native-v0.19.1-c). That one
 is ours: LiteRT-LM 0.19's LiteRT loads an NPU dispatch only through
 `LiteRtDispatchQueryInterface`, which Google's build does not export, so ours
 exports it and answers with the tables of Google's. Google's is not in this
@@ -1746,7 +1748,7 @@ package's `LiteRtEmbeddingBackend` and `flutter_edge_ai_speech` both use it
 through `litertlm_dart`. A stale Native-Assets cache after a
 native version bump can leave the library unbundled, surfacing as an opaque
 `dlopen` "no such file" on the first inference. The hook caches each release
-under its own tag (`<cache>/litertlm_dart/native/native-v0.19.1-c/<platform>`).
+under its own tag (`<cache>/litertlm_dart/native/native-v0.20.0/<platform>`).
 Fix with a clean rebuild:
 
 ```bash

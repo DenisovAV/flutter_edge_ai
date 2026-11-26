@@ -66,7 +66,8 @@ const thoughtChunkPrefix = '<|channel>thought\n';
 ///
 /// Public, though nothing outside this library uses it, so that tests can drive
 /// the recovery over fake handles with no engine.
-class RecoveringConversationHandle implements ConversationHandle {
+class RecoveringConversationHandle
+    implements ConversationHandle, ConversationStateAccess {
   RecoveringConversationHandle(
     this._live, {
     required this.reopen,
@@ -75,7 +76,10 @@ class RecoveringConversationHandle implements ConversationHandle {
     this.freshConversationEachTurn = false,
     this.windDownTimeout = _windDownTimeout,
     this.mediaOrder = MediaOrder.imagesAudioText,
-  });
+    List<Map<String, Object?>> history = const [],
+  }) {
+    _history.addAll(history);
+  }
 
   /// The tool calls of a raw reply, for the assistant turn a rebuild replays.
   final ToolCallReader toolCallsOf;
@@ -455,6 +459,72 @@ class RecoveringConversationHandle implements ConversationHandle {
     }
   }
 
+  /// Runs [op] on the live conversation between turns: after the turn before
+  /// it has ended, and after the conversation is recovered from a stopped or
+  /// refused one, as the next turn would recover it. A turn that starts
+  /// meanwhile waits for [op].
+  Future<T> _betweenTurns<T>(
+    Future<T> Function(ConversationHandle live) op,
+  ) async {
+    if (_closed) throw StateError('Conversation handle is closed');
+    final previous = _turnDone;
+    final done = Completer<void>();
+    _turnDone = done.future;
+    try {
+      await previous;
+      for (var r = _recovery; r != null; r = _recovery) {
+        await r.catchError((Object _) {});
+      }
+      if (_closed) throw StateError('Conversation handle is closed');
+      if (_stopped) {
+        final recovery = _recovery = _recover();
+        try {
+          await recovery;
+        } finally {
+          if (identical(_recovery, recovery)) _recovery = null;
+        }
+      }
+      return await op(_live);
+    } finally {
+      done.complete();
+    }
+  }
+
+  static ConversationStateAccess _access(ConversationHandle live) {
+    if (live is ConversationStateAccess) return live as ConversationStateAccess;
+    throw UnsupportedError('This conversation cannot read its own state.');
+  }
+
+  @override
+  Future<int> kvTokenCount() =>
+      _betweenTurns((live) => _access(live).kvTokenCount());
+
+  @override
+  Future<String> renderMessage(String messageJson) =>
+      _betweenTurns((live) => _access(live).renderMessage(messageJson));
+
+  @override
+  Future<String> renderPreface() =>
+      _betweenTurns((live) => _access(live).renderPreface());
+
+  /// A native clone of the live conversation, recovered first, in a handle
+  /// of its own that records the same history, so a rebuild of the clone
+  /// replays what the clone holds.
+  @override
+  Future<ConversationHandle> cloneHandle() => _betweenTurns((live) async {
+    final cloned = await _access(live).cloneHandle();
+    return RecoveringConversationHandle(
+      cloned,
+      reopen: reopen,
+      toolCallsOf: toolCallsOf,
+      noRewindReason: noRewindReason,
+      freshConversationEachTurn: freshConversationEachTurn,
+      windDownTimeout: windDownTimeout,
+      mediaOrder: mediaOrder,
+      history: _history,
+    ).._liveSent = _liveSent;
+  });
+
   /// The complete user message a rebuild replays, including media.
   Map<String, Object?> _message(
     String text,
@@ -585,7 +655,8 @@ class RecoveringConversationHandle implements ConversationHandle {
 /// Same-session follow-up turns reuse the live conversation (no rebuild),
 /// except under [freshConversationEachTurn]; only switching to a different
 /// session pays the teardown+replay cost.
-class VirtualConversationHandle implements ConversationHandle {
+class VirtualConversationHandle
+    implements ConversationHandle, ConversationStateAccess {
   VirtualConversationHandle({
     required this.client,
     required this.systemMessage,
@@ -865,7 +936,51 @@ class VirtualConversationHandle implements ConversationHandle {
     _history.clear();
     client.releaseVirtualConversation(token);
   }
+
+  @override
+  Future<int> kvTokenCount() async =>
+      throw UnsupportedError('$_virtualStateRefusal to count.');
+
+  @override
+  Future<String> renderMessage(String messageJson) async =>
+      throw UnsupportedError('$_virtualStateRefusal to render with.');
+
+  @override
+  Future<String> renderPreface() async =>
+      throw UnsupportedError('$_virtualStateRefusal to render with.');
+
+  /// A new virtual session with this one's configuration and history, after
+  /// the turn in flight has recorded itself: the shared conversation replays
+  /// that history when the clone first runs, so the clone holds what this
+  /// session holds, rebuilt rather than copied.
+  @override
+  Future<ConversationHandle> cloneHandle() async {
+    if (_closed) throw StateError('Conversation handle is closed');
+    await _turnDone;
+    if (_closed) throw StateError('Conversation handle is closed');
+    return VirtualConversationHandle(
+      client: client,
+      systemMessage: systemMessage,
+      toolsJson: toolsJson,
+      sampling: sampling,
+      samplingExplicit: samplingExplicit,
+      multimodalOrder: multimodalOrder,
+      filterChannelContent: filterChannelContent,
+      toolCallsOf: toolCallsOf,
+      maxOutputTokens: maxOutputTokens,
+      constraint: constraint,
+      extras: extras,
+      initialHistory: _history,
+      freshConversationEachTurn: freshConversationEachTurn,
+    );
+  }
 }
+
+/// Why a virtual session has no native state of its own to read.
+const _virtualStateRefusal =
+    'This conversation shares the engine\'s one native conversation by replay '
+    '(several live native conversations are not verified on this host and '
+    'backend), so it has no KV cache of its own';
 
 /// Test seam for the history a virtual session would replay on its next turn.
 @visibleForTesting

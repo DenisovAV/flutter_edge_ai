@@ -95,7 +95,11 @@ void main() {
   test('what a conversation is created with: system, tools, history, cap, '
       'constraint and extras', () async {
     final client = _Client();
-    final engine = engineForTest(client, backing: OpenSessionBacking.native);
+    final engine = engineForTest(
+      client,
+      backing: OpenSessionBacking.native,
+      speculates: true,
+    );
     await engine.createConversation(
       ConversationConfig(
         systemInstruction: 'be brief',
@@ -104,7 +108,9 @@ void main() {
         maxOutputTokens: 64,
         responseFormat: ResponseFormat.regex('[0-9]+'),
         extraContext: const {'k': 'v'},
-        speculativeDecoding: SpeculativeDecodingMode.adaptive,
+        speculativeDecoding: SpeculativeDecodingConfig(
+          mode: SpeculativeDecodingMode.adaptive,
+        ),
       ),
     );
     await engine.createConversation(
@@ -132,7 +138,10 @@ void main() {
     expect(first.maxOutputTokens, 64);
     expect(first.constraint, const Constraint.regex('[0-9]+'));
     expect(first.extras.extraContext, {'k': 'v'});
-    expect(first.extras.speculativeDecoding, SpeculativeDecodingMode.adaptive);
+    expect(
+      first.extras.speculativeDecoding,
+      SpeculativeDecodingConfig(mode: SpeculativeDecodingMode.adaptive),
+    );
     expect(
       client.creates.last.constraint,
       const Constraint.jsonSchema('{"type":"string"}'),
@@ -203,6 +212,40 @@ void main() {
     await engine.createConversation();
   });
 
+  test(
+    'a tool choice other than auto is refused on the stream where '
+    'constrained decoding was not qualified, as a response format is',
+    () async {
+      final engine = engineForTest(
+        _Client(),
+        constraintRefusal: 'refused on linux_arm64 CPU',
+      );
+      final conversation = await engine.createConversation(
+        ConversationConfig(tools: [Tool(name: 't')]),
+      );
+      for (final choice in [
+        ToolChoice.none,
+        ToolChoice.required,
+        const ToolChoice.forcedFunction('t'),
+        const ToolChoice.allowedTools(['t']),
+      ]) {
+        await expectLater(
+          conversation
+              .sendMessageStream(Message.user('x'), toolChoice: choice)
+              .toList(),
+          throwsA(
+            isA<ConstraintUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              'refused on linux_arm64 CPU',
+            ),
+          ),
+          reason: '$choice',
+        );
+      }
+    },
+  );
+
   test('the qualified rows: the CPU and GPU of macOS, iOS, Linux x64, '
       'Windows x64 and Android (Adreno, Mali, PowerVR); never an NPU', () {
     String? refusal(String abi, BackendKind backend, {AndroidGpuFamily? gpu}) =>
@@ -254,5 +297,52 @@ void main() {
     await engine.close();
     expect(engine.createConversation, throwsStateError);
     expect(() => engine.tokenize('x'), throwsStateError);
+  });
+
+  test("a conversation's chat template and tool call streaming reach its "
+      'native conversation', () async {
+    final client = _Client();
+    final engine = engineForTest(client, backing: OpenSessionBacking.native);
+    await engine.createConversation(
+      ConversationConfig(
+        chatTemplate: '{{ messages }}',
+        enableToolCallStreaming: true,
+      ),
+    );
+    final extras = client.creates.single.extras;
+    expect(extras.chatTemplate, '{{ messages }}');
+    expect(extras.streamToolCalls, isTrue);
+    await engine.createConversation();
+    expect(client.creates.last.extras.chatTemplate, isNull);
+    expect(client.creates.last.extras.streamToolCalls, isFalse);
+  });
+
+  test("a conversation's visual token budget is checked against the engine "
+      'before anything native', () async {
+    final client = _Client();
+    final engine = engineForTest(
+      client,
+      backing: OpenSessionBacking.native,
+      visionBackend: const Backend.cpu(),
+      visionBudgets: const [70, 140, 280],
+      visualTokenBudget: 140,
+    );
+    await engine.createConversation(ConversationConfig(visualTokenBudget: 70));
+    expect(client.creates, hasLength(1));
+    for (final budget in [280, 100]) {
+      await expectLater(
+        engine.createConversation(
+          ConversationConfig(visualTokenBudget: budget),
+        ),
+        throwsArgumentError,
+        reason: '$budget',
+      );
+    }
+    final noVision = engineForTest(client, backing: OpenSessionBacking.native);
+    await expectLater(
+      noVision.createConversation(ConversationConfig(visualTokenBudget: 70)),
+      throwsArgumentError,
+    );
+    expect(client.creates, hasLength(1));
   });
 }

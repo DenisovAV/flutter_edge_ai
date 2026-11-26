@@ -1,6 +1,6 @@
 // The web arm of the public API in a browser, over a stub `@litert-lm/core`
-// defined on the page in plain JS: `window.Engine` (with the prototype members
-// the release calls) and conversations whose `sendMessageStreaming` returns a
+// defined on the page in plain JS: `window.litertLm`, whose `Engine` has the
+// prototype members the release calls, and conversations whose `sendMessageStreaming` returns a
 // real `ReadableStream` the test feeds chunk by chunk. The stub does what
 // 0.19.0 was measured to do (2026-11-23, web_litertlm_runtime_probe_test.dart):
 // `cancel()` rejects the stream with "Task cancelled", and every later send on
@@ -61,15 +61,17 @@ void main() {
             modelPath: 'blob:x',
             activationDataType: ActivationDataType.float32,
           ),
-          'an activationDataType',
+          'refuses an activationDataType: 0.20.0 takes one',
         ),
         (
           'speculative decoding',
           EngineConfig(
             modelPath: 'blob:x',
-            speculativeDecoding: SpeculativeDecodingMode.on,
+            speculativeDecoding: SpeculativeDecodingConfig(
+              mode: SpeculativeDecodingMode.on,
+            ),
           ),
-          'speculative decoding',
+          'the web export has no drafter',
         ),
       ]) {
         test(what, () async {
@@ -84,8 +86,8 @@ void main() {
 
     test('a vision encoder goes to the runtime with one image reserved per '
         'conversation by default, which a GPU_ARTISAN model needs', () async {
-      setOnPage('resolvedVisionBackend', 4);
-      setOnPage('resolvedAudioBackend', 3);
+      setOnPage('resolvedVisionBackend', backendId('GPU'));
+      setOnPage('resolvedAudioBackend', backendId('CPU'));
       final engine = await Engine.create(
         EngineConfig(
           modelPath: 'blob:x',
@@ -96,8 +98,8 @@ void main() {
       );
 
       final settings = asMap(list('createSettings').single);
-      expect(settings['visionBackend'], 4);
-      expect(settings['audioBackend'], 3);
+      expect(settings['visionBackend'], backendId('GPU'));
+      expect(settings['audioBackend'], backendId('CPU'));
       expect(asMap(settings['mainExecutorSettings'])['maxNumImages'], 1);
       await engine.close();
     });
@@ -105,7 +107,7 @@ void main() {
     test(
       'maxNumImages, when set, is the images a conversation reserves',
       () async {
-        setOnPage('resolvedVisionBackend', 4);
+        setOnPage('resolvedVisionBackend', backendId('GPU'));
         final engine = await Engine.create(
           EngineConfig(
             modelPath: 'blob:x',
@@ -185,8 +187,8 @@ void main() {
     });
 
     test('the encoders the runtime resolved are read back', () async {
-      setOnPage('resolvedVisionBackend', 4);
-      setOnPage('resolvedAudioBackend', 3);
+      setOnPage('resolvedVisionBackend', backendId('GPU'));
+      setOnPage('resolvedAudioBackend', backendId('CPU'));
 
       final engine = await Engine.create(
         EngineConfig(
@@ -202,40 +204,110 @@ void main() {
       await engine.close();
     });
 
-    test(
-      'a page without the loader is a StateError naming the module',
-      () async {
-        removeRuntime();
+    test('a page without the loader is a StateError naming the module and the '
+        'shim line', () async {
+      removeRuntime();
 
-        await expectLater(
-          Engine.create(webConfig()),
-          throwsA(
-            errorWith<StateError>('litertLmReady').having(
-              (e) => e.message,
-              'message',
-              contains(web.liteRtLmWebModuleUrl),
-            ),
-          ),
-        );
-      },
-    );
+      await expectLater(
+        Engine.create(webConfig()),
+        throwsA(
+          errorWith<web.LiteRtLmWebModuleError>('window.litertLm is not set')
+              .having(
+                (e) => e.message,
+                'message',
+                contains(web.liteRtLmWebModuleUrl),
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                contains(web.liteRtLmWebModuleShimLine),
+              ),
+        ),
+      );
+    });
 
     test(
-      'a page without window.Engine is a StateError naming the shim line',
+      'a loader that sets no window.litertLm is a StateError naming the shim '
+      'line',
       () async {
         removeRuntime();
         globalContext['litertLmReady'] = Future<void>.value().toJS;
 
         await expectLater(
           Engine.create(webConfig()),
-          throwsWith<StateError>('window.Engine = m.Engine;'),
+          throwsA(
+            errorWith<web.LiteRtLmWebModuleError>(
+              'window.litertLm is not set',
+            ).having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains(web.liteRtLmWebModuleShimLine),
+                isNot(contains('replace')),
+              ),
+            ),
+          ),
         );
       },
     );
 
+    test('a page with the old shim (window.Engine, no window.litertLm) is a '
+        'StateError naming the lines to replace', () async {
+      final engine = stubModule['Engine'];
+      removeRuntime();
+      globalContext['Engine'] = engine;
+      globalContext['litertLmReady'] = Future<JSAny?>.value(engine).toJS;
+      addTearDown(() => globalContext.delete('Engine'.toJS));
+
+      await expectLater(
+        Engine.create(webConfig()),
+        throwsA(
+          errorWith<web.LiteRtLmWebModuleError>('but window.Engine or').having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('window.Engine = m.Engine;'),
+              contains('window.EmbeddingEngine = m.EmbeddingEngine;'),
+              contains(web.liteRtLmWebModuleShimLine),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('a window.litertLm that is not an object is a StateError', () async {
+      globalContext['litertLm'] = 'module'.toJS;
+
+      await expectLater(
+        Engine.create(webConfig()),
+        throwsWith<web.LiteRtLmWebModuleError>(
+          'window.litertLm is a value of type string',
+        ),
+      );
+    });
+
+    test('a module without Engine is a StateError naming it, while the '
+        'module is otherwise whole', () async {
+      stubModule.delete('Engine'.toJS);
+
+      await expectLater(
+        Engine.create(webConfig()),
+        throwsA(
+          errorWith<web.LiteRtLmWebModuleError>(
+            'window.litertLm has no Engine (a value of type undefined)',
+          ).having(
+            (e) => e.message,
+            'message',
+            contains(web.liteRtLmWebModuleUrl),
+          ),
+        ),
+      );
+      expect(list('createSettings'), isEmpty);
+    });
+
     test('a runtime lacking a member the release calls is a StateError '
         'naming it and the pinned version', () async {
-      ((globalContext['Engine']! as JSObject)['prototype']! as JSObject).delete(
+      ((stubModule['Engine']! as JSObject)['prototype']! as JSObject).delete(
         'createConversation'.toJS,
       );
 
@@ -254,12 +326,15 @@ void main() {
 
     test('hands Engine.create the model, the backend, the context and the '
         'thread count; reads back what the runtime resolved', () async {
-      setOnPage('resolvedBackend', 2); // GPU_ARTISAN: a web export on the GPU
+      setOnPage(
+        'resolvedBackend',
+        backendId('GPU_ARTISAN'),
+      ); // a web export on the GPU
       setOnPage('maxNumTokens', 2048);
       final engine = await Engine.create(webConfig(tokens: 2048));
       expect(asMap(list('createSettings').single), {
         'model': 'blob:https://example.com/model',
-        'backend': 4,
+        'backend': backendId('GPU'),
         'mainExecutorSettings': {'maxNumTokens': 2048},
       });
       expect(engine.backend, const Backend.gpu());
@@ -268,12 +343,12 @@ void main() {
       await engine.close();
 
       installRuntime();
-      setOnPage('resolvedBackend', 3);
+      setOnPage('resolvedBackend', backendId('CPU'));
       final cpu = await Engine.create(
         webConfig(backend: const Backend.cpu(threadCount: 2)),
       );
       final cpuSettings = asMap(list('createSettings').single);
-      expect(cpuSettings['backend'], 3);
+      expect(cpuSettings['backend'], backendId('CPU'));
       expect(cpuSettings['mainExecutorSettings'], {
         'backendConfig': {'number_of_threads': 2},
       });
@@ -287,6 +362,144 @@ void main() {
         Engine.create(webConfig()),
         throwsWith<StateError>('backend 6'),
       );
+    });
+
+    group('the Backend ids are the module\'s own (window.litertLm.Backend)', () {
+      for (final (version, backends) in [
+        ('0.19.0', backends019),
+        ('0.20.0', backends020),
+      ]) {
+        group(version, () {
+          final cpu = backends['CPU']!;
+          final gpu = backends['GPU']!;
+          final artisan = backends['GPU_ARTISAN']!;
+          setUp(() {
+            removeRuntime();
+            installRuntime(backends: backends);
+          });
+
+          test('the backend and the encoders are sent as its CPU ($cpu) and '
+              'GPU ($gpu), and read back as they resolved', () async {
+            setOnPage('resolvedVisionBackend', gpu);
+            setOnPage('resolvedAudioBackend', cpu);
+            final engine = await Engine.create(
+              EngineConfig(
+                modelPath: 'blob:x',
+                backend: const Backend.gpu(),
+                visionBackend: const Backend.gpu(),
+                audioBackend: const Backend.cpu(),
+              ),
+            );
+            final settings = asMap(list('createSettings').single);
+            expect(settings['backend'], gpu);
+            expect(settings['visionBackend'], gpu);
+            expect(settings['audioBackend'], cpu);
+            expect(engine.backend, const Backend.gpu());
+            expect(engine.visionBackend, const Backend.gpu());
+            expect(engine.audioBackend, const Backend.cpu());
+            await engine.close();
+          });
+
+          test('GPU_ARTISAN ($artisan) reads back as the GPU, CPU ($cpu) as '
+              'the CPU', () async {
+            setOnPage('resolvedBackend', artisan);
+            final engine = await Engine.create(webConfig());
+            expect(engine.backend, const Backend.gpu());
+            await engine.close();
+
+            setOnPage('resolvedBackend', cpu);
+            final onCpu = await Engine.create(
+              webConfig(backend: const Backend.cpu()),
+            );
+            expect(asMap(list('createSettings').last)['backend'], cpu);
+            expect(onCpu.backend, const Backend.cpu());
+            await onCpu.close();
+          });
+
+          test('an id it reports that is not CPU, GPU or GPU_ARTISAN is '
+              'refused naming the id and the enum\'s name for it, and the '
+              'engine is deleted', () async {
+            setOnPage('resolvedBackend', backends['NPU']);
+            await expectLater(
+              Engine.create(webConfig()),
+              throwsWith<StateError>(
+                'backend ${backends['NPU']}, which this release does not know '
+                '(NPU in the page\'s Backend)',
+              ),
+            );
+            expect(count('engineDeletes'), 1);
+
+            setOnPage('resolvedBackend', 42);
+            await expectLater(
+              Engine.create(webConfig()),
+              throwsWith<StateError>(
+                'backend 42, which this release does not know (not in the '
+                'page\'s Backend',
+              ),
+            );
+          });
+
+          test(
+            'an encoder on an id it does not know is refused naming it',
+            () async {
+              setOnPage('resolvedAudioBackend', backends['NPU']);
+              await expectLater(
+                Engine.create(
+                  EngineConfig(
+                    modelPath: 'blob:x',
+                    backend: const Backend.gpu(),
+                    audioBackend: const Backend.cpu(),
+                  ),
+                ),
+                throwsWith<LiteRtLmEngineCreateException>(
+                  'with its audio encoder on backend ${backends['NPU']}, which '
+                  'this release does not know (NPU in the page\'s Backend)',
+                ),
+              );
+              expect(count('engineDeletes'), 1);
+            },
+          );
+        });
+      }
+
+      for (final (what, backends, reason) in <(String, Object?, String)>[
+        (
+          'missing',
+          null,
+          'window.litertLm has no Backend (a value of type undefined)',
+        ),
+        (
+          'not an object',
+          'GPU',
+          'window.litertLm.Backend is a value of type string',
+        ),
+        ('without CPU', {'GPU': 3, 'GPU_ARTISAN': 1}, 'it has no CPU'),
+        (
+          'with a GPU that is not an integer',
+          {'CPU': 2, 'GPU': 3.5, 'GPU_ARTISAN': 1},
+          'its GPU is 3.5, not an integer',
+        ),
+      ]) {
+        test('a module whose enum is $what is a StateError naming the '
+            'runtime to import, before Engine.create', () async {
+          if (backends == null) {
+            stubModule.delete('Backend'.toJS);
+          } else {
+            stubModule['Backend'] = backends.jsify();
+          }
+          await expectLater(
+            Engine.create(webConfig()),
+            throwsA(
+              errorWith<web.LiteRtLmWebBackendEnumError>(reason).having(
+                (e) => e.message,
+                'message',
+                contains(web.liteRtLmWebModuleUrl),
+              ),
+            ),
+          );
+          expect(list('createSettings'), isEmpty);
+        });
+      }
     });
 
     test('the runtime refusing the model is a LiteRtLmEngineCreateException '
@@ -431,9 +644,13 @@ void main() {
       test('speculative decoding', () async {
         await expectLater(
           engine.createConversation(
-            ConversationConfig(speculativeDecoding: SpeculativeDecodingMode.on),
+            ConversationConfig(
+              speculativeDecoding: SpeculativeDecodingConfig(
+                mode: SpeculativeDecodingMode.on,
+              ),
+            ),
           ),
-          refusal('no speculative decoding'),
+          refusal('the web export has no drafter'),
         );
         expect(list('conversationOptions'), isEmpty);
       });
@@ -541,6 +758,12 @@ void main() {
     });
 
     test('a tool result goes as the role-tool object', () async {
+      // A conversation that declares the tool: a tool result on one that
+      // declares none is refused before anything is sent.
+      await conversation.close();
+      conversation = await engine.createConversation(
+        ConversationConfig(tools: [Tool(name: 'f')]),
+      );
       final done = conversation
           .sendMessageStream(
             Message.tool([

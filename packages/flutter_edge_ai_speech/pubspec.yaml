@@ -35,7 +35,7 @@ dependencies:
   flutter_edge_ai: ^2.6.0
   # The LiteRT C API bindings (litert_bindings.dart) and the native bundle
   # that carries libLiteRt / libLiteRtLm.
-  litertlm_dart: '>=0.19.1+1 <0.19.2'
+  litertlm_dart: '>=0.20.0 <0.20.1'
   # LiteRtLmNpuTarget, the core NpuTarget the speech catalog names. 1.21.0 is
   # the first release that builds on litertlm_dart: the 1.20.x releases carry
   # a build hook of their own, which would bundle libLiteRtLm a second time.

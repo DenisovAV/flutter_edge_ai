@@ -1,5 +1,20 @@
 # Migration guide
 
+## flutter_edge_ai_litertlm and litertlm_dart, next release: one web shim line
+
+**Web: one shim line replaces three.** This release reads `@litert-lm/core` from `window.litertLm`, the whole module, instead of `window.Engine` and `window.EmbeddingEngine`. The backend ids it sends now come from the module's own `Backend` enum, because 0.20.0 renumbered them. In `web/index.html`, inside the `litertLmReady` module script, replace
+```js
+window.Engine = m.Engine;
+window.EmbeddingEngine = m.EmbeddingEngine;
+return m.Engine;
+```
+with
+```js
+window.litertLm = m;
+return m;
+```
+and import `@litert-lm/core@0.20.0`. A 0.19.0 page with the new line still runs, with a one-time version note. A page without the line is refused at create, quoting the line to add: a language model with a `StateError`, an EmbeddingGemma 2 embedder with an `EmbeddingLoadException`. Later releases that use more of the module need no further page edit.
+
 ## flutter_edge_ai_litertlm 1.21.1: web on `@litert-lm/core` 0.19.0
 
 `.litertlm` models on the web now run on `@litert-lm/core` 0.19.0. Native

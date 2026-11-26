@@ -36,6 +36,23 @@ sealed class Backend {
   /// libraries out of the APK into a directory of their own and passes it
   /// here.
   const factory Backend.npu({String? dispatchDir}) = NpuBackend;
+
+  /// Kotlin's `Backend.GOOGLE_TENSOR` (Config.kt), which names LiteRT-LM's
+  /// `GOOGLE_TENSOR_ARTISAN` executor: refused with an [UnsupportedError].
+  /// The C API takes the name (`google_tensor_artisan`), but the open-source
+  /// LiteRT-LM 0.20.0 this package runs registers no executor for it: its
+  /// `LlmExecutorSettings::CreateDefault` refuses the backend, so
+  /// `litert_lm_engine_settings_create` fails with "Unsupported backend: 4"
+  /// (measured on macOS arm64 with native-v0.20.0; the check is the same
+  /// code on every platform). A Tensor G5/G6 NPU runs through [Backend.npu]
+  /// with a bundle compiled for it.
+  factory Backend.googleTensor() => throw UnsupportedError(
+    "Backend.googleTensor (Kotlin's Backend.GOOGLE_TENSOR, LiteRT-LM's "
+    'GOOGLE_TENSOR_ARTISAN) is not offered: the open-source LiteRT-LM '
+    '0.20.0 registers no executor for it ("Unsupported backend: 4" at '
+    'engine settings create). For a Tensor NPU use Backend.npu() with a '
+    'bundle compiled for it.',
+  );
 }
 
 /// The runtime's name for [backend].
@@ -136,4 +153,56 @@ enum SpeculativeDecodingMode {
   /// Speculate only while it is measured to be faster than plain decoding;
   /// backends that cannot adapt speculate on every step.
   adaptive,
+}
+
+/// LiteRT-LM's speculative decoding (MTP) settings: Kotlin's
+/// `SpeculativeDecodingConfig(mode, lenience)` (Config.kt) and Swift's
+/// (Config.swift), both fields nullable as there.
+///
+/// On `EngineConfig.speculativeDecoding` it is the default of the engine's
+/// conversations, a field left null the runtime's (mode off, lenience 0). On
+/// `ConversationConfig.speculativeDecoding` it overrides the engine's, and a
+/// field left null inherits the engine's value, as upstream: a conversation
+/// can change only the lenience. A conversation cannot speculate when its
+/// engine's mode is off: the drafter is loaded at engine create only.
+///
+/// Any [lenience] above 0 gives up speculative decoding's quality guarantee
+/// (upstream's warning): at 0 it is lossless, the tokens follow the model's
+/// own sampling distribution; above 0 a drafted token that differs from the
+/// verifier's sample is still accepted with that probability, so the reply
+/// can differ from what the model itself would write. Set it only where
+/// lower quality is an acceptable price for speed.
+@immutable
+final class SpeculativeDecodingConfig {
+  /// [lenience] must be in [0, 1]; null inherits it. An [ArgumentError]
+  /// otherwise.
+  SpeculativeDecodingConfig({this.mode, this.lenience}) {
+    final l = lenience;
+    if (l != null && !(l >= 0 && l <= 1)) {
+      throw ArgumentError.value(l, 'lenience', 'must be in [0, 1]');
+    }
+  }
+
+  /// Whether and how to speculate; null inherits it (the engine's, on a
+  /// conversation; the runtime's off, on an engine).
+  final SpeculativeDecodingMode? mode;
+
+  /// How far a drafted token may stray from what the model would choose and
+  /// still be accepted, in [0, 1]: 0 accepts only exact matches. The NPU
+  /// executor stays exact whatever is set (LiteRT-LM logs a warning).
+  final double? lenience;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SpeculativeDecodingConfig &&
+      other.mode == mode &&
+      other.lenience == lenience;
+
+  @override
+  int get hashCode => Object.hash(mode, lenience);
+
+  @override
+  String toString() =>
+      'SpeculativeDecodingConfig(mode: ${mode?.name}'
+      '${lenience == null ? '' : ', lenience: $lenience'})';
 }

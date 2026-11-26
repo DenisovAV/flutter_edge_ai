@@ -1,5 +1,5 @@
 {
- "description": "EmbeddingGemma 2 text golden vectors for the flutter_edge_ai EG2 integration test. 'vector' comes from native-v0.19.0-a final build (build_macos.sh), macOS arm64 libLiteRtLm (CPU); 'vector_python_wheel' from litert-lm 0.19.0 (PyPI); 'vector_st_fp32' from sentence-transformers fp32. The native vectors are re-recorded by integration_test/tools/eg2_text_golden_vectors.py.",
+ "description": "EmbeddingGemma 2 text golden vectors for the flutter_edge_ai EG2 integration test. 'vector' comes from native-v0.20.0 (litertlm-macos_arm64.tar.gz), macOS arm64 libLiteRtLm (CPU); 'vector_python_wheel' from litert-lm 0.20.0 (PyPI); 'vector_st_fp32' from sentence-transformers fp32. The native vectors are re-recorded by integration_test/tools/eg2_text_golden_vectors.py.",
  "model": {
   "bundle": "litert-community/embeddinggemma-2-text-270m-litert-lm/embeddinggemma-2-text-270m.litertlm",
   "bundle_revision": "9be6e8b90982095dc05c2bd162e4b954ee4dbac7",
@@ -8,15 +8,15 @@
   "reference_revision": "914f7f89142e33e77833254d9c9b90c3cef7303b"
  },
  "native_library": {
-  "tag": "native-v0.19.0-a",
-  "build": "native-v0.19.0-a final build (build_macos.sh), macOS arm64",
+  "tag": "native-v0.20.0",
+  "build": "native-v0.20.0 (litertlm-macos_arm64.tar.gz), macOS arm64",
   "file": "libLiteRtLm.dylib",
-  "dylib_sha256": "44dffbb9cb94fd34928356e8d5c151d67639db7a3d184e08b2b68152adb3110c",
+  "dylib_sha256": "14a38a8074475714744e76d1279ce7625425e17338c81c88cf0e20ca70f966ad",
   "cache_dir": "a fresh temporary directory"
  },
  "runtime": {
-  "litert-lm": "0.19.0",
-  "litert-lm-api": "0.19.0",
+  "litert-lm": "0.20.0",
+  "litert-lm-api": "0.20.0",
   "backend": "cpu",
   "normalize": true,
   "insert_special_tokens": true,

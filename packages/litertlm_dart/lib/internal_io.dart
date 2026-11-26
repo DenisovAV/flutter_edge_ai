@@ -81,6 +81,7 @@ export 'src/ffi/litert_lm_client.dart'
         benchmarkInfoOf,
         capturesNativeStderr,
         ConversationHandle,
+        ConversationStateAccess,
         EngineCreateRequest,
         EngineCreateResult,
         ExecutorConversation,

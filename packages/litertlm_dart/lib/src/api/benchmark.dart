@@ -14,9 +14,9 @@ import 'message.dart';
 export 'benchmark_result.dart';
 
 /// Benchmarks the `.litertlm` model at [modelPath] on [backend], as
-/// LiteRT-LM's Kotlin `benchmark()` does: creates an engine in the runtime's
-/// benchmark mode, sends [prompt] once in a new conversation, and closes the
-/// engine.
+/// LiteRT-LM's Kotlin and Swift `benchmark()` do: creates an engine in the
+/// runtime's benchmark mode, sends [prompt] (Swift's parameter; Kotlin takes
+/// `contents`) once in a new conversation, and closes the engine.
 ///
 /// In that mode the prompt's last text is cut or padded with token 0 to
 /// exactly [prefillTokens] tokens, and the reply runs exactly [decodeTokens]
@@ -34,7 +34,20 @@ export 'benchmark_result.dart';
 /// leaves the context window to LiteRT-LM (the bundle's own), which
 /// [LlmBenchmarkResult.maxNumTokens] reports; it changes prefill and decode
 /// speed, so compare runs with the same window.
-/// [samplerConfig] null uses the model's own sampler.
+/// [samplerConfig] null uses the model's own sampler; [speculativeDecoding]
+/// null leaves LiteRT-LM's (off).
+///
+/// [loraConfig] (Kotlin's `benchmark(loraConfig:)`; Swift's has none) runs
+/// the conversation with those LoRA weights, as
+/// [ConversationConfig.loraConfig]; null runs the base weights.
+/// [repetitionPenaltyConfig] (Kotlin's; Swift's has none) applies the
+/// penalties to every decode step of the message, as `sendMessage`'s; null
+/// applies none.
+///
+/// Kotlin's `BenchmarkInfo.markDurationsInSecond` is not reported:
+/// LiteRT-LM's C API has no getter for the runtime's mark durations (only
+/// Kotlin's JNI reads them from C++), so [LlmBenchmarkResult] has the C
+/// API's numbers only, as Swift's `BenchmarkInfo`.
 ///
 /// Throws what [Engine.create] throws, an [ArgumentError] for a count below
 /// 1, and a [StateError] when LiteRT-LM reports no prefill or no decode.
@@ -50,6 +63,9 @@ Future<LlmBenchmarkResult> benchmark({
   int? maxNumTokens,
   String? cacheDir,
   SamplerConfig? samplerConfig,
+  SpeculativeDecodingConfig? speculativeDecoding,
+  LoraConfig? loraConfig,
+  RepetitionPenaltyConfig? repetitionPenaltyConfig,
 }) async {
   if (prefillTokens < 1) {
     throw ArgumentError.value(prefillTokens, 'prefillTokens', 'must be 1+');
@@ -68,15 +84,19 @@ Future<LlmBenchmarkResult> benchmark({
       audioBackend: audioBackend,
       maxNumTokens: maxNumTokens,
       cacheDir: cacheDir,
+      speculativeDecoding: speculativeDecoding,
     ),
     (prefill: prefillTokens, decode: decodeTokens),
   );
   try {
     final conversation = await engine.createConversation(
-      ConversationConfig(samplerConfig: samplerConfig),
+      ConversationConfig(samplerConfig: samplerConfig, loraConfig: loraConfig),
     );
     try {
-      await conversation.sendMessage(Message.user(prompt));
+      await conversation.sendMessage(
+        Message.user(prompt),
+        repetitionPenaltyConfig: repetitionPenaltyConfig,
+      );
       return llmBenchmarkResultOf(
         conversationNativeBenchmark(conversation),
         createTime: createTime,

@@ -7,7 +7,8 @@ every one a thinking token budget calls (THINKING_BUDGET_SYMBOLS), every
 one the per-message and engine options call (OPTION_SYMBOLS), the
 symbol the loader checks to recognise this package's build
 (OWN_BUILD_SYMBOLS), the LLM functions the C API 1.0 client binds
-(LLM_SYMBOLS), the StreamProxy entry it streams through
+(LLM_SYMBOLS), every one the Session API calls (SESSION_SYMBOLS), the
+StreamProxy entry it streams through
 (STREAM_PROXY_SYMBOLS, from libStreamProxy / StreamProxy.dll), and, from every
 NPU dispatch in the bundle, the versioned dispatch entry LiteRT loads it by
 (DISPATCH_SYMBOL).
@@ -53,6 +54,7 @@ REQUIRED = [
     "litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir",
     "litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir",
     "litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir",
+    "litert_lm_embedding_engine_settings_set_activation_data_type",
     "litert_lm_embedding_engine_create",
     "litert_lm_embedding_engine_delete",
     "litert_lm_embedding_engine_compute_embedding",
@@ -61,6 +63,8 @@ REQUIRED = [
     "litert_lm_embedding_options_set_normalize",
     "litert_lm_embedding_options_set_insert_special_tokens",
     "litert_lm_embedding_options_set_input_overflow_strategy",
+    "litert_lm_embedding_options_set_output_size",
+    "litert_lm_embedding_options_set_vision_tokens_per_image",
     "litert_lm_input_data_create",
     "litert_lm_input_data_delete",
     "litert_lm_embedding_response_get_size",
@@ -134,11 +138,22 @@ THINKING_BUDGET_SYMBOLS = [
 # since v0.19.0, so every archive has them; a tarball without one would fail
 # the option's first use instead of the release.
 OPTION_SYMBOLS = [
+    "litert_lm_conversation_clone",
     "litert_lm_conversation_config_set_extra_context",
+    "litert_lm_conversation_config_set_prompt_template",
+    "litert_lm_conversation_config_set_stream_tool_calls",
+    "litert_lm_conversation_get_token_count",
+    "litert_lm_conversation_optional_args_set_max_output_tokens",
+    "litert_lm_conversation_optional_args_set_visual_token_budget",
+    "litert_lm_conversation_render_message_to_string",
+    "litert_lm_conversation_render_preface_to_string",
     "litert_lm_conversation_optional_args_set_no_repeat_ngram_config",
     "litert_lm_conversation_optional_args_set_repetition_penalty_config",
     "litert_lm_conversation_optional_args_set_suppress_tokens_config",
+    "litert_lm_conversation_optional_args_set_tool_choice",
+    "litert_lm_engine_settings_set_max_vision_tokens_per_image",
     "litert_lm_engine_settings_set_num_threads",
+    "litert_lm_engine_settings_set_selected_signatures",
     "litert_lm_engine_settings_set_speculative_decoding_config",
     "litert_lm_no_repeat_ngram_config_create",
     "litert_lm_no_repeat_ngram_config_delete",
@@ -153,6 +168,7 @@ OPTION_SYMBOLS = [
     "litert_lm_session_config_set_speculative_decoding_config",
     "litert_lm_speculative_decoding_config_create",
     "litert_lm_speculative_decoding_config_delete",
+    "litert_lm_speculative_decoding_config_set_lenience",
     "litert_lm_speculative_decoding_config_set_mode",
     "litert_lm_suppress_tokens_config_create",
     "litert_lm_suppress_tokens_config_delete",
@@ -170,7 +186,9 @@ OWN_BUILD_SYMBOLS = [
 # Every LiteRT C function LiteRtBindings looks up (lib/src/ffi/litert_bindings.dart;
 # a VM test compares them): embeddings on .tflite and every speech model. They
 # come out of the library LiteRtBindings opens — libLiteRtLm on Apple and
-# Android, Google's libLiteRt.so / LiteRt.dll beside it on Linux and Windows.
+# Android, libLiteRt.so / LiteRt.dll beside it on Linux and Windows (Google's
+# prebuilt up to native-v0.19.1-c; from LiteRT-LM v0.20.0 our own build of
+# LiteRT at the tag's pin, which upstream no longer ships prebuilt).
 # Missing one, that load fails on that target only (the opaque-options three
 # carry the speech-to-text GPU options, #747).
 LITERT_BINDINGS_SYMBOLS = [
@@ -200,11 +218,16 @@ LITERT_BINDINGS_SYMBOLS = [
     "LiteRtUnlockTensorBuffer",
 ]
 
-# The LLM functions the C API 1.0 Dart client (core 2.6.0, PRs L2, L3 and 6)
-# binds beyond the ones above: the version gate, structured output, real
+# The LLM functions the Dart client (C API 1.0 from core 2.6.0, PRs L2, L3
+# and 6; C API 1.1 from LiteRT-LM v0.20.0) binds beyond the ones above and
+# SESSION_SYMBOLS: the version gate, structured output, real
 # conversations for open sessions, the effective NPU context (#4184), and our
-# patches' section 16 rewind and section 23 turn-end record. Missing one, that
-# feature fails on that target only, at its first use.
+# patches' section 16 rewind and section 23 turn-end record, and section 4b's
+# four NPU executor flag setters, which every NPU load calls from LiteRT-LM
+# v0.20.0 (it resolves an unset flag from the bundle's metadata, else off).
+# They leave the library through the Windows .def list in patch_c_api.sh like
+# every other export. Missing one, that feature fails on that target only, at
+# its first use.
 LLM_SYMBOLS = [
     "litert_lm_benchmark_info_get_max_num_tokens",
     "litert_lm_conversation_config_set_constraint_provider",
@@ -215,10 +238,49 @@ LLM_SYMBOLS = [
     "litert_lm_conversation_optional_args_set_constraint",
     "litert_lm_conversation_rewind_cancelled_turn",
     "litert_lm_conversation_wait_until_done",
+    "litert_lm_engine_settings_set_enable_neon_for_npu_greedy_sampling",
+    "litert_lm_engine_settings_set_use_hw_cache_update_for_npu",
+    "litert_lm_engine_settings_set_use_hw_masking_for_npu",
+    "litert_lm_engine_settings_set_use_hw_ple_for_npu",
     "litert_lm_get_api_version",
     "litert_lm_stream_chunk_get_error",
     "litert_lm_stream_chunk_get_text",
     "litert_lm_stream_chunk_is_final",
+]
+
+# Every C function Kotlin's Session API calls in this package
+# (Engine.createSession: lib/src/ffi/session_ffi.dart, and the client's cancel
+# and delete in litert_lm_client.dart; a VM test keeps this list equal to the
+# calls). New in the C API 1.1 client of LiteRT-LM v0.20.0. Missing one, that
+# session call fails on that target only, at its first use.
+SESSION_SYMBOLS = [
+    "litert_lm_clear_last_error",
+    "litert_lm_engine_create_session",
+    "litert_lm_input_data_create",
+    "litert_lm_input_data_delete",
+    "litert_lm_responses_delete",
+    "litert_lm_responses_get_response_text_at",
+    "litert_lm_sampler_params_create",
+    "litert_lm_sampler_params_delete",
+    "litert_lm_sampler_params_set_seed",
+    "litert_lm_sampler_params_set_temperature",
+    "litert_lm_sampler_params_set_top_k",
+    "litert_lm_sampler_params_set_top_p",
+    "litert_lm_session_cancel_process",
+    "litert_lm_session_clone",
+    "litert_lm_session_config_create",
+    "litert_lm_session_config_delete",
+    "litert_lm_session_config_set_audio_lora_path",
+    "litert_lm_session_config_set_lora_path",
+    "litert_lm_session_config_set_sampler_params",
+    "litert_lm_session_config_set_speculative_decoding_config",
+    "litert_lm_session_delete",
+    "litert_lm_session_generate_content",
+    "litert_lm_session_generate_content_stream",
+    "litert_lm_session_run_decode",
+    "litert_lm_session_run_prefill",
+    "litert_lm_speculative_decoding_config_create",
+    "litert_lm_speculative_decoding_config_delete",
 ]
 
 # The StreamProxy shim (stream_proxy.c) every streamed reply goes through. Its
@@ -245,8 +307,9 @@ DISPATCH_SYMBOL = "LiteRtDispatchQueryInterface"
 DISPATCH_RETIRED = "LiteRtDispatchGetApi"
 
 # The library LiteRtBindings opens where it is not the main library, by the
-# platform in the bundle's label (litertlm-<platform>): Google's prebuilt
-# LiteRT beside libLiteRtLm (_openLiteRt in lib/src/ffi/litert_bindings.dart).
+# platform in the bundle's label (litertlm-<platform>): the LiteRT runtime
+# beside libLiteRtLm (_openLiteRt in lib/src/ffi/litert_bindings.dart), built
+# from LiteRT's source from LiteRT-LM v0.20.0.
 # Every other platform links LiteRT into the main library.
 LITERT_C_LIBRARY = {"linux": "libLiteRt.so", "windows": "LiteRt.dll"}
 
@@ -465,8 +528,10 @@ def main(argv):
                           "engine options call"),
                          (OWN_BUILD_SYMBOLS, "symbols the loader checks to "
                           "recognise this package's build"),
-                         (LLM_SYMBOLS, "LLM functions the C API 1.0 client "
-                          "binds")):
+                         (LLM_SYMBOLS, "LLM functions the Dart client "
+                          "binds"),
+                         (SESSION_SYMBOLS, "functions the Session API "
+                          "(Engine.createSession) calls")):
         missing = [s for s in wanted if s not in names]
         if missing:
             failed = True

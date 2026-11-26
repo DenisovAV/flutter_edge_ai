@@ -618,6 +618,59 @@ void main() {
     expect(handle.sends, hasLength(1));
   });
 
+  test("a tool choice goes with the message's own send only: the round "
+      'answering the tool results runs the default', () async {
+    final handle = _Handle();
+    final conversation = _conversation(handle, [_tool('t', [])]);
+    unawaited(
+      conversation.sendMessage(
+        Message.user('x'),
+        toolChoice: ToolChoice.required,
+      ),
+    );
+    await pumpEventQueue();
+    handle.sends.single
+      ..chunk(_call('t'))
+      ..finished();
+    await pumpEventQueue();
+    expect(handle.options.map((o) => o.toolChoiceJson), ['"required"', null]);
+  });
+
+  test('no choice sends none, ToolChoice.auto an explicit "auto"; a choice '
+      'the conversation cannot take is an ArgumentError on the stream, '
+      'before anything is sent', () async {
+    for (final (choice, json) in [(null, null), (ToolChoice.auto, '"auto"')]) {
+      final handle = _Handle();
+      _conversation(
+        handle,
+        [_tool('t', [])],
+      ).sendMessageStream(Message.user('x'), toolChoice: choice).listen((_) {});
+      await pumpEventQueue();
+      expect(handle.options.single.toolChoiceJson, json);
+    }
+    for (final (tools, format, choice) in [
+      (<Tool>[], null, ToolChoice.none),
+      // A send that carries the format: no automatic tools.
+      (
+        [Tool(name: 't')],
+        ResponseFormat.json(const {'type': 'object'}),
+        ToolChoice.required,
+      ),
+      ([_tool('t', [])], null, const ToolChoice.forcedFunction('other')),
+      ([_tool('t', [])], null, const ToolChoice.allowedTools([])),
+    ]) {
+      final handle = _Handle();
+      final conversation = _conversation(handle, tools, responseFormat: format);
+      await expectLater(
+        conversation
+            .sendMessageStream(Message.user('x'), toolChoice: choice)
+            .toList(),
+        throwsArgumentError,
+      );
+      expect(handle.sends, isEmpty);
+    }
+  });
+
   test('with a response format, a message goes without it while some tool '
       'has execute; tool responses keep it', () async {
     final handle = _Handle();

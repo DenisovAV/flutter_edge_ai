@@ -10,6 +10,11 @@ const liteRtLmAudioBundle = 'embeddinggemma-2-740m';
 /// The input length every EmbeddingGemma 2 engine is created with, in tokens.
 const liteRtLmMaxInputLength = 1024;
 
+/// The text signatures of the EmbeddingGemma 2 bundles, in tokens: the
+/// generic ones have all six, the per-SoC ones 128-1024. The web pins its
+/// window against them (the web runtime has no ModelInfo).
+const liteRtLmEg2TextSignatures = [128, 256, 512, 1024, 2048, 8192];
+
 /// The vision budget an engine is created with unless the app asks for 70.
 const liteRtLmDefaultVisionTokensPerImage = 140;
 

@@ -234,6 +234,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
 
       final session = _session = LiteRtLmWebSession(
         conversation: conversation,
+        declaresTools: tools.isNotEmpty,
         modelType: modelType,
         fileType: fileType,
         generationMutex: generationMutex,
@@ -335,6 +336,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     late final LiteRtLmWebSession session;
     session = LiteRtLmWebSession(
       conversation: conversation,
+      declaresTools: tools.isNotEmpty,
       modelType: modelType,
       fileType: fileType,
       generationMutex: generationMutex,
@@ -463,6 +465,7 @@ class LiteRtLmWebSession extends InferenceModelSession
     with RawSdkResponseSession {
   LiteRtLmWebSession({
     required this.conversation,
+    required this.declaresTools,
     required this.modelType,
     required this.fileType,
     required this.generationMutex,
@@ -484,6 +487,12 @@ class LiteRtLmWebSession extends InferenceModelSession
   Uint8List? _pendingAudio;
 
   final lm.Conversation conversation;
+
+  /// Whether the session was opened with tools. Without, a tool response is
+  /// sent as user text, as for a model whose tool calling runs in Dart:
+  /// LiteRT-LM refuses a tool message on a conversation that declares no
+  /// tools.
+  final bool declaresTools;
   final ModelType modelType;
   final ModelFileType fileType;
 
@@ -559,7 +568,9 @@ class LiteRtLmWebSession extends InferenceModelSession
       fileType: fileType,
     );
     _queryBuffer.write(prompt);
-    if (_nativeTools && message.type == MessageType.toolResponse) {
+    if (_nativeTools &&
+        declaresTools &&
+        message.type == MessageType.toolResponse) {
       final name = message.toolName;
       if (name == null) {
         throw ArgumentError.value(

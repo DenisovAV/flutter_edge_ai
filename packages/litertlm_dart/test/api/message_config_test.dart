@@ -8,6 +8,25 @@ import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('ToolChoice auto, none and required are equal by type, as the const '
+      'and non-const instances of one choice', () {
+    // Not const: the canonical instances would be identical anyway.
+    // ignore: prefer_const_constructors
+    final auto = ToolChoiceAuto();
+    // ignore: prefer_const_constructors
+    final none = ToolChoiceNone();
+    // ignore: prefer_const_constructors
+    final required = ToolChoiceRequired();
+    expect(auto, ToolChoice.auto);
+    expect(none, ToolChoice.none);
+    expect(required, ToolChoice.required);
+    expect(auto.hashCode, ToolChoice.auto.hashCode);
+    expect(none.hashCode, ToolChoice.none.hashCode);
+    expect(required.hashCode, ToolChoice.required.hashCode);
+    expect(auto, isNot(none));
+    expect(none, isNot(required));
+  });
+
   group('Message', () {
     test('a turn whose calls cannot all be read has none, as core reads it: '
         'arguments that are not a JSON object (a reply cut mid-arguments), '

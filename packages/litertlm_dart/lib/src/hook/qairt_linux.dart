@@ -23,10 +23,14 @@ import 'package:litertlm_dart/src/runtime/npu_stacks.dart';
 
 /// The QAIRT SDK build the Linux libraries come from.
 ///
-/// The same release as [qnnRuntimeVersion] on Android: the dispatch is built
-/// against LiteRT's QAIRT pin (`third_party/qairt/workspace.bzl`), and
-/// `build_qualcomm_dispatch.sh` refuses any other.
-const qairtBuild = '2.50.0.260828';
+/// Its own release, not [qnnRuntimeVersion]: Linux has no Maven artifact, so
+/// it can take the exact QAIRT LiteRT pins (`third_party/qairt/workspace.bzl`
+/// at `bf49eb62`: 2.51.1.261002), which Maven Central does not carry for
+/// Android. The Linux dispatch is built against the header slice
+/// `fetch_qairt_sdk_slim.py` reads from this same zip, and
+/// `build_qualcomm_dispatch.sh TARGET=linux_arm64` refuses an SDK of any other
+/// release.
+const qairtBuild = '2.51.1.261002';
 
 /// Qualcomm's public download of [qairtBuild] (no login). Redirects once to
 /// an API gateway that serves byte ranges.
@@ -35,41 +39,42 @@ final qairtZipUrl = Uri.parse(
   'Qualcomm_AI_Runtime_Community/All/$qairtBuild/v$qairtBuild.zip',
 );
 
-/// Size of `v2.50.0.260828.zip` (sha256 a346ea0e2c8631b4…). A range response
-/// for any other total is a different file, and is refused.
-const qairtZipLength = 2601473189;
+/// Size of `v2.51.1.261002.zip` (read from a range response, 2026-11-25). A
+/// range response for any other total is a different file, and is refused.
+const qairtZipLength = 2971039746;
 
-/// SHA-256 of each library as it sits in the zip, measured from the zip and
-/// matching the libraries that ran Gemma 4 on the NPU of a QCS8275 board.
+/// SHA-256 of each library as it sits in the zip, measured from the zip by
+/// range reads on 2026-11-25: the exact QAIRT LiteRT bf49eb62 pins. Not run
+/// on a Qualcomm Linux board (QCS8275) yet.
 const qairtLinuxSha256 = {
   'libQnnHtp.so':
-      '823f764d434869919c7e01825ba76da7db828225525b0d27a4c21f4b2841e25b',
+      'bf77968b801cccca89dc3f99aca9894bab45980a2e3a4b6d629b022c8617beac',
   'libQnnSystem.so':
-      '65c1faa1c2175128fd3c3c8a8edb276e93520666afd9696977e947e6d7a3d1d2',
+      '3c0238ace64db39a3c6b0c9e1aee01bfbf71baabad66e421408d044d01840203',
   'libQnnHtpV68Stub.so':
-      '8b37e04841fe2299c5325c2dd6d3ff54f73b68fff6151971742852de545e21b3',
+      '538fc29e04d83822d47083a79bde0e18cd37d08dd8f0da8f5a2f11f407fbe90a',
   'libQnnHtpV68Skel.so':
-      'e97388c45019995caa75c3c5c963e1dcce50081045f0eb4486e6365cb2ad83d6',
+      'b6b2e99f7cec3ad7bd73a8b928fee2aa9fda7510a17bc783824a46c90ee6515e',
   'libQnnHtpV69Stub.so':
-      '07e8b59dbe3318e600c2843a726a32510d80884263a5b0620b9ca82f7aecf3e0',
+      'cd0335bfc63564a9c2a372bb6e24fe834083aa0de317ce3c0459e326f91c31b7',
   'libQnnHtpV69Skel.so':
-      '93c395d8fe86021708bb8ee8ed6926416794f6167e7a236e7d75d490ceb99e55',
+      '2300b76f11e65f6593a44c786c92fdfee93163225a94aeae4e88a57ef0c686a7',
   'libQnnHtpV73Stub.so':
-      '84228f305bcac780abbc79dc5adff878bd0393b9eec3c1a7b0fbca5535319a69',
+      'a714ca8e00c32e3aeb0bf38fb8797dee3068387e8dabcd63967fb752247fa11e',
   'libQnnHtpV73Skel.so':
-      'e3070ed8ec0fc24ea6e44ef54c599d43bcb1d95dd5aa377c0cd55d74f49fb2dd',
+      'c1e3e23ef676f092d69aa4a32301af78014ca19828a7020d56019d2eae832426',
   'libQnnHtpV75Stub.so':
-      'c9ca7044e946248ce8bbac85c54f720e9d732793fada9160ef82d037629e7046',
+      '9e81df5cd8c4a945adc8465d5568c7146ef2cec764ee1f185a49c51bcfcff1e2',
   'libQnnHtpV75Skel.so':
-      '2f6cfe5aae553d8ec88b6741bf8598a557375eacfc58056c2667fc43fda64f6a',
+      '3514dd6a25842cd33a2d3168e42f2fcb89ade0631fd3299b839c6a4f758be990',
   'libQnnHtpV79Stub.so':
-      '41af4982799c61572b471256937799742f6bc948bbdf0015b724b1bb3c9f833e',
+      'cf474e74bcc75dcb8bdbd2b232be232b58370450bd31e9ec5ed7f77068745bfd',
   'libQnnHtpV79Skel.so':
-      '238675526b2932efe83a66784937e310ce238e76577e16e9c4358e81711e5333',
+      '6ffe158665620af47011c6f41a45b89ae572038f31edc99c8d4e7e87e15b5206',
   'libQnnHtpV81Stub.so':
-      '99faa17bd92b902561603916bf5df752d447cd4a858bf30f8c18bfd136f45ff3',
+      'f5aad77022117dc238ae0407204a4366fa5b6026d73be249bf7cd079c77a76af',
   'libQnnHtpV81Skel.so':
-      '9b7266e38aea818a1caeba5cbfebd9a8cbdba8f25dd82126d9b44ebf4fec4fa0',
+      '839f1665f103982d3fb26bd3e9168f8c87f50101eb21d5a6ff9f22e31809a91b',
 };
 
 /// Qualcomm's licence and notices, kept beside the libraries in the cache.

@@ -75,9 +75,14 @@ FfiInferenceModelSession ffiSessionForHandle({
   bool enableThinking = false,
   int? thinkingTokenBudget,
   int? maxOutputTokens,
+  List<lm.Tool> tools = const [],
   required VoidCallback onClose,
 }) => FfiInferenceModelSession(
-  conversation: conversationForTest(handle),
+  declaresTools: tools.isNotEmpty,
+  conversation: conversationForTest(
+    handle,
+    config: lm.ConversationConfig(tools: tools),
+  ),
   modelType: modelType,
   fileType: fileType,
   supportImage: supportImage,

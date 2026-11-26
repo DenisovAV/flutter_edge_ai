@@ -59,13 +59,14 @@ Future<Uint8List?> _readLlmMetadata(String modelPath) async {
 }
 
 /// The model families whose `LlmModelType` the runtime acts on (the GPU
-/// activation rules of `Engine.create`); every other family is [other].
-enum LlmModelFamily { gemma4, functionGemma, other }
+/// activation rules of `Engine.create`, and which apply a tool choice other
+/// than auto); every other family is [other].
+enum LlmModelFamily { gemma3, gemma3n, gemma4, functionGemma, other }
 
 /// The family `LlmMetadata.llm_model_type` (field 6) names: its oneof
-/// `gemma4 = 8`, `function_gemma = 3` (LiteRT-LM v0.19.1
-/// `runtime/proto/llm_model_type.proto`), [LlmModelFamily.other] for any other
-/// case, and null when the bundle has no `LlmMetadata` or no model type.
+/// `gemma3 = 4`, `gemma3n = 2`, `gemma4 = 8`, `function_gemma = 3` (LiteRT-LM
+/// v0.20.0 `runtime/proto/llm_model_type.proto`), [LlmModelFamily.other] for
+/// any other case, and null when the bundle has no `LlmMetadata` or no model type.
 LlmModelFamily? llmModelFamilyFrom(Uint8List llmMetadata) {
   try {
     for (final f in _ProtoReader(llmMetadata).fields()) {
@@ -73,6 +74,8 @@ LlmModelFamily? llmModelFamilyFrom(Uint8List llmMetadata) {
       for (final type in _ProtoReader(f.bytes!).fields()) {
         if (type.bytes == null) continue;
         return switch (type.number) {
+          4 => LlmModelFamily.gemma3,
+          2 => LlmModelFamily.gemma3n,
           8 => LlmModelFamily.gemma4,
           3 => LlmModelFamily.functionGemma,
           _ => LlmModelFamily.other,

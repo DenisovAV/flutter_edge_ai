@@ -44,7 +44,8 @@ import 'stderr_redirect.dart';
 import 'windows_std_handles.dart';
 import 'thinking_context.dart';
 import 'send_options.dart';
-import '../api/backend.dart' show SpeculativeDecodingMode;
+import 'session_ffi.dart';
+import '../api/backend.dart' show SpeculativeDecodingConfig;
 import '../runtime/load_errors.dart';
 import '../runtime/litert_lm_log_level.dart';
 
@@ -250,7 +251,6 @@ const windowsPreloadLibraries = [
 @visibleForTesting
 const linuxGlobalLibraries = [
   'libLiteRt.so',
-  'libGemmaModelConstraintProvider.so',
   'libLiteRtWebGpuAccelerator.so',
   'libLiteRtLm.so',
 ];
@@ -373,7 +373,8 @@ StoppedTurnRewind stoppedTurnRewindOutcome(
 ///
 /// Lifetime contract: the caller must call [close] when done. The owning
 /// client closes any remaining handles on [LiteRtLmFfiClient.shutdown].
-class LiteRtLmConversationHandle implements ConversationHandle {
+class LiteRtLmConversationHandle
+    implements ConversationHandle, ConversationStateAccess {
   LiteRtLmConversationHandle._(
     this._client,
     this._conversation,
@@ -575,6 +576,30 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   int? get lastTurnCode {
     final conv = _conversation;
     return conv == null ? null : _client._lastTurnEnds[conv]?.code;
+  }
+
+  @override
+  Future<int> kvTokenCount() {
+    _assertOpen();
+    return _client._kvTokenCountOn(_conversation!);
+  }
+
+  @override
+  Future<String> renderMessage(String messageJson) {
+    _assertOpen();
+    return _client._renderOn(_conversation!, messageJson);
+  }
+
+  @override
+  Future<String> renderPreface() {
+    _assertOpen();
+    return _client._renderOn(_conversation!, null);
+  }
+
+  @override
+  Future<LiteRtLmConversationHandle> cloneHandle() {
+    _assertOpen();
+    return _client._cloneOn(this);
   }
 
   /// Whether this conversation can still take an input, or null when that
@@ -847,6 +872,24 @@ Future<({int code, String? message, int micros})> Function(
 )
 sendOffMainIsolate = Isolate.run;
 
+/// How a session clone reaches its spawned isolate:
+/// [sessionCloneOffMainIsolate], replaced by tests, which have no native
+/// library behind the call.
+@visibleForTesting
+Future<SessionCallResult> Function({required int sessionAddr}) sessionCloneOff =
+    sessionCloneOffMainIsolate;
+
+/// How a session's streamed generation reaches its spawned isolate:
+/// [sessionGenerateStreamOffMainIsolate], replaced by tests.
+@visibleForTesting
+Future<SessionCallResult> Function({
+  required int sessionAddr,
+  required List<SessionInput> inputs,
+  required int callbackAddr,
+  required int callbackDataAddr,
+})
+sessionStreamOff = sessionGenerateStreamOffMainIsolate;
+
 /// How a rewind reaches its spawned isolate: [_rewindCancelledTurnOffMainIsolate],
 /// replaced by tests, which have no native library behind the call.
 @visibleForTesting
@@ -1018,16 +1061,22 @@ class EngineCreateRequest {
     this.maxNumImages = 0,
     this.enableSpeculativeDecoding,
     this.speculativeDecodingMode,
+    this.speculativeDecodingLenience,
+    this.selectedSignatures,
+    this.loraRank,
+    this.audioLoraRank,
     this.numThreads,
     this.activationDataType,
     this.nativeLogLevel,
     this.dispatchLibDir,
     this.useHwMaskingForNpu,
+    this.npuExecutorFlags,
     this.kernelBatchSize,
     this.blockSigprof = false,
     this.listWeightBanks = false,
     this.benchmarkPrefillTokens,
     this.benchmarkDecodeTokens,
+    this.maxVisionTokensPerImage,
   });
 
   final String modelPath;
@@ -1061,8 +1110,27 @@ class EngineCreateRequest {
   /// config (adaptive has no boolean); null sets none.
   final int? speculativeDecodingMode;
 
+  /// The speculative decoding config's lenience, set through a speculative
+  /// decoding config (with [speculativeDecodingMode] when that is set too);
+  /// null leaves LiteRT-LM's.
+  final double? speculativeDecodingLenience;
+
+  /// `engine_settings_set_selected_signatures`; null runs every signature.
+  final List<String>? selectedSignatures;
+
+  /// `engine_settings_set_lora_rank`, with `set_supported_lora_ranks([rank])`
+  /// when above 0, as Swift does; null sets none.
+  final int? loraRank;
+
+  /// The audio setters' counterpart of [loraRank].
+  final int? audioLoraRank;
+
   /// The CPU executor's threads; null leaves LiteRT-LM's default.
   final int? numThreads;
+
+  /// `engine_settings_set_max_vision_tokens_per_image`
+  /// (`EngineConfig.visualTokenBudget`); null leaves the bundle's.
+  final int? maxVisionTokensPerImage;
 
   /// The C API's number; null leaves the engine's own choice.
   final int? activationDataType;
@@ -1075,8 +1143,13 @@ class EngineCreateRequest {
   final String? dispatchLibDir;
 
   /// What `use_hw_masking_for_npu` is set to (`npuHwMasking` decides); null
-  /// leaves LiteRT-LM's default.
+  /// leaves LiteRT-LM's resolution (bundle metadata, else off).
   final bool? useHwMaskingForNpu;
+
+  /// The other three NPU executor flags (`npuExecutorFlags` on an NPU load);
+  /// null off the NPU, which leaves LiteRT-LM's resolution.
+  final ({bool neonGreedySampling, bool hwCacheUpdate, bool hwPle})?
+  npuExecutorFlags;
 
   /// Flushes the GPU command queue every N ops (#364); null leaves the
   /// engine's default.
@@ -1264,6 +1337,17 @@ EngineCreateResult createEngineWith(
           ),
         );
       }
+      // EngineConfig.visualTokenBudget, as Swift's Engine.initializeInternal
+      // sets ExperimentalFlags.visualTokenBudget.
+      if (r.maxVisionTokensPerImage case final budget?) {
+        setter(
+          'litert_lm_engine_settings_set_max_vision_tokens_per_image',
+          b.litert_lm_engine_settings_set_max_vision_tokens_per_image(
+            settings,
+            budget,
+          ),
+        );
+      }
 
       // MTP / speculative decoding (LiteRT-LM v0.11.0+). Skip when null so
       // the SDK uses the model's default; only call when caller explicitly
@@ -1279,19 +1363,18 @@ EngineCreateResult createEngineWith(
         );
       }
       final speculativeMode = r.speculativeDecodingMode;
-      if (speculativeMode != null) {
+      if (speculativeMode != null || r.speculativeDecodingLenience != null) {
         final config = createLiteRtLm(
           'litert_lm_speculative_decoding_config_create',
           b.litert_lm_speculative_decoding_config_create,
           b.lastError,
         );
         try {
-          setter(
-            'litert_lm_speculative_decoding_config_set_mode',
-            b.litert_lm_speculative_decoding_config_set_mode(
-              config,
-              LiteRtLmSpeculativeDecodingMode.fromValue(speculativeMode),
-            ),
+          applySpeculativeDecodingFields(
+            b,
+            config,
+            mode: speculativeMode,
+            lenience: r.speculativeDecodingLenience,
           );
           setter(
             'litert_lm_engine_settings_set_speculative_decoding_config',
@@ -1302,6 +1385,59 @@ EngineCreateResult createEngineWith(
           );
         } finally {
           b.litert_lm_speculative_decoding_config_delete(config);
+        }
+      }
+      final selected = r.selectedSignatures;
+      if (selected != null && selected.isNotEmpty) {
+        final names = calloc<Pointer<Char>>(selected.length);
+        try {
+          for (var i = 0; i < selected.length; i++) {
+            names[i] = selected[i].toNativeUtf8(allocator: calloc).cast();
+          }
+          setter(
+            'litert_lm_engine_settings_set_selected_signatures',
+            b.litert_lm_engine_settings_set_selected_signatures(
+              settings,
+              names,
+              selected.length,
+            ),
+          );
+        } finally {
+          for (var i = 0; i < selected.length; i++) {
+            if (names[i] != nullptr) calloc.free(names[i]);
+          }
+          calloc.free(names);
+        }
+      }
+      // LoRA ranks as Swift sets them (Engine.swift): the rank, and above 0
+      // the one-rank supported list. LiteRT-LM keeps that list only for
+      // GPU_ARTISAN and logs an ERROR line on every other backend.
+      for (final (rank, setRank, rankName, setSupported, supportedName) in [
+        (
+          r.loraRank,
+          b.litert_lm_engine_settings_set_lora_rank,
+          'litert_lm_engine_settings_set_lora_rank',
+          b.litert_lm_engine_settings_set_supported_lora_ranks,
+          'litert_lm_engine_settings_set_supported_lora_ranks',
+        ),
+        (
+          r.audioLoraRank,
+          b.litert_lm_engine_settings_set_audio_lora_rank,
+          'litert_lm_engine_settings_set_audio_lora_rank',
+          b.litert_lm_engine_settings_set_supported_audio_lora_ranks,
+          'litert_lm_engine_settings_set_supported_audio_lora_ranks',
+        ),
+      ]) {
+        if (rank == null) continue;
+        setter(rankName, setRank(settings, rank));
+        if (rank > 0) {
+          final ranks = calloc<Int>(1);
+          try {
+            ranks[0] = rank;
+            setter(supportedName, setSupported(settings, ranks, 1));
+          } finally {
+            calloc.free(ranks);
+          }
         }
       }
       final numThreads = r.numThreads;
@@ -1336,6 +1472,30 @@ EngineCreateResult createEngineWith(
           b.litert_lm_engine_settings_set_use_hw_masking_for_npu(
             settings,
             useHwMasking,
+          ),
+        );
+      }
+      final npuFlags = r.npuExecutorFlags;
+      if (npuFlags != null) {
+        setter(
+          'litert_lm_engine_settings_set_enable_neon_for_npu_greedy_sampling',
+          b.litert_lm_engine_settings_set_enable_neon_for_npu_greedy_sampling(
+            settings,
+            npuFlags.neonGreedySampling,
+          ),
+        );
+        setter(
+          'litert_lm_engine_settings_set_use_hw_cache_update_for_npu',
+          b.litert_lm_engine_settings_set_use_hw_cache_update_for_npu(
+            settings,
+            npuFlags.hwCacheUpdate,
+          ),
+        );
+        setter(
+          'litert_lm_engine_settings_set_use_hw_ple_for_npu',
+          b.litert_lm_engine_settings_set_use_hw_ple_for_npu(
+            settings,
+            npuFlags.hwPle,
           ),
         );
       }
@@ -1672,9 +1832,17 @@ class LiteRtLmFfiClient {
   int? get thinkingTokenBudget => _thinkingTokenBudget;
   int? _thinkingTokenBudget;
 
-  /// The sampler of the engine's first generation, which LiteRT-LM keeps for
-  /// every later conversation (google-ai-edge/LiteRT-LM#2080).
+  /// The sampler of the engine's first generation, which LiteRT-LM 0.19 (C
+  /// API 1.0) keeps for every later conversation
+  /// (google-ai-edge/LiteRT-LM#2080). LiteRT-LM 0.20 builds each
+  /// conversation's own ([liteRtLmSamplerFixedAtFirstGeneration]), so the
+  /// latch says nothing on a library of C API 1.1 or later.
   final _samplerLatch = EngineSamplerLatch();
+
+  /// Whether the loaded library keeps the sampler of an engine's first
+  /// generation ([liteRtLmSamplerFixedAtFirstGeneration]); read when the
+  /// library loads.
+  bool _samplerFixedAtFirstGeneration = true;
   bool _warnedNpuSampling = false;
 
   /// The sampler each live conversation was created with, so the first
@@ -2042,11 +2210,11 @@ class LiteRtLmFfiClient {
       preload(proxyPath);
       proxyLib = DynamicLibrary.open(proxyPath);
     } else if (Platform.isMacOS && liteRtLmOutsideFlutter) {
-      // A plain Dart program: its code assets, when its build bundled the
-      // companion there (macos_load_error.dart); refused, naming why, before
-      // anything is loaded otherwise (a preload of the framework's name could
-      // load a stray copy). Absolute paths, so the preload and the open are
-      // one image; checked all the same.
+      // A plain Dart program: its code assets (macos_load_error.dart);
+      // refused, naming why, before anything is loaded when there are none
+      // or they are an older release's build (a preload of the framework's
+      // name could load a stray copy). Absolute paths, so the preload and the
+      // open are one image; checked all the same.
       final assets = macOSCodeAssetsHere;
       final dir = switch (assets) {
         MacOSPlainDartAssets(:final dir) => dir,
@@ -2064,10 +2232,6 @@ class LiteRtLmFfiClient {
       proxyLib = DynamicLibrary.open(assetProxyPath);
       requireSameLoadedLibrary(preloadedAssetProxy, proxyLib, assetProxyPath);
     } else if (Platform.isMacOS) {
-      // An app built with the plain-Dart define is refused before anything
-      // loads (macos_load_error.dart).
-      final misuse = macOSFlutterCodeAssetsMisuse();
-      if (misuse != null) throw ArgumentError(misuse);
       // Relative paths: dyld resolves the preload's through its caller's and
       // the main executable's rpaths, the open's through FlutterMacOS's, so
       // the two are checked to be one image.
@@ -2114,8 +2278,6 @@ class LiteRtLmFfiClient {
       // Preload sequence:
       // - libLiteRt.so first (provides LiteRt C API used by the WebGPU
       //   accelerator at registration)
-      // - libGemmaModelConstraintProvider.so (libLiteRtLm.so has a
-      //   SONAME-level dependency on it)
       // - libLiteRtWebGpuAccelerator.so so gpu_registry.cc:162 can find it
       //   via the loader's already-loaded modules table when it does
       //   basename-only dlopen
@@ -2315,6 +2477,9 @@ class LiteRtLmFfiClient {
       _hasTurnEndRecord = lib.providesSymbol(
         'litert_lm_conversation_get_last_turn_end',
       );
+      _samplerFixedAtFirstGeneration = liteRtLmSamplerFixedAtFirstGeneration(
+        readLiteRtLmCApiVersion(lib),
+      );
       _proxyDestroy = proxyLib
           .lookupFunction<
             Void Function(Pointer<Void>),
@@ -2450,6 +2615,10 @@ class LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? speculativeDecodingMode,
+    double? speculativeDecodingLenience,
+    List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     int? numThreads,
     int? activationDataType,
     GpuActivationReason? gpuActivationReason,
@@ -2457,6 +2626,7 @@ class LiteRtLmFfiClient {
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
     BenchmarkTokens? benchmarkTokens,
+    int? maxVisionTokensPerImage,
   }) async {
     if (backend == 'npu' && npuDispatch == null) {
       throw ArgumentError.notNull('npuDispatch');
@@ -2518,8 +2688,16 @@ class LiteRtLmFfiClient {
     // mask update path off, except for a bundle whose NPU-compiled mask graphs
     // are known to be wrong (Intel's public Gemma 4 26B for Panther Lake).
     final useHwMasking = backend == 'npu' ? npuDispatch!.useHwMasking : null;
+    final npuFlags = backend == 'npu' ? npuExecutorFlags : null;
     if (useHwMasking != null) {
       runtimeLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=$useHwMasking');
+    }
+    if (npuFlags != null) {
+      runtimeLog(
+        '[LiteRtLmFfi] NPU: enable_neon_for_npu_greedy_sampling='
+        '${npuFlags.neonGreedySampling} use_hw_cache_update_for_npu='
+        '${npuFlags.hwCacheUpdate} use_hw_ple_for_npu=${npuFlags.hwPle}',
+      );
     }
 
     if (npuDispatchDir != null) {
@@ -2581,11 +2759,17 @@ class LiteRtLmFfiClient {
         maxNumImages: maxNumImages,
         enableSpeculativeDecoding: enableSpeculativeDecoding,
         speculativeDecodingMode: speculativeDecodingMode,
+        speculativeDecodingLenience: speculativeDecodingLenience,
+        selectedSignatures: selectedSignatures,
+        loraRank: loraRank,
+        audioLoraRank: audioLoraRank,
         numThreads: numThreads,
         activationDataType: activationDataType,
+        maxVisionTokensPerImage: maxVisionTokensPerImage,
         nativeLogLevel: nativeLogLevel,
         dispatchLibDir: npuDispatchDir,
         useHwMaskingForNpu: useHwMasking,
+        npuExecutorFlags: npuFlags,
         kernelBatchSize: kernelBatchSize,
         // The QNN backend's init fails under the debug VM's SIGPROF sampling
         // on Linux (see withSigprofBlocked); Android's FastRPC client
@@ -2713,13 +2897,38 @@ class LiteRtLmFfiClient {
     );
   }
 
+  /// Says that the NPU executor decodes greedily when a conversation or a
+  /// session (Engine.createSession) of an NPU engine sends a sampler the
+  /// caller set ([explicit]): the executor argmaxes regardless, so the caller
+  /// is told rather than left believing a seed or temperature took hold. Only
+  /// for a sampler the caller set: the defaults are not greedy, and warning
+  /// on every NPU context would train people to ignore it. Printed once per
+  /// engine: a release build is where it gets reported, and runtimeLog is
+  /// silent there.
+  void noteNpuSampling(Sampler sampling, {required bool explicit}) {
+    if (_backend != 'npu' || !explicit || _warnedNpuSampling) return;
+    _warnedNpuSampling = true;
+    // ignore: avoid_print
+    print(
+      '[litertlm_dart] WARNING: NPU backend: sampler params '
+      '($sampling) are sent but the NPU executor decodes greedily and never '
+      'reads them, so output is deterministic argmax. Use '
+      'the CPU or the GPU if you need sampling. Shown once per '
+      'engine.',
+    );
+  }
+
   /// Reports what LiteRT-LM#2080 means for [conv]'s generation (see
-  /// [EngineSamplerLatch]). The engine builds its sampler at its first
-  /// generation, not when a conversation is created.
+  /// [EngineSamplerLatch]). A LiteRT-LM 0.19 engine builds its sampler at its
+  /// first generation, not when a conversation is created; from 0.20 (C API
+  /// 1.1) each conversation's sampler is its own on the CPU and the GPU, and
+  /// nothing is said.
   void _noteGeneration(Pointer<LiteRtLmConversation> conv) {
     final entry = _conversationSampling[conv];
     // The NPU executor never reads a sampler; its own warning covers it.
-    if (entry == null || _backend == 'npu') return;
+    if (entry == null || _backend == 'npu' || !_samplerFixedAtFirstGeneration) {
+      return;
+    }
     final note = _samplerLatch.onGeneration(entry.$1, explicit: entry.$2);
     if (note == null) return;
     if (!note.warn) {
@@ -2918,23 +3127,7 @@ class LiteRtLmFfiClient {
           b.litert_lm_sampler_params_delete(samplerParams);
         }
 
-        // The NPU executor argmaxes regardless of what we just set, so tell the
-        // caller rather than letting them believe a seed or temperature took hold.
-        // Only when they set one themselves: the defaults are not greedy, and
-        // warning on every NPU session would train people to ignore it.
-        // Printed once per engine: a release build is where it gets reported, and
-        // runtimeLog is silent there.
-        if (_backend == 'npu' && samplingExplicit && !_warnedNpuSampling) {
-          _warnedNpuSampling = true;
-          // ignore: avoid_print
-          print(
-            '[litertlm_dart] WARNING: NPU backend: sampler params '
-            '($sampling) are sent but the NPU executor decodes greedily and never '
-            'reads them, so output is deterministic argmax. Use '
-            'the CPU or the GPU if you need sampling. Shown once per '
-            'engine.',
-          );
-        }
+        noteNpuSampling(sampling, explicit: samplingExplicit);
 
         // Optional per-session cap on how many tokens are *generated* (output),
         // independent of the engine's context window (maxTokens / KV-cache). This
@@ -2958,6 +3151,26 @@ class LiteRtLmFfiClient {
         final speculative = extras.speculativeDecoding;
         if (speculative != null) {
           _setSessionSpeculativeDecoding(sessionConfig, speculative, check);
+        }
+        for (final (name, path, set) in [
+          (
+            'litert_lm_session_config_set_lora_path',
+            extras.loraPath,
+            b.litert_lm_session_config_set_lora_path,
+          ),
+          (
+            'litert_lm_session_config_set_audio_lora_path',
+            extras.audioLoraPath,
+            b.litert_lm_session_config_set_audio_lora_path,
+          ),
+        ]) {
+          if (path == null) continue;
+          final pathPtr = path.toNativeUtf8();
+          try {
+            check(name, set(sessionConfig, pathPtr.cast()));
+          } finally {
+            malloc.free(pathPtr);
+          }
         }
 
         // No-argument create + setter chain: the session config carries
@@ -3024,6 +3237,7 @@ class LiteRtLmFfiClient {
               ),
             );
           }
+          applyConversationExtras(b, convConfig, extras);
         } catch (_) {
           b.litert_lm_conversation_config_delete(convConfig);
           rethrow;
@@ -3119,7 +3333,7 @@ class LiteRtLmFfiClient {
   /// Sets [mode] on a session config through a speculative decoding config.
   void _setSessionSpeculativeDecoding(
     Pointer<LiteRtLmSessionConfig> sessionConfig,
-    SpeculativeDecodingMode mode,
+    SpeculativeDecodingConfig speculative,
     void Function(String name, int code) check,
   ) {
     final b = _bindings!;
@@ -3129,12 +3343,14 @@ class LiteRtLmFfiClient {
       b.lastError,
     );
     try {
-      check(
-        'litert_lm_speculative_decoding_config_set_mode',
-        b.litert_lm_speculative_decoding_config_set_mode(
-          config,
-          LiteRtLmSpeculativeDecodingMode.fromValue(mode.index),
-        ),
+      // A mode left null inherits the engine's: native keeps a field that is
+      // not set (`litert_lm_session_config_set_speculative_decoding_config`),
+      // as Kotlin's and Swift's conversation configs leave it.
+      applySpeculativeDecodingFields(
+        b,
+        config,
+        mode: speculative.mode?.index,
+        lenience: speculative.lenience,
       );
       check(
         'litert_lm_session_config_set_speculative_decoding_config',
@@ -4707,9 +4923,26 @@ class LiteRtLmFfiClient {
     for (final stop in _scoringStops) {
       stop.value = 1;
     }
+    // A session call in flight (Engine.createSession) runs inside the guard
+    // awaited below: it is stopped first, or shutdown would wait for a whole
+    // decode. A call that passed its check under the lock but had not reached
+    // native when the cancel came would run on: the cancel is repeated until
+    // the guard is free.
+    _cancelLiveSessions();
     if (_createsInFlight > 0) {
       _createsQuiescent ??= Completer<void>();
-      await _createsQuiescent!.future;
+      final quiescent = _createsQuiescent!.future;
+      final again = _liveSessions.isEmpty
+          ? null
+          : Timer.periodic(
+              const Duration(milliseconds: 100),
+              (_) => _cancelLiveSessions(),
+            );
+      try {
+        await quiescent;
+      } finally {
+        again?.cancel();
+      }
     }
 
     // Copy because close() mutates _handles.
@@ -4746,6 +4979,29 @@ class LiteRtLmFfiClient {
       ),
     );
 
+    // Sessions (Engine.createSession) left open: their calls were stopped and
+    // have ended (above), so each is deleted under the lock before the
+    // engine. Like a generation that does not end, a delete that does not
+    // come keeps the engine: deleting it under native's session would free
+    // what native still uses.
+    if (_liveSessions.isNotEmpty && _bindings != null) {
+      final sessions = _liveSessions.toList();
+      await _protectNativeMutex(() async {
+        for (final session in sessions) {
+          if (_liveSessions.remove(session)) {
+            _bindings!.litert_lm_session_delete(Pointer.fromAddress(session));
+          }
+        }
+      }).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw TimeoutException(
+          'LiteRT-LM shutdown stopped after 10 s because the open sessions '
+          'could not be deleted; the engine was deliberately not deleted '
+          'while native still owns them.',
+          const Duration(seconds: 10),
+        ),
+      );
+    }
     if (_engine != null && _engine != nullptr && _bindings != null) {
       _bindings!.litert_lm_engine_delete(_engine!);
       _engine = null;
@@ -4758,6 +5014,9 @@ class LiteRtLmFfiClient {
     // handle/virtual drains above already emptied the registry, but clear it so
     // no address can linger as a dangling "live" entry after a bulk free.
     _liveConvs.clear();
+    // Deleted with the engine: no address may stay "live" to a late cancel.
+    _liveSessions.clear();
+    _cancelledSessions.clear();
     _executor.unknown();
     _sentConvs.clear();
     _lastTurnEnds.clear();
@@ -4872,6 +5131,483 @@ class LiteRtLmFfiClient {
         if (textPtr != null) calloc.free(textPtr);
       }
     });
+  }
+
+  /// The tokens in [conv]'s KV cache (`litert_lm_conversation_get_token_count`),
+  /// read under [_nativeMutex]: a turn on any conversation of the engine ends
+  /// before it. Throws [StateError] when the conversation or the engine is
+  /// gone, [LiteRtLmNativeException] when native fails.
+  Future<int> _kvTokenCountOn(Pointer<LiteRtLmConversation> conv) =>
+      _protectNativeMutex(() async {
+        final b = _liveBindingsFor(conv);
+        try {
+          return readLiteRtLmSize(
+            'litert_lm_conversation_get_token_count',
+            (out) => b.litert_lm_conversation_get_token_count(conv, out),
+            b.lastError,
+          );
+        } on LiteRtLmCallException catch (e) {
+          throw LiteRtLmNativeException('$e');
+        }
+      });
+
+  /// [messageJson] rendered by [conv]'s template
+  /// (`litert_lm_conversation_render_message_to_string`), or its preface
+  /// when null (`litert_lm_conversation_render_preface_to_string`). Under
+  /// [_nativeMutex]; the string native returns is copied before the lock
+  /// goes, as the next render replaces it.
+  Future<String> _renderOn(
+    Pointer<LiteRtLmConversation> conv,
+    String? messageJson,
+  ) => _protectNativeMutex(() async {
+    final b = _liveBindingsFor(conv);
+    final json = messageJson?.toNativeUtf8();
+    try {
+      final call = json == null
+          ? 'litert_lm_conversation_render_preface_to_string'
+          : 'litert_lm_conversation_render_message_to_string';
+      final Pointer<Char> text;
+      try {
+        b.litert_lm_clear_last_error();
+        text = readLiteRtLmPointer<Char>(
+          call,
+          (out) => json == null
+              ? b.litert_lm_conversation_render_preface_to_string(conv, out)
+              : b.litert_lm_conversation_render_message_to_string(
+                  conv,
+                  json.cast(),
+                  out,
+                ),
+          b.lastError,
+        );
+      } on LiteRtLmCallException catch (e) {
+        throw LiteRtLmNativeException('$e');
+      }
+      if (text == nullptr) {
+        throw LiteRtLmNativeException('$call returned no text');
+      }
+      return nativeText(text.cast());
+    } finally {
+      if (json != null) calloc.free(json);
+    }
+  });
+
+  /// A new native conversation holding [source]'s state
+  /// (`litert_lm_conversation_clone`: its history and KV cache), as a handle
+  /// of its own, registered as one this client created. Under
+  /// [_nativeMutex], held off [shutdown].
+  Future<LiteRtLmConversationHandle> _cloneOn(
+    LiteRtLmConversationHandle source,
+  ) => _guardCreate(
+    () => _protectNativeMutex(() async {
+      final conv = source._conversation;
+      if (conv == null) throw StateError('Conversation handle is closed');
+      final b = _liveBindingsFor(conv);
+      final Pointer<LiteRtLmConversation> cloned;
+      try {
+        b.litert_lm_clear_last_error();
+        cloned = createLiteRtLm<LiteRtLmConversation>(
+          'litert_lm_conversation_clone',
+          (out) => b.litert_lm_conversation_clone(conv, out),
+          b.lastError,
+        );
+      } on LiteRtLmCallException catch (e) {
+        throw LiteRtLmNativeException('$e');
+      }
+      // The clone runs the session's clone, which may switch the executor's
+      // context.
+      _executor.unknown();
+      _liveConvs.add(cloned);
+      if (_conversationSampling[conv] case final sampling?) {
+        _conversationSampling[cloned] = sampling;
+      }
+      final handle = LiteRtLmConversationHandle._(
+        this,
+        cloned,
+        source._multimodalOrder,
+        source._constraint,
+      );
+      _handles.add(handle);
+      return handle;
+    }),
+  );
+
+  // ---- Kotlin's Session API (Engine.createSession), session_ffi.dart ----
+
+  /// The sessions this client created and has not deleted, by address;
+  /// [shutdown] deletes what is left.
+  final Set<int> _liveSessions = {};
+
+  /// The sessions whose caller asked them to stop ([sessionCancel]): a call
+  /// on one that has not reached native yet is refused under the lock
+  /// instead of running, and a CANCELLED end is the caller's, not a failure.
+  /// LiteRT-LM does not support reusing a cancelled session, so the mark is
+  /// never cleared while the session lives.
+  final Set<int> _cancelledSessions = {};
+
+  /// The status name a session call reports when its caller cancelled it.
+  static const _sessionCancelled = 'CANCELLED';
+
+  /// Runs a session call on a spawned isolate under [_nativeMutex], held off
+  /// [shutdown]; a non-zero status is a [LiteRtLmNativeException] naming
+  /// [call] and LiteRT-LM's last error. [publish] runs with the result before
+  /// the guard is left, so [shutdown] sees what the call made.
+  ///
+  /// A prefill or decode ([stoppable]) that its caller stopped
+  /// ([sessionCancel]) ends normally, as a stopped stream does: before native
+  /// started it, without running; while it ran, with what native returned
+  /// (the text decoded until then, or nothing when native answers
+  /// CANCELLED). One that [shutdown] stopped is a [StateError].
+  Future<SessionCallResult> _sessionCall(
+    String call,
+    Future<SessionCallResult> Function(int engineAddr) body, {
+    int? session,
+    bool stoppable = false,
+    void Function(SessionCallResult r)? publish,
+  }) => _guardCreate(
+    () => _protectNativeMutex(() async {
+      final engine = _engine;
+      if (_isShuttingDown || engine == null || engine == nullptr) {
+        throw StateError('The LiteRT-LM engine is not loaded.');
+      }
+      const stopped = (code: 0, address: 0, text: '', message: null);
+      if (session != null) {
+        if (!_liveSessions.contains(session)) {
+          throw StateError('The session is closed.');
+        }
+        // Asked to stop before native started it: native's cancel found
+        // nothing running, so the call does not run.
+        if (_cancelledSessions.contains(session)) {
+          if (stoppable) return stopped;
+          throw StateError('$call: the session was cancelled.');
+        }
+      }
+      // A session runs its own context on the executor.
+      _executor.unknown();
+      final r = await body(engine.address);
+      final byCaller = session != null && _cancelledSessions.contains(session);
+      if (session != null && _isShuttingDown && !byCaller) {
+        // A session the call made (a clone) still exists natively: published,
+        // so shutdown deletes it with the others instead of leaking it.
+        if (r.code == liteRtLmStatusOk && r.address != 0) publish?.call(r);
+        throw StateError(
+          '$call: the engine was closed while the call ran; the session was '
+          'stopped and deleted with it.',
+        );
+      }
+      if (r.code != liteRtLmStatusOk) {
+        if (stoppable &&
+            byCaller &&
+            liteRtLmStatusName(r.code) == _sessionCancelled) {
+          return stopped;
+        }
+        throw LiteRtLmNativeException(
+          '$call failed with ${liteRtLmStatusName(r.code)}'
+          '${r.message == null ? '' : ': ${r.message}'}',
+        );
+      }
+      publish?.call(r);
+      return r;
+    }),
+  );
+
+  /// A new session (`litert_lm_engine_create_session`), by address.
+  Future<int> createSession(SessionSettings settings) async {
+    final r = await _sessionCall(
+      'litert_lm_engine_create_session',
+      (engine) =>
+          createSessionOffMainIsolate(engineAddr: engine, settings: settings),
+      publish: (r) => _liveSessions.add(r.address),
+    );
+    return r.address;
+  }
+
+  /// `litert_lm_session_run_prefill`.
+  Future<void> sessionPrefill(int session, List<SessionInput> inputs) =>
+      _sessionCall(
+        'litert_lm_session_run_prefill',
+        (_) =>
+            sessionPrefillOffMainIsolate(sessionAddr: session, inputs: inputs),
+        session: session,
+        stoppable: true,
+      );
+
+  /// `litert_lm_session_run_decode`, or `litert_lm_session_generate_content`
+  /// with [inputs]: the first candidate's text.
+  Future<String> sessionDecode(
+    int session, {
+    List<SessionInput>? inputs,
+  }) async => (await _sessionCall(
+    inputs == null
+        ? 'litert_lm_session_run_decode'
+        : 'litert_lm_session_generate_content',
+    (_) => sessionDecodeOffMainIsolate(sessionAddr: session, inputs: inputs),
+    session: session,
+    stoppable: true,
+  )).text!;
+
+  /// `litert_lm_session_clone`, by address.
+  Future<int> sessionClone(int session) async {
+    final r = await _sessionCall(
+      'litert_lm_session_clone',
+      (_) => sessionCloneOff(sessionAddr: session),
+      session: session,
+      publish: (r) => _liveSessions.add(r.address),
+    );
+    return r.address;
+  }
+
+  /// `litert_lm_session_cancel_process`: asks the session's prefill or
+  /// decode in flight to stop, and marks the session so a call queued on it
+  /// is refused before native ([_cancelledSessions]). Thread-safe natively,
+  /// so it runs here, outside the lock the call it stops holds; also while
+  /// [shutdown] runs, until the session is deleted.
+  void sessionCancel(int session) {
+    final b = _bindings;
+    if (b == null || !_liveSessions.contains(session)) return;
+    _cancelledSessions.add(session);
+    b.litert_lm_session_cancel_process(Pointer.fromAddress(session));
+  }
+
+  /// Stops every live session's call in flight, for [shutdown]: native's
+  /// cancel, without the caller's mark, so the stream it stops ends with an
+  /// error ([_sessionStreamFailure]).
+  void _cancelLiveSessions() {
+    final b = _bindings;
+    if (b == null) return;
+    for (final session in _liveSessions) {
+      b.litert_lm_session_cancel_process(Pointer.fromAddress(session));
+    }
+  }
+
+  /// Test seam: marks [session] live without a native engine, as a create
+  /// does.
+  @visibleForTesting
+  void seedLiveSessionForTest(int session) => _liveSessions.add(session);
+
+  /// Test seam: whether [session] was cancelled by its caller.
+  @visibleForTesting
+  bool isSessionCancelledForTest(int session) =>
+      _cancelledSessions.contains(session);
+
+  /// `litert_lm_session_delete`, under the lock, after a call in flight on it.
+  Future<void> sessionDelete(int session) => _protectNativeMutex(() async {
+    if (!_liveSessions.remove(session)) return;
+    _cancelledSessions.remove(session);
+    final b = _bindings;
+    if (b == null || _engine == null) return;
+    b.litert_lm_session_delete(Pointer.fromAddress(session));
+  });
+
+  /// `litert_lm_session_generate_content_stream`: the decode's chunks of
+  /// text, through the stream proxy every conversation streams through. The
+  /// lock is held from the call until native's final or error chunk; a
+  /// cancelled subscription cancels the session and waits for that end.
+  ///
+  /// How it ends: a stop the caller asked for ([sessionCancel], during the
+  /// prefill, the decode, or before native started) ends the stream normally
+  /// with what came before it; [shutdown] ends it with a [StateError]; any
+  /// other native error, the context window's end included ("Max number of
+  /// tokens reached.", which the C API and Kotlin report as an error too), is
+  /// a [LiteRtLmNativeException].
+  Stream<String> sessionGenerateStream(int session, List<SessionInput> inputs) {
+    late final StreamController<String> out;
+    var started = false;
+    var ended = false;
+    var consumerCancelled = false;
+    final end = Completer<void>();
+    out = StreamController<String>(
+      onListen: () {
+        started = true;
+        unawaited(() async {
+          try {
+            await _guardCreate(
+              () => _protectNativeMutex(() async {
+                await _sessionStream(
+                  session,
+                  inputs,
+                  out,
+                  () => consumerCancelled,
+                  () => ended = true,
+                );
+                ended = true;
+              }),
+            );
+          } on Object catch (e, st) {
+            if (!out.isClosed && !consumerCancelled) out.addError(e, st);
+          } finally {
+            ended = true;
+            if (!end.isCompleted) end.complete();
+            if (!out.isClosed) await out.close();
+          }
+        }());
+      },
+      onCancel: () {
+        if (!started || ended) return null;
+        consumerCancelled = true;
+        sessionCancel(session);
+        return end.future.timeout(const Duration(seconds: 5), onTimeout: () {});
+      },
+    );
+    return out.stream;
+  }
+
+  /// One streamed generation, while the caller holds the lock: completes
+  /// when native has sent its final or error chunk (or refused the call).
+  Future<void> _sessionStream(
+    int session,
+    List<SessionInput> inputs,
+    StreamController<String> out,
+    bool Function() abandoned,
+    void Function() nativeEnded,
+  ) async {
+    final b = _bindings;
+    final engine = _engine;
+    if (_isShuttingDown || b == null || engine == null || engine == nullptr) {
+      throw StateError('The LiteRT-LM engine is not loaded.');
+    }
+    if (!_liveSessions.contains(session)) {
+      throw StateError('The session is closed.');
+    }
+    // Asked to stop before native started: the caller's stop, so the stream
+    // ends normally with nothing.
+    if (_cancelledSessions.contains(session)) return;
+    if (_missingChunkAccessors.isNotEmpty) {
+      throw StateError(
+        'libLiteRtLm does not export ${_missingChunkAccessors.join(', ')}: '
+        'a streamed chunk cannot be read.',
+      );
+    }
+    _executor.unknown();
+    final done = Completer<void>();
+    late final NativeCallable<StreamCallbackNative> callable;
+    callable = NativeCallable<StreamCallbackNative>.listener((
+      Pointer<Void> _,
+      Pointer<Char> chunk,
+      int isFinal,
+      Pointer<Char> errorMsg,
+    ) {
+      if (done.isCompleted) return;
+      if (errorMsg != nullptr) {
+        // Ended natively: a cancel of the subscription after this error has
+        // nothing to stop.
+        nativeEnded();
+        final error = decodeNativeString(errorMsg, maxBytes: _maxErrorBytes);
+        _proxyFreeString!(errorMsg);
+        if (chunk != nullptr) _proxyFreeString!(chunk);
+        if (!out.isClosed && !abandoned()) {
+          final failure = _sessionStreamFailure(session, error);
+          if (failure != null) out.addError(failure);
+        }
+        callable.close();
+        done.complete();
+        return;
+      }
+      if (chunk != nullptr) {
+        final text = decodeNativeString(chunk);
+        _proxyFreeString!(chunk);
+        if (!out.isClosed && !abandoned()) out.add(text);
+      }
+      if (isFinal != 0) {
+        nativeEnded();
+        callable.close();
+        done.complete();
+      }
+    });
+    final outProxyFn = calloc<Pointer<NativeFunction<StreamCallbackNative>>>();
+    final Pointer<Void> proxyData;
+    final Pointer<NativeFunction<StreamCallbackNative>> proxyFn;
+    try {
+      proxyData = _proxyCreate!(
+        callable.nativeFunction,
+        nullptr,
+        _chunkGetText,
+        _chunkGetError,
+        _chunkIsFinal,
+        outProxyFn,
+      );
+      proxyFn = outProxyFn.value;
+    } finally {
+      calloc.free(outProxyFn);
+    }
+    if (proxyData == nullptr || proxyFn == nullptr) {
+      callable.close();
+      throw StateError('stream_proxy_create_v1 returned null.');
+    }
+    final SessionCallResult r;
+    try {
+      r = await sessionStreamOff(
+        sessionAddr: session,
+        inputs: inputs,
+        callbackAddr: proxyFn.address,
+        callbackDataAddr: proxyData.address,
+      );
+    } catch (_) {
+      releaseRefusedStreamProxy(-1, proxyData, _proxyDestroy!);
+      callable.close();
+      rethrow;
+    }
+    if (r.code != liteRtLmStatusOk) {
+      nativeEnded();
+      // No callback comes for a refused call: its proxy is freed here.
+      releaseRefusedStreamProxy(r.code, proxyData, _proxyDestroy!);
+      callable.close();
+      // A stop during the prefill, which native runs before it returns.
+      final failure = _sessionStreamFailure(
+        session,
+        '${liteRtLmStatusName(r.code)}'
+        '${r.message == null ? '' : ': ${r.message}'}',
+      );
+      if (failure != null) throw failure;
+      return;
+    }
+    await done.future;
+  }
+
+  /// What a session stream's native [error] ends it with: null (a normal
+  /// end) for a stop its caller asked for, a [StateError] for one [shutdown]
+  /// asked for, else a [LiteRtLmNativeException].
+  Object? _sessionStreamFailure(int session, String error) {
+    if (error.startsWith(_sessionCancelled)) {
+      if (_cancelledSessions.contains(session)) return null;
+      if (_isShuttingDown) {
+        return StateError(
+          'The engine was closed while the session generated: the session '
+          'was stopped and deleted with it.',
+        );
+      }
+    }
+    return LiteRtLmNativeException('Session stream error: $error');
+  }
+
+  /// Test seam: what a session stream ends with on [error]
+  /// ([_sessionStreamFailure]), with [shuttingDown] as [shutdown] sets it.
+  @visibleForTesting
+  Object? sessionStreamFailureForTest(
+    int session,
+    String error, {
+    bool shuttingDown = false,
+  }) {
+    final was = _isShuttingDown;
+    _isShuttingDown = shuttingDown;
+    try {
+      return _sessionStreamFailure(session, error);
+    } finally {
+      _isShuttingDown = was;
+    }
+  }
+
+  /// The bindings, for a native call on [conv]: a [StateError] when the
+  /// engine is gone or [conv] is no longer one of its conversations.
+  LiteRtLmBindings _liveBindingsFor(Pointer<LiteRtLmConversation> conv) {
+    final b = _bindings;
+    if (b == null ||
+        _isShuttingDown ||
+        _engine == null ||
+        !_liveConvs.contains(conv)) {
+      throw StateError('The conversation or its engine is closed.');
+    }
+    return b;
   }
 
   /// The engine's token ids for [text], with no BOS added: what the option

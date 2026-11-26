@@ -12,7 +12,8 @@
 ///   `maxNumImages`) and an image part (`data`); a second image in the same
 ///   conversation; an image as base64 `blob` in a message and in a preface;
 ///   the history after an image, and a conversation rebuilt from it with the
-///   image as base64;
+///   image as base64; four different images in one conversation of an engine
+///   reserving one (`maxNumImages: 1`);
 /// - audio engines (`audioBackend` CPU and GPU) and an audio part, and the
 ///   history after it; vision and audio in one engine;
 /// - `backendConfig.number_of_threads` on the CPU (WebAssembly) backend;
@@ -23,7 +24,34 @@
 /// - `cancel()` with nothing in flight, then a send;
 /// - a stop at the very end: every chunk read, `cancel()`, then the stream's
 ///   end, and whether the completed exchange is in `getHistory()`;
-/// - `backend: GPU` and `GPU_ARTISAN` named explicitly.
+/// - `backend: GPU` and `GPU_ARTISAN` named explicitly;
+/// - a malformed message (unknown role, unknown part, a tool response with
+///   no tools): does its stream reject or close empty, and does the next send
+///   answer;
+/// - the text model's `activationDataType` (unset, FP16, FP32) read back,
+///   and a prompt of about 3,200 tokens at each;
+/// - speculative decoding (`speculativeDecodingConfig` ON and ADAPTIVE) on
+///   this export, with the benchmark's MTP counters.
+/// A second test, the 0.20.0 parity probes (run alone with
+/// `--dart-define=PROBE_PART=parity`), records:
+/// - `Engine.createSession` and its `Session`: the members it has, a text
+///   prefill and decode with Gemma 4's turn markers, a clone continued on
+///   its own, a cancel with nothing in flight then a prefill and decode, a
+///   cancel 200 ms into a prefill and decode of a long reply and into its
+///   decode alone (what the call ends with, when, and a decode after it),
+///   and an image input to `runPrefill`;
+/// - `Conversation.clone()`: the clone and the original each continued, and
+///   their token counts;
+/// - `maxVisionTokensPerImage` on the engine: 70 (a budget the vision
+///   encoder has) and 100 (one it has not), read back, and an image sent
+///   with each, with the token count after it;
+/// - EmbeddingGemma 2 (`EmbeddingEngine`): `computeEmbedding` with
+///   `outputSize` 256 and 100, the 440m's image with `visionTokensPerImage`
+///   140 and 70 on an engine created with 140, and `maxInputLength` 512,
+///   2048 and 9000 with an over-long text under TRUNCATE.
+/// Every backend id is read from the module the page hands over
+/// (`window.litertLm.Backend`, recorded as `backendEnum`), never written here:
+/// 0.20.0 renumbered it.
 /// The model (2.34 GB) is fetched for every `Engine.create` and handed to it
 /// as the response's ReadableStream: a Blob of it would need a `blob:` fetch
 /// past Chrome's limit. A local copy (LLM_MODEL_URL) keeps that cheap.
@@ -56,13 +84,268 @@ const _modelUrl = String.fromEnvironment(
       'gemma-4-E2B-it-gpu.litertlm',
 );
 
+/// Which test runs: `all` (both), `runtime` or `parity`.
+const _part = String.fromEnvironment('PROBE_PART', defaultValue: 'all');
+
+/// The EmbeddingGemma 2 bundles the parity probes load (local copies, as the
+/// LLM's): the 270m (text) and the 440m (text and images).
+const _eg2Url = String.fromEnvironment('EG2_MODEL_URL');
+const _eg2VisionUrl = String.fromEnvironment('EG2_440M_MODEL_URL');
+
+const _parityProbe = r'''
+window.__litertlmParityProbe = async (url, eg2Url, eg2VisionUrl, image) => {
+  await window.litertLmReady;
+  const m = window.litertLm;
+  const Engine = m.Engine;
+  const B = m.Backend;
+  const r = {};
+  const attempt = async (name, fn) => {
+    try { r[name] = {ok: true, value: await fn()}; }
+    catch (e) { r[name] = {ok: false, error: String((e && e.message) || e)}; }
+  };
+  const text = async (c, message) => {
+    let t = '';
+    for await (const chunk of c.sendMessageStreaming(message)) {
+      t += JSON.stringify(chunk.content);
+    }
+    return t.slice(0, 400);
+  };
+  const members = (o, names) => Object.fromEntries(
+    names.map((n) => [n, typeof (o && o[n])]));
+  const greedy = {samplerParams: {type: 2, k: 1, p: 1, temperature: 1, seed: 1}};
+  const turn = (t) => '<|turn>user\n' + t + '<turn|>\n<|turn>model\n';
+  const decoded = async (s) => {
+    const responses = await s.runDecode();
+    const out = {members: members(responses, ['getTexts', 'delete']),
+                 texts: responses.getTexts().map((x) => x.slice(0, 300))};
+    responses.delete();
+    return out;
+  };
+  const stream = async () => (await fetch(url)).body;
+
+  // Sessions and Conversation.clone, on an engine with a vision encoder.
+  let e;
+  await attempt('create_parity_engine', async () => {
+    e = await Engine.create({model: await stream(), visionBackend: B.GPU,
+      mainExecutorSettings: {maxNumImages: 1}});
+    return {engineMembers: members(Engine.prototype,
+      ['createConversation', 'createSession', 'delete'])};
+  });
+  if (e) {
+    await attempt('session_prefill_decode', async () => {
+      const s = await e.createSession(greedy);
+      try {
+        const sessionMembers = members(s,
+          ['runPrefill', 'runDecode', 'cancel', 'clone', 'delete']);
+        await s.runPrefill([turn('Say hello in five words.')]);
+        return {sessionMembers, decoded: await decoded(s)};
+      } finally { await s.delete(); }
+    });
+    await attempt('session_clone', async () => {
+      const s = await e.createSession(greedy);
+      try {
+        await s.runPrefill([turn('My name is Ada. Reply with OK.')]);
+        const first = await decoded(s);
+        const k = await s.clone();
+        try {
+          await k.runPrefill([turn('What is my name? One word.')]);
+          const clone = await decoded(k);
+          await s.runPrefill([turn('Say blue.')]);
+          const original = await decoded(s);
+          return {first, clone, original};
+        } finally { await k.delete(); }
+      } finally { await s.delete(); }
+    });
+    await attempt('session_idle_cancel_then_decode', async () => {
+      const s = await e.createSession(greedy);
+      try {
+        s.cancel();
+        await s.runPrefill([turn('Say yes.')]);
+        return await decoded(s);
+      } finally { await s.delete(); }
+    });
+    // A cancel during a session's work, as Session.cancelProcess sends it:
+    // 200 ms into a prefill + decode of a long reply, and 200 ms into the
+    // decode alone. What the call ends with, how long after the cancel, and
+    // whether the session answers afterwards.
+    const cancelled = async (s, work) => {
+      const t0 = performance.now();
+      let cancelAt;
+      const timer = setTimeout(() => { cancelAt = performance.now(); s.cancel(); }, 200);
+      let outcome;
+      try { outcome = {resolved: await work()}; }
+      catch (err) { outcome = {rejected: String((err && err.message) || err)}; }
+      clearTimeout(timer);
+      const end = performance.now();
+      outcome.endedMsAfterCancel = cancelAt === undefined ? null : Math.round(end - cancelAt);
+      outcome.totalMs = Math.round(end - t0);
+      try {
+        await s.runPrefill([turn('Say yes.')]);
+        outcome.after = await decoded(s);
+      } catch (err) { outcome.after = {rejected: String((err && err.message) || err)}; }
+      return outcome;
+    };
+    const long = turn('Count from 1 to 400, one number per line, nothing else.');
+    await attempt('session_cancel_during_generate', async () => {
+      const s = await e.createSession(greedy);
+      try {
+        return await cancelled(s, async () => {
+          await s.runPrefill([long]);
+          const prefilledAt = performance.now();
+          return {prefilledAt: Math.round(prefilledAt), decoded: await decoded(s)};
+        });
+      } finally { await s.delete(); }
+    });
+    await attempt('session_cancel_during_decode', async () => {
+      const s = await e.createSession(greedy);
+      try {
+        await s.runPrefill([long]);
+        return await cancelled(s, () => decoded(s));
+      } finally { await s.delete(); }
+    });
+    await attempt('session_image_input', async () => {
+      const s = await e.createSession(greedy);
+      try {
+        await s.runPrefill([{type: 'image', data: image}]);
+        return 'accepted';
+      } finally { await s.delete(); }
+    });
+    await attempt('conversation_clone', async () => {
+      const c = await e.createConversation({sessionConfig: greedy});
+      try {
+        const first = await text(c, 'My name is Ada. Reply with OK.');
+        const k = await c.clone();
+        try {
+          const clone = await text(k, 'What is my name? One word.');
+          const original = await text(c, 'Say blue.');
+          return {first, clone, original,
+                  tokens: {original: await c.getTokenCount(),
+                           clone: await k.getTokenCount()},
+                  cloneHistoryRoles: (await k.getHistory()).map((x) => x.role)};
+        } finally { await k.delete(); }
+      } finally { await c.delete(); }
+    });
+    await attempt('vision_budget_unset', async () => {
+      const c = await e.createConversation({sessionConfig: greedy});
+      try {
+        const answer = await text(c, {role: 'user', content: [
+          {type: 'image', data: image},
+          {type: 'text', text: 'Which shape? One word.'}]});
+        return {settings: e.settings.maxVisionTokensPerImage,
+                answer, tokens: await c.getTokenCount()};
+      } finally { await c.delete(); }
+    });
+    await e.delete();
+  }
+  for (const budget of [70, 100]) {
+    await attempt('vision_budget_' + budget, async () => {
+      const x = await Engine.create({model: await stream(), visionBackend: B.GPU,
+        maxVisionTokensPerImage: budget, mainExecutorSettings: {maxNumImages: 1}});
+      try {
+        const c = await x.createConversation({sessionConfig: greedy});
+        try {
+          let answer;
+          try {
+            answer = await text(c, {role: 'user', content: [
+              {type: 'image', data: image},
+              {type: 'text', text: 'Which shape? One word.'}]});
+          } catch (err) { answer = 'rejected: ' + ((err && err.message) || err); }
+          return {readBack: x.settings.maxVisionTokensPerImage,
+                  answer, tokens: await c.getTokenCount()};
+        } finally { await c.delete(); }
+      } finally { await x.delete(); }
+    });
+  }
+
+  // EmbeddingGemma 2.
+  const E = m.EmbeddingEngine;
+  const TRUNCATE = 1;
+  const opts = (extra) => ({normalize: true, insertSpecialTokens: true,
+    inputOverflowStrategy: TRUNCATE, ...extra});
+  const summary = (res) => ({dimension: res.embedding.length,
+    inputLength: res.inputLength, truncatedLength: res.truncatedLength,
+    numChunks: res.numChunks,
+    norm: Math.sqrt(res.embedding.reduce((a, v) => a + v * v, 0))});
+  const long = 'word '.repeat(3000);
+  if (eg2Url) {
+    let t;
+    await attempt('eg2_create_270m', async () => {
+      t = await E.create({model: eg2Url, backend: B.GPU, maxInputLength: 1024});
+      return 'created';
+    });
+    if (t) {
+      for (const size of [256, 100]) {
+        await attempt('eg2_output_size_' + size, async () =>
+          summary(await t.computeEmbedding('A cat on a mat.', opts({outputSize: size}))));
+      }
+      await t.delete();
+    }
+    for (const length of [512, 2048, 9000]) {
+      await attempt('eg2_max_input_length_' + length, async () => {
+        const x = await E.create({model: eg2Url, backend: B.GPU, maxInputLength: length});
+        try {
+          return {overLong: summary(await x.computeEmbedding(long, opts({}))),
+                  short: summary(await x.computeEmbedding('A cat.', opts({})))};
+        } finally { await x.delete(); }
+      });
+    }
+  }
+  if (eg2VisionUrl) {
+    let v;
+    await attempt('eg2_create_440m_vision_140', async () => {
+      v = await E.create({model: eg2VisionUrl, backend: B.GPU, visionBackend: B.GPU,
+        maxInputLength: 1024, visionTokensPerImage: 140});
+      return 'created';
+    });
+    if (v) {
+      const vectors = {};
+      for (const budget of [undefined, 140, 70]) {
+        await attempt('eg2_image_vision_tokens_' + (budget || 'unset'), async () => {
+          const res = await v.computeEmbedding({type: 'image', data: image.slice().buffer},
+            opts(budget === undefined ? {} : {visionTokensPerImage: budget}));
+          vectors[budget || 'unset'] = res.embedding;
+          return summary(res);
+        });
+      }
+      await v.delete();
+      // The per-call 70 of an engine created with 140, against an engine
+      // created with 70.
+      await attempt('eg2_image_engine_70_vs_call_70', async () => {
+        const w = await E.create({model: eg2VisionUrl, backend: B.GPU, visionBackend: B.GPU,
+          maxInputLength: 1024, visionTokensPerImage: 70});
+        try {
+          const res = await w.computeEmbedding({type: 'image', data: image.slice().buffer}, opts({}));
+          const a = res.embedding, b = vectors[70], c = vectors[140];
+          const cos = (x, y) => x.reduce((s, xi, i) => s + xi * y[i], 0);
+          return {engine70: summary(res), cosToCall70: b ? cos(a, b) : null,
+                  cosToCall140: c ? cos(a, c) : null};
+        } finally { await w.delete(); }
+      });
+    }
+  }
+  return JSON.stringify(r);
+};
+''';
+
 // The GPU engines leave `backend` out (the runtime's default, GPU); the
 // explicit forms are probed on their own.
 const _probe = r'''
-window.__litertlmProbe = async (url, image, audio) => {
+window.__litertlmProbe = async (url, image, audio, shapes) => {
   await window.litertLmReady;
-  const Engine = window.Engine;
+  const m = window.litertLm;
+  if (!m) {
+    throw new Error('window.litertLm is not set: add window.litertLm = m; to '
+      + 'the module script of web/index.html');
+  }
+  const Engine = m.Engine;
+  // The module's own Backend ids: 0.20.0 renumbered them (0.19.0: GPU_ARTISAN
+  // 2, CPU 3, GPU 4; 0.20.0: 1, 2, 3).
+  const B = m.Backend;
+  if (!B || ![B.CPU, B.GPU, B.GPU_ARTISAN].every(Number.isInteger)) {
+    throw new Error('window.litertLm.Backend is not the module\'s Backend enum');
+  }
   const r = {};
+  r.backendEnum = {...B};
   const attempt = async (name, fn) => {
     try { r[name] = {ok: true, value: await fn()}; }
     catch (e) { r[name] = {ok: false, error: String((e && e.message) || e)}; }
@@ -209,6 +492,33 @@ window.__litertlmProbe = async (url, image, audio) => {
       {role: 'assistant', content: [{type: 'text', text: ''}]}], 'Say yes.'));
     // N3: an empty reply that succeeds, and a reply that fails mid-decode:
     // what each leaves in the history.
+    // 0.20.0's sendMessageStreaming drops what sendMessageAsync returns: a
+    // message the runtime refuses before it generates (its template, the
+    // history) may close the stream with no chunk instead of rejecting it.
+    // Each malformed message, then a plain send on the same conversation.
+    for (const [name, message] of [
+      ['unknown_role', {role: 'narrator', content: [{type: 'text', text: 'Say yes.'}]}],
+      ['unknown_part', {role: 'user', content: [{type: 'no_such_part', text: 'Say yes.'}]}],
+      ['tool_response_without_tools', {role: 'tool', content: [{type: 'tool_response', name: 'nothing', response: {}}]}],
+    ]) {
+      await attempt('malformed_' + name, async () => {
+        const k = await e.createConversation(greedy);
+        try {
+          let chunks = 0, end;
+          try {
+            for await (const _ of k.sendMessageStreaming(message)) chunks++;
+            end = 'done';
+          } catch (err) { end = 'rejected: ' + ((err && err.message) || err); }
+          let history;
+          try { history = JSON.stringify(await k.getHistory()).slice(0, 400); }
+          catch (err) { history = 'getHistory rejected: ' + ((err && err.message) || err); }
+          let next;
+          try { next = 'answered: ' + await text(k, 'Say yes.'); }
+          catch (err) { next = 'rejected: ' + ((err && err.message) || err); }
+          return {chunks, end, history, next};
+        } finally { await k.delete(); }
+      });
+    }
     await attempt('history_after_empty_reply', async () => {
       const k = await e.createConversation({...greedy, sessionConfig: {...greedy.sessionConfig, maxOutputTokens: 0}});
       let reply;
@@ -329,14 +639,14 @@ window.__litertlmProbe = async (url, image, audio) => {
 
   // P4: the GPU named explicitly.
   await attempt('explicit_gpu_backend', async () => {
-    const x = await Engine.create({model: await stream(), backend: 4});
+    const x = await Engine.create({model: await stream(), backend: B.GPU});
     const s = {backend: x.settings.backend};
     await x.delete();
     return s;
   });
 
   await attempt('explicit_gpu_artisan_backend', async () => {
-    const x = await Engine.create({model: await stream(), backend: 2});
+    const x = await Engine.create({model: await stream(), backend: B.GPU_ARTISAN});
     const s = {backend: x.settings.backend};
     await x.delete();
     return s;
@@ -361,11 +671,80 @@ window.__litertlmProbe = async (url, image, audio) => {
   });
   if (t) await t.delete();
 
+  // 0.20.0: the text model's activation type (unset, FP16, FP32) read back,
+  // and a prompt past 2,048 tokens at each: natively Gemma 4 at FP16 loses
+  // its rotary positions there (LiteRT-LM #4001). Three facts from a list of
+  // 140 (about 3,200 tokens; 180 did not fit in 4,096), asked after it.
+  const AD = m.ActivationDataType;
+  r.activationDataTypeEnum = AD ? {...AD} : null;
+  const cities = ['Paris', 'Lima', 'Oslo', 'Cairo', 'Quito', 'Hanoi', 'Dakar', 'Perth', 'Tunis', 'Sofia'];
+  const lines = [];
+  for (let i = 0; i < 140; i++) {
+    lines.push('Entry ' + i + ': the locker code of ' + cities[i % 10] + ' office ' + i + ' is ' + (1000 + i * 37) + '.');
+  }
+  const asks = [5, 70, 130];
+  const longPrompt = lines.join('\n') + '\n\nAnswer with the three numbers only, separated by commas: what are the locker codes of entries '
+    + asks.join(', ') + '?';
+  const expected = asks.map((i) => String(1000 + i * 37));
+  for (const [name, adt] of [
+    ['activation_unset', undefined],
+    ['activation_fp16', AD && AD.FLOAT16],
+    ['activation_fp32', AD && AD.FLOAT32],
+  ]) {
+    await attempt(name, async () => {
+      const settings = {model: await stream(), mainExecutorSettings: {maxNumTokens: 4096}};
+      if (adt !== undefined) settings.activationDataType = adt;
+      const x = await Engine.create(settings);
+      try {
+        const out = {asked: adt === undefined ? null : adt,
+                     readBack: x.settings.activationDataType === undefined ? 'undefined' : x.settings.activationDataType,
+                     backend: x.settings.backend};
+        const c = await x.createConversation(greedy);
+        out.short = await text(c, 'Say hello in five words.');
+        await c.delete();
+        const l = await x.createConversation(greedy);
+        const t0 = performance.now();
+        // The reply's text itself: numbers stream digit by digit.
+        try {
+          let t = '';
+          for await (const chunk of l.sendMessageStreaming(longPrompt)) {
+            for (const part of chunk.content || []) if (part.type === 'text') t += part.text;
+          }
+          out.long = t.slice(0, 200);
+        } catch (err) { out.long = 'rejected: ' + ((err && err.message) || err); }
+        out.longMs = Math.round(performance.now() - t0);
+        out.longTokens = await l.getTokenCount();
+        out.longCorrect = expected.filter((v) => out.long.includes(v)).length;
+        out.expected = expected;
+        await l.delete();
+        return out;
+      } finally { await x.delete(); }
+    });
+  }
+
+  // 0.20.0: speculative decoding (MTP). Does this export carry a drafter:
+  // ON at the engine loads it or refuses the create.
+  const SD = m.SpeculativeDecodingMode;
+  r.speculativeDecodingModeEnum = SD ? {...SD} : null;
+  for (const [name, mode] of [['speculative_decoding_on', SD && SD.ON], ['speculative_decoding_adaptive', SD && SD.ADAPTIVE]]) {
+    await attempt(name, async () => {
+      const x = await Engine.create({model: await stream(), benchmarkEnabled: true, speculativeDecodingConfig: {mode}});
+      try {
+        const out = {settings: JSON.parse(JSON.stringify(x.settings.speculativeDecodingConfig === undefined ? null : x.settings.speculativeDecodingConfig))};
+        const c = await x.createConversation(greedy);
+        out.reply = await text(c, 'Count from 1 to 20, separated by commas.');
+        out.benchmark = JSON.parse(JSON.stringify(await c.getBenchmarkInfo()));
+        await c.delete();
+        return out;
+      } finally { await x.delete(); }
+    });
+  }
+
   // Vision: GPU_ARTISAN models reserve image space up front (maxNumImages).
   for (const [name, settings] of [
-    ['vision_gpu', {visionBackend: 4, mainExecutorSettings: {maxNumImages: 1}}],
-    ['vision_gpu_no_max_images', {visionBackend: 4}],
-    ['vision_cpu', {visionBackend: 3, mainExecutorSettings: {maxNumImages: 1}}],
+    ['vision_gpu', {visionBackend: B.GPU, mainExecutorSettings: {maxNumImages: 1}}],
+    ['vision_gpu_no_max_images', {visionBackend: B.GPU}],
+    ['vision_cpu', {visionBackend: B.CPU, mainExecutorSettings: {maxNumImages: 1}}],
   ]) {
     let v;
     await attempt('create_' + name, async () => {
@@ -455,9 +834,41 @@ window.__litertlmProbe = async (url, image, audio) => {
     }
   }
 
+  // Images past maxNumImages: 0.19.0 failed the second image of a
+  // conversation reserving one ("Image index 1 must be less than 1.").
+  // Four different shapes in one conversation of an engine reserving one,
+  // each asked for, then the history replayed as a preface.
+  await attempt('images_past_max_num_images', async () => {
+    const x = await Engine.create({model: await stream(), visionBackend: B.GPU,
+      mainExecutorSettings: {maxNumImages: 1}});
+    try {
+      const k = await x.createConversation(greedy);
+      const answers = [];
+      for (const [name, bytes] of shapes) {
+        let a;
+        try { a = await text(k, {role: 'user', content: [{type: 'image', data: bytes},
+          {type: 'text', text: 'Which shape is drawn in this image? One word.'}]}); }
+        catch (err) { a = 'rejected: ' + ((err && err.message) || err); }
+        answers.push([name, a]);
+      }
+      let recall;
+      try { recall = await text(k, 'List the shapes of the images I showed you, in order. Words only.'); }
+      catch (err) { recall = 'rejected: ' + ((err && err.message) || err); }
+      const h = await k.getHistory();
+      await k.delete();
+      let rebuilt;
+      try {
+        const r7 = await x.createConversation({...greedy, preface: {messages: toBase64(h)}});
+        rebuilt = await text(r7, 'Which shape was in the second image? One word.');
+        await r7.delete();
+      } catch (err) { rebuilt = 'rejected: ' + ((err && err.message) || err); }
+      return {answers, recall, roles: h.map((m) => m.role), rebuilt};
+    } finally { await x.delete(); }
+  });
+
   for (const [name, settings] of [
-    ['audio_cpu', {audioBackend: 3}],
-    ['audio_gpu', {audioBackend: 4}],
+    ['audio_cpu', {audioBackend: B.CPU}],
+    ['audio_gpu', {audioBackend: B.GPU}],
   ]) {
     let a;
     await attempt('create_' + name, async () => {
@@ -492,8 +903,8 @@ window.__litertlmProbe = async (url, image, audio) => {
   // Vision and audio in one engine, as a native multimodal load.
   let va;
   await attempt('create_vision_and_audio', async () => {
-    va = await Engine.create({model: await stream(), visionBackend: 4,
-      audioBackend: 3, mainExecutorSettings: {maxNumImages: 1}});
+    va = await Engine.create({model: await stream(), visionBackend: B.GPU,
+      audioBackend: B.CPU, mainExecutorSettings: {maxNumImages: 1}});
     return JSON.parse(JSON.stringify(va.settings));
   });
   if (va) {
@@ -506,7 +917,7 @@ window.__litertlmProbe = async (url, image, audio) => {
   }
 
   await attempt('cpu_default', async () => {
-    const x = await Engine.create({model: await stream(), backend: 3});
+    const x = await Engine.create({model: await stream(), backend: B.CPU});
     const c = await x.createConversation(greedy);
     const s = {backend: x.settings.backend, reply: await text(c, 'Say hi.')};
     await c.delete();
@@ -514,7 +925,7 @@ window.__litertlmProbe = async (url, image, audio) => {
     return s;
   });
   await attempt('cpu_number_of_threads', async () => {
-    const x = await Engine.create({model: await stream(), backend: 3,
+    const x = await Engine.create({model: await stream(), backend: B.CPU,
       mainExecutorSettings: {backendConfig: {number_of_threads: 2}}});
     const s = {backend: x.settings.backend,
                backendConfig: JSON.parse(JSON.stringify(x.settings.mainExecutorSettings.backendConfig))};
@@ -551,134 +962,355 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   reportTo('web_litertlm_runtime_probe_response');
 
-  testWidgets('$liteRtLmWebRuntime with Gemma 4 E2B: what it does when asked '
-      'directly', (tester) async {
-    globalContext.callMethod('eval'.toJS, _probe.toJS);
-    final result = await tester.runAsync(() async {
-      final image = await _asset('assets/eg2_vision/circle.png');
-      final audio = await _asset('assets/eg2_audio/kitchen_lights.wav');
-      return globalContext
-          .callMethod<JSPromise<JSString>>(
-            '__litertlmProbe'.toJS,
-            _modelUrl.toJS,
-            image,
-            audio,
-          )
-          .toDart;
-    });
-    final record = jsonDecode(result!.toDart) as Map<String, Object?>;
-    report('runtime', liteRtLmWebRuntime);
-    record.forEach(report);
-    // ignore: avoid_print
-    print('PROBE ${jsonEncode(record)}');
-    for (final probe in [
-      'create_text_benchmark',
-      'cancel_after_first_chunk',
-      'send_after_cancel',
-      'history_after_cancel',
-      'rebuilt_from_history',
-      'history_with_preface',
-      'idle_cancel_then_send',
-      'cancel_at_end',
-      'explicit_gpu_backend',
-      'explicit_gpu_artisan_backend',
-      'constrained_decoding_tool_round_trip',
-      'create_vision_gpu',
-      'create_vision_gpu_no_max_images',
-      'create_vision_cpu',
-      'create_audio_cpu',
-      'create_audio_gpu',
-      'create_vision_and_audio',
-      'history_with_image',
-      'image_as_base64_blob',
-      'preface_with_image_blob',
-      'second_image_same_conversation',
-      'rebuilt_from_history_with_image_as_base64',
-      'history_after_failed_turn',
-      'send_after_failed_turn',
-      'rebuilt_after_failed_turn',
-      'rebuilt_after_failed_turn_trimmed',
-      'preface_dangling_tool_call',
-      'preface_tool_call_and_response',
-      'preface_from_tool_round_trip_history',
-      'preface_empty_assistant_text',
-      'history_after_empty_reply',
-      'history_after_failure_mid_decode',
-      'oversized_prompt_then_shorter',
-      'refusal_count_and_room',
-      'create_from_blob_url_over_2gib',
-      'history_with_audio',
-      'rebuilt_from_history_with_audio_as_base64',
-      'cpu_default',
-      'cpu_number_of_threads',
-    ]) {
-      expect(record, contains(probe), reason: '$probe never ran');
-    }
-    // What the docs and the web arm rely on must have worked, not only run.
-    for (final probe in [
-      'send_text',
-      'create_vision_gpu',
-      'vision_gpu_image_and_text',
-      'create_audio_cpu',
-      'audio_cpu_and_text',
-      'create_vision_and_audio',
-      'vision_and_audio_both',
-      'image_as_base64_blob',
-      'preface_with_image_blob',
-      'rebuilt_from_history_with_image_as_base64',
-      'rebuilt_from_history_with_audio_as_base64',
-      'history_with_preface',
-      'idle_cancel_then_send',
-      'cancel_at_end',
-      'explicit_gpu_backend',
-      'rebuilt_from_history',
-      'rebuilt_after_failed_turn_trimmed',
-      'preface_dangling_tool_call',
-      'preface_tool_call_and_response',
-      'preface_from_tool_round_trip_history',
-      'preface_empty_assistant_text',
-    ]) {
+  testWidgets(
+    '$liteRtLmWebRuntime with Gemma 4 E2B: what it does when asked '
+    'directly',
+    skip: _part == 'parity',
+    (tester) async {
+      globalContext.callMethod('eval'.toJS, _probe.toJS);
+      final result = await tester.runAsync(() async {
+        final image = await _asset('assets/eg2_vision/circle.png');
+        final audio = await _asset('assets/eg2_audio/kitchen_lights.wav');
+        final shapes = [
+          for (final name in ['circle', 'square', 'triangle', 'stop_sign'])
+            [name.toJS, await _asset('assets/eg2_vision/$name.png')].toJS,
+        ].toJS;
+        return globalContext
+            .callMethod<JSPromise<JSString>>(
+              '__litertlmProbe'.toJS,
+              _modelUrl.toJS,
+              image,
+              audio,
+              shapes,
+            )
+            .toDart;
+      });
+      final record = jsonDecode(result!.toDart) as Map<String, Object?>;
+      report('runtime', liteRtLmWebRuntime);
+      record.forEach(report);
+      // ignore: avoid_print
+      print('PROBE ${jsonEncode(record)}');
+      for (final probe in [
+        'create_text_benchmark',
+        'cancel_after_first_chunk',
+        'send_after_cancel',
+        'history_after_cancel',
+        'rebuilt_from_history',
+        'history_with_preface',
+        'idle_cancel_then_send',
+        'cancel_at_end',
+        'explicit_gpu_backend',
+        'explicit_gpu_artisan_backend',
+        'constrained_decoding_tool_round_trip',
+        'create_vision_gpu',
+        'create_vision_gpu_no_max_images',
+        'create_vision_cpu',
+        'create_audio_cpu',
+        'create_audio_gpu',
+        'create_vision_and_audio',
+        'history_with_image',
+        'image_as_base64_blob',
+        'preface_with_image_blob',
+        'second_image_same_conversation',
+        'rebuilt_from_history_with_image_as_base64',
+        'history_after_failed_turn',
+        'send_after_failed_turn',
+        'rebuilt_after_failed_turn',
+        'rebuilt_after_failed_turn_trimmed',
+        'preface_dangling_tool_call',
+        'preface_tool_call_and_response',
+        'preface_from_tool_round_trip_history',
+        'preface_empty_assistant_text',
+        'history_after_empty_reply',
+        'history_after_failure_mid_decode',
+        'oversized_prompt_then_shorter',
+        'refusal_count_and_room',
+        'create_from_blob_url_over_2gib',
+        'history_with_audio',
+        'rebuilt_from_history_with_audio_as_base64',
+        'cpu_default',
+        'cpu_number_of_threads',
+        'images_past_max_num_images',
+        'malformed_unknown_role',
+        'malformed_unknown_part',
+        'malformed_tool_response_without_tools',
+        'activation_unset',
+        'activation_fp16',
+        'activation_fp32',
+        'speculative_decoding_on',
+        'speculative_decoding_adaptive',
+      ]) {
+        expect(record, contains(probe), reason: '$probe never ran');
+      }
+      // What the docs and the web arm rely on must have worked, not only run.
+      for (final probe in [
+        'send_text',
+        'create_vision_gpu',
+        'vision_gpu_image_and_text',
+        'create_audio_cpu',
+        'audio_cpu_and_text',
+        'create_vision_and_audio',
+        'vision_and_audio_both',
+        'image_as_base64_blob',
+        'preface_with_image_blob',
+        'rebuilt_from_history_with_image_as_base64',
+        'rebuilt_from_history_with_audio_as_base64',
+        'history_with_preface',
+        'idle_cancel_then_send',
+        'cancel_at_end',
+        'explicit_gpu_backend',
+        'rebuilt_from_history',
+        'rebuilt_after_failed_turn_trimmed',
+        'preface_dangling_tool_call',
+        'preface_tool_call_and_response',
+        'preface_from_tool_round_trip_history',
+        'preface_empty_assistant_text',
+      ]) {
+        expect(
+          (record[probe]! as Map)['ok'],
+          isTrue,
+          reason: '$probe failed: ${record[probe]}',
+        );
+      }
+      // N5: an oversized message is refused and kept in the history; the
+      // conversation rebuilt without it answers a shorter one. N6: a history
+      // that filled the window is refused again when replayed.
+      final oversized =
+          (record['oversized_prompt_then_shorter']! as Map)['value'] as Map;
+      expect(oversized['oversized'], startsWith('rejected: Input token ids'));
+      expect(oversized['rebuilt'], startsWith('answered:'));
+      final full =
+          (record['history_after_failure_mid_decode']! as Map)['value'] as Map;
+      expect(full['tokensFull'], full['tokensAfter']);
+      expect(full['rebuilt'], startsWith('send rejected: Input token ids'));
+      // N7: a refusal's count is what that call would prefill: the message
+      // alone once the conversation has prefilled (not its 15 held tokens),
+      // the preface with the message on a conversation's first call; a call
+      // of the whole window is refused.
+      final room = (record['refusal_count_and_room']! as Map)['value'] as Map;
+      final fresh = (room['fresh']! as List).cast<num>();
+      final after = (room['afterExchange']! as List).cast<num>();
+      expect(after[0], lessThan(fresh[0] + (room['held']! as num)));
       expect(
-        (record[probe]! as Map)['ok'],
-        isTrue,
-        reason: '$probe failed: ${record[probe]}',
+        (room['scan']! as List).cast<Map>().where(
+          (r) => '${r['refused']}' == '[128, 128]',
+        ),
+        hasLength(1),
       );
-    }
-    // N5: an oversized message is refused and kept in the history; the
-    // conversation rebuilt without it answers a shorter one. N6: a history
-    // that filled the window is refused again when replayed.
-    final oversized =
-        (record['oversized_prompt_then_shorter']! as Map)['value'] as Map;
-    expect(oversized['oversized'], startsWith('rejected: Input token ids'));
-    expect(oversized['rebuilt'], startsWith('answered:'));
-    final full =
-        (record['history_after_failure_mid_decode']! as Map)['value'] as Map;
-    expect(full['tokensFull'], full['tokensAfter']);
-    expect(full['rebuilt'], startsWith('send rejected: Input token ids'));
-    // N7: a refusal's count is what that call would prefill: the message
-    // alone once the conversation has prefilled (not its 15 held tokens),
-    // the preface with the message on a conversation's first call; a call
-    // of the whole window is refused.
-    final room = (record['refusal_count_and_room']! as Map)['value'] as Map;
-    final fresh = (room['fresh']! as List).cast<num>();
-    final after = (room['afterExchange']! as List).cast<num>();
-    expect(after[0], lessThan(fresh[0] + (room['held']! as num)));
-    expect(
-      (room['scan']! as List).cast<Map>().where(
-        (r) => '${r['refused']}' == '[128, 128]',
-      ),
-      hasLength(1),
-    );
-    // M1/N1: the failed message stays at the end of the history with no
-    // reply, a rebuild with it fails again, and one without it answers.
-    final failed =
-        (record['history_after_failed_turn']! as Map)['value'] as Map;
-    final roles = (failed['roles']! as List).cast<String>();
-    expect(roles.sublist(roles.length - 2), ['assistant', 'user']);
-    expect(
-      (record['rebuilt_after_failed_turn']! as Map)['ok'],
-      isFalse,
-      reason: 'a rebuild that replays the failed message answered',
-    );
-  }, timeout: const Timeout(Duration(minutes: 60)));
+      // N3 on @litert-lm/core 0.20.0 (recorded 2026-11-25): a conversation
+      // whose session asks for 0 output tokens still answers, and its history
+      // grew by exactly the message and that reply.
+      final emptyReply =
+          (record['history_after_empty_reply']! as Map)['value'] as Map;
+      expect(emptyReply['reply'], startsWith('answered:'));
+      expect(emptyReply['roles'], ['user', 'assistant']);
+      // What 0.20.0 does with a message its template cannot take. Each probe
+      // conversation answers a plain message afterwards.
+      Map malformed(String name) =>
+          (record['malformed_$name']! as Map)['value'] as Map;
+      List<String> rolesOf(Map value) => [
+        for (final entry in jsonDecode(value['history'] as String) as List)
+          (entry as Map)['role'] as String,
+      ];
+      // An unknown role is rendered and answered.
+      final unknownRole = malformed('unknown_role');
+      expect(unknownRole['end'], 'done');
+      expect(unknownRole['chunks'], greaterThan(0));
+      expect(rolesOf(unknownRole), ['narrator', 'assistant']);
+      expect(unknownRole['next'], startsWith('answered:'));
+      // An unknown part: the stream closes with no chunk and no error, and the
+      // message stays in the history with no reply (a refused send).
+      final unknownPart = malformed('unknown_part');
+      expect(unknownPart['end'], 'done');
+      expect(unknownPart['chunks'], 0);
+      expect(rolesOf(unknownPart), ['user']);
+      expect(unknownPart['next'], startsWith('answered:'));
+      // A tool response without tools: no chunk, and an empty assistant entry
+      // after it (what the web arm reads as an empty reply).
+      final toolResponse = malformed('tool_response_without_tools');
+      expect(toolResponse['end'], 'done');
+      expect(toolResponse['chunks'], 0);
+      final toolHistory = jsonDecode(toolResponse['history'] as String) as List;
+      expect(
+        [for (final e in toolHistory) (e as Map)['role']],
+        ['tool', 'assistant'],
+      );
+      expect((toolHistory.last as Map)['content'], [
+        {'type': 'text', 'text': ''},
+      ]);
+      expect(toolResponse['next'], startsWith('answered:'));
+      // M1/N1: when the second image fails (0.19.0: "Image index 1 must be
+      // less than 1."; 0.20.0 answers it), the failed message stays at the end
+      // of the history with no reply, a rebuild with it fails again, and one
+      // without it answers.
+      if ((record['second_image_same_conversation']! as Map)['ok'] == false) {
+        final failed =
+            (record['history_after_failed_turn']! as Map)['value'] as Map;
+        final roles = (failed['roles']! as List).cast<String>();
+        expect(roles.sublist(roles.length - 2), ['assistant', 'user']);
+        expect(
+          (record['rebuilt_after_failed_turn']! as Map)['ok'],
+          isFalse,
+          reason: 'a rebuild that replays the failed message answered',
+        );
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 60)),
+  );
+
+  testWidgets(
+    '$liteRtLmWebRuntime 0.20.0 parity: sessions, clones, vision budgets and '
+    'EmbeddingGemma 2 options, asked directly',
+    skip: _part == 'runtime',
+    (tester) async {
+      globalContext.callMethod('eval'.toJS, _parityProbe.toJS);
+      final result = await tester.runAsync(
+        () async => globalContext
+            .callMethod<JSPromise<JSString>>(
+              '__litertlmParityProbe'.toJS,
+              _modelUrl.toJS,
+              _eg2Url.toJS,
+              _eg2VisionUrl.toJS,
+              await _asset('assets/eg2_vision/circle.png'),
+            )
+            .toDart,
+      );
+      final record = jsonDecode(result!.toDart) as Map<String, Object?>;
+      report('runtime', liteRtLmWebRuntime);
+      record.forEach((key, value) => report('parity_$key', value));
+      // ignore: avoid_print
+      print('PARITY ${jsonEncode(record)}');
+      // Rule 6b: every probe ran, so an empty record cannot read as a pass.
+      expect(record.keys, containsAll(_parityProbes));
+      // What @litert-lm/core 0.20.0 did (recorded 2026-11-26, Chrome 158,
+      // Gemma 4 E2B's GPU export, EmbeddingGemma 2 270m and 440m).
+      Object? value(String probe) {
+        final entry = record[probe]! as Map;
+        expect(entry['ok'], isTrue, reason: '$probe: ${entry['error']}');
+        return entry['value'];
+      }
+
+      String error(String probe) {
+        final entry = record[probe]! as Map;
+        expect(entry['ok'], isFalse, reason: '$probe answered');
+        return entry['error']! as String;
+      }
+
+      // Every member litertlm_dart calls (webEngineMembers,
+      // webSessionMembers, webResponsesMembers) is a function.
+      final engine = (value('create_parity_engine')! as Map)['engineMembers'];
+      expect((engine as Map).values, everyElement('function'));
+      final session = value('session_prefill_decode')! as Map;
+      expect(
+        (session['sessionMembers'] as Map).values,
+        everyElement('function'),
+      );
+      expect(
+        ((session['decoded'] as Map)['members'] as Map).values,
+        everyElement('function'),
+      );
+      expect((session['decoded'] as Map)['texts'], isNotEmpty);
+      // A session's clone carries its context and goes on alone.
+      final sessionClone = value('session_clone')! as Map;
+      expect('${(sessionClone['clone'] as Map)['texts']}', contains('Ada'));
+      // A cancel with nothing in flight leaves the session answering here
+      // (litertlm_dart still refuses a session after any cancel, as LiteRT-LM
+      // documents that reuse as unsupported).
+      expect((value('session_idle_cancel_then_decode')! as Map)['texts'], [
+        isNotEmpty,
+      ]);
+      // A cancel 200 ms into a session's work ends its runDecode normally
+      // with the text decoded until then, within ~20 ms, as natively; the
+      // session answers empty afterwards (recorded 2026-11-26: "1 2 3 4"
+      // to "1 … 5", 8-21 ms after the cancel, over two runs).
+      for (final probe in [
+        'session_cancel_during_generate',
+        'session_cancel_during_decode',
+      ]) {
+        final outcome = value(probe)! as Map;
+        expect(outcome['rejected'], isNull, reason: '$probe: $outcome');
+        final resolved = outcome['resolved'] as Map;
+        final texts =
+            ((resolved['decoded'] ?? resolved) as Map)['texts'] as List;
+        expect(texts.single as String, startsWith('1'));
+        expect(texts.single as String, isNot(contains('400')));
+        expect(outcome['endedMsAfterCancel'] as int, lessThan(1000));
+        expect((outcome['after'] as Map)['texts'], ['']);
+      }
+      // A session prefills strings only: an image input is refused.
+      expect(error('session_image_input'), contains('must be a string'));
+      // Conversation.clone carries the history; each goes on alone.
+      final conversationClone = value('conversation_clone')! as Map;
+      expect(conversationClone['clone'], contains('Ada'));
+      expect(conversationClone['cloneHistoryRoles'], hasLength(4));
+      // maxVisionTokensPerImage: unset resolves to 280; 70 and 100 (a
+      // budget the encoder has no signature for) are both taken, read back
+      // and answered, the image costing about the budget in tokens.
+      expect((value('vision_budget_unset')! as Map)['settings'], 280);
+      for (final budget in [70, 100]) {
+        final taken = value('vision_budget_$budget')! as Map;
+        expect(taken['readBack'], budget);
+        expect(taken['tokens'], lessThan(budget + 20));
+      }
+      if (_eg2Url != '') {
+        expect((value('eg2_output_size_256')! as Map)['dimension'], 256);
+        expect((value('eg2_output_size_100')! as Map)['dimension'], 100);
+        // Under TRUNCATE the GPU path splits an over-long text into windows
+        // of the signature prepared for maxInputLength.
+        final at512 =
+            (value('eg2_max_input_length_512')! as Map)['overLong'] as Map;
+        expect(at512['truncatedLength'], isNull);
+        expect(at512['numChunks'], 6);
+        final at2048 =
+            (value('eg2_max_input_length_2048')! as Map)['overLong'] as Map;
+        expect(at2048['numChunks'], 2);
+        // Above the longest signature the runtime refuses the create, as
+        // litertlm_dart now does before it.
+        expect(
+          error('eg2_max_input_length_9000'),
+          contains('exceeds maximum available signature length (8192)'),
+        );
+      }
+      if (_eg2VisionUrl != '') {
+        int tokens(String budget) =>
+            (value('eg2_image_vision_tokens_$budget')! as Map)['inputLength']
+                as int;
+        expect(tokens('unset'), tokens('140'));
+        expect(tokens('70'), lessThan(tokens('140')));
+        final against = value('eg2_image_engine_70_vs_call_70')! as Map;
+        expect((against['cosToCall70'] as num).isFinite, isTrue);
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 60)),
+  );
 }
+
+/// The probes the parity test must have recorded.
+const _parityProbes = [
+  'create_parity_engine',
+  'session_prefill_decode',
+  'session_clone',
+  'session_idle_cancel_then_decode',
+  'session_cancel_during_generate',
+  'session_cancel_during_decode',
+  'session_image_input',
+  'conversation_clone',
+  'vision_budget_unset',
+  'vision_budget_70',
+  'vision_budget_100',
+  if (_eg2Url != '') ...[
+    'eg2_create_270m',
+    'eg2_output_size_256',
+    'eg2_output_size_100',
+    'eg2_max_input_length_512',
+    'eg2_max_input_length_2048',
+    'eg2_max_input_length_9000',
+  ],
+  if (_eg2VisionUrl != '') ...[
+    'eg2_create_440m_vision_140',
+    'eg2_image_vision_tokens_unset',
+    'eg2_image_vision_tokens_140',
+    'eg2_image_vision_tokens_70',
+    'eg2_image_engine_70_vs_call_70',
+  ],
+];

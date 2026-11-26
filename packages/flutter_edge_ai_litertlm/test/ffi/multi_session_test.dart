@@ -5,6 +5,7 @@ import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'ffi_test_support.dart';
 
@@ -188,6 +189,12 @@ void main() {
       fileType: ModelFileType.litertlm,
       supportImage: false,
       supportAudio: false,
+      // A conversation that declares tools: a tool result on one that
+      // declares none is refused before anything is sent.
+      tools: [
+        lm.Tool(name: 'multiply'),
+        lm.Tool(name: 'get_time'),
+      ],
       onClose: () {},
     );
 
@@ -238,6 +245,31 @@ void main() {
           expect(session.lastRawResponse, contains('7006652'));
         },
       );
+    }
+
+    for (final modelType in [ModelType.functionGemma, ModelType.gemma4]) {
+      test('$modelType: a tool result on a session opened without tools goes '
+          'as user text, as for a model whose tools run in Dart', () async {
+        final handle = _FakeConversationHandle(['ok']);
+        final session = ffiSessionForHandle(
+          handle: handle,
+          modelType: modelType,
+          fileType: ModelFileType.litertlm,
+          supportImage: false,
+          supportAudio: false,
+          onClose: () {},
+        );
+
+        await session.addQueryChunk(
+          Message.toolResponse(toolName: 'multiply', response: {'result': 7}),
+        );
+        expect(await session.getResponse(), 'ok');
+
+        // A user message (chatRaw), not a role-tool one (chatRawMessage).
+        expect(handle.sentMessages, isEmpty);
+        expect(handle.sentTexts.single, contains('<tool_response>'));
+        expect(handle.sentTexts.single, contains('multiply'));
+      });
     }
 
     test('streaming sends tool results the same way', () async {

@@ -263,12 +263,12 @@ final eg2Index = await rag.open(
 - Android, iOS, macOS, Linux, Windows (`flutter_edge_ai_litertlm` 1.13.0 for
   text, 1.13.1 for images and audio), and Web on WebGPU through
   `@litert-lm/core`'s EmbeddingEngine (1.13.1 for text and images, 1.13.2 for
-  audio and combined inputs). The Web page needs
-  `window.EmbeddingEngine = m.EmbeddingEngine;` next to `window.Engine =
-  m.Engine;` in its `@litert-lm/core` module script; without it the load fails
-  with an `EmbeddingLoadException` naming that line. The browser needs WebGPU:
-  the CPU (WebAssembly) path of `@litert-lm/core` cannot read these
-  bundles' external weights, so there is no CPU fallback, and a browser
+  audio and combined inputs). The Web page's `@litert-lm/core` module script
+  hands over the whole module with `window.litertLm = m;`; without it the load
+  fails with an `EmbeddingLoadException` quoting that line. The browser needs WebGPU:
+  the CPU (WebAssembly) path of `@litert-lm/core` 0.20.0 loads these
+  bundles but takes minutes to load and seconds per text, so there is no CPU
+  fallback, and a browser
   without WebGPU (no `navigator.gpu`, or no adapter) fails the load with an
   `EmbeddingLoadException` that says so.
 - The 270m is text only: `getActiveEmbedder(supportImage: true)` throws
@@ -1135,8 +1135,8 @@ location.
   again after upgrading it: a stale `litert_embeddings.js` fails
   `getActiveEmbedder()` with an `EmbeddingLoadException` that names the file.
   EmbeddingGemma 2 (`.litertlm`) needs none of those files, only
-  `window.EmbeddingEngine = m.EmbeddingEngine;` in the `@litert-lm/core`
-  module script of `web/index.html`, and a browser with WebGPU.
+  `window.litertLm = m;` in the `@litert-lm/core` module script of
+  `web/index.html`, and a browser with WebGPU.
 - `EmbeddingLoadException` starting "EmbeddingGemma 2 on the web needs
   WebGPU": the browser has no `navigator.gpu` or no GPU adapter. There is no
   CPU path for these bundles on Web; use a browser with WebGPU enabled.

@@ -5,6 +5,7 @@
   "flutter_edge_ai_litertlm": "1.21.3",
   "flutter_edge_ai_speech": "0.6.2"
  },
+ "native_release": "native-v0.19.1-c",
  "hosts": [
   {
    "id": "android_arm64",
@@ -36,8 +37,8 @@
   }
  ],
  "statuses": {
-  "verified": "Passed on that host and backend with the native build the packages ship now",
-  "stale": "Passed there on an earlier native build; not run since it changed",
+  "verified": "Passed on that host and backend with the native build of the packages on pub.dev",
+  "stale": "Passed there on another native build; not run on the one on pub.dev",
   "documented": "Documented as working; not yet re-run with a recorded log",
   "untested": "The package runs it there; nobody has recorded a run",
   "refused": "This version of the package does not run it there",
@@ -520,7 +521,9 @@
       },
       "windows_x64": {
        "gpu": {
-        "status": "untested"
+        "status": "stale",
+        "source": "evidence/2026-11-26_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-2.json",
+        "note": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-26, litertlm_dart 0.20.0, native-v0.20.0"
        },
        "cpu": {
         "status": "verified",

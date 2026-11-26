@@ -145,6 +145,10 @@ const _docClaim = '''
   List<Map<String, Object?>> evidence = const [],
   bool linuxArm64Archive = true,
   bool hook = true,
+  String? pin,
+  bool withoutPin = false,
+  String adapterVersion = '1.16.1',
+  Map<String, String> extraFiles = const {},
 }) {
   final root = Directory.systemTemp.createTempSync('site_test');
   addTearDown(() => root.deleteSync(recursive: true));
@@ -183,8 +187,10 @@ const _docClaim = '''
   );
   write(
     'packages/flutter_edge_ai_litertlm/pubspec.yaml',
-    'name: flutter_edge_ai_litertlm\nversion: 1.16.1\n',
+    'name: flutter_edge_ai_litertlm\nversion: $adapterVersion\n',
   );
+  if (!withoutPin) write('model_registry/pub_dev.yaml', pin ?? _pin);
+  extraFiles.forEach(write);
   if (hook)
     write(
       'packages/litertlm_dart/hook/build.dart',
@@ -214,6 +220,26 @@ SiteInputs _inputs(
   List<Map<String, Object?>> evidence = const [],
 }) => _repo(claims, problems, snapshot: snapshot, evidence: evidence).$1;
 
+/// The fixture's pub.dev pin: the adapter at 1.16.1 on the fixture hook's
+/// archives.
+final _pin = _pinYaml();
+
+String _pinYaml({
+  String adapter = '1.16.1',
+  String litertlmDart = '0.1.0',
+  String? macos,
+}) =>
+    '''
+packages:
+  flutter_edge_ai_litertlm: $adapter
+litertlm_dart: $litertlmDart
+native_release: native-v0.1.0
+archives:
+  android_arm64: ${'b' * 64}
+  macos_arm64: ${macos ?? _macNative}
+  linux_arm64: ${'f' * 64}
+''';
+
 /// The fixture hook's macOS archive.
 final _macNative = 'a' * 64;
 
@@ -223,6 +249,7 @@ Map<String, Object?> _run({
   String host = 'macos_arm64',
   String? native,
   String version = '1.16.1',
+  String? litertlmDart,
   String date = '2026-10-20',
   int schema = 2,
   Map<String, Object?> cells = const {
@@ -236,7 +263,10 @@ Map<String, Object?> _run({
   'host': host,
   'device': 'Test Mac',
   'commit': 'c' * 40,
-  'packages': {'flutter_edge_ai_litertlm': version},
+  'packages': {
+    'flutter_edge_ai_litertlm': version,
+    'litertlm_dart': ?litertlmDart,
+  },
   'native': native ?? _macNative,
   'log_sha256': 'd' * 64,
   'log_url': null,
@@ -654,6 +684,117 @@ void main() {
       expect(
         macGpu([_run(native: 'e' * 64), _run(date: '2026-01-01')]),
         'verified',
+      );
+    });
+
+    test('the native build judged is the pinned pub.dev one, not the hook', () {
+      String status(String pin, List<Map<String, Object?>> runs) {
+        final problems = <Problem>[];
+        final all = cells(_repo('[]', problems, pin: pin, evidence: runs).$1, [
+          _llm(),
+        ]);
+        expect(problems, isEmpty);
+        return all['tiny/generic']!['macos_arm64']!['gpu']!.status;
+      }
+
+      // The hook (the workspace) moved to 'a' * 64; pub.dev still ships
+      // 'e' * 64: a run on the workspace's build is stale, one on pub.dev's
+      // verified.
+      final published = _pinYaml(macos: 'e' * 64);
+      expect(status(published, [_run()]), 'stale');
+      expect(status(published, [_run(native: 'e' * 64)]), 'verified');
+      expect(
+        status(published, [_run(native: 'e' * 64, date: '2026-01-01'), _run()]),
+        'verified',
+      );
+    });
+
+    test("a cell's note names the run's litertlm_dart and its native "
+        'release when the run recorded litertlm_dart, else the package', () {
+      Cell cell(List<Map<String, Object?>> runs) {
+        final problems = <Problem>[];
+        final all = cells(
+          _repo('[]', problems, pin: _pinYaml(), evidence: runs).$1,
+          [_llm()],
+        );
+        return all['tiny/generic']!['macos_arm64']!['gpu']!;
+      }
+
+      expect(
+        cell([_run(litertlmDart: '0.1.0')]).note,
+        'Test Mac, 2026-10-20, litertlm_dart 0.1.0, native-v0.1.0',
+      );
+      // A native build no release names: the release is left out.
+      expect(
+        cell([_run(litertlmDart: '0.2.0', native: '9' * 64)]).note,
+        'Test Mac, 2026-10-20, litertlm_dart 0.2.0',
+      );
+      expect(
+        cell([_run()]).note,
+        'Test Mac, 2026-10-20, flutter_edge_ai_litertlm 1.16.1',
+      );
+    });
+
+    test('the minor version judged is the pinned pub.dev one', () {
+      String status({required String workspace, required String run}) {
+        final problems = <Problem>[];
+        final all = cells(
+          _repo(
+            '[]',
+            problems,
+            adapterVersion: workspace,
+            evidence: [_run(version: run)],
+          ).$1,
+          [_llm()],
+        );
+        expect(problems, isEmpty);
+        return all['tiny/generic']!['macos_arm64']!['gpu']!.status;
+      }
+
+      // The workspace bumped to 1.17.0 ahead of its release: pub.dev's
+      // 1.16.1 still decides.
+      expect(status(workspace: '1.17.0', run: '1.16.0'), 'verified');
+      expect(status(workspace: '1.17.0', run: '1.17.0'), 'stale');
+    });
+
+    test('a repository with packages needs the pin', () {
+      final problems = <Problem>[];
+      _repo('[]', problems, withoutPin: true);
+      expect(
+        problems.map((x) => '$x'),
+        contains(contains('pub_dev.yaml: -: missing')),
+      );
+    });
+
+    test('a pin with no archive for a host makes it stale everywhere', () {
+      final problems = <Problem>[];
+      _repo(
+        '[]',
+        problems,
+        pin: _pin.replaceFirst(RegExp(r'  linux_arm64: f+\n'), ''),
+      );
+      expect(
+        problems.map((x) => '$x'),
+        contains(contains('no native build for host linux_arm64')),
+      );
+    });
+
+    test('a pin that disagrees with the same litertlm_dart version', () {
+      final problems = <Problem>[];
+      _repo(
+        '[]',
+        problems,
+        pin: _pinYaml(macos: 'e' * 64),
+        extraFiles: {
+          'packages/litertlm_dart/pubspec.yaml':
+              'name: litertlm_dart\nversion: 0.1.0\n',
+          'packages/litertlm_dart/lib/src/runtime/native_release.dart':
+              "const liteRtLmNativeVersion = '0.1.0';\n",
+        },
+      );
+      expect(
+        problems.map((x) => '$x'),
+        contains(contains('archives.macos_arm64: differs from litertlm_dart')),
       );
     });
 

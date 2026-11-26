@@ -96,9 +96,15 @@ sealed class Content {
   const factory Content.audioFile(String path) = AudioFileContent;
 
   /// The result of the tool call named [name]. A map is formatted as the
-  /// call's fields; anything else goes in as it is.
-  const factory Content.toolResponse(String name, Object? response) =
-      ToolResponseContent;
+  /// call's fields; anything else goes in as it is. [id] is the call's
+  /// [ToolCall.id], sent as the response's `id` when set: Swift's
+  /// `Content.toolResponse(name:response:id:)` (Message.swift), which writes
+  /// it only when not empty, as here.
+  const factory Content.toolResponse(
+    String name,
+    Object? response, {
+    String? id,
+  }) = ToolResponseContent;
 }
 
 final class TextContent extends Content {
@@ -142,24 +148,36 @@ final class AudioFileContent extends Content {
 }
 
 final class ToolResponseContent extends Content {
-  const ToolResponseContent(this.name, this.response) : super._();
+  const ToolResponseContent(this.name, this.response, {this.id}) : super._();
   final String name;
   final Object? response;
+
+  /// The id of the call this answers; null or empty sends none.
+  final String? id;
   @override
-  String toString() => 'toolResponse($name)';
+  String toString() => 'toolResponse($name${id == null ? '' : ', id: $id'})';
 }
 
-/// A call a model reply made: the function's [name] and its [arguments].
+/// A call a model reply made: the function's [name], its [arguments], and
+/// the call's [id] when the reply gave one.
 @immutable
 final class ToolCall {
-  ToolCall(this.name, Map<String, Object?> arguments)
+  /// [id] is Swift's `ToolCall.id` (Message.swift): read from the call's
+  /// `id` in the reply, written back as its `id` when the call is part of a
+  /// message sent (history, `initialMessages`); null when the reply gave
+  /// none. Kotlin's `ToolCall` has no id.
+  ToolCall(this.name, Map<String, Object?> arguments, {this.id})
     : arguments = Map.unmodifiable(arguments);
 
   final String name;
   final Map<String, Object?> arguments;
 
+  /// The call's id; null when the reply gave none.
+  final String? id;
+
   @override
-  String toString() => 'ToolCall($name, $arguments)';
+  String toString() =>
+      'ToolCall($name, $arguments${id == null ? '' : ', id: $id'})';
 }
 
 /// A function the model may call: its [name], what it does, its parameters
@@ -202,6 +220,7 @@ Map<String, Object?> messageJson(Message message) => {
     'tool_calls': [
       for (final call in message.toolCalls)
         {
+          if (call.id case final id? when id.isNotEmpty) 'id': id,
           'type': 'function',
           'function': {'name': call.name, 'arguments': call.arguments},
         },
@@ -221,10 +240,11 @@ Map<String, Object?> _contentJson(Content content) => switch (content) {
     'blob': base64Encode(bytes),
   },
   AudioFileContent(:final path) => {'type': 'audio', 'path': path},
-  ToolResponseContent(:final name, :final response) => {
+  ToolResponseContent(:final name, :final response, :final id) => {
     'type': 'tool_response',
     'name': name,
     'response': response,
+    if (id != null && id.isNotEmpty) 'id': id,
   },
 };
 
@@ -331,7 +351,10 @@ ToolCall? _call(Object? raw) {
   if (name is! String || name.isEmpty) return null;
   final arguments = _arguments(function['arguments']);
   if (arguments == null) return null;
-  return ToolCall(name, arguments);
+  // The id sits beside `function` in OpenAI's shape (Swift reads
+  // `item["id"]`), beside the name in the flat one.
+  final id = raw['id'];
+  return ToolCall(name, arguments, id: id is String ? id : null);
 }
 
 /// A call's arguments: absent or blank is none, an object, or a string

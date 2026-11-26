@@ -7,7 +7,9 @@
 // the bare name LiteRT's GPU registry opens it by (and on Windows Dawn and
 // the shader compiler with it), and on macOS when libLiteRtLm carries the
 // statically linked Metal accelerator LiteRT registers first: the GPU's own
-// load is not run, as CI has no GPU.
+// load is not run, as CI has no GPU. No platform needs a hooks define (from
+// litertlm_dart 0.20.0), and no Gemma constraint provider may be among the
+// code assets: the tool-call constraints are LLGuidance's, inside libLiteRtLm.
 //
 // Internal to the repository's CI: it reads the runtime's private library
 // lookup, which the published API does not expose.
@@ -43,6 +45,20 @@ Future<void> main() async {
   stdout.writeln('opened ${nativeAssetPath(dir, liteRtLmAssetFile)}');
   LiteRtBindings.open();
   stdout.writeln('opened the LiteRT C API');
+  final providers = [
+    for (final entity in Directory(dir).listSync())
+      if (RegExp(
+        'GemmaModelConstraintProvider|LtGmcp',
+      ).hasMatch(entity.uri.pathSegments.lastWhere((s) => s.isNotEmpty)))
+        entity.path,
+  ];
+  if (providers.isNotEmpty) {
+    stderr.writeln(
+      'FAIL: a Gemma constraint provider is among the code assets: '
+      '${providers.join(', ')}',
+    );
+    exit(1);
+  }
   const missing = '/no/such/model.litertlm';
   try {
     await LiteRtLmFfiClient().initialize(modelPath: missing, backend: 'cpu');

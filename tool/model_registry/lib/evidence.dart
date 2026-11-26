@@ -23,6 +23,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 import 'check.dart';
+import 'pub_dev.dart';
 
 const evidencePrefix = 'FEA_EVIDENCE v2 ';
 
@@ -35,36 +36,21 @@ const _towerChecks = {'vision', 'audio'};
 /// The evidence file schema [runFromLines] writes.
 const evidenceSchemaVersion = 2;
 
-/// The LiteRT-LM archive each native host loads, as named in
-/// packages/litertlm_dart/hook/build.dart. The speech package
-/// loads the same libraries.
-const _archives = {
-  'android_arm64': 'litertlm-android_arm64.tar.gz',
-  'ios_arm64': 'litertlm-ios_arm64.tar.gz',
-  'macos_arm64': 'litertlm-macos_arm64.tar.gz',
-  'windows_x64': 'litertlm-windows_x86_64.tar.gz',
-  'linux_x64': 'litertlm-linux_x86_64.tar.gz',
-  'linux_arm64': 'litertlm-linux_arm64.tar.gz',
-};
-
-/// What a run of [host] ran against: the sha256 of the host's native archive,
-/// or on the web the litertlm package version, whose JavaScript pins ride
-/// with it. Null when the hook does not name an archive for [host].
+/// What a run of [host] ran against: the sha256 of the host's native archive
+/// in the workspace's litertlm_dart hook, or on the web the litertlm package
+/// version, whose JavaScript pins ride with it. Null when the hook does not
+/// name an archive for [host]. The site judges runs against the published
+/// build instead (pub_dev.dart).
 String? nativeKey(String repoRoot, String host, Map<String, String> versions) {
   if (host == 'web') {
     final v = versions['flutter_edge_ai_litertlm'];
     return v == null ? null : 'flutter_edge_ai_litertlm@$v';
   }
-  final archive = _archives[host];
-  if (archive == null) return null;
   final hook = File(
     p.join(repoRoot, 'packages', 'litertlm_dart', 'hook', 'build.dart'),
   );
   if (!hook.existsSync()) return null;
-  final m = RegExp(
-    "'${RegExp.escape(archive)}':\\s*'([0-9a-f]{64})'",
-  ).firstMatch(hook.readAsStringSync());
-  return m?.group(1);
+  return hookArchives(hook.readAsStringSync())[host];
 }
 
 /// One evidence file: a run on one host.

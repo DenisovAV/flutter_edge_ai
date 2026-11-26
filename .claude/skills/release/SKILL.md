@@ -87,7 +87,9 @@ silently do the other thing.
         apps, README, desktop.md and the inference skill's
         references/platform-setup.md; the script prints the count, do not hardcode
         one here) — RUN it, do not eyeball
-[ ] 1f-ter  litertlm or speech in the release → macOS SwiftPM gate (#689), else N/A:
+[ ] 1f-ter  litertlm or speech in the release → macOS SwiftPM gate (#689), else N/A
+        (from litertlm_dart 0.20.0 no companion ships: the gate checks the app
+        runs with Package.swift carrying no companion binary target):
         a fresh `flutter create` app (deployment target 14.0) on litertlm's
         Flutter floor (3.44.0) and on current stable, RUN, not just built, with
         no `macos/flutter_edge_ai_litertlm/Artifacts/` in the package (so
@@ -114,12 +116,18 @@ silently do the other thing.
         example/integration_test, on every host release_critical.yaml lists;
         they print FEA_EVIDENCE lines), then in tool/model_registry
         `dart run bin/registry.dart evidence --device … <log>` per host,
-        `dart run bin/registry.dart freeze <package>`, `generate`, and commit
-        the evidence, the snapshot and the generated files together. Then
+        `dart run bin/registry.dart freeze <package>`,
+        `dart run bin/registry.dart pin <package>` (model_registry/pub_dev.yaml:
+        the site shows what pub.dev ships, so the pin moves with the release;
+        for the adapter it also moves litertlm_dart and the native build),
+        `generate`, and commit the evidence, the snapshot, the pin and the
+        generated files together. Then
         `dart run bin/registry.dart release-check <package>` must print
         "<package> <version>: ready to publish" on that commit, with nothing
         uncommitted. Nothing enforces this but this step: run it again after
         any later commit, and never skip it
+[ ] 10a  litertlm or speech published? → `(cd tool/model_registry && dart run
+        bin/registry.dart pub-check)` must say pub_dev.yaml matches pub.dev
 [ ] 10b  after publishing: pub.dev actually SERVES the new versions (its API
         lags minutes behind the upload); if a package's web/ changed
         (flutter_edge_ai_litertlm or flutter_edge_ai), sync every codelab copy to
@@ -314,9 +322,14 @@ Shared-code hotspots to sweep, per fix type:
   ```
   Why this one bites harder than the others: `pod install` freezes the block
   into every app's `project.pbxproj`, and upgrading `flutter_edge_ai_litertlm`
-  never rewrites it. Only apps with Swift Package Manager off need it since
-  #689; an app with it on gets the companions from the package's
-  `macos/flutter_edge_ai_litertlm/Package.swift`. A fix landed in one copy never
+  never rewrites it. Only apps with Swift Package Manager off needed it since
+  #689; an app with it on got the companions from the package's
+  `macos/flutter_edge_ai_litertlm/Package.swift`. From litertlm_dart 0.20.0
+  there are no companions: `stage_macos_companions.sh` is deleted, and the hook
+  writes a no-op stub at the path the block runs, so an app that keeps the block
+  builds and is told it can remove it. Removing the block from the examples,
+  codelabs and docs (and the companion targets from `Package.swift`) is the
+  cleanup that follows. A fix landed in one copy never
   reaches users who pasted another. When the check was added the copies had
   already split into three vintages — the genkit example predated all of the
   #300/#368 fixes, and the README copy was missing `input_paths`, so every app
@@ -424,7 +437,7 @@ Publish order: `litertlm_dart` → `flutter_edge_ai_litertlm` → `flutter_edge_
 Only if (1b) bumps `NATIVE_VERSION`:
 | File | Field |
 |------|-------|
-| `packages/litertlm_dart/lib/src/runtime/native_release.dart` | `liteRtLmNativeVersion` — bump (e.g. `'0.19.1-b'` → `'0.19.1-c'`). The hook's `_litertlmBundle` takes `version:` from it; the host dev lookup and `package_macos_spm_companions.sh` read it too. Also `nativeTag` in `flutter_edge_ai_litertlm`'s `macos/flutter_edge_ai_litertlm/Package.swift`. The cache is per tag (`_cacheBaseDir()/<tag>/<platform>`). |
+| `packages/litertlm_dart/lib/src/runtime/native_release.dart` | `liteRtLmNativeVersion` — bump (e.g. `'0.19.1-b'` → `'0.19.1-c'`). The hook's `_litertlmBundle` takes `version:` from it; the host dev lookup reads it too. Up to native-v0.19.1 also `nativeTag` in `flutter_edge_ai_litertlm`'s `macos/flutter_edge_ai_litertlm/Package.swift` (and `package_macos_spm_companions.sh`, deleted with the companions). The first native build on an upstream version is the bare `native-v<upstream>` (`native-v0.20.0`); `-a`, `-b` mark rebuilds on it. The cache is per tag (`_cacheBaseDir()/<tag>/<platform>`). |
 | `packages/litertlm_dart/hook/build.dart` | the per-archive SHA256 `checksums` of `_litertlmBundle`. |
 
 For App Store / breaking platform fixes prefer **bumping NATIVE_VERSION** rather than overwriting `native-v0.10.2` assets — keeps consumers on `0.14.0` reproducible. Overwrite only for emergency hotfixes where downstream version pinning is acceptable.
@@ -575,7 +588,11 @@ gh release create "$RELEASE" "$DIST"/litertlm-*.tar.gz "$DIST"/checksums_litertl
   --target main
 ```
 
-Then the macOS Swift Package Manager companions (#689), built from the macOS
+Up to native-v0.19.1 only — from native-v0.20.0 there are no macOS companions,
+`package_macos_spm_companions.sh` is deleted, and `verify_tarball_manifest.sh`
+fails a release that carries `*LiteRtLmMetalAccelerator*`,
+`*GemmaModelConstraintProvider*` or `checksums_spm_macos.txt`. For an old tag:
+the macOS Swift Package Manager companions (#689), built from the macOS
 tarball just published — the same bytes the hook pins — and uploaded to the
 same tag:
 ```bash
@@ -696,11 +713,13 @@ flutter test integration_test/litertlm_native_tools_test.dart -d macos   # and e
 ```
 
 Host tests cannot see this, and neither can the litertlm smoke suite: it never
-passes a tool, so it never loads `libGemmaModelConstraintProvider`. A mismatch
-between that Google prebuilt and the runtime we build segfaults on the first
-tool call — `CompositeLogitMask::Apply`, no Dart error, every other gate green.
-native-v0.17.0 shipped that way and broke tool calling for everyone on
-litertlm 1.7.0.
+passes a tool, so it never builds a tool-call constraint. From native-v0.20.0
+those are LLGuidance's, compiled into libLiteRtLm (`patch_c_api.sh` §29, §31);
+up to native-v0.19.1 they came from Google's prebuilt
+`libGemmaModelConstraintProvider`, and a mismatch between it and the runtime we
+build segfaulted on the first tool call — `CompositeLogitMask::Apply`, no Dart
+error, every other gate green. native-v0.17.0 shipped that way and broke tool
+calling for everyone on litertlm 1.7.0.
 
 The suite asserts the text that follows the tool result, not just that a call
 was parsed. The weaker assertion is why a second bug — tool results sent as role

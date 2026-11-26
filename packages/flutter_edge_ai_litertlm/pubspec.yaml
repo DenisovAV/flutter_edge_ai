@@ -49,9 +49,9 @@ dependencies:
   # `LitertlmManifestResolver` declares.
   flutter_edge_ai: '>=2.7.0 <2.8.0'
   # The LiteRT-LM runtime and its build hook (libLiteRtLm and the NPU
-  # stacks). Pinned exactly: macos/flutter_edge_ai_litertlm/Package.swift
-  # fetches the companions of one native tag, the one this build's hook uses.
-  litertlm_dart: 0.19.1+4
+  # stacks). Pinned exactly: this adapter reads litertlm_dart's internal
+  # libraries, which carry no compatibility promise between releases.
+  litertlm_dart: 0.20.0
   ffi: ^2.1.0
   mutex: ^3.1.0
   crypto: ^3.0.6
@@ -68,10 +68,10 @@ dev_dependencies:
   shared_preferences: ^2.5.2
 
 # The native libraries are delivered as CodeAssets by litertlm_dart's build
-# hook, which owns the litertlm bundle. The macOS plugin carries no
-# code: its Swift package brings the two companion libraries LiteRtLm needs as
-# binary targets, so an app with Swift Package Manager on embeds them with no
-# Podfile (#689). Its podspec only keeps an app with it off building.
+# hook, which owns the litertlm bundle. The macOS plugin carries no code and
+# brings no library: since litertlm_dart 0.20.0 LiteRtLm needs no companion on
+# macOS. Its Swift package and podspec keep the plugin resolving with Swift
+# Package Manager on and off.
 flutter:
   plugin:
     platforms:

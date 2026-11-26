@@ -16,15 +16,15 @@ await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic).
 
 | Mark | Meaning |
 |---|---|
-| ✅ verified | Passed on that host and backend with the native build the packages ship now |
-| 🕓 stale | Passed there on an earlier native build; not run since it changed |
+| ✅ verified | Passed on that host and backend with the native build of the packages on pub.dev |
+| 🕓 stale | Passed there on another native build; not run on the one on pub.dev |
 | 📝 documented | Documented as working; not yet re-run with a recorded log |
 | ⚪ untested | The package runs it there; nobody has recorded a run |
 | ⛔ refused | This version of the package does not run it there |
 | ⏸️ withheld | Left out of the catalog; the note says why |
 | ❌ broken | Known not to work there; see the issue |
 
-A blank cell is a combination that does not exist: a build compiled for one NPU on another platform, a web export on a phone, or a native build on the web. Package versions: `flutter_edge_ai` 2.7.2, `flutter_edge_ai_litertlm` 1.21.3, `flutter_edge_ai_speech` 0.6.2.
+A blank cell is a combination that does not exist: a build compiled for one NPU on another platform, a web export on a phone, or a native build on the web. Package versions: `flutter_edge_ai` 2.7.2, `flutter_edge_ai_litertlm` 1.21.3, `flutter_edge_ai_speech` 0.6.2, as on pub.dev, with native-v0.19.1-c.
 
 ## Language models
 
@@ -347,7 +347,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [generic](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m.litertlm)<br>165&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;📝 |
+| [generic](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m.litertlm)<br>165&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;🕓 CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;📝 |
 | [npu-mt6991](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_MediaTek_MT6991.litertlm)<br>416&nbsp;MB | NPU&nbsp;⚪ |  |  |  |  |  |  |
 | [npu-mt6993](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_MediaTek_MT6993.litertlm)<br>386&nbsp;MB | NPU&nbsp;⚪ |  |  |  |  |  |  |
 | [npu-ptl](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Intel_PTL.litertlm)<br>317&nbsp;MB |  |  |  | NPU&nbsp;📝 |  |  |  |
@@ -362,6 +362,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 - Verified on Android: Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-19, flutter_edge_ai_litertlm 1.21.0.
 - Verified on iOS: iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-19, flutter_edge_ai_litertlm 1.21.0.
 - Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-19, flutter_edge_ai_litertlm 1.21.0.
+- Stale on Windows x64: Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-26, litertlm_dart 0.20.0, native-v0.20.0.
 - Verified on Windows x64: Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-19, flutter_edge_ai_litertlm 1.21.0.
 - Verified on Linux x64: GCE flutter-gemma-linux (Tesla T4), 2026-11-19, flutter_edge_ai_litertlm 1.21.0.
 - Documented: [PR #688](https://github.com/DenisovAV/flutter_edge_ai/pull/688), device matrix (native-v0.18.0-f).

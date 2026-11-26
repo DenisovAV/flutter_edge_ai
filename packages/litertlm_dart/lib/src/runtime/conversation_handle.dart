@@ -205,3 +205,25 @@ BenchmarkInfo benchmarkInfoOf(NativeBenchmark turns) {
     initTimeMs: turns.initSeconds > 0 ? turns.initSeconds * 1000 : null,
   );
 }
+
+/// What Kotlin's and Swift's `Conversation` read from, or make of, a
+/// conversation's own state: its KV cache's token count, the prompt its
+/// template renders, and a copy. Implemented by the handles that can answer;
+/// `Conversation` refuses the rest with an [UnsupportedError] naming why.
+abstract interface class ConversationStateAccess {
+  /// The tokens in the conversation's KV cache, prefill and decode
+  /// (`litert_lm_conversation_get_token_count`).
+  Future<int> kvTokenCount();
+
+  /// [messageJson] as the conversation's template renders it
+  /// (`litert_lm_conversation_render_message_to_string`).
+  Future<String> renderMessage(String messageJson);
+
+  /// The conversation's preface as its template renders it
+  /// (`litert_lm_conversation_render_preface_to_string`).
+  Future<String> renderPreface();
+
+  /// A new handle holding this one's history and state
+  /// (`litert_lm_conversation_clone` where the conversation is native).
+  Future<ConversationHandle> cloneHandle();
+}

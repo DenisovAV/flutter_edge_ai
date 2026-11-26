@@ -314,6 +314,9 @@ void main() {
         // 0.19.1-b's Android archive plus the MediaTek adapter; the Qualcomm
         // dispatch is byte-identical.
         '0.19.1-c': '2.50.0',
+        // LiteRT-LM v0.20.0 (LiteRT bf49eb62): the Qualcomm dispatch is built
+        // against QAIRT 2.52.0, the QNN runtime the hook fetches (decision D3).
+        '0.20.0': '2.52.0',
       };
       const bundle = liteRtLmNativeVersion;
       expect(

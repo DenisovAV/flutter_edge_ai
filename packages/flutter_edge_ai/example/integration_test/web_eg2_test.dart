@@ -4,9 +4,9 @@
 /// flutter_edge_ai_litertlm's web `.litertlm` pass → litertlm_dart's web
 /// embedder → `@litert-lm/core`'s `EmbeddingEngine` (the version litertlm_dart
 /// pins) on WebGPU, with `WebStorageMode.cacheApi`. WebGPU because the
-/// runtime's CPU (WebAssembly) path cannot load these bundles ("Failed to get
-/// external weight for buffer id …", 0.18.0 and 0.19.0 alike); there is no CPU
-/// fallback.
+/// runtime's CPU (WebAssembly) path could not load these bundles on 0.18.0 and
+/// 0.19.0 ("Failed to get external weight for buffer id …") and is too slow to
+/// use on 0.20.0 (load 110-225 s, 9-12 s per text); there is no CPU fallback.
 ///
 /// What it holds the browser to:
 /// - 768 dimensions, unit norm, finite; `maxInputTokens` 1024; `{text}`; GPU;
@@ -22,8 +22,8 @@
 ///   EmbeddingInputTooLongException(1024, 1025 / 3000) — counts from Python
 ///   sentencepiece 0.2.2 on the bundle's own tokenizer (sha256 e594c8a9…), the
 ///   measurement's `text_with_total` — and the model keeps working;
-/// - a page without `window.EmbeddingEngine = m.EmbeddingEngine;` fails the
-///   load with the EmbeddingLoadException that names the line;
+/// - a module without `EmbeddingEngine` fails the load with the
+///   EmbeddingLoadException that names it;
 /// - supportImage on the 270m is refused naming the 440m, from the bundle's
 ///   container header, and the runtime asked directly never embeds an image
 ///   there either;
@@ -46,9 +46,12 @@
 /// - a page without WebGPU (`navigator.gpu` hidden): the load is refused
 ///   before `EmbeddingEngine.create`, with the EmbeddingLoadException that
 ///   says EmbeddingGemma 2 on the web needs WebGPU and why;
-/// - last: the CPU path, asked for directly, still fails in
-///   `EmbeddingEngine.create` on both bundles, and the error says why — the
-///   day a newer `@litert-lm/core` loads them there, this test says so.
+/// - last: the CPU path, asked for directly, recorded for each bundle: when
+///   it loads, its load time, dimension, the golden texts' cosine to the
+///   native vectors, their median latency and what an over-long text does
+///   (0.20.0 loads there: 110-225 s, 9-12 s per text, 2026-11-25); when the
+///   runtime refuses it (0.18.0 and 0.19.0: "Failed to get external weight"),
+///   the refusal's text. Either is a pass; an error that is neither fails.
 /// Measured, never asserted (in the response file and the log):
 /// - M11: the longest main-thread stall while images and texts are embedded
 ///   on WebGPU;
@@ -138,7 +141,7 @@ const _tests = [
   'no WebGPU',
   // Last: a CPU failure that took the page's WASM module down must not fail
   // a WebGPU test after it.
-  'CPU refused',
+  'CPU record',
 ];
 
 const _eg2 = catalog.EmbeddingModel.embeddingGemma2Text270m;
@@ -590,13 +593,20 @@ void main() {
     report('w2', {'maxInputTokens': model.maxInputTokens, 'boundary': 1024});
   }, timeout: const Timeout(Duration(minutes: 30)));
 
-  testWidgets('a page without window.EmbeddingEngine fails the load with the '
-      'EmbeddingLoadException naming the line', (tester) async {
+  testWidgets('a module without EmbeddingEngine fails the load with the '
+      'EmbeddingLoadException naming it', (tester) async {
     _start('EG2 shim missing');
     await _ensureEg2();
     await _releaseActive();
-    final saved = globalContext['EmbeddingEngine'];
-    globalContext.delete('EmbeddingEngine'.toJS);
+    // A plain copy of the module without it: a module namespace is frozen.
+    final module = globalContext['litertLm']! as JSObject;
+    final copy = globalContext.callMethod<JSObject>(
+      'eval'.toJS,
+      '(() => { const {EmbeddingEngine, ...rest} = window.litertLm; '
+              'return rest; })()'
+          .toJS,
+    );
+    globalContext['litertLm'] = copy;
     try {
       await expectLater(
         FlutterEdgeAi.getActiveEmbedder(),
@@ -606,12 +616,12 @@ void main() {
               .having(
                 (e) => e.message,
                 'message',
-                contains('window.EmbeddingEngine = m.EmbeddingEngine;'),
+                contains('window.litertLm has no EmbeddingEngine'),
               ),
         ),
       );
     } finally {
-      globalContext['EmbeddingEngine'] = saved;
+      globalContext['litertLm'] = module;
     }
     expect((await _active()).dimension, 768);
   }, timeout: const Timeout(Duration(minutes: 30)));
@@ -1230,7 +1240,9 @@ void main() {
     final created = <String>[];
     // Hide navigator.gpu (an own property shadows the prototype's getter),
     // and count the engines the runtime is asked to create meanwhile.
-    final engine = globalContext['EmbeddingEngine']! as JSObject;
+    final engine =
+        (globalContext['litertLm']! as JSObject)['EmbeddingEngine']!
+            as JSObject;
     final create = engine['create'];
     engine['create'] = ((JSAny settings) {
       created.add('create');
@@ -1264,7 +1276,7 @@ void main() {
         startsWith('EmbeddingGemma 2 on the web needs WebGPU'),
         contains('this browser has no WebGPU'),
         contains('There is no CPU fallback'),
-        contains('cannot read the external weights'),
+        contains('is too slow to use'),
       ),
     );
     expect(created, isEmpty, reason: 'EmbeddingEngine.create was called');
@@ -1277,9 +1289,10 @@ void main() {
     );
   }, timeout: const Timeout(Duration(minutes: 30)));
 
-  testWidgets('CPU, asked for directly: $liteRtLmWebRuntime still cannot '
-      'load either bundle there, and the error says why', (tester) async {
-    _start('CPU refused');
+  testWidgets('CPU, asked for directly: what $liteRtLmWebRuntime does with '
+      'each bundle there is recorded, a load measured or its refusal '
+      'quoted', (tester) async {
+    _start('CPU record');
     final record = <String, Object?>{};
     for (final (model, ensure, images) in [
       (_eg2, _ensureEg2, false),
@@ -1293,37 +1306,69 @@ void main() {
         images: images,
       );
       EmbeddingLoadException? refusal;
+      // What a CPU engine does when it loads (measured, not asserted): the
+      // golden texts against the native CPU vectors, their latency, and an
+      // over-long text.
+      final measured = <String, Object?>{};
       try {
+        final watch = Stopwatch()..start();
         await pass.load();
+        measured['loadMs'] = watch.elapsedMilliseconds;
+        final cosines = <double>[];
+        final micros = <int>[];
+        for (final item in _golden) {
+          watch.reset();
+          final vector = await pass.embed(
+            EmbeddingInput.text(item.text),
+            _taskFor(item.role),
+          );
+          micros.add(watch.elapsedMicroseconds);
+          measured['dimension'] = vector.length;
+          cosines.add(cosine(vector, item.vector));
+        }
+        measured['minCosVsNativeGolden'] = cosines.reduce(math.min);
+        measured['perTextMedianMs'] = _median(micros);
+        try {
+          await pass.embed(EmbeddingInput.text('word ' * 3000), TaskType.none);
+          measured['overLong'] = 'embedded';
+        } on EmbeddingInputTooLongException catch (e) {
+          measured['overLong'] =
+              'EmbeddingInputTooLongException(${e.maxInputTokens}, '
+              '${e.actualTokens})';
+        }
       } on EmbeddingLoadException catch (e) {
         refusal = e;
+      } catch (e) {
+        measured['error'] = '$e';
       } finally {
         await pass.close();
       }
-      record[model.filename] = refusal?.message;
+      record[model.filename] = refusal == null
+          ? measured
+          : {'refused': refusal.message};
+      // Reported before the expectations, so every bundle is recorded.
+      report('cpu_path', record);
+      _log('CPU ${model.filename}: ${record[model.filename]}');
+    }
+    // After both bundles were tried, so each is recorded: a refusal that
+    // says something, or a load whose measurements are numbers. An error
+    // that is neither is a fault, not a record.
+    for (final MapEntry(key: file, value: result) in record.entries) {
+      final value = result! as Map<String, Object?>;
+      if (value['refused'] case final String message) {
+        expect(message, contains('could not create the embedding engine'));
+        continue;
+      }
+      expect(value['error'], isNull, reason: '$file on the CPU: $value');
+      expect(value['dimension'], 768, reason: file);
+      expect(value['loadMs'], isA<int>(), reason: file);
       expect(
-        refusal,
-        isNotNull,
-        reason:
-            '${model.filename} loaded on the CPU: @litert-lm/core now reads '
-            'its external weights there, and the WebGPU-only rule (and its '
-            'documentation) should be revisited',
-      );
-      expect(
-        refusal!.message,
-        allOf(
-          contains('could not create the embedding engine'),
-          contains('Failed to get external weight'),
-          contains(
-            'The CPU (WebAssembly) path of $liteRtLmWebRuntime cannot read '
-            'the external weights',
-          ),
-        ),
+        (value['minCosVsNativeGolden']! as double).isFinite,
+        isTrue,
+        reason: file,
       );
     }
-    report('cpu_refusal', record);
-    _log('CPU: $record');
-  }, timeout: const Timeout(Duration(minutes: 30)));
+  }, timeout: const Timeout(Duration(minutes: 60)));
 
   testWidgets('every test above started (an absent test reads as a pass '
       'under flutter drive)', (tester) async {

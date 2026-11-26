@@ -32,6 +32,131 @@ final class EmbedderInput {
   final Uint8List? audio;
 }
 
+/// How one embedding is computed: LiteRT-LM's Kotlin `EmbeddingOptions` and
+/// Swift `EmbeddingOptions`, per request. A null field keeps the engine's
+/// default, which is also what a request without options gets.
+///
+/// The fields are checked when a request uses them (`computeEmbedding` throws
+/// an [ArgumentError]), not here, so the default can be `const`.
+@immutable
+final class EmbeddingOptions {
+  const EmbeddingOptions({
+    this.normalize,
+    this.insertSpecialTokens,
+    this.outputSize,
+    this.visionTokensPerImage,
+  });
+
+  /// L2-normalise the vector (null: yes). With [outputSize] the engine
+  /// truncates first and normalises the truncated vector, as LiteRT-LM does.
+  /// `false` returns the vector as the model computed it.
+  final bool? normalize;
+
+  /// Add BOS, EOS and the start and end tokens of each image and audio part
+  /// (null: yes). The bundles' vectors are computed with them: without them
+  /// a text embeds to another vector, so turn them off only for vectors
+  /// compared with others computed the same way.
+  final bool? insertSpecialTokens;
+
+  /// Matryoshka truncation: the first [outputSize] values of the vector,
+  /// then L2-normalised unless [normalize] is false (null: the whole
+  /// vector). From 1 to the engine's dimension.
+  final int? outputSize;
+
+  /// Vision tokens per image for this request's images (null: the engine's
+  /// own). Only on an engine loaded with images: natively 70 or 140, at most
+  /// the engine's `visionTokensPerImage` (LiteRT-LM prepares the vision
+  /// signatures up to the engine's budget); on the web only the engine's own
+  /// (the web runtime prepares that one signature).
+  final int? visionTokensPerImage;
+
+  @override
+  bool operator ==(Object other) =>
+      other is EmbeddingOptions &&
+      other.normalize == normalize &&
+      other.insertSpecialTokens == insertSpecialTokens &&
+      other.outputSize == outputSize &&
+      other.visionTokensPerImage == visionTokensPerImage;
+
+  @override
+  int get hashCode => Object.hash(
+    normalize,
+    insertSpecialTokens,
+    outputSize,
+    visionTokensPerImage,
+  );
+
+  @override
+  String toString() =>
+      'EmbeddingOptions(normalize: $normalize, insertSpecialTokens: '
+      '$insertSpecialTokens, outputSize: $outputSize, visionTokensPerImage: '
+      '$visionTokensPerImage)';
+}
+
+/// Internal to the runtime: the public library does not export it.
+extension EmbeddingOptionsDefaults on EmbeddingOptions {
+  /// No field set: the engine's defaults.
+  bool get isDefault =>
+      normalize == null &&
+      insertSpecialTokens == null &&
+      outputSize == null &&
+      visionTokensPerImage == null;
+}
+
+/// Throws [ArgumentError] for [options] an engine of [dimension] cannot
+/// apply: an [EmbeddingOptions.outputSize] outside 1..[dimension], or an
+/// [EmbeddingOptions.visionTokensPerImage] on an engine loaded without images
+/// ([engineVisionTokensPerImage] null), not one of [budgets], above the
+/// engine's own, or — with [onlyEngineBudget], the reason — other than it.
+void checkEmbeddingOptions(
+  EmbeddingOptions options, {
+  required int dimension,
+  required int? engineVisionTokensPerImage,
+  required List<int> budgets,
+  String? onlyEngineBudget,
+}) {
+  if (options.outputSize case final size? when size < 1 || size > dimension) {
+    throw ArgumentError.value(
+      size,
+      'outputSize',
+      'must be from 1 to the dimension, $dimension',
+    );
+  }
+  final budget = options.visionTokensPerImage;
+  if (budget == null) return;
+  if (engineVisionTokensPerImage == null) {
+    throw ArgumentError.value(
+      budget,
+      'visionTokensPerImage',
+      'applies to images, and this engine was loaded without them',
+    );
+  }
+  if (!budgets.contains(budget)) {
+    throw ArgumentError.value(
+      budget,
+      'visionTokensPerImage',
+      'must be one of $budgets',
+    );
+  }
+  if (onlyEngineBudget != null && budget != engineVisionTokensPerImage) {
+    throw ArgumentError.value(
+      budget,
+      'visionTokensPerImage',
+      "must be the engine's own, $engineVisionTokensPerImage: "
+          '$onlyEngineBudget',
+    );
+  }
+  if (budget > engineVisionTokensPerImage) {
+    throw ArgumentError.value(
+      budget,
+      'visionTokensPerImage',
+      "must be at most the engine's own, $engineVisionTokensPerImage: "
+          'LiteRT-LM prepares the vision signatures up to the budget the '
+          'engine was created with',
+    );
+  }
+}
+
 /// What a loaded embedder reports.
 @immutable
 final class EmbedderInfo {

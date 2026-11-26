@@ -1,15 +1,15 @@
 /// The `dart:js_interop` side of the EmbeddingGemma 2 web embedder:
 /// [WindowLiteRtLmWebRuntime], the [LiteRtLmWebRuntime] a [LiteRtLmWebEmbedder]
 /// gets on a page, over `@litert-lm/core`'s `EmbeddingEngine`
-/// ([liteRtLmWebRuntime]) as the page exposes it:
+/// ([liteRtLmWebRuntime]), read from the module the page hands over
+/// ([liteRtLmWebModuleShim]):
 ///
 /// ```html
 /// <script type="module">
 /// window.litertLmReady = (async () => {
 ///   const m = await import('<liteRtLmWebModuleUrl>');
-///   window.Engine = m.Engine;
-///   window.EmbeddingEngine = m.EmbeddingEngine;
-///   return m.Engine;
+///   window.litertLm = m;
+///   return m;
 /// })();
 /// </script>
 /// ```
@@ -23,8 +23,9 @@
 ///     maxInputLength, minInputLength?, visionTokensPerImage?})
 ///   // Promise<EmbeddingEngine>
 /// engine.computeEmbedding(input, {normalize, insertSpecialTokens,
-///     inputOverflowStrategy})  // Promise<{embedding: number[], inputLength,
-///                              //   truncatedLength?, numChunks}>
+///     inputOverflowStrategy, outputSize?, visionTokensPerImage?})
+///   // Promise<{embedding: number[], inputLength, truncatedLength?,
+///   //   numChunks}>
 ///   // input: a string, {type: 'image', data: ArrayBuffer},
 ///   // {type: 'audio', data: ArrayBuffer}, or an array of them (one vector)
 /// engine.delete()                                   // Promise<void>
@@ -33,7 +34,10 @@
 /// [WindowLiteRtLmWebRuntime.readPrefix] is the page's own `fetch()`: the
 /// first bytes of the installed bundle, for its container header.
 ///
-/// With `backend: GPU` (4, the backend the embedder asks for) `create` sets
+/// The `Backend` ids sent are the module's own (`window.litertLm.Backend`,
+/// web_backend_ids.dart): 0.20.0 renumbered them.
+///
+/// With `backend: GPU` (the backend the embedder asks for) `create` sets
 /// up the module's one WebGPU device itself, from
 /// `navigator.gpu.requestAdapter({powerPreference: 'high-performance'})`;
 /// [WindowLiteRtLmWebRuntime.webGpuSupport] asks the same question first, so
@@ -47,21 +51,18 @@ import 'dart:typed_data';
 import '../runtime/runtime_log.dart';
 import 'litert_lm_js.dart'
     show
-        liteRtLmWebBackendCpu,
-        liteRtLmWebBackendGpu,
+        LiteRtLmWebModule,
+        LiteRtLmWebModuleError,
         awaitIfThenable,
+        hasLiteRtLmWebModule,
+        liteRtLmWebModuleShim,
         liteRtLmWebRuntimeMissing,
         noteOtherWebRuntimeVersion,
         noteWebDeleteFailure,
-        otherWebRuntimeVersionSentence;
+        otherWebRuntimeVersionSentence,
+        readLiteRtLmWebModule;
 import 'web_embedder.dart';
 import 'web_runtime_version.dart';
-
-/// `Backend` in `@litert-lm/core` (`wasm_binding_types.js`).
-int _backendValue(LiteRtLmWebBackend backend) => switch (backend) {
-  LiteRtLmWebBackend.cpu => liteRtLmWebBackendCpu,
-  LiteRtLmWebBackend.gpu => liteRtLmWebBackendGpu,
-};
 
 /// `InputOverflowStrategy` in `@litert-lm/core`: `CHUNK_AND_AVERAGE: 0`,
 /// `TRUNCATE: 1`, `ERROR: 2`.
@@ -71,12 +72,14 @@ int _overflowValue(LiteRtLmWebOverflowStrategy strategy) => switch (strategy) {
   LiteRtLmWebOverflowStrategy.error => 2,
 };
 
-/// `window.EmbeddingEngine`, resolved at the call: `@JS('EmbeddingEngine')`
-/// makes the static `create` resolve against the global the page's shim sets.
-@JS('EmbeddingEngine')
-extension type _EmbeddingEngine._(JSObject _) implements JSObject {
-  external static JSPromise<_EmbeddingEngine> create(JSObject settings);
+/// The module's `EmbeddingEngine` class, read from `window.litertLm` at
+/// each create.
+extension type _EmbeddingEngineClass._(JSObject _) implements JSObject {
+  external JSPromise<_EmbeddingEngine> create(JSObject settings);
+}
 
+/// An `EmbeddingEngine` the runtime created.
+extension type _EmbeddingEngine._(JSObject _) implements JSObject {
   external JSPromise<_EmbeddingResponse> computeEmbedding(
     JSAny input,
     JSObject options,
@@ -120,48 +123,66 @@ extension type _ReadResult._(JSObject _) implements JSObject {
   external JSUint8Array? get value;
 }
 
-/// The [LiteRtLmWebRuntime] of the page: `window.litertLmReady` and
-/// `window.EmbeddingEngine`.
+/// The [LiteRtLmWebRuntime] of the page: `window.litertLmReady` and the
+/// `EmbeddingEngine` of `window.litertLm`.
 final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
   const WindowLiteRtLmWebRuntime();
-
-  static bool get _hasEmbeddingEngine =>
-      globalContext['EmbeddingEngine'].typeofEquals('function');
 
   @override
   Future<LiteRtLmWebRuntimeState> ensureReady() async {
     // Said before the load: a runtime of another version than the one this
     // release is measured on behaves otherwise, without a missing member.
     noteOtherWebRuntimeVersion();
-    if (_hasEmbeddingEngine) return _versionState;
-    final ready = globalContext['litertLmReady'];
-    if (ready == null || ready.isUndefinedOrNull) {
-      return LiteRtLmWebRuntimeState.loaderMissing;
+    if (!hasLiteRtLmWebModule) {
+      final ready = globalContext['litertLmReady'];
+      if (ready == null || ready.isUndefinedOrNull) {
+        // A page with the old window.Engine line is told what to replace.
+        if (_legacyPage) readLiteRtLmWebModule();
+        return LiteRtLmWebRuntimeState.loaderMissing;
+      }
+      // Module scripts are deferred: the shim may still be importing the
+      // module. A rejection (the CDN import failed) propagates.
+      if (ready.typeofEquals('object') && (ready as JSObject).has('then')) {
+        await (ready as JSPromise<JSAny?>).toDart;
+        // The module the shim imported is fetched by now.
+        noteOtherWebRuntimeVersion();
+      }
     }
-    // Module scripts are deferred: the shim may still be importing the
-    // module. A rejection (the CDN import failed) propagates.
-    if (ready.typeofEquals('object') && (ready as JSObject).has('then')) {
-      await (ready as JSPromise<JSAny?>).toDart;
-      // The module the shim imported is fetched by now.
-      noteOtherWebRuntimeVersion();
+    final module = readLiteRtLmWebModule();
+    if (_missing(module).isNotEmpty) {
+      return LiteRtLmWebRuntimeState.runtimeIncomplete;
     }
-    return _hasEmbeddingEngine
-        ? _versionState
-        : LiteRtLmWebRuntimeState.embeddingEngineMissing;
+    // Read here too, so a page whose Backend this release cannot read is
+    // refused at load, before anything is fetched.
+    module.backendIds;
+    return LiteRtLmWebRuntimeState.ready;
   }
 
-  static LiteRtLmWebRuntimeState get _versionState => _missing().isEmpty
-      ? LiteRtLmWebRuntimeState.ready
-      : LiteRtLmWebRuntimeState.runtimeIncomplete;
+  /// The page still sets a global of the old shim.
+  static bool get _legacyPage =>
+      (globalContext['Engine']?.typeofEquals('function') ?? false) ||
+      (globalContext['EmbeddingEngine']?.typeofEquals('function') ?? false);
 
-  static List<String> _missing() => liteRtLmWebRuntimeMissing(
-    globalContext['EmbeddingEngine']! as JSObject,
-    const ['computeEmbedding', 'delete'],
-  );
+  /// The module's `EmbeddingEngine`; throws [LiteRtLmWebModuleError] naming
+  /// it when the module has none.
+  static _EmbeddingEngineClass _class(LiteRtLmWebModule module) =>
+      module.classNamed('EmbeddingEngine') as _EmbeddingEngineClass;
+
+  static List<String> _missing(LiteRtLmWebModule module) =>
+      liteRtLmWebRuntimeMissing(_class(module), const [
+        'computeEmbedding',
+        'delete',
+      ]);
 
   @override
-  List<String> get missingMembers =>
-      _hasEmbeddingEngine ? _missing() : const [];
+  List<String> get missingMembers {
+    if (!hasLiteRtLmWebModule) return const [];
+    try {
+      return _missing(readLiteRtLmWebModule());
+    } on LiteRtLmWebModuleError {
+      return const [];
+    }
+  }
 
   /// `navigator.gpu.requestAdapter({powerPreference: 'high-performance'})`:
   /// the adapter `@litert-lm/core` itself asks for before it creates
@@ -189,18 +210,22 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
 
   @override
   Future<LiteRtLmWebEngine> create(LiteRtLmWebEngineSettings settings) async {
+    // Read again here: the class and the ids are the page module's own.
+    final module = readLiteRtLmWebModule();
+    final engineClass = _class(module);
+    final ids = module.backendIds;
     final js = JSObject()
       ..['model'] = settings.modelUrl.toJS
-      ..['backend'] = _backendValue(settings.backend).toJS
+      ..['backend'] = ids.idOf(settings.backend).toJS
       ..['maxInputLength'] = settings.maxInputLength.toJS;
     // Absent, never null: the runtime tests `!== undefined`, and a null
     // visionBackend would ask for a tower with no backend.
     if (settings.visionBackend case final vision?) {
-      js['visionBackend'] = _backendValue(vision).toJS;
+      js['visionBackend'] = ids.idOf(vision).toJS;
     }
     // The same rule: absent = the audio tower disabled.
     if (settings.audioBackend case final audio?) {
-      js['audioBackend'] = _backendValue(audio).toJS;
+      js['audioBackend'] = ids.idOf(audio).toJS;
     }
     if (settings.minInputLength case final min?) {
       js['minInputLength'] = min.toJS;
@@ -210,7 +235,7 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
     }
     final _EmbeddingEngine engine;
     try {
-      engine = await _EmbeddingEngine.create(js).toDart;
+      engine = await engineClass.create(js).toDart;
     } catch (e) {
       final version = otherWebRuntimeVersionSentence();
       if (version == null) rethrow;
@@ -284,6 +309,13 @@ final class _WindowEngine implements LiteRtLmWebEngine {
       ..['inputOverflowStrategy'] = _overflowValue(
         options.inputOverflowStrategy,
       ).toJS;
+    // Absent, never null: the runtime passes them on as optional values.
+    if (options.outputSize case final size?) {
+      jsOptions['outputSize'] = size.toJS;
+    }
+    if (options.visionTokensPerImage case final budget?) {
+      jsOptions['visionTokensPerImage'] = budget.toJS;
+    }
     final response = await _engine.computeEmbedding(part, jsOptions).toDart;
     final values =
         response.embedding ??

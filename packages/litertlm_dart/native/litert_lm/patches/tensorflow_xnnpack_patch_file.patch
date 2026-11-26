@@ -2,14 +2,16 @@ TensorFlow defines the XNNPACK repository this build uses (LiteRT's own
 definition is skipped: TensorFlow's comes first). This adds our XNNPACK patch
 to it (patch_c_api.sh section 21). The hunk names the pinned archive, so a
 TensorFlow that moves XNNPACK fails the fetch until the XNNPACK patch is
-re-checked. Strip 0, like third_party/tensorflow/tensorflow.patch.
+re-checked. Strip 0, like third_party/tensorflow/tensorflow.patch. Against
+TensorFlow faa06da43657488c1f7479289d11d15e03a15ba1 (LiteRT-LM v0.20.0
+TENSORFLOW_REF), XNNPACK 08cc38b61f7589f84e91c6e343e0f130ae3279ca.
 
---- third_party/xla/third_party/xnnpack/workspace.bzl	2026-11-02 08:45:31
-+++ third_party/xla/third_party/xnnpack/workspace.bzl	2026-11-02 08:45:31
+--- third_party/xla/third_party/xnnpack/workspace.bzl	2026-11-25 04:45:21
++++ third_party/xla/third_party/xnnpack/workspace.bzl	2026-11-25 04:45:21
 @@ -24,5 +24,6 @@
-         sha256 = "b1d4ab092cd92b1241c1d14f440b5ed725530757b540fe4fb88a20b07577e8a8",
-         strip_prefix = "XNNPACK-28d1fc6d908bc4d80920be989177b7eb1a4aebc8",
-         urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/28d1fc6d908bc4d80920be989177b7eb1a4aebc8.zip"),
+         sha256 = "1c94d80ff3069b3510e54b41a2c82729a4053724a682fcb09840af296dcaa07c",
+         strip_prefix = "XNNPACK-08cc38b61f7589f84e91c6e343e0f130ae3279ca",
+         urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/08cc38b61f7589f84e91c6e343e0f130ae3279ca.zip"),
 +        patch_file = ["@//:flutter_gemma_xnnpack_pf32_sme2_apple.patch"],
      )
      # LINT.ThenChange(//tensorflow/lite/tools/cmake/modules/xnnpack.cmake)

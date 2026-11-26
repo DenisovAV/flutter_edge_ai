@@ -148,6 +148,45 @@ void main() {
     }
   });
 
+  test('activationDataType: int16 and int8 refused on the GPU (they ran as '
+      'float16), floats taken; off the GPU every type is said to have no '
+      'effect and passes', () async {
+    final path = write('g.litertlm', eg2Container());
+    for (final type in ActivationDataType.values) {
+      final placing = embedderConfigFor(
+        EmbeddingEngineConfig(
+          modelPath: path,
+          cacheDir: dir.path,
+          backend: const Backend.gpu(),
+          activationDataType: type,
+        ),
+      );
+      if (type == ActivationDataType.int16 || type == ActivationDataType.int8) {
+        await expectLater(
+          placing,
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => '${e.message}',
+              'message',
+              contains('runs it at float16'),
+            ),
+          ),
+          reason: type.name,
+        );
+      } else {
+        expect((await placing).activationDataType, isNotNull);
+      }
+      final cpu = await embedderConfigFor(
+        EmbeddingEngineConfig(
+          modelPath: path,
+          cacheDir: dir.path,
+          activationDataType: type,
+        ),
+      );
+      expect(cpu.gpu, isFalse);
+    }
+  }, skip: '${Abi.current()}' == 'macos_arm64' ? null : 'measured on Metal');
+
   test(
     'images on a bundle without a vision tower are refused on the GPU',
     () async {

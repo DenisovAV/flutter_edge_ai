@@ -31,6 +31,7 @@ import '../ffi/npu_vendor_host.dart';
 import '../ffi/open_session_backing.dart';
 import '../runtime/constrained_decoding_hosts.dart';
 import '../ffi/send_options.dart';
+import '../ffi/session_ffi.dart' show NativeSessionHandle;
 import '../runtime/errors.dart';
 import '../runtime/litert_lm_log_level.dart';
 import '../runtime/load_errors.dart'
@@ -42,6 +43,7 @@ import 'backend.dart';
 import 'config.dart';
 import 'conversation.dart';
 import 'message.dart';
+import 'session.dart';
 
 export '../runtime/litert_lm_log_level.dart' show liteRtLmNativeLogLevel;
 
@@ -142,7 +144,8 @@ typedef GpuActivationDecision = ({
 /// On Android ([android]) Gemma 4 keeps the bundle's float16 at any context,
 /// with [GpuActivationReason.gemma4LongContextAndroid] above
 /// [gemma4Fp16MaxContextTokens] so the engine says so: float32 fails there on
-/// Adreno 8xx with this native build. An explicit float32 is still honoured.
+/// Adreno 8xx, with LiteRT-LM 0.19 and 0.20 alike (Galaxy S25 Ultra,
+/// google-ai-edge/LiteRT-LM#4825). An explicit float32 is still honoured.
 ({ActivationDataType? type, GpuActivationReason? reason}) gpuActivationFor({
   required LlmModelFamily? family,
   required bool? declaresActivation,
@@ -167,7 +170,8 @@ bool _notedAndroidGemma4Float16 = false;
 
 /// Says, once per isolate and in release builds too, that Gemma 4 with a
 /// context of [maxTokens] runs at float16 on this Android GPU, where a long
-/// prompt can degrade (LiteRT-LM #4001), and how to ask for float32.
+/// prompt can degrade (LiteRT-LM #4001), why float32 is not chosen there
+/// (LiteRT-LM #4825), and how to ask for it.
 void noteAndroidGemma4Float16(int maxTokens) {
   if (_notedAndroidGemma4Float16) return;
   _notedAndroidGemma4Float16 = true;
@@ -176,10 +180,10 @@ void noteAndroidGemma4Float16(int maxTokens) {
     '[litertlm_dart] WARNING: Gemma 4 with maxTokens $maxTokens runs at '
     "float16 on this Android GPU (the bundle's default): a prompt past about "
     '$gemma4Fp16MaxContextTokens tokens can degrade (LiteRT-LM #4001). '
-    'float32, which avoids that, is not chosen on Android: with this native '
-    'build it fails on Adreno 8xx GPUs ("Invalid work group size" at the '
-    'first token). Pass activationDataType: ActivationDataType.float32 to ask '
-    'for it. Shown once.',
+    'float32, which avoids that, is not chosen on Android: it fails on '
+    'Adreno 8xx GPUs ("Invalid work group size" at the first token, '
+    'LiteRT-LM #4825). Pass activationDataType: ActivationDataType.float32 '
+    'to ask for it. Shown once.',
   );
 }
 
@@ -249,12 +253,17 @@ class EngineHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? speculativeDecodingMode,
+    double? speculativeDecodingLenience,
+    List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     required int? numThreads,
     required int? activationDataType,
     required GpuActivationReason? gpuActivationReason,
     required NpuDispatch? npuDispatch,
     required LiteRtLmLogLevel? nativeLogLevel,
     BenchmarkTokens? benchmarkTokens,
+    int? maxVisionTokensPerImage,
   }) => client.initialize(
     modelPath: modelPath,
     backend: backend,
@@ -268,12 +277,17 @@ class EngineHost {
     audioBackend: audioBackend,
     enableSpeculativeDecoding: enableSpeculativeDecoding,
     speculativeDecodingMode: speculativeDecodingMode,
+    speculativeDecodingLenience: speculativeDecodingLenience,
+    selectedSignatures: selectedSignatures,
+    loraRank: loraRank,
+    audioLoraRank: audioLoraRank,
     numThreads: numThreads,
     activationDataType: activationDataType,
     gpuActivationReason: gpuActivationReason,
     npuDispatch: npuDispatch,
     nativeLogLevel: nativeLogLevel,
     benchmarkTokens: benchmarkTokens,
+    maxVisionTokensPerImage: maxVisionTokensPerImage,
   );
 
   /// Whether the model at [path] keeps linear attention state; null when the
@@ -325,7 +339,43 @@ final class Engine {
     required this._linearAttentionState,
     this._toolCallsOf = nativeToolCalls,
     this._constraintRefusal,
+    this._modelPath,
+    this._visualTokenBudget,
+    this._visionBudgets,
+    this._toolChoiceRefusal,
+    this._sessionRefusal,
+    this._speculates = false,
   });
+
+  /// Why a tool choice other than auto is refused on this engine's model
+  /// ([liteRtLmToolChoiceRefusal]); null where its family applies one.
+  final String? _toolChoiceRefusal;
+
+  /// Why [createSession] is refused on this engine's backend
+  /// ([liteRtLmSessionRefusal]); null where it is not.
+  final String? _sessionRefusal;
+
+  /// Whether the engine was created speculating (mode on or adaptive): the
+  /// drafter is loaded at engine create only, so a conversation or session
+  /// asking to speculate on an engine that does not is refused.
+  final bool _speculates;
+
+  /// The model file; null for a test engine without one.
+  final String? _modelPath;
+
+  /// [EngineConfig.visualTokenBudget]: the most a conversation's budget may
+  /// be; null when the engine set none (the bundle's own largest).
+  final int? _visualTokenBudget;
+
+  /// Reads the vision budgets the bundle's vision encoder has
+  /// ([readLiteRtLmVisionTokenBudgets]) on its first call, memoised; null
+  /// when the engine loaded no vision encoder or the file is not read for
+  /// them.
+  final Future<List<int>?> Function()? _visionBudgets;
+
+  /// How many LoRA inputs the model's `decode` signature has, read from the
+  /// file once, on the first conversation with a [LoraConfig].
+  Future<int>? _loraInputCount;
 
   /// Why a response format is refused on this engine's host and backend
   /// ([liteRtLmConstrainedDecodingRefusal]), or null where it was qualified.
@@ -438,6 +488,16 @@ final class Engine {
         'must be 1 or more',
       );
     }
+    if ((config.audioLoraRank ?? 0) > 0 && config.audioBackend == null) {
+      // Native refuses it at create, as FailedPrecondition "Audio executor
+      // settings not configured": the rank has no audio encoder to go to.
+      throw ArgumentError.value(
+        config.audioLoraRank,
+        'audioLoraRank',
+        'needs an audio encoder: set audioBackend, or leave audioLoraRank '
+            'unset',
+      );
+    }
     final kind = backendKindOf(config.backend);
     final path = config.modelPath;
     final platform =
@@ -527,6 +587,27 @@ final class Engine {
     );
     final maxTokens = resolved.context;
 
+    // Integer activations on the GPU: LiteRT-LM 0.20.0 creates the engine and
+    // decodes nonsense for the float bundles measured (Gemma 4 E2B and
+    // FunctionGemma 270M on Metal, native-v0.20.0), with no error to pass on.
+    final asked = config.activationDataType;
+    if (kind == BackendKind.gpu &&
+        (asked == ActivationDataType.int16 ||
+            asked == ActivationDataType.int8)) {
+      final family = await _readFamily(path);
+      if (family == LlmModelFamily.gemma4 ||
+          family == LlmModelFamily.functionGemma) {
+        throw ArgumentError.value(
+          asked,
+          'activationDataType',
+          '${asked!.name} on the GPU: LiteRT-LM 0.20.0 creates the engine for '
+              'this ${family!.name} bundle and then decodes nonsense (measured '
+              'on Metal with native-v0.20.0); it is a float model. Use '
+              'ActivationDataType.float16 or float32.',
+        );
+      }
+    }
+
     // Only the GPU executor reads the activation type: the caller's wins, else
     // the engine's rule for a GPU load.
     var activation = config.activationDataType;
@@ -602,6 +683,37 @@ final class Engine {
             null => throw StateError('an NPU load without an NPU vendor'),
           };
 
+    final selected = config.selectedSignatures;
+    if (selected != null) {
+      final keys = await readLiteRtLmMainSignatureKeys(path);
+      final unknown = [
+        for (final name in selected)
+          if (!keys.contains(name)) name,
+      ];
+      if (unknown.isNotEmpty) {
+        throw ArgumentError.value(
+          selected,
+          'selectedSignatures',
+          'names ${unknown.join(', ')}, which the model does not have '
+              '(it has ${keys.isEmpty ? 'none' : keys.join(', ')})',
+        );
+      }
+    }
+    // Read once per engine with a vision encoder, on the first budget asked
+    // for (an engine that never asks never reads; a failed read is kept and
+    // thrown to every ask); a file the reader does not know (bundle null) is
+    // left to native.
+    final visionBudgets = supportImage && bundle != null
+        ? memoisedRead(() => readLiteRtLmVisionTokenBudgets(path, bundle))
+        : null;
+    if (config.visualTokenBudget case final budget?) {
+      await checkVisionBudget(
+        budget,
+        visionLoaded: supportImage,
+        budgets: visionBudgets,
+        modelPath: path,
+      );
+    }
     final speculative = config.speculativeDecoding;
     final client = host.createClient();
     try {
@@ -630,16 +742,34 @@ final class Engine {
                 null => null,
               },
         ),
-        // Off and on keep the boolean setter they always used; adaptive has
-        // none and goes through a speculative decoding config.
+        // Off and on without a lenience keep the boolean setter they always
+        // used; adaptive, or any lenience, goes through a speculative
+        // decoding config.
         enableSpeculativeDecoding: switch (speculative) {
-          SpeculativeDecodingMode.off => false,
-          SpeculativeDecodingMode.on => true,
+          SpeculativeDecodingConfig(
+            mode: SpeculativeDecodingMode.off,
+            lenience: null,
+          ) =>
+            false,
+          SpeculativeDecodingConfig(
+            mode: SpeculativeDecodingMode.on,
+            lenience: null,
+          ) =>
+            true,
           _ => null,
         },
-        speculativeDecodingMode: speculative == SpeculativeDecodingMode.adaptive
-            ? speculative!.index
+        // A mode left null is not set: the runtime's (off) stays, as
+        // Swift's makeCSpeculativeDecodingConfig leaves it (Engine.swift).
+        speculativeDecodingMode:
+            speculative != null &&
+                (speculative.mode == SpeculativeDecodingMode.adaptive ||
+                    speculative.lenience != null)
+            ? speculative.mode?.index
             : null,
+        speculativeDecodingLenience: speculative?.lenience,
+        selectedSignatures: selected,
+        loraRank: config.loraRank,
+        audioLoraRank: config.audioLoraRank,
         numThreads: switch (config.backend) {
           CpuBackend(:final threadCount) => threadCount,
           _ => null,
@@ -649,6 +779,7 @@ final class Engine {
         npuDispatch: dispatch,
         nativeLogLevel: nativeLevel,
         benchmarkTokens: benchmarkTokens,
+        maxVisionTokensPerImage: config.visualTokenBudget,
       );
     } on LiteRtLmEngineCreateException catch (e, st) {
       await _shutdownAfterFailure(client);
@@ -711,6 +842,16 @@ final class Engine {
           androidGpu: androidGpu,
           npuVendor: kind == BackendKind.npu ? vendor : null,
         ),
+        modelPath: path,
+        visualTokenBudget: config.visualTokenBudget,
+        visionBudgets: visionBudgets,
+        toolChoiceRefusal: await _toolChoiceRefusalFor(path, bundle),
+        sessionRefusal: liteRtLmSessionRefusal(
+          backend: kind,
+          npuVendor: kind == BackendKind.npu ? vendor : null,
+          androidGpu: androidGpu,
+        ),
+        speculates: speculatesWith(speculative),
       );
     } catch (_) {
       // The engine exists: it is deleted before the failure reaches the
@@ -760,6 +901,30 @@ final class Engine {
       }
     } on FileSystemException {
       return false;
+    }
+  }
+
+  /// [liteRtLmToolChoiceRefusal] for the bundle at [path] ([bundle] null
+  /// when the file is not one this package reads).
+  static Future<String?> _toolChoiceRefusalFor(
+    String path,
+    BundleInfo? bundle,
+  ) async {
+    if (bundle == null) {
+      return liteRtLmToolChoiceRefusal(
+        null,
+        readError: 'the file is not a .litertlm this package reads',
+      );
+    }
+    try {
+      return liteRtLmToolChoiceRefusal(await readLlmModelFamily(path));
+    } on Object catch (e) {
+      if (e is! FileSystemException &&
+          e is! FormatException &&
+          e is! RangeError) {
+        rethrow;
+      }
+      return liteRtLmToolChoiceRefusal(null, readError: '$e');
     }
   }
 
@@ -848,6 +1013,21 @@ final class Engine {
   }) async {
     if (_closed) throw StateError('The engine is closed.');
     final c = config ?? ConversationConfig();
+    _checkSpeculation(c.speculativeDecoding);
+    final lora = c.loraConfig;
+    if (lora != null) await _checkLora(lora);
+    if (c.visualTokenBudget case final budget?) {
+      await checkVisionBudget(
+        budget,
+        visionLoaded: visionBackend != null,
+        budgets: _visionBudgets,
+        modelPath: _modelPath,
+        engineBudget: _visualTokenBudget,
+      );
+    }
+    // An adapter belongs to one native session: a conversation with one never
+    // shares a native conversation by replay.
+    final ownConversation = own || lora != null;
     final format = c.responseFormat;
     final refusal = _constraintRefusal;
     if (format != null && refusal != null) {
@@ -870,23 +1050,30 @@ final class Engine {
     final extras = ConversationExtras(
       extraContext: c.extraContext,
       speculativeDecoding: c.speculativeDecoding,
+      loraPath: lora?.loraPath,
+      audioLoraPath: lora?.audioLoraPath,
+      chatTemplate: c.chatTemplate,
+      streamToolCalls: c.enableToolCallStreaming,
     );
     final filter = _filtersChannelContent;
     final ConversationHandle handle;
-    switch (own) {
+    switch (ownConversation) {
       case true:
         Future<LiteRtLmConversationHandle> open(String? historyJson) =>
-            _client.createConversationHandle(
-              systemMessage: c.systemInstruction,
-              toolsJson: tools,
-              messagesJson: _withInitial(initial, historyJson),
-              sampling: sampling,
-              samplingExplicit: explicit,
-              maxOutputTokens: c.maxOutputTokens,
-              multimodalOrder: MediaOrder.imagesAudioText,
-              constraint: constraint,
-              filterChannelContent: filter,
-              extras: extras,
+            _withLoraRefusal(
+              lora,
+              () => _client.createConversationHandle(
+                systemMessage: c.systemInstruction,
+                toolsJson: tools,
+                messagesJson: _withInitial(initial, historyJson),
+                sampling: sampling,
+                samplingExplicit: explicit,
+                maxOutputTokens: c.maxOutputTokens,
+                multimodalOrder: MediaOrder.imagesAudioText,
+                constraint: constraint,
+                filterChannelContent: filter,
+                extras: extras,
+              ),
             );
         final first = await open(null);
         if (_closed) {
@@ -925,8 +1112,173 @@ final class Engine {
       thinkingTokenBudgetCapsNothing: _budgetCapsNothing,
       engineClosed: () => _closed,
       engineCloseListeners: _closeListeners,
+      constraintRefusal: _constraintRefusal,
+      toolChoiceRefusal: _toolChoiceRefusal,
     );
   }
+
+  /// Refuses a conversation's or session's [speculative] mode on or adaptive
+  /// on an engine created without speculation: LiteRT-LM loads the drafter at
+  /// engine create only.
+  void _checkSpeculation(SpeculativeDecodingConfig? speculative) {
+    final mode = speculative?.mode;
+    if (_speculates ||
+        (mode != SpeculativeDecodingMode.on &&
+            mode != SpeculativeDecodingMode.adaptive)) {
+      return;
+    }
+    throw ArgumentError.value(
+      speculative,
+      'speculativeDecoding',
+      'mode ${mode!.name} needs an engine created speculating: LiteRT-LM '
+          'loads the drafter at engine create only. Set '
+          'EngineConfig.speculativeDecoding',
+    );
+  }
+
+  /// A low-level session of this engine: Kotlin's
+  /// `Engine.createSession(SessionConfig)` (Engine.kt), over
+  /// `litert_lm_engine_create_session`. See [Session]. [SessionConfig.loraConfig]
+  /// is checked as a conversation's is, and a speculative mode on or
+  /// adaptive needs an engine created speculating. On the web
+  /// `@litert-lm/core`'s `Engine.createSession`, without LoRA or speculative
+  /// decoding.
+  ///
+  /// A session is a native context of its own beside the engine's other
+  /// sessions and conversations. Several such contexts on one engine were
+  /// measured to work on the CPU of macOS arm64, Linux and Windows x86_64,
+  /// on Metal, on Adreno and Mali GPUs, and on the Qualcomm and Google Tensor
+  /// NPUs (Android) and the Intel NPU (Windows). Two places were measured
+  /// broken and refuse it with an [UnsupportedError] naming why: the PowerVR
+  /// GPU (two greedy conversations diverged on a Pixel 11) and the MediaTek
+  /// NPU (a context answers its second message empty, LiteRT-LM #4256).
+  /// Linux Vulkan, Windows D3D12, iOS and the Android CPU are unmeasured for a
+  /// session beside a conversation. On an NPU, a [SessionConfig.samplerConfig]
+  /// set is said to be ignored, as for a conversation: the NPU decodes
+  /// greedily.
+  Future<Session> createSession([SessionConfig? config]) async {
+    if (_closed) throw StateError('The engine is closed.');
+    if (_sessionRefusal case final refusal?) throw UnsupportedError(refusal);
+    final c = config ?? SessionConfig();
+    _checkSpeculation(c.speculativeDecoding);
+    final lora = c.loraConfig;
+    if (lora != null) await _checkLora(lora);
+    final sampler = samplerFor(c.samplerConfig, _client.bundleSampler);
+    final address = await _withLoraRefusal(
+      lora,
+      () => _client.createSession((
+        sampler: sampler,
+        loraPath: lora?.loraPath,
+        audioLoraPath: lora?.audioLoraPath,
+        speculativeMode: c.speculativeDecoding?.mode?.index,
+        speculativeLenience: c.speculativeDecoding?.lenience,
+      )),
+    );
+    _client.noteNpuSampling(sampler, explicit: c.samplerConfig != null);
+    final handle = NativeSessionHandle(
+      _client,
+      address,
+      vision: visionBackend != null,
+      audio: audioBackend != null,
+    );
+    if (_closed) {
+      await handle.close();
+      throw StateError('The engine was closed while a session opened.');
+    }
+    return newSession(handle, () => _closed);
+  }
+
+  /// Refuses [lora] before any native call: on an NPU (LiteRT-LM's NPU
+  /// executor takes no adapter), an audio adapter on an engine that loaded
+  /// no audio encoder, for a file that is not there, and on a model whose
+  /// `decode` signature has no LoRA inputs (LiteRT-LM would take the adapter
+  /// and leave it without effect).
+  Future<void> _checkLora(LoraConfig lora) async {
+    if (backendKindOf(backend) == BackendKind.npu) {
+      throw UnsupportedError(
+        'LoRA adapters are not supported on the NPU: LiteRT-LM\'s NPU '
+        'executor refuses them. Load the model on the CPU or the GPU.',
+      );
+    }
+    if (lora.audioLoraPath != null) {
+      final info = bundleInfo;
+      final why = audioBackend == null
+          ? 'this engine loaded no audio encoder (EngineConfig.audioBackend '
+                'is unset)'
+          : info != null && !_hasAudioEncoderSection(info)
+          ? '$_modelPath has no audio encoder (no tf_lite_audio_encoder '
+                'section)'
+          : null;
+      if (why != null) {
+        throw ArgumentError.value(
+          lora.audioLoraPath,
+          'audioLoraPath',
+          'cannot apply: $why. An audio LoRA adapts the audio encoder',
+        );
+      }
+    }
+    for (final (name, path) in [
+      ('loraPath', lora.loraPath),
+      ('audioLoraPath', lora.audioLoraPath),
+    ]) {
+      if (path != null && !File(path).existsSync()) {
+        throw ArgumentError.value(path, name, 'is not a file');
+      }
+    }
+    final model = _modelPath;
+    if (lora.loraPath == null || model == null) return;
+    final pending = _loraInputCount ??= readLiteRtLmMainLoraInputCount(model);
+    final int inputs;
+    try {
+      inputs = await pending;
+    } on Object {
+      // A failed read is not the model's answer: the next conversation reads
+      // the file again.
+      if (identical(_loraInputCount, pending)) _loraInputCount = null;
+      rethrow;
+    }
+    if (inputs == 0) {
+      throw ArgumentError.value(
+        lora.loraPath,
+        'loraPath',
+        'cannot apply: $model has no LoRA inputs. Export the model with LoRA '
+            'input signatures (LiteRT-LM\'s LoRA Colab, step 3)',
+      );
+    }
+  }
+
+  /// Runs [open], and turns the refusal of a libLiteRtLm built without text
+  /// LoRA (LiteRT-LM's public source: "Lora is not supported.") into an
+  /// [UnsupportedError] that says so.
+  static Future<T> _withLoraRefusal<T>(
+    LoraConfig? lora,
+    Future<T> Function() open,
+  ) async {
+    try {
+      return await open();
+    } on Object catch (e, stack) {
+      if (lora == null || !'$e'.contains('Lora is not supported')) rethrow;
+      Error.throwWithStackTrace(
+        UnsupportedError(
+          'This libLiteRtLm cannot load a text LoRA ("Lora is not '
+          'supported."): it is built from LiteRT-LM\'s public source without '
+          'the text LoRA backport (litertlm_dart '
+          'native/litert_lm/patch_c_api.sh section 33). Native error: $e',
+        ),
+        stack,
+      );
+    }
+  }
+
+  /// Whether [info] has a `TFLiteModel` section of an audio encoder
+  /// (`tf_lite_audio_encoder…`).
+  static bool _hasAudioEncoderSection(BundleInfo info) => info.sections.any(
+    (section) =>
+        section.dataType == 'TFLiteModel' &&
+        (section.modelType ?? '').toLowerCase().startsWith(
+          'tf_lite_audio_encoder',
+        ),
+  );
 
   /// Said once per engine: a thinking budget on a bundle that declares no
   /// output channel caps nothing.
@@ -1105,9 +1457,9 @@ Future<Conversation> createOwnConversation(
 /// [Engine.createConversation] with the model's own sampler default when the
 /// config sets none: the values flutter_edge_ai_litertlm resolves (the file's
 /// sampler, then the family's published defaults, then the fallback), which
-/// never count as the caller's choice (LiteRT-LM#2080's one-time warning
-/// fires only for a sampler the caller set). Null takes the file's sampler,
-/// then 0.8 / 40 / 0.95 / seed 1.
+/// never count as the caller's choice (the web's LiteRT-LM#2080 one-time
+/// warning fires only for a sampler the caller set). Null takes the file's
+/// sampler, then 0.8 / 40 / 0.95 / seed 1.
 Future<Conversation> createConversationWithDefault(
   Engine engine,
   ConversationConfig config,
@@ -1132,6 +1484,64 @@ Future<String> engineRenderUserMessage(Engine engine, String content) {
   return engine._client.renderUserMessage(content);
 }
 
+/// [read], run on the first call of the function returned and memoised: the
+/// same future, value or error, for every later call. Nothing runs until
+/// then, so an error no one asks for is never left unhandled.
+Future<T> Function() memoisedRead<T>(Future<T> Function() read) {
+  Future<T>? once;
+  return () => once ??= read();
+}
+
+/// Checks a visual token budget against the engine it is for: an
+/// [ArgumentError] when the engine loads no vision encoder
+/// ([visionLoaded]), when the bundle's vision encoder has no budget
+/// signatures, or when [budget] is not one of them ([budgets], read from
+/// [modelPath]); [engineBudget] is the engine's own, which a conversation's
+/// must not exceed (native refuses it at the send otherwise). Null [budgets]
+/// with a vision encoder loaded is a file the reader does not know: left to
+/// native.
+Future<void> checkVisionBudget(
+  int budget, {
+  required bool visionLoaded,
+  required Future<List<int>?> Function()? budgets,
+  required String? modelPath,
+  int? engineBudget,
+}) async {
+  if (!visionLoaded) {
+    throw ArgumentError.value(
+      budget,
+      'visualTokenBudget',
+      'needs a vision encoder: create the engine with a visionBackend',
+    );
+  }
+  final known = await budgets?.call();
+  if (known != null) {
+    if (known.isEmpty) {
+      throw ArgumentError.value(
+        budget,
+        'visualTokenBudget',
+        'cannot apply: the vision encoder of $modelPath has no budget '
+            'signatures (vision_<N>)',
+      );
+    }
+    if (!known.contains(budget)) {
+      throw ArgumentError.value(
+        budget,
+        'visualTokenBudget',
+        'is not one of the budgets the vision encoder of $modelPath has '
+            '(${known.join(', ')})',
+      );
+    }
+  }
+  if (engineBudget != null && budget > engineBudget) {
+    throw ArgumentError.value(
+      budget,
+      'visualTokenBudget',
+      "exceeds the engine's EngineConfig.visualTokenBudget ($engineBudget)",
+    );
+  }
+}
+
 /// An engine over [client], for tests that drive conversations with a fake
 /// client.
 Engine engineForTest(
@@ -1142,18 +1552,35 @@ Engine engineForTest(
   bool? linearAttentionState = false,
   NpuStack? npuVendor,
   String? constraintRefusal,
+  String? modelPath,
+  Backend? audioBackend,
+  Backend? visionBackend,
+  BundleInfo? bundleInfo,
+  int? visualTokenBudget,
+  List<int>? visionBudgets,
+  String? toolChoiceRefusal,
+  String? sessionRefusal,
+  bool speculates = false,
 }) => Engine._(
   client: client,
   backend: backend,
-  visionBackend: null,
-  audioBackend: null,
+  visionBackend: visionBackend,
+  visualTokenBudget: visualTokenBudget,
+  visionBudgets: visionBudgets == null
+      ? null
+      : () => Future.value(visionBudgets),
+  audioBackend: audioBackend,
   maxNumTokens: maxNumTokens,
   activationDataType: null,
   npuVendor: npuVendor,
-  bundleInfo: null,
+  bundleInfo: bundleInfo,
   backing: backing,
   linearAttentionState: linearAttentionState,
   constraintRefusal: constraintRefusal,
+  modelPath: modelPath,
+  toolChoiceRefusal: toolChoiceRefusal,
+  sessionRefusal: sessionRefusal,
+  speculates: speculates,
 );
 
 /// The client under [engine].
@@ -1180,4 +1607,39 @@ Future<void> _shutdownAfterFailure(LiteRtLmFfiClient client) async {
   } on Object catch (e) {
     runtimeLog('[LiteRtLmEngine] deleting the failed engine failed too: $e');
   }
+}
+
+/// Whether an engine created with [speculative] speculates: mode on or
+/// adaptive.
+bool speculatesWith(SpeculativeDecodingConfig? speculative) =>
+    speculative?.mode == SpeculativeDecodingMode.on ||
+    speculative?.mode == SpeculativeDecodingMode.adaptive;
+
+/// Why a tool choice other than auto is refused for a model of [family]
+/// (null when the file names none; [readError] when it could not be read);
+/// null where LiteRT-LM 0.20.0 applies one. Only the Gemma 3 (and 3n), Gemma 4
+/// and FunctionGemma data processors build a constraint from a tool choice
+/// (`model_data_processor/{gemma3,gemma4,function_gemma}_data_processor.cc`);
+/// every other family's drops it and the reply runs as auto.
+String? liteRtLmToolChoiceRefusal(LlmModelFamily? family, {String? readError}) {
+  const applies =
+      'only Gemma 3, Gemma 3n, Gemma 4 and FunctionGemma bundles apply a tool '
+      'choice other than auto in LiteRT-LM 0.20.0; every other model family '
+      'drops it and answers as with auto';
+  if (readError != null) {
+    return 'A tool choice other than auto is refused: which model family this '
+        'bundle is could not be read ($readError), and $applies.';
+  }
+  return switch (family) {
+    LlmModelFamily.gemma3 ||
+    LlmModelFamily.gemma3n ||
+    LlmModelFamily.gemma4 ||
+    LlmModelFamily.functionGemma => null,
+    LlmModelFamily.other =>
+      'A tool choice other than auto is refused for this model: $applies.',
+    null =>
+      'A tool choice other than auto is refused: this bundle names no model '
+          'family (LiteRT-LM infers one from the tokenizer, which is not read '
+          'here), and $applies.',
+  };
 }

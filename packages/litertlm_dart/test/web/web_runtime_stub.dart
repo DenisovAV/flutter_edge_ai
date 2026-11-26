@@ -151,6 +151,25 @@ const _stub = r'''
     if (p.missingMember) delete c[p.missingMember];
     return c;
   };
+  // 0.20.0's Session: text prefill, whole-reply decode.
+  const session = (config) => {
+    const s = {prefills: []};
+    p.sessions = p.sessions || [];
+    p.sessions.push(s);
+    s.runPrefill = async (inputs) => { s.prefills.push(inputs); };
+    s.runDecode = async () => ({
+      getTexts: () => ['decoded ' + s.prefills.length],
+      delete: () => {},
+    });
+    s.cancel = () => { p.sessionCancels = (p.sessionCancels || 0) + 1; };
+    s.clone = async () => {
+      const copy = session(config);
+      copy.prefills = [...s.prefills];
+      return copy;
+    };
+    s.delete = async () => { p.sessionDeletes = (p.sessionDeletes || 0) + 1; };
+    return s;
+  };
   // Every chunk generated, the stream not ended yet.
   // 0.19.0 returns an image or audio part's bytes as {bytes: [...]}.
   const asHistory = (message) => typeof message === 'string'
@@ -261,6 +280,11 @@ const _stub = r'''
         }
         return conversation(options,
           (settings.mainExecutorSettings && settings.mainExecutorSettings.maxNumImages) || 0);
+      },
+      createSession: async (config) => {
+        p.sessionConfigs = p.sessionConfigs || [];
+        p.sessionConfigs.push(config);
+        return session(config);
       },
       delete: async () => {
         p.engineDeletes++;

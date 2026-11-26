@@ -35,7 +35,9 @@ import 'page_lock.dart';
 import 'web_conversation_handle.dart';
 import 'web_embedder.dart' show LiteRtLmWebBackend;
 import 'web_runtime_version.dart';
+import 'web_session.dart';
 import 'web_session_config.dart';
+import '../api/session.dart';
 
 /// One `.litertlm` model loaded by the page's `@litert-lm/core` runtime.
 final class Engine {
@@ -358,6 +360,44 @@ final class Engine {
     );
   }
 
+  /// The open sessions ([createSession]); [close] closes them.
+  final _sessions = <WebSessionHandle>{};
+
+  /// A low-level session: `@litert-lm/core` 0.20.0's
+  /// `Engine.createSession(sessionConfig)`, as Kotlin's `Engine.createSession`
+  /// natively. Text prefill and whole-reply decode only (see [Session]); a
+  /// [SessionConfig] with LoRA or speculative decoding is refused, as for a
+  /// conversation.
+  Future<Session> createSession([SessionConfig? config]) async {
+    if (_closed) throw StateError('The engine is closed.');
+    final c = config ?? SessionConfig();
+    if (c.loraConfig != null) {
+      throw UnsupportedError(
+        'The web runtime ($liteRtLmWebRuntime) takes no LoRA adapter.',
+      );
+    }
+    if (c.speculativeDecoding != null) {
+      throw UnsupportedError(_webSpeculativeDecodingRefusal);
+    }
+    final sampling = samplerFor(c.samplerConfig, const BundleSampler());
+    final js = await _pageLock.run(() async {
+      if (_closed) throw StateError('The engine is closed.');
+      try {
+        return await _js
+            .createSession(webSessionConfig(sampling).jsify()! as JSObject)
+            .toDart;
+      } catch (e) {
+        throw LiteRtLmNativeException(
+          '$liteRtLmWebRuntime refused the session: $e',
+        );
+      }
+    });
+    return newSession(
+      WebSessionHandle(js, _pageLock, _sessions),
+      () => _closed,
+    );
+  }
+
   /// Reports what LiteRT-LM#2080 means for a generation with [sampling], as
   /// the native client does: the web runtime is the same LiteRT-LM and keeps
   /// the sampler of its first generation too.
@@ -422,6 +462,8 @@ final class Engine {
     final closes = [
       for (final handle in _handles.toList())
         handle.close().then<Object?>((_) => null, onError: (Object e) => e),
+      for (final session in _sessions.toList())
+        session.close().then<Object?>((_) => null, onError: (Object e) => e),
     ];
     // A create queued on the page lock refuses when its turn comes; one
     // already running deletes what it built.

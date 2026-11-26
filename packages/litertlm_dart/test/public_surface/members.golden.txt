@@ -19,6 +19,10 @@ final class AudioFileContent extends Content
   field final String path
   method String toString()
 
+final class AudioInputData extends InputData
+  constructor AudioInputData(Uint8List bytes)
+  field final Uint8List bytes
+
 sealed class Backend
   constructor const factory Backend.cpu({int? threadCount})
   constructor factory Backend.googleTensor()
@@ -191,6 +195,7 @@ final class Engine
   method Future<void> close()
   method static Future<Engine> create(EngineConfig config)
   method Future<Conversation> createConversation([ConversationConfig? config])
+  method Future<Session> createSession([SessionConfig? config])
   method Future<String> detokenize(List<int> ids)
   method Future<ScoringRun> scoreTargets(String prompt, List<String> targets, {CancelSignal? cancel})
   method Future<List<int>> tokenize(String text)
@@ -226,6 +231,15 @@ final class ImageFileContent extends Content
   constructor const ImageFileContent(String path)
   field final String path
   method String toString()
+
+final class ImageInputData extends InputData
+  constructor ImageInputData(Uint8List bytes)
+  field final Uint8List bytes
+
+sealed class InputData
+  constructor factory InputData.audio(Uint8List bytes)
+  constructor factory InputData.image(Uint8List bytes)
+  constructor const factory InputData.text(String text)
 
 final class JsonResponseFormat extends ResponseFormat
   constructor JsonResponseFormat(Map<String, Object?> schema)
@@ -390,6 +404,21 @@ final class ScoringRun
   field final Duration scoreTime
   field final List<List<double>> tokenScores
 
+final class Session
+  method void cancelProcess()
+  method Future<Session> clone()
+  method Future<void> close()
+  method Future<String> generateContent(List<InputData> inputs)
+  method Stream<String> generateContentStream(List<InputData> inputs)
+  method Future<String> runDecode()
+  method Future<void> runPrefill(List<InputData> inputs)
+
+final class SessionConfig
+  constructor SessionConfig({SamplerConfig? samplerConfig, LoraConfig? loraConfig, SpeculativeDecodingConfig? speculativeDecoding})
+  field final LoraConfig? loraConfig
+  field final SamplerConfig? samplerConfig
+  field final SpeculativeDecodingConfig? speculativeDecoding
+
 final class SpeculativeDecodingConfig
   constructor SpeculativeDecodingConfig({SpeculativeDecodingMode? mode, double? lenience})
   field final double? lenience
@@ -407,6 +436,10 @@ final class TextContent extends Content
   constructor const TextContent(String text)
   field final String text
   method String toString()
+
+final class TextInputData extends InputData
+  constructor const TextInputData(String text)
+  field final String text
 
 final class ThinkingConfig
   constructor ThinkingConfig({bool enableThinking = true, int? thinkingTokenBudget})

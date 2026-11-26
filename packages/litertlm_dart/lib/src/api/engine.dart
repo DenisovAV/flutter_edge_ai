@@ -31,6 +31,7 @@ import '../ffi/npu_vendor_host.dart';
 import '../ffi/open_session_backing.dart';
 import '../runtime/constrained_decoding_hosts.dart';
 import '../ffi/send_options.dart';
+import '../ffi/session_ffi.dart' show NativeSessionHandle;
 import '../runtime/errors.dart';
 import '../runtime/litert_lm_log_level.dart';
 import '../runtime/load_errors.dart'
@@ -42,6 +43,7 @@ import 'backend.dart';
 import 'config.dart';
 import 'conversation.dart';
 import 'message.dart';
+import 'session.dart';
 
 export '../runtime/litert_lm_log_level.dart' show liteRtLmNativeLogLevel;
 
@@ -1040,6 +1042,39 @@ final class Engine {
       engineCloseListeners: _closeListeners,
       constraintRefusal: _constraintRefusal,
     );
+  }
+
+  /// A low-level session of this engine: Kotlin's
+  /// `Engine.createSession(SessionConfig)` (Engine.kt), over
+  /// `litert_lm_engine_create_session`. See [Session]. [SessionConfig.loraConfig]
+  /// is checked as a conversation's is. On the web `@litert-lm/core`'s
+  /// `Engine.createSession`, without LoRA or speculative decoding.
+  Future<Session> createSession([SessionConfig? config]) async {
+    if (_closed) throw StateError('The engine is closed.');
+    final c = config ?? SessionConfig();
+    final lora = c.loraConfig;
+    if (lora != null) await _checkLora(lora);
+    final address = await _withLoraRefusal(
+      lora,
+      () => _client.createSession((
+        sampler: samplerFor(c.samplerConfig, _client.bundleSampler),
+        loraPath: lora?.loraPath,
+        audioLoraPath: lora?.audioLoraPath,
+        speculativeMode: c.speculativeDecoding?.mode?.index,
+        speculativeLenience: c.speculativeDecoding?.lenience,
+      )),
+    );
+    final handle = NativeSessionHandle(
+      _client,
+      address,
+      vision: visionBackend != null,
+      audio: audioBackend != null,
+    );
+    if (_closed) {
+      await handle.close();
+      throw StateError('The engine was closed while a session opened.');
+    }
+    return newSession(handle, () => _closed);
   }
 
   /// Refuses [lora] before any native call: on an NPU (LiteRT-LM's NPU

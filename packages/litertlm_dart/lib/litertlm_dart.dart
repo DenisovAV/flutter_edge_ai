@@ -59,6 +59,14 @@ export 'src/api/engine.dart'
     if (dart.library.js_interop) 'src/web/engine_web.dart'
     show Engine;
 export 'src/api/log.dart' show LiteRtLmLog;
+export 'src/api/session.dart'
+    show
+        AudioInputData,
+        ImageInputData,
+        InputData,
+        Session,
+        SessionConfig,
+        TextInputData;
 export 'src/api/message.dart'
     show
         AudioBytesContent,

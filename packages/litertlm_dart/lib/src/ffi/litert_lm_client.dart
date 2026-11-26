@@ -44,6 +44,7 @@ import 'stderr_redirect.dart';
 import 'windows_std_handles.dart';
 import 'thinking_context.dart';
 import 'send_options.dart';
+import 'session_ffi.dart';
 import '../api/backend.dart' show SpeculativeDecodingConfig;
 import '../runtime/load_errors.dart';
 import '../runtime/litert_lm_log_level.dart';
@@ -4938,6 +4939,32 @@ class LiteRtLmFfiClient {
       ),
     );
 
+    // Sessions (Engine.createSession) left open: a call in flight on one is
+    // stopped and ends before the lock is free, then each is deleted before
+    // the engine.
+    if (_liveSessions.isNotEmpty && _bindings != null) {
+      final sessions = _liveSessions.toList();
+      for (final session in sessions) {
+        _bindings!.litert_lm_session_cancel_process(
+          Pointer.fromAddress(session),
+        );
+      }
+      try {
+        await _protectNativeMutex(() async {
+          for (final session in sessions) {
+            if (_liveSessions.remove(session)) {
+              _bindings!.litert_lm_session_delete(Pointer.fromAddress(session));
+            }
+          }
+        }).timeout(const Duration(seconds: 10));
+      } on Object catch (e) {
+        // ignore: avoid_print
+        print(
+          '[litertlm_dart] WARNING: open sessions were not deleted before the '
+          'engine ($e).',
+        );
+      }
+    }
     if (_engine != null && _engine != nullptr && _bindings != null) {
       _bindings!.litert_lm_engine_delete(_engine!);
       _engine = null;
@@ -5164,6 +5191,243 @@ class LiteRtLmFfiClient {
       return handle;
     }),
   );
+
+  // ---- Kotlin's Session API (Engine.createSession), session_ffi.dart ----
+
+  /// The sessions this client created and has not deleted, by address;
+  /// [shutdown] deletes what is left.
+  final Set<int> _liveSessions = {};
+
+  /// Runs a session call on a spawned isolate under [_nativeMutex], held off
+  /// [shutdown]; a non-zero status is a [LiteRtLmNativeException] naming
+  /// [call] and LiteRT-LM's last error.
+  Future<SessionCallResult> _sessionCall(
+    String call,
+    Future<SessionCallResult> Function(int engineAddr) body, {
+    int? session,
+  }) => _guardCreate(
+    () => _protectNativeMutex(() async {
+      final engine = _engine;
+      if (_isShuttingDown || engine == null || engine == nullptr) {
+        throw StateError('The LiteRT-LM engine is not loaded.');
+      }
+      if (session != null && !_liveSessions.contains(session)) {
+        throw StateError('The session is closed.');
+      }
+      // A session runs its own context on the executor.
+      _executor.unknown();
+      final r = await body(engine.address);
+      if (r.code != liteRtLmStatusOk) {
+        throw LiteRtLmNativeException(
+          '$call failed with ${liteRtLmStatusName(r.code)}'
+          '${r.message == null ? '' : ': ${r.message}'}',
+        );
+      }
+      return r;
+    }),
+  );
+
+  /// A new session (`litert_lm_engine_create_session`), by address.
+  Future<int> createSession(SessionSettings settings) async {
+    final r = await _sessionCall(
+      'litert_lm_engine_create_session',
+      (engine) =>
+          createSessionOffMainIsolate(engineAddr: engine, settings: settings),
+    );
+    _liveSessions.add(r.address);
+    return r.address;
+  }
+
+  /// `litert_lm_session_run_prefill`.
+  Future<void> sessionPrefill(int session, List<SessionInput> inputs) =>
+      _sessionCall(
+        'litert_lm_session_run_prefill',
+        (_) =>
+            sessionPrefillOffMainIsolate(sessionAddr: session, inputs: inputs),
+        session: session,
+      );
+
+  /// `litert_lm_session_run_decode`, or `litert_lm_session_generate_content`
+  /// with [inputs]: the first candidate's text.
+  Future<String> sessionDecode(
+    int session, {
+    List<SessionInput>? inputs,
+  }) async => (await _sessionCall(
+    inputs == null
+        ? 'litert_lm_session_run_decode'
+        : 'litert_lm_session_generate_content',
+    (_) => sessionDecodeOffMainIsolate(sessionAddr: session, inputs: inputs),
+    session: session,
+  )).text!;
+
+  /// `litert_lm_session_clone`, by address.
+  Future<int> sessionClone(int session) async {
+    final r = await _sessionCall(
+      'litert_lm_session_clone',
+      (_) => sessionCloneOffMainIsolate(sessionAddr: session),
+      session: session,
+    );
+    _liveSessions.add(r.address);
+    return r.address;
+  }
+
+  /// `litert_lm_session_cancel_process`: asks the session's prefill or
+  /// decode in flight to stop; nothing when none runs. Thread-safe natively,
+  /// so it runs here, outside the lock the call it stops holds.
+  void sessionCancel(int session) {
+    final b = _bindings;
+    if (b == null || !_liveSessions.contains(session)) return;
+    b.litert_lm_session_cancel_process(Pointer.fromAddress(session));
+  }
+
+  /// `litert_lm_session_delete`, under the lock, after a call in flight on it.
+  Future<void> sessionDelete(int session) => _protectNativeMutex(() async {
+    if (!_liveSessions.remove(session)) return;
+    final b = _bindings;
+    if (b == null || _engine == null) return;
+    b.litert_lm_session_delete(Pointer.fromAddress(session));
+  });
+
+  /// `litert_lm_session_generate_content_stream`: the decode's chunks of
+  /// text, through the stream proxy every conversation streams through. The
+  /// lock is held from the call until native's final or error chunk; a
+  /// cancelled subscription cancels the session and waits for that end. A
+  /// stop ([sessionCancel]) ends the stream normally with what came before
+  /// it.
+  Stream<String> sessionGenerateStream(int session, List<SessionInput> inputs) {
+    late final StreamController<String> out;
+    var started = false;
+    var ended = false;
+    final end = Completer<void>();
+    out = StreamController<String>(
+      onListen: () {
+        started = true;
+        unawaited(() async {
+          try {
+            await _guardCreate(
+              () => _protectNativeMutex(() async {
+                await _sessionStream(session, inputs, out, () => ended);
+                ended = true;
+              }),
+            );
+          } on Object catch (e, st) {
+            if (!out.isClosed) out.addError(e, st);
+          } finally {
+            ended = true;
+            if (!end.isCompleted) end.complete();
+            if (!out.isClosed) await out.close();
+          }
+        }());
+      },
+      onCancel: () {
+        if (!started || ended) return null;
+        sessionCancel(session);
+        return end.future.timeout(const Duration(seconds: 5), onTimeout: () {});
+      },
+    );
+    return out.stream;
+  }
+
+  /// One streamed generation, while the caller holds the lock: completes
+  /// when native has sent its final or error chunk (or refused the call).
+  Future<void> _sessionStream(
+    int session,
+    List<SessionInput> inputs,
+    StreamController<String> out,
+    bool Function() abandoned,
+  ) async {
+    final b = _bindings;
+    final engine = _engine;
+    if (_isShuttingDown || b == null || engine == null || engine == nullptr) {
+      throw StateError('The LiteRT-LM engine is not loaded.');
+    }
+    if (!_liveSessions.contains(session)) {
+      throw StateError('The session is closed.');
+    }
+    if (_missingChunkAccessors.isNotEmpty) {
+      throw StateError(
+        'libLiteRtLm does not export ${_missingChunkAccessors.join(', ')}: '
+        'a streamed chunk cannot be read.',
+      );
+    }
+    _executor.unknown();
+    final done = Completer<void>();
+    late final NativeCallable<StreamCallbackNative> callable;
+    callable = NativeCallable<StreamCallbackNative>.listener((
+      Pointer<Void> _,
+      Pointer<Char> chunk,
+      int isFinal,
+      Pointer<Char> errorMsg,
+    ) {
+      if (done.isCompleted) return;
+      if (errorMsg != nullptr) {
+        final error = decodeNativeString(errorMsg, maxBytes: _maxErrorBytes);
+        _proxyFreeString!(errorMsg);
+        if (chunk != nullptr) _proxyFreeString!(chunk);
+        // A stop (cancelProcess) ends the stream cleanly, as a
+        // conversation's does.
+        if (!error.startsWith('CANCELLED') && !out.isClosed) {
+          out.addError(LiteRtLmNativeException('Session stream error: $error'));
+        }
+        callable.close();
+        done.complete();
+        return;
+      }
+      if (chunk != nullptr) {
+        final text = decodeNativeString(chunk);
+        _proxyFreeString!(chunk);
+        if (!out.isClosed && !abandoned()) out.add(text);
+      }
+      if (isFinal != 0) {
+        callable.close();
+        done.complete();
+      }
+    });
+    final outProxyFn = calloc<Pointer<NativeFunction<StreamCallbackNative>>>();
+    final Pointer<Void> proxyData;
+    final Pointer<NativeFunction<StreamCallbackNative>> proxyFn;
+    try {
+      proxyData = _proxyCreate!(
+        callable.nativeFunction,
+        nullptr,
+        _chunkGetText,
+        _chunkGetError,
+        _chunkIsFinal,
+        outProxyFn,
+      );
+      proxyFn = outProxyFn.value;
+    } finally {
+      calloc.free(outProxyFn);
+    }
+    if (proxyData == nullptr || proxyFn == nullptr) {
+      callable.close();
+      throw StateError('stream_proxy_create_v1 returned null.');
+    }
+    final SessionCallResult r;
+    try {
+      r = await sessionGenerateStreamOffMainIsolate(
+        sessionAddr: session,
+        inputs: inputs,
+        callbackAddr: proxyFn.address,
+        callbackDataAddr: proxyData.address,
+      );
+    } catch (_) {
+      releaseRefusedStreamProxy(-1, proxyData, _proxyDestroy!);
+      callable.close();
+      rethrow;
+    }
+    if (r.code != liteRtLmStatusOk) {
+      // No callback comes for a refused call: its proxy is freed here.
+      releaseRefusedStreamProxy(r.code, proxyData, _proxyDestroy!);
+      callable.close();
+      throw LiteRtLmNativeException(
+        'litert_lm_session_generate_content_stream failed with '
+        '${liteRtLmStatusName(r.code)}'
+        '${r.message == null ? '' : ': ${r.message}'}',
+      );
+    }
+    await done.future;
+  }
 
   /// The bindings, for a native call on [conv]: a [StateError] when the
   /// engine is gone or [conv] is no longer one of its conversations.

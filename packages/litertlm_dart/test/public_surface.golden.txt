@@ -1,6 +1,7 @@
 ActivationDataType
 AudioBytesContent
 AudioFileContent
+AudioInputData
 Backend
 BackendKind
 BenchmarkInfo
@@ -27,6 +28,8 @@ EngineConfig
 GpuBackend
 ImageBytesContent
 ImageFileContent
+ImageInputData
+InputData
 JsonResponseFormat
 LiteRtLmBundleException
 LiteRtLmBundleProblem
@@ -51,9 +54,12 @@ RuntimeLogSink
 SamplerConfig
 ScoringCancelledException
 ScoringRun
+Session
+SessionConfig
 SpeculativeDecodingConfig
 SpeculativeDecodingMode
 TextContent
+TextInputData
 ThinkingConfig
 Tool
 ToolCall

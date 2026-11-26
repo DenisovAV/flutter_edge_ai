@@ -273,6 +273,9 @@ extension type JsLiteRtLmEngine._(JSObject _) implements JSObject {
     JSObject config,
   );
 
+  /// `Engine.createSession(sessionConfig?)` (0.20.0).
+  external JSPromise<JsLiteRtLmSession> createSession(JSObject config);
+
   /// Frees the engine; a Promise in the published typings (await it with
   /// [awaitIfThenable]).
   external JSAny? delete();
@@ -313,6 +316,28 @@ extension type JsLiteRtLmConversation._(JSObject _) implements JSObject {
   /// A copy of the conversation, independent of it from then on: its
   /// history and state (`Conversation.clone()`, 0.20.0).
   external JSPromise<JSObject> clone();
+}
+
+/// A `Session` the runtime created (0.20.0's session.d.ts): text prefill
+/// and whole-reply decode, no streaming.
+extension type JsLiteRtLmSession._(JSObject _) implements JSObject {
+  external JSPromise<JSAny?> runPrefill(JSArray<JSString> inputs);
+
+  /// A `Responses`: `getTexts()` and `delete()`.
+  external JSPromise<JsLiteRtLmResponses> runDecode();
+
+  external void cancel();
+
+  external JSPromise<JsLiteRtLmSession> clone();
+
+  external JSAny? delete();
+}
+
+/// A session's `Responses`.
+extension type JsLiteRtLmResponses._(JSObject _) implements JSObject {
+  external JSArray<JSString> getTexts();
+
+  external void delete();
 }
 
 /// A JS AsyncIterator: `next()` is a Promise of `{value, done}`.

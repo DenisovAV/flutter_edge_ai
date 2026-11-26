@@ -1096,7 +1096,7 @@ Native platforms need no web setup.
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
 | Web      | ⚠️ early preview via `@litert-lm/core` 0.20.0 (CDN; LLM text, images and audio with Gemma 4 E2B's GPU export; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
-The native library (`native-v0.19.1-c`, LiteRT-LM v0.19.1) is fetched at build
+The native library (`native-v0.20.0`, LiteRT-LM v0.20.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
 entitlements, and macOS 14.0. On macOS the companion libraries come from this
@@ -1384,7 +1384,7 @@ Google Maven (checksum-pinned; `mediatek_npu_maven_url` names a mirror,
 `mediatek_npu_aar` a downloaded copy) and bundles its
 `libLiteRtDispatch_MediaTek.so` (Apache 2.0), about 330 KB, into every Android
 arm64 build of the app as `libmtk_litert_dispatch_legacy.so`, beside this
-package's `libLiteRtDispatch_MediaTek.so` (8 KB, native-v0.19.1-c). That one
+package's `libLiteRtDispatch_MediaTek.so` (8 KB, since native-v0.19.1-c). That one
 is ours: LiteRT-LM 0.19's LiteRT loads an NPU dispatch only through
 `LiteRtDispatchQueryInterface`, which Google's build does not export, so ours
 exports it and answers with the tables of Google's. Google's is not in this
@@ -1748,7 +1748,7 @@ package's `LiteRtEmbeddingBackend` and `flutter_edge_ai_speech` both use it
 through `litertlm_dart`. A stale Native-Assets cache after a
 native version bump can leave the library unbundled, surfacing as an opaque
 `dlopen` "no such file" on the first inference. The hook caches each release
-under its own tag (`<cache>/litertlm_dart/native/native-v0.19.1-c/<platform>`).
+under its own tag (`<cache>/litertlm_dart/native/native-v0.20.0/<platform>`).
 Fix with a clean rebuild:
 
 ```bash

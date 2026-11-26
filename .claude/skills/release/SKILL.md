@@ -104,6 +104,11 @@ silently do the other thing.
         `dart tool/check_published_assets.dart` exits 0 — pub never checks that
         runtime files ship, and every agent release up to 0.2.6 passed
         "0 warnings" with no SKILL.md in the archive (#578)
+[ ] 8a  pana → 160/160 for every package being published (full points; any
+        lost point is a release blocker). `dart pub publish --dry-run` and CI's
+        `--no-fatal-infos` analyze both pass an `info` lint that pana charges
+        10 points for: litertlm_dart 0.20.0 shipped at 150/160 over one
+        `use_null_aware_elements` info. Commands in Step 8a.
 [ ] 8b  native bundle moved? → litertlm_native_tools_test.dart green on every
         platform in the release (the smoke suite never passes a tool), else N/A
 [ ] 8c  litertlm or speech in the release? → MANDATORY, else N/A. NO PUBLISH of
@@ -704,6 +709,31 @@ dart tool/check_published_assets.dart   # from the repo root: every file apps re
 ```
 
 **NEVER publish without dry-run first.** Publishing is IRREVERSIBLE.
+
+### 8a. pana — full pub points BEFORE publishing (every package in the release)
+
+pub.dev scores each version with pana right after upload; points lost there
+stay on that version. Run the same analysis locally first:
+
+```bash
+dart pub global activate pana          # once; keep it current
+cd packages/<pkg>
+dart pub global run pana --flutter-sdk "$(dirname "$(dirname "$(which flutter)")")" .
+# fast pass without dartdoc (its 10 points are checked separately):
+dart pub global run pana --no-dartdoc --flutter-sdk ... .   # expect "Points: 150/150."
+```
+
+- Required: every section full (`Points: 160/160`, or 150/150 with
+  `--no-dartdoc`). Read the `Pass static analysis` section: pana analyzes
+  with the current stable SDK's lints and counts INFO-level issues, which
+  `flutter analyze --no-fatal-infos` and `dart pub publish --dry-run` both
+  let through. Fix every reported item, then rerun pana.
+- Use the same SDK as the publish (`~/fvm/versions/<stable>/bin`) — a newer
+  stable SDK adds lints; after a Flutter stable bump, rerun pana.
+- After the publish, confirm on pub.dev: `curl -s https://pub.dev/api/packages/<pkg>/score`
+  → `grantedPoints == maxPoints` once the analysis finishes (a few minutes).
+  If it is lower, read `https://pub.dev/packages/<pkg>/score`, fix, and
+  ship a `+1` release — do not leave a version below full points.
 
 ### 8b. One tool call on a device — required whenever the native bundle moved
 

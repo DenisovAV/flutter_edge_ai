@@ -64,7 +64,7 @@ void main() {
       });
     });
 
-    test('anything but a tool message of known parts is left as it is', () {
+    test('a message that is no tool response is left as it is', () {
       expect(
         webToolResponseAsUserText({
           'role': 'user',
@@ -74,38 +74,101 @@ void main() {
         }),
         isNull,
       );
-      expect(
-        webToolResponseAsUserText({'role': 'tool', 'content': '{"a":1}'}),
-        isNull,
-      );
-      expect(
-        webToolResponseAsUserText({
-          'role': 'tool',
-          'content': [
-            {'type': 'image', 'blob': 'AA=='},
-          ],
-        }),
-        isNull,
-      );
-      expect(
-        webToolResponseAsUserText({'role': 'tool', 'content': <Object?>[]}),
-        isNull,
-      );
-      // Never rewritten in part: a result beside another kind of part.
+    });
+
+    test('media beside a result stay, in order, in the same user message', () {
       expect(
         webToolResponseAsUserText({
           'role': 'tool',
           'content': [
+            {'type': 'text', 'text': 'before'},
             {
               'type': 'tool_response',
               'name': 'weather',
               'response': {'temp': 25},
             },
             {'type': 'image', 'blob': 'AA=='},
+            {'type': 'audio', 'blob': 'AQ=='},
+            {'type': 'tool_response', 'name': 'time', 'response': '12:00'},
           ],
         }),
-        isNull,
+        {
+          'role': 'user',
+          'content': [
+            {
+              'type': 'text',
+              'text': 'before\nTool weather returned: {"temp":25}',
+            },
+            {'type': 'image', 'blob': 'AA=='},
+            {'type': 'audio', 'blob': 'AQ=='},
+            {'type': 'text', 'text': 'Tool time returned: "12:00"'},
+          ],
+        },
+      );
+    });
+
+    test('a result in a message of another role is converted too', () {
+      expect(
+        webToolResponseAsUserText({
+          'role': 'user',
+          'content': [
+            {
+              'type': 'tool_response',
+              'name': 'weather',
+              'response': {'temp': 25},
+            },
+          ],
+        }),
+        userText('Tool weather returned: {"temp":25}'),
+      );
+    });
+
+    test('a result without a response is written as null', () {
+      expect(
+        webToolResponseAsUserText({
+          'role': 'tool',
+          'content': [
+            {'type': 'tool_response', 'name': 'ping'},
+          ],
+        }),
+        userText('Tool ping returned: null'),
+      );
+    });
+
+    test('a tool message never stays one', () {
+      expect(
+        webToolResponseAsUserText({'role': 'tool', 'content': '{"a":1}'}),
+        {'role': 'user', 'content': '{"a":1}'},
+      );
+      expect(
+        webToolResponseAsUserText({'role': 'tool', 'content': <Object?>[]}),
+        {'role': 'user', 'content': <Object?>[]},
+      );
+      expect(webToolResponseAsUserText({'role': 'tool'}), {
+        'role': 'user',
+        'content': <Object?>[],
+      });
+      expect(
+        webToolResponseAsUserText({
+          'role': 'tool',
+          'content': [
+            {'type': 'image', 'blob': 'AA=='},
+          ],
+        }),
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'image', 'blob': 'AA=='},
+          ],
+        },
       );
     });
   });
 }
+
+Map<String, Object?> userText(String text) => {
+  'role': 'user',
+  'content': [
+    {'type': 'text', 'text': text},
+  ],
+};

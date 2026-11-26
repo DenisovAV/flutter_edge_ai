@@ -976,7 +976,8 @@ Chrome 157 before it (2026-11-23):
 - **Tool results go as user text.** Each result of a turn's tool calls goes
   as `Tool <name> returned: <JSON>` (with a call id,
   `Tool <name> (call <id>) returned: <JSON>`), one per line, in one user
-  message, never as a `role: 'tool'` message: with Gemma 4 E2B's GPU export
+  message (an image or audio part sent with them stays in it, in order),
+  never as a `role: 'tool'` message: with Gemma 4 E2B's GPU export
   the tool message got no text on 5 of 8 sampler seeds and under greedy
   decoding on 0.20.0 and 0.21.0-nightly.20261125 (the nightly ends that
   turn with `finish_reason: "stop"`), and on 3 of 8 seeds on 0.19.0 (greedy

@@ -757,10 +757,9 @@ void main() {
       expect(pieces.single.text, 'Hi');
     });
 
-    // On 0.20.0 and later as user text: they mostly answer a tool message
-    // with nothing (web_conversation_tools_browser_test.dart has 0.19.0's tool
-    // message).
-    test('a tool result goes as user text on the pinned runtime', () async {
+    // Never as a tool message, which the runtime mostly answers with
+    // nothing (web_tool_responses.dart).
+    test('a tool result goes as user text', () async {
       // A conversation that declares the tool: a tool result on one that
       // declares none is refused before anything is sent.
       await conversation.close();

@@ -605,7 +605,9 @@ class LiteRtLmWebSession extends InferenceModelSession
   /// when they are the whole turn (the only shape after which the template
   /// continues the model's own turn), else the staged text as a user message.
   /// A turn that also carries user text is a user message, and the results
-  /// stay in its text.
+  /// stay in its text. litertlm_dart then sends the tool message to the
+  /// page's runtime as user text (`Tool <name> returned: <JSON>`), which it
+  /// answers where the tool message mostly got no reply.
   lm.Message _takeTurnMessage(String text) {
     final onlyTools =
         _pendingToolResponses.isNotEmpty && !_stagedNonToolContent;

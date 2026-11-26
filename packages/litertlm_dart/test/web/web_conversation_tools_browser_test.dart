@@ -10,6 +10,9 @@
 @TestOn('browser')
 library;
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:litertlm_dart/internal_web.dart' as web;
 import 'package:litertlm_dart/litertlm_dart.dart';
 import 'package:test/test.dart';
@@ -50,6 +53,63 @@ void main() {
   late web.Engine engine;
   setUp(() async => engine = await webEngine());
   tearDown(() => engine.close());
+
+  test('an image beside a result goes in the same user message, after its '
+      'line; an empty reply to it is an empty reply', () async {
+    setOnPage('resolvedVisionBackend', backendId('GPU'));
+    final vision = await web.createWebEngine(
+      EngineConfig(
+        modelPath: 'blob:https://example.com/model',
+        backend: const Backend.gpu(),
+        visionBackend: const Backend.gpu(),
+      ),
+      pageLock: web.LiteRtLmPageLock(),
+    );
+    addTearDown(vision.close);
+    final conversation = await vision.createConversation(
+      ConversationConfig(tools: [Tool(name: 'weather')]),
+    );
+    final reply = conversation.sendMessage(
+      Message.tool([
+        Content.toolResponse('weather', {'temp': 25}),
+        Content.imageBytes(Uint8List.fromList([137, 80, 78, 71])),
+      ]),
+    );
+    await settle();
+    expect(list('sent').single, {
+      'role': 'user',
+      'content': [
+        {'type': 'text', 'text': 'Tool weather returned: {"temp":25}'},
+        {
+          'type': 'image',
+          'blob': base64Encode([137, 80, 78, 71]),
+        },
+      ],
+    });
+    js('__emptyReply');
+    expect((await reply).text, '');
+    await exchange(conversation, 'Thanks', 'Welcome');
+    expect(list('conversationOptions'), hasLength(1));
+  });
+
+  test('a result in a user message goes as user text', () async {
+    final conversation = await engine.createConversation(
+      ConversationConfig(tools: [Tool(name: 'weather')]),
+    );
+    final reply = conversation.sendMessage(
+      Message(
+        role: Role.user,
+        contents: [
+          Content.toolResponse('weather', {'temp': 25}),
+        ],
+      ),
+    );
+    await settle();
+    expect(list('sent').single, _toolText);
+    js('__step', 'Sunny');
+    js('__end');
+    expect((await reply).text, 'Sunny');
+  });
 
   test('a call id goes with its result as text', () async {
     final conversation = await engine.createConversation(

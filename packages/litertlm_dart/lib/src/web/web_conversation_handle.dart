@@ -372,10 +372,12 @@ final class WebConversationHandle
 
   /// Sends [messageJson], the conversation API JSON of a message.
   ///
-  /// A tool message (`role: 'tool'`, the results of the calls a reply made)
-  /// goes to `@litert-lm/core` as one user message of text instead, each
-  /// result written `Tool <name> returned: <JSON>` (with a call id,
-  /// `Tool <name> (call <id>) returned: <JSON>`), one per line. With Gemma 4
+  /// A tool response (a `role: 'tool'` message, or any message holding a
+  /// `tool_response` part: the results of the calls a reply made) goes to
+  /// `@litert-lm/core` as one user message instead, each result written as
+  /// the text `Tool <name> returned: <JSON>` (with a call id,
+  /// `Tool <name> (call <id>) returned: <JSON>`), one per line, its other
+  /// parts (text, an image, audio) kept in order. With Gemma 4
   /// E2B's GPU export the tool message got no text on 5 of 8 sampler seeds
   /// and under greedy decoding on 0.20.0 and 0.21.0-nightly.20261125 (the
   /// nightly ends the turn with `finish_reason: "stop"`), and on 3 of 8 seeds

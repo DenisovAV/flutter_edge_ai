@@ -33,42 +33,55 @@ String webToolResponseText(String name, Object? response, {String? id}) =>
     'Tool $name${id == null || id.isEmpty ? '' : ' (call $id)'} returned: '
     '${jsonEncode(response)}';
 
-/// [message], a `role: 'tool'` message of the conversation API JSON, as the
-/// user message sent in its place: one text part holding each
-/// `tool_response` part as [webToolResponseText] and each text part as is,
-/// one per line, in their order. Null when [message] is not a tool message
-/// with a list of parts, or holds a part that is neither: it is then sent as
-/// it is, never rewritten in part.
+/// [message], a message of the conversation API JSON, as the user message
+/// sent in its place when it is a tool response: a `role: 'tool'` message,
+/// or a message of any role holding a `tool_response` part (as
+/// `Conversation` takes it). Each `tool_response` part becomes the text
+/// line [webToolResponseText] (a part without a `response` is written as
+/// `null`, as `Content.toolResponse(name, null)` sends it); every other part
+/// (text, an image, audio) is kept, in order, with neighbouring text joined
+/// into one text part, one line each. A tool message whose content is not a
+/// list of parts keeps that content under the user role. Null when
+/// [message] is no tool response: it is sent as it is. No message goes to
+/// the runtime as `role: 'tool'`.
 Map<String, Object?>? webToolResponseAsUserText(Map<String, Object?> message) {
-  if (message['role'] != 'tool') return null;
-  final lines = <String>[];
-  switch (message['content']) {
-    case final List<Object?> parts:
-      for (final part in parts) {
-        switch (part) {
-          case {
-            'type': 'tool_response',
-            'name': final String name,
-            'response': final response,
-          }:
-            final id = (part as Map)['id'];
-            lines.add(
-              webToolResponseText(name, response, id: id is String ? id : null),
-            );
-          case {'type': 'text', 'text': final String text}:
-            lines.add(text);
-          default:
-            return null;
-        }
-      }
-    default:
-      return null;
+  final content = message['content'];
+  final parts = content is List<Object?> ? content : null;
+  final hasResponse =
+      parts?.any((part) => part is Map && part['type'] == 'tool_response') ??
+      false;
+  if (message['role'] != 'tool' && !hasResponse) return null;
+  if (parts == null) {
+    return {...message, 'role': 'user', 'content': content ?? <Object?>[]};
   }
-  if (lines.isEmpty) return null;
-  return {
-    'role': 'user',
-    'content': [
-      {'type': 'text', 'text': lines.join('\n')},
-    ],
-  };
+  final converted = <Object?>[];
+  final lines = <String>[];
+  void flush() {
+    if (lines.isEmpty) return;
+    converted.add({'type': 'text', 'text': lines.join('\n')});
+    lines.clear();
+  }
+
+  for (final part in parts) {
+    switch (part) {
+      case {'type': 'tool_response'}:
+        final map = part as Map;
+        final name = map['name'];
+        final id = map['id'];
+        lines.add(
+          webToolResponseText(
+            name is String ? name : jsonEncode(name),
+            map['response'],
+            id: id is String ? id : null,
+          ),
+        );
+      case {'type': 'text', 'text': final String text}:
+        lines.add(text);
+      default:
+        flush();
+        converted.add(part);
+    }
+  }
+  flush();
+  return {...message, 'role': 'user', 'content': converted};
 }

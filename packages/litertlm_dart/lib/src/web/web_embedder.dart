@@ -26,13 +26,14 @@
 //   does not wait for it.
 // - `maxInputLength: 1024` (D21, the runtime's own default), WebGPU for the
 //   text and the vision tower. The CPU (WebAssembly) path of `@litert-lm/core`
-//   cannot load the EmbeddingGemma 2 bundles, 0.18.0 and 0.19.0 alike
-//   (web_eg2_test.dart, 2026-11-23): `EmbeddingEngine.create`
-//   fails with "Failed to get external weight for buffer id …" for the 270m
-//   and the 440m alike (measured on Chrome 155, and on the 0.19.0 nightly of
-//   2026-10-11). WebGPU loads them, and its vectors match the native CPU
-//   goldens (text cos >= 0.9948, images >= 0.9976, no NaN or zero vector), so
-//   WebGPU is the backend — and there is no CPU fallback.
+//   0.20.0 loads the EmbeddingGemma 2 bundles but is far too slow to use:
+//   110-225 s to load and 9-12 s per short text (web_eg2_test.dart,
+//   2026-11-25). On 0.18.0 and 0.19.0 it could not load them at all
+//   (`EmbeddingEngine.create` failed with "Failed to get external weight for
+//   buffer id …", Chrome 155, 2026-11-23). WebGPU loads them, and its vectors
+//   match the native CPU goldens (text cos >= 0.9948, images >= 0.9976, no
+//   NaN or zero vector), so WebGPU is the backend, refused for speed rather
+//   than ability on the CPU — and there is no CPU fallback.
 // - A page without WebGPU (no `navigator.gpu`, or no adapter) is refused
 //   before `EmbeddingEngine.create`, with an EmbedderLoadException that says
 //   why, instead of the runtime's "No GPU adapter found." deep in the create.
@@ -96,9 +97,10 @@ import 'web_runtime_version.dart';
 /// The `@litert-lm/core` backends the pass can ask for (`Backend.CPU`,
 /// `Backend.GPU`).
 enum LiteRtLmWebBackend {
-  /// XNNPack on WebAssembly. `@litert-lm/core` cannot load the EmbeddingGemma
-  /// 2 bundles on it (their external weights; 0.18.0 and 0.19.0 alike); the
-  /// embedder says so when `EmbeddingEngine.create` fails here.
+  /// XNNPack on WebAssembly. `@litert-lm/core` 0.20.0 loads the
+  /// EmbeddingGemma 2 bundles on it, but takes 110-225 s to load and 9-12 s
+  /// per short text (0.18.0 and 0.19.0 could not load them); for
+  /// measurement only.
   cpu,
 
   /// WebGPU: the default, and the backend the EmbeddingGemma 2 bundles load

@@ -266,8 +266,9 @@ final eg2Index = await rag.open(
   audio and combined inputs). The Web page's `@litert-lm/core` module script
   hands over the whole module with `window.litertLm = m;`; without it the load
   fails with an `EmbeddingLoadException` quoting that line. The browser needs WebGPU:
-  the CPU (WebAssembly) path of `@litert-lm/core` cannot read these
-  bundles' external weights, so there is no CPU fallback, and a browser
+  the CPU (WebAssembly) path of `@litert-lm/core` 0.20.0 loads these
+  bundles but takes minutes to load and seconds per text, so there is no CPU
+  fallback, and a browser
   without WebGPU (no `navigator.gpu`, or no adapter) fails the load with an
   `EmbeddingLoadException` that says so.
 - The 270m is text only: `getActiveEmbedder(supportImage: true)` throws

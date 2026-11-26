@@ -38,9 +38,10 @@ final class EmbeddingEngineConfig {
   /// only, a generic one never there; the GPU is taken where it was measured,
   /// for the bundles measured there, and refused elsewhere (never moved to
   /// the CPU). On the web: [Backend.gpu] (WebGPU) only — the CPU
-  /// (WebAssembly) path of the pinned `@litert-lm/core` cannot read these
-  /// bundles' external weights, so `Backend.cpu`, the default, is refused
-  /// there, as is the NPU.
+  /// (WebAssembly) path of the pinned `@litert-lm/core` 0.20.0 loads these
+  /// bundles but takes 110-225 s to load and 9-12 s per short text, so
+  /// `Backend.cpu`, the default, is refused there for speed, as is the
+  /// NPU.
   final Backend backend;
 
   /// Null: images are not taken. Set: they are, and a bundle without a vision

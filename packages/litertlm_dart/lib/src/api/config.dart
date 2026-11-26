@@ -212,7 +212,11 @@ final class RegexResponseFormat extends ResponseFormat {
 /// `Conversation.sendMessage`/`sendMessageStream`, it applies to that
 /// message's first round only; the rounds that answer tool results go with
 /// no choice (the model's default), as in Kotlin and Swift, so [required]
-/// cannot loop.
+/// cannot loop. A choice other than [auto] is refused (an [UnsupportedError]
+/// on the stream) for a model whose family does not apply one: LiteRT-LM
+/// 0.20.0 builds a tool-choice constraint for Gemma 3, Gemma 3n, Gemma 4 and
+/// FunctionGemma bundles only, and every other family drops the choice. A
+/// bundle whose family cannot be read is refused too.
 @immutable
 sealed class ToolChoice {
   const ToolChoice();
@@ -245,6 +249,12 @@ final class ToolChoiceAuto extends ToolChoice {
   const ToolChoiceAuto();
 
   @override
+  bool operator ==(Object other) => other is ToolChoiceAuto;
+
+  @override
+  int get hashCode => (ToolChoiceAuto).hashCode;
+
+  @override
   String toString() => 'ToolChoice.auto';
 }
 
@@ -253,12 +263,24 @@ final class ToolChoiceNone extends ToolChoice {
   const ToolChoiceNone();
 
   @override
+  bool operator ==(Object other) => other is ToolChoiceNone;
+
+  @override
+  int get hashCode => (ToolChoiceNone).hashCode;
+
+  @override
   String toString() => 'ToolChoice.none';
 }
 
 /// [ToolChoice.required].
 final class ToolChoiceRequired extends ToolChoice {
   const ToolChoiceRequired();
+
+  @override
+  bool operator ==(Object other) => other is ToolChoiceRequired;
+
+  @override
+  int get hashCode => (ToolChoiceRequired).hashCode;
 
   @override
   String toString() => 'ToolChoice.required';
@@ -575,7 +597,7 @@ final class ConversationConfig {
   ///
   /// Measured with a text adapter on macOS arm64 (CPU and Metal) and Android
   /// (Galaxy S24, Adreno; Pixel 8a, Mali; GPU and CPU), through this API and
-  /// through flutter_edge_ai. A conversation with an adapter always has its
+  /// through an app built on it. A conversation with an adapter always has its
   /// own native conversation, also where conversations otherwise share one
   /// by replay (iOS, Android CPU and PowerVR, Linux and Windows GPUs): there,
   /// a LoRA conversation beside another live conversation of the same engine

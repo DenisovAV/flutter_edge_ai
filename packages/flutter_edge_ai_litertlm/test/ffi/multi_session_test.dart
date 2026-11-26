@@ -5,6 +5,7 @@ import 'package:flutter_edge_ai_litertlm/src/adapter/ffi_inference_model.dart';
 import 'package:litertlm_dart/internal_io.dart' hide ActivationDataType;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'package:litertlm_dart/internal.dart' hide ActivationDataType;
 import 'ffi_test_support.dart';
 
@@ -188,6 +189,12 @@ void main() {
       fileType: ModelFileType.litertlm,
       supportImage: false,
       supportAudio: false,
+      // A conversation that declares tools: a tool result on one that
+      // declares none is refused before anything is sent.
+      tools: [
+        lm.Tool(name: 'multiply'),
+        lm.Tool(name: 'get_time'),
+      ],
       onClose: () {},
     );
 

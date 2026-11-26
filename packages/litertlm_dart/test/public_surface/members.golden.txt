@@ -493,6 +493,8 @@ final class ToolChoiceAllowedTools extends ToolChoice
 
 final class ToolChoiceAuto extends ToolChoice
   constructor const ToolChoiceAuto()
+  getter int hashCode
+  method bool ==(Object other)
   method String toString()
 
 final class ToolChoiceForcedFunction extends ToolChoice
@@ -504,10 +506,14 @@ final class ToolChoiceForcedFunction extends ToolChoice
 
 final class ToolChoiceNone extends ToolChoice
   constructor const ToolChoiceNone()
+  getter int hashCode
+  method bool ==(Object other)
   method String toString()
 
 final class ToolChoiceRequired extends ToolChoice
   constructor const ToolChoiceRequired()
+  getter int hashCode
+  method bool ==(Object other)
   method String toString()
 
 final class ToolResponseContent extends Content

@@ -95,6 +95,7 @@ final class Conversation {
     required this._engineClosed,
     required this._engineCloseListeners,
     this._constraintRefusal,
+    this._toolChoiceRefusal,
   }) : _budgetCapsNothing = thinkingTokenBudgetCapsNothing,
        _automaticTools =
            _config.automaticToolCalling &&
@@ -109,6 +110,11 @@ final class Conversation {
   /// tool choice other than auto is as much as a response format; null where
   /// it was qualified.
   final String? _constraintRefusal;
+
+  /// Why a tool choice other than auto is refused for the engine's model
+  /// family (LiteRT-LM drops it for most families); null where the family
+  /// applies one.
+  final String? _toolChoiceRefusal;
 
   /// The declared tools by name while the conversation runs tool calls
   /// itself: [ConversationConfig.automaticToolCalling] is on and some tool
@@ -162,7 +168,11 @@ final class Conversation {
   /// in a shape this release cannot read is a [TurnFailedException] event
   /// too, and the reply streams on after it. Programming errors stay [Error]s:
   /// a send on a conversation that is closed, or whose engine is closed, is a
-  /// [StateError] thrown by this call.
+  /// [StateError] thrown by this call; on the stream, before anything is
+  /// sent, a tool response on a conversation that declares no tools is an
+  /// [ArgumentError], and a [toolChoice] other than auto on a model family
+  /// that does not apply one (LiteRT-LM 0.20.0 applies it for Gemma 3,
+  /// Gemma 3n, Gemma 4 and FunctionGemma only) an [UnsupportedError].
   Stream<Message> sendMessageStream(
     Message message, {
     Map<String, Object?>? extraContext,
@@ -226,6 +236,26 @@ final class Conversation {
       if (_constraintRefusal case final refusal?) {
         return Stream.error(ConstraintUnsupportedException(refusal));
       }
+      if (toolChoice is! ToolChoiceAuto) {
+        if (_toolChoiceRefusal case final refusal?) {
+          return Stream.error(UnsupportedError(refusal));
+        }
+      }
+    }
+    // A tool response with no tools declared answers nothing the model
+    // asked: the runtime takes it and the web one answers it with an empty
+    // reply, so it is refused before anything is sent.
+    if (_config.tools.isEmpty &&
+        (message.role == Role.tool ||
+            message.contents.any((c) => c is ToolResponseContent))) {
+      return Stream.error(
+        ArgumentError.value(
+          message,
+          'message',
+          'is a tool response, but this conversation declares no tools '
+              '(ConversationConfig.tools)',
+        ),
+      );
     }
     final automaticTools = _automaticTools;
     // Kotlin's and Swift's rule (Kotlin's `resolveResponseFormat`,
@@ -796,6 +826,7 @@ final class Conversation {
       engineClosed: _engineClosed,
       engineCloseListeners: _engineCloseListeners,
       constraintRefusal: _constraintRefusal,
+      toolChoiceRefusal: _toolChoiceRefusal,
     );
   }
 
@@ -832,6 +863,7 @@ Conversation newConversation(
   required bool Function() engineClosed,
   required Set<void Function()> engineCloseListeners,
   String? constraintRefusal,
+  String? toolChoiceRefusal,
 }) => Conversation._(
   handle,
   config: config,
@@ -839,6 +871,7 @@ Conversation newConversation(
   engineClosed: engineClosed,
   engineCloseListeners: engineCloseListeners,
   constraintRefusal: constraintRefusal,
+  toolChoiceRefusal: toolChoiceRefusal,
 );
 
 /// A conversation over [handle], for tests that drive it with a fake; a test

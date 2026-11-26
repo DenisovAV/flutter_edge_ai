@@ -124,17 +124,20 @@ final chat = await model.openChat(
 - `ToolChoice.required` — the model must respond with a function call.
 - `ToolChoice.none` — the model must not call any tool. Where the SDK renders the
   declarations this takes them out of the prompt; on a `.litertlm` Gemma 4 or
-  FunctionGemma the runtime already holds them, so the model can still emit a
-  call — and with parsing off it reaches the stream as raw text.
+  FunctionGemma (`flutter_edge_ai_litertlm` 1.22.0+, native and web) the
+  session is opened without the tools, so the model never sees them.
 
 <Info>
 
-`ToolChoice.required` reaches the model only where the SDK writes the
-declarations itself. Gemma 4, and FunctionGemma on a `.litertlm`, hand them to
-the runtime instead, and the runtime's tool payload carries no `tool_choice` —
-so for those two `required` behaves as `auto`, silently. A `.task`
+On a `.litertlm` Gemma 4 or FunctionGemma the runtime renders the
+declarations. From `flutter_edge_ai_litertlm` 1.22.0 `ToolChoice.required`
+reaches it natively as LiteRT-LM's per-message tool choice, sent with each user
+message (not with the one answering tool calls): measured on macOS, Gemma 4 E2B
+called the tool for a question no tool answers, which it answered in text with
+`auto`. On the web the runtime takes no per-message choice, so there
+`required` behaves as `auto`, as it did natively before 1.22.0. A `.task`
 FunctionGemma gets the old "not supported" warning, and the JSON-format
-families (Qwen, DeepSeek, Phi-4 Mini) do get a "you must call a function"
+families (Qwen, DeepSeek, Phi-4 Mini) get a "you must call a function"
 instruction written into their prompt.
 
 </Info>
@@ -161,9 +164,9 @@ Two consequences worth knowing:
 - Nothing in your code changes. `openChat(tools: ..., supportsFunctionCalls: true)`
   and the loop stay the same; the wire format is chosen from `modelType` and the
   file type together.
-- `ToolChoice.none` cannot take the declarations back out, because the runtime
-  holds them. It stops the SDK from suppressing tool-call text, which is why a
-  call made under `none` can reach the bubble as raw markup.
+- `ToolChoice.none` opens the runtime's conversation without the declarations
+  (`flutter_edge_ai_litertlm` 1.22.0+). Before 1.22.0 it could not take them
+  back out, so a call made under `none` could reach the bubble as raw markup.
 
 On `.task` models through MediaPipe there is no native tool path, so
 FunctionGemma keeps the text wire format the SDK renders itself.

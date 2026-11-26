@@ -176,33 +176,31 @@ For the high-level chat API with history + thinking + tool calling, use
 
 ### macOS
 
-**macOS 14 or later.** LiteRT-LM's companion libraries are built for macOS 14,
-so the app's deployment target must be 14.0: in Xcode, Runner target → General
+**macOS 14 or later.** `flutter_edge_ai_litertlm` declares macOS 14.0, so the
+app's deployment target must be 14.0: in Xcode, Runner target → General
 → Minimum Deployments (`MACOSX_DEPLOYMENT_TARGET = 14.0` in
 `macos/Runner.xcodeproj/project.pbxproj`), and `platform :osx, '14.0'` in
 `macos/Podfile` if the app has one. Below it the build stops with `The package
 product 'flutter-edge-ai-litertlm-product' requires minimum platform version
 14.0`, or CocoaPods' `required a higher minimum deployment target`.
 
-Native libs are fetched and bundled via Native Assets, except two companion
-libraries: `GemmaModelConstraintProvider`, which `LiteRtLm` links, and the
-Metal accelerator `LiteRtLmMetalAccelerator`. Native Assets cannot relocate
-them ([#247](https://github.com/DenisovAV/flutter_edge_ai/issues/247)), so they
-reach the app one of two ways:
+Native libs are fetched and bundled via Native Assets. Since
+`flutter_edge_ai_litertlm` 1.22.0 (`litertlm_dart` 0.20.0) that is all there
+is: `libLiteRtLm` carries the tool-call constraints and the Metal accelerator
+itself, so there are no companion libraries to stage, with Swift Package
+Manager on or off.
 
-- **Swift Package Manager on** (Flutter's default since 3.44): nothing to set
-  up. `flutter_edge_ai_litertlm`'s Swift package brings them from the native
-  release, and Xcode embeds them and signs them with the app's identity. An app
-  that also has a `macos/Podfile` (another plugin uses CocoaPods) needs no
-  block in it.
-- **Swift Package Manager off** (`enable-swift-package-manager: false` under
-  `flutter: config:` in `pubspec.yaml`): a `post_install` block in
-  `macos/Podfile` copies them. Replace that Podfile's `post_install` block with
-  the one below, keeping any lines of your own inside it; the next build runs
-  `pod install` itself.
-
-Without them the first model load fails with `LiteRT-LM did not load on
-macOS`, naming the missing library.
+Up to 1.21.3 two companion libraries, `GemmaModelConstraintProvider` and
+`LiteRtLmMetalAccelerator`, reached the app outside Native Assets
+([#247](https://github.com/DenisovAV/flutter_edge_ai/issues/247)): with Swift
+Package Manager on from this package's Swift package, with it off from a
+`post_install` block in `macos/Podfile`, the one below. An app that has that
+block keeps building on 1.22.0: the build replaces the script it runs with
+one that does nothing and says the block can be removed. Delete the block, and
+the `[flutter_gemma] Setup LiteRT-LM macOS` build phase from the Runner target,
+when convenient. An older inline block of the same name, which copies
+`libGemmaModelConstraintProvider.dylib` itself, fails the build on 1.22.0:
+delete it.
 
 ```
 post_install do |installer|
@@ -309,7 +307,7 @@ Runner target's Build Phases.
 
 `network.client` lets the sandboxed app download a model.
 
-With Swift Package Manager off, also add:
+Up to 1.21.3, with Swift Package Manager off, also add:
 
 ```
 <key>com.apple.security.cs.disable-library-validation</key>
@@ -317,10 +315,10 @@ With Swift Package Manager off, also add:
 ```
 
 It takes effect once Hardened Runtime is on, which notarization requires: the
-Podfile block signs the companion libraries ad hoc, and library validation
+Podfile block signed the companion libraries ad hoc, and library validation
 refuses code not signed by Apple or by the app's own team. With Swift Package
-Manager on, Xcode signs them with the app's team, and a team-signed build with
-Hardened Runtime loads them without it.
+Manager on, Xcode signed them with the app's team. From 1.22.0 there are no
+companion libraries to sign.
 
 Do not add the iOS `com.apple.developer.kernel.*` memory entitlements — they are
 iOS-only. Without a signing team the build fails with `"Runner" has entitlements

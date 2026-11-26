@@ -32,7 +32,7 @@ runtimes and stores your app uses.
 - **Embeddings and on-device RAG:** text, image and audio embeddings (EmbeddingGemma 2 and 1, Gecko, ONNX models — [models](https://flutteredge.ai/docs/models)) with nine task types, stored in Qdrant Edge or SQLite + `sqlite-vec`, payload filters included.
 - **Speech:** on-device STT, TTS and a push-to-talk voice loop.
 - **Agent skills:** `SKILL.md` tools the model invokes through function calling.
-- **Model management:** installs from the network, assets, bundled files or local paths; Hugging Face installs in one call; retries, typed download errors, LoRA weights (MediaPipe `.task` models, and GGUF models through llama.cpp on native platforms).
+- **Model management:** installs from the network, assets, bundled files or local paths; Hugging Face installs in one call; retries, typed download errors, LoRA weights (MediaPipe `.task` models; natively also `.litertlm` models exported with LoRA inputs, and GGUF models through llama.cpp).
 - **Genkit** integration for on-device and hybrid cloud flows.
 
 ## Packages
@@ -81,7 +81,7 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 ```yaml
 dependencies:
   flutter_edge_ai: ^2.7.2
-  flutter_edge_ai_litertlm: ^1.21.1   # or any other engine from the table
+  flutter_edge_ai_litertlm: ^1.22.0   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with
@@ -153,15 +153,15 @@ macOS 14 or later: set the app's deployment target to 14.0 (Xcode → Runner
 target → General → Minimum Deployments, and `platform :osx, '14.0'` in
 `macos/Podfile` if the app has one).
 
-With Flutter's default Swift Package Manager on, that is all: from
-`flutter_edge_ai_litertlm` 1.19.0 its Swift package brings LiteRT-LM's companion
-libraries into the app ([why](https://flutteredge.ai/docs/desktop#macos)).
+From `flutter_edge_ai_litertlm` 1.22.0 that is all, with Swift Package
+Manager on or off: `libLiteRtLm` carries the tool-call constraints and the
+Metal accelerator itself, so no companion library is staged ([details](https://flutteredge.ai/docs/desktop#macos)).
 
-An app with Swift Package Manager off (`enable-swift-package-manager: false`
-under `flutter: config:` in `pubspec.yaml`) gets them from `macos/Podfile`:
-replace its `post_install` block with the one below, keeping any lines of your
-own inside it; the next build runs `pod install` itself. Without it the first
-model load fails with `LiteRT-LM did not load on macOS`.
+Up to 1.21.3 an app with Swift Package Manager off
+(`enable-swift-package-manager: false` under `flutter: config:` in
+`pubspec.yaml`) got them from the `post_install` block of `macos/Podfile`
+below. An app that has it keeps building on 1.22.0, its script now a no-op,
+and can remove it.
 
 ```ruby
 post_install do |installer|
@@ -251,8 +251,8 @@ Add to `macos/Runner/DebugProfile.entitlements` and `Release.entitlements`:
 <true/>
 ```
 
-With Swift Package Manager off, also add
-`com.apple.security.cs.disable-library-validation`: the Podfile block signs the
+Up to 1.21.3, with Swift Package Manager off, also add
+`com.apple.security.cs.disable-library-validation`: the Podfile block signed the
 companion libraries ad hoc, which Hardened Runtime refuses without it.
 
 ### Windows and Linux

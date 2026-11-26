@@ -531,7 +531,9 @@ final vector = await embedder.embed(
   232-308 ms on its CPU (Windows on Lunar Lake, on native-v0.18.0-g: 22 ms vs
   83-90 ms); min cos 0.997 to the
   CPU vectors (0.998 for a ~900-token text: the GPU runs FP16 activations),
-  and the CPU's distance to Sentence Transformers fp32. A load takes 1.7-3.6 s
+  and the CPU's distance to Sentence Transformers fp32. On LiteRT-LM 0.20
+  (litertlm_dart 0.20.0) the min cos to CPU is 0.9969-0.9991 on the T4,
+  0.9959-0.9988 on an Arc B390 and 0.9971 at least on Metal (2026-11-25/26). A load takes 1.7-3.6 s
   against 0.3-0.6 s on CPU; the very first also builds the GPU caches (8.2 s
   on the T4; 5.9 s on Lunar Lake on native-v0.18.0-g). Measured in one process with a GPU LLM
   (Gemma 4 E2B), the embedder loaded before and after it.

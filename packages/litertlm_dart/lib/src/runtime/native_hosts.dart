@@ -26,6 +26,12 @@ const liteRtLmNativeAbis = {
 /// GPU executor, over the WebGPU accelerator these archives ship on Linux and
 /// Windows and the Metal accelerator linked into libLiteRtLm on macOS.
 ///
+/// On LiteRT-LM 0.20 (native-v0.20.0) the 270m's GPU vectors are min cos
+/// 0.9969-0.9991 to the CPU ones on a Tesla T4 (Vulkan, golden texts,
+/// 2026-11-26), 0.9959-0.9988 on an Arc B390 (D3D12, three texts, from the
+/// released archive, 2026-11-26) and 0.9971 at least on Metal (ten golden
+/// texts, 2026-11-25): FP16 activations. The measurements below are older.
+///
 /// - Linux x64, measured 2026-10-22 on the 270m, ten golden texts, on a Tesla
 ///   T4 (Vulkan): 32-64 ms per embedding vs 232-308 ms on its CPU; min cos
 ///   0.997 to the CPU vectors, and to Sentence Transformers fp32

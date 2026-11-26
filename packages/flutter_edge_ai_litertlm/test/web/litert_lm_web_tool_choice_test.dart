@@ -87,10 +87,14 @@ const _tools = [
 
 /// A model over a stub runtime; [options] collects each conversation's
 /// create options.
-LiteRtLmWebInferenceModel _model(ModelType modelType, List<Object?> options) {
+LiteRtLmWebInferenceModel _model(
+  ModelType modelType,
+  List<Object?> options, {
+  void Function()? onDelete,
+}) {
   final engine = _runtimeEngine((o) {
     options.add(o.dartify());
-    return Future<JSObject>.value(_conversation()).toJS;
+    return Future<JSObject>.value(_conversation(onDelete: onDelete)).toJS;
   });
   globalContext['litertLmReady'] = Future<void>.value().toJS;
   globalContext['litertLm'] = JSObject()
@@ -174,5 +178,29 @@ void main() {
       ),
       throwsA(isA<ArgumentError>()),
     );
+  });
+
+  test('a second legacy createChat replaces the first chat\'s session: auto '
+      'then none, the second conversation has no tools', () async {
+    final options = <Object?>[];
+    var deletes = 0;
+    final model = _model(ModelType.gemma4, options, onDelete: () => deletes++);
+    // ignore: deprecated_member_use
+    await model.createChat(tools: _tools, modelType: ModelType.gemma4);
+    // ignore: deprecated_member_use
+    final first = model.session;
+    // ignore: deprecated_member_use
+    await model.createChat(
+      tools: _tools,
+      modelType: ModelType.gemma4,
+      toolChoice: ToolChoice.none,
+    );
+    expect(options, hasLength(2));
+    expect(_hasTools(options[0]), isTrue);
+    expect(_hasTools(options[1]), isFalse);
+    // ignore: deprecated_member_use
+    expect(model.session, isNot(same(first)));
+    // The first chat's conversation was closed before the second was built.
+    expect(deletes, 1);
   });
 }

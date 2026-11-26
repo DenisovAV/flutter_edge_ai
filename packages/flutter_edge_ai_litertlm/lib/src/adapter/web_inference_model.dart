@@ -295,6 +295,9 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     );
     final sampling = _resolveSampling(explicit, thinking: enableThinking);
 
+    // Single-flight guard for concurrent callers only, as natively (#308): a
+    // sequential call replaces the session it gave before, so a later
+    // createChat's tools and tool choice reach the runtime.
     if (_createCompleter case Completer<InferenceModelSession> completer) {
       return completer.future;
     }
@@ -302,6 +305,9 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     final sessionSw = Stopwatch()..start();
 
     try {
+      // The previous singleton session is closed before the next one is
+      // built: its conversation goes, and the new one starts empty.
+      await _session?.close();
       await _ensureEngine();
       final conversation = await _buildConversation(
         explicit: explicit,
@@ -318,7 +324,8 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         throw StateError('Model was closed while creating a session');
       }
 
-      final session = _session = LiteRtLmWebSession(
+      late final LiteRtLmWebSession session;
+      session = _session = LiteRtLmWebSession(
         conversation: conversation,
         declaresTools: sessionTools.isNotEmpty,
         modelType: modelType,
@@ -328,13 +335,15 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         supportImage: enableVisionModality ?? supportImage,
         supportAudio: enableAudioModality ?? supportAudio,
         multimodalOrder: multimodalOrder,
+        // Identity-guarded: a late close of a replaced session must not
+        // forget the newer one.
         onClose: () {
-          _session = null;
-          _createCompleter = null;
+          if (identical(_session, session)) _session = null;
         },
       );
 
       completer.complete(session);
+      _createCompleter = null;
       if (kDebugMode) {
         edgeAiLog(
           '[LiteRtLmWebInferenceModel/perf] createSession total: ${sessionSw.elapsedMilliseconds}ms',

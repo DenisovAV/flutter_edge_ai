@@ -637,7 +637,8 @@ void main() {
   });
 
   test('ToolChoice.auto and no choice send none; a choice the conversation '
-      'cannot take is an ArgumentError before anything is sent', () async {
+      'cannot take is an ArgumentError on the stream, before anything is '
+      'sent', () async {
     for (final choice in [null, ToolChoice.auto]) {
       final handle = _Handle();
       _conversation(
@@ -659,11 +660,10 @@ void main() {
     ]) {
       final handle = _Handle();
       final conversation = _conversation(handle, tools, responseFormat: format);
-      expect(
-        () => conversation.sendMessageStream(
-          Message.user('x'),
-          toolChoice: choice,
-        ),
+      await expectLater(
+        conversation
+            .sendMessageStream(Message.user('x'), toolChoice: choice)
+            .toList(),
         throwsArgumentError,
       );
       expect(handle.sends, isEmpty);

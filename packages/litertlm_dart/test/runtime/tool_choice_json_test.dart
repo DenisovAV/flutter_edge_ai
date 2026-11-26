@@ -122,4 +122,32 @@ void main() {
       ['prefill_128', 'decode'],
     );
   });
+
+  test('a forced function and allowed tools are equal by value', () {
+    expect(
+      ToolChoice.forcedFunction(['a'].single),
+      const ToolChoice.forcedFunction('a'),
+    );
+    expect(
+      ToolChoice.forcedFunction(['a'].single).hashCode,
+      const ToolChoice.forcedFunction('a').hashCode,
+    );
+    expect(
+      const ToolChoice.forcedFunction('a'),
+      isNot(const ToolChoice.forcedFunction('b')),
+    );
+    final built = ToolChoice.allowedTools(['a', 'b'], required: true);
+    expect(built, const ToolChoice.allowedTools(['a', 'b'], required: true));
+    expect(
+      built.hashCode,
+      const ToolChoice.allowedTools(['a', 'b'], required: true).hashCode,
+    );
+    expect(built, isNot(const ToolChoice.allowedTools(['a', 'b'])));
+    expect(built, isNot(ToolChoice.allowedTools(['b', 'a'], required: true)));
+    expect(built, isNot(ToolChoice.allowedTools(['a'], required: true)));
+    expect(
+      const ToolChoice.forcedFunction('a'),
+      isNot(const ToolChoice.allowedTools(['a'])),
+    );
+  });
 }

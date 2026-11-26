@@ -208,6 +208,40 @@ void main() {
     await engine.createConversation();
   });
 
+  test(
+    'a tool choice other than auto is refused on the stream where '
+    'constrained decoding was not qualified, as a response format is',
+    () async {
+      final engine = engineForTest(
+        _Client(),
+        constraintRefusal: 'refused on linux_arm64 CPU',
+      );
+      final conversation = await engine.createConversation(
+        ConversationConfig(tools: [Tool(name: 't')]),
+      );
+      for (final choice in [
+        ToolChoice.none,
+        ToolChoice.required,
+        const ToolChoice.forcedFunction('t'),
+        const ToolChoice.allowedTools(['t']),
+      ]) {
+        await expectLater(
+          conversation
+              .sendMessageStream(Message.user('x'), toolChoice: choice)
+              .toList(),
+          throwsA(
+            isA<ConstraintUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              'refused on linux_arm64 CPU',
+            ),
+          ),
+          reason: '$choice',
+        );
+      }
+    },
+  );
+
   test('the qualified rows: the CPU and GPU of macOS, iOS, Linux x64, '
       'Windows x64 and Android (Adreno, Mali, PowerVR); never an NPU', () {
     String? refusal(String abi, BackendKind backend, {AndroidGpuFamily? gpu}) =>

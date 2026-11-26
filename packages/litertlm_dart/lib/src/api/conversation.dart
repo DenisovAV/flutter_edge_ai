@@ -90,6 +90,7 @@ final class Conversation {
     required void Function() thinkingTokenBudgetCapsNothing,
     required this._engineClosed,
     required this._engineCloseListeners,
+    this._constraintRefusal,
   }) : _budgetCapsNothing = thinkingTokenBudgetCapsNothing,
        _automaticTools =
            _config.automaticToolCalling &&
@@ -99,6 +100,11 @@ final class Conversation {
 
   final ConversationHandle _handle;
   final ConversationConfig _config;
+
+  /// Why the engine's host and backend refuse constrained decoding, which a
+  /// tool choice other than auto is as much as a response format; null where
+  /// it was qualified.
+  final String? _constraintRefusal;
 
   /// The declared tools by name while the conversation runs tool calls
   /// itself: [ConversationConfig.automaticToolCalling] is on and some tool
@@ -191,11 +197,23 @@ final class Conversation {
         'holds a value that is not JSON: ${e.unsupportedObject}',
       );
     }
-    final choiceJson = toolChoiceJson(
-      toolChoice,
-      toolNames: [for (final tool in _config.tools) tool.name],
-      hasResponseFormat: _config.responseFormat != null,
-    );
+    // A tool choice is refused as the conversation's other constraints are:
+    // on the stream, before anything is sent.
+    if (toolChoice != null && toolChoice is! ToolChoiceAuto) {
+      if (_constraintRefusal case final refusal?) {
+        return Stream.error(ConstraintUnsupportedException(refusal));
+      }
+    }
+    final String? choiceJson;
+    try {
+      choiceJson = toolChoiceJson(
+        toolChoice,
+        toolNames: [for (final tool in _config.tools) tool.name],
+        hasResponseFormat: _config.responseFormat != null,
+      );
+    } on ArgumentError catch (e, stack) {
+      return Stream.error(e, stack);
+    }
     final json = jsonEncode(messageJson(message));
     if (budget != null && _config.responseFormat != null) {
       return Stream.error(
@@ -700,12 +718,14 @@ Conversation newConversation(
   required void Function() thinkingTokenBudgetCapsNothing,
   required bool Function() engineClosed,
   required Set<void Function()> engineCloseListeners,
+  String? constraintRefusal,
 }) => Conversation._(
   handle,
   config: config,
   thinkingTokenBudgetCapsNothing: thinkingTokenBudgetCapsNothing,
   engineClosed: engineClosed,
   engineCloseListeners: engineCloseListeners,
+  constraintRefusal: constraintRefusal,
 );
 
 /// A conversation over [handle], for tests that drive it with a fake; a test

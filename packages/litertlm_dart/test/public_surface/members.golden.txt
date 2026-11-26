@@ -430,6 +430,8 @@ final class ToolChoiceAllowedTools extends ToolChoice
   constructor const ToolChoiceAllowedTools(List<String> names, {bool required = false})
   field final List<String> names
   field final bool required
+  getter int hashCode
+  method bool ==(Object other)
   method String toString()
 
 final class ToolChoiceAuto extends ToolChoice
@@ -439,6 +441,8 @@ final class ToolChoiceAuto extends ToolChoice
 final class ToolChoiceForcedFunction extends ToolChoice
   constructor const ToolChoiceForcedFunction(String name)
   field final String name
+  getter int hashCode
+  method bool ==(Object other)
   method String toString()
 
 final class ToolChoiceNone extends ToolChoice

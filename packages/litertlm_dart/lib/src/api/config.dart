@@ -267,10 +267,21 @@ final class ToolChoiceForcedFunction extends ToolChoice {
   final String name;
 
   @override
+  bool operator ==(Object other) =>
+      other is ToolChoiceForcedFunction && other.name == name;
+
+  @override
+  int get hashCode => Object.hash(ToolChoiceForcedFunction, name);
+
+  @override
   String toString() => 'ToolChoice.forcedFunction($name)';
 }
 
 /// [ToolChoice.allowedTools].
+///
+/// The constructor is `const`, so [names] is kept as given, not copied: pass
+/// a list that does not change afterwards (a `const` list, or one made for
+/// the call). Each send reads it when the message is sent.
 final class ToolChoiceAllowedTools extends ToolChoice {
   const ToolChoiceAllowedTools(this.names, {this.required = false});
 
@@ -279,6 +290,23 @@ final class ToolChoiceAllowedTools extends ToolChoice {
 
   /// Whether it must call one of them; false lets it answer without a tool.
   final bool required;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! ToolChoiceAllowedTools ||
+        other.required != required ||
+        other.names.length != names.length) {
+      return false;
+    }
+    for (var i = 0; i < names.length; i++) {
+      if (other.names[i] != names[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(ToolChoiceAllowedTools, required, Object.hashAll(names));
 
   @override
   String toString() =>

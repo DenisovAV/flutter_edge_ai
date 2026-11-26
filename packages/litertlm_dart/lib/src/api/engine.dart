@@ -996,6 +996,7 @@ final class Engine {
       thinkingTokenBudgetCapsNothing: _budgetCapsNothing,
       engineClosed: () => _closed,
       engineCloseListeners: _closeListeners,
+      constraintRefusal: _constraintRefusal,
     );
   }
 

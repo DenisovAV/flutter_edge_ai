@@ -35,9 +35,9 @@ EmbeddingGemma 1 / Gecko
 | iOS | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in via `qualcomm_npu`) |
 | Windows | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
-| Web | ⚠️ early preview via `@litert-lm/core` 0.20.0 (images and audio with Gemma 4 E2B's GPU export) |
+| Web | ⚠️ early preview via `@litert-lm/core` 0.19.0 (images and audio with Gemma 4 E2B's GPU export) |
 
-> **Web is a preview.** It runs through `@litert-lm/core` 0.20.0 (WebGPU) and
+> **Web is a preview.** It runs through `@litert-lm/core` 0.19.0 (WebGPU) and
 > supports function calling and thinking; core parses `<think>` tags from any
 > model that emits them. Gemma 4 E2B runs from its GPU export
 > (`LiteRtLmModels.gemma4E2bIt.webGpu`, 2.34 GB, installed with
@@ -419,7 +419,7 @@ exception. Formats cannot be combined with tools or thinking.
 | iOS arm64 CPU / Metal | ✅ |
 | NPU, Web, and every unlisted row | ❌ refused |
 
-The Web `.litertlm` runtime (`@litert-lm/core` 0.20.0) has no constraint
+The Web `.litertlm` runtime (`@litert-lm/core` 0.19.0) has no constraint
 API. NPU support is refused per vendor until that exact row passes a
 discriminating device run; support never silently falls back to unconstrained
 decoding.
@@ -462,17 +462,18 @@ third session onward (the first two reused freed memory). Set
 
 ## Web setup
 
-`.litertlm` web inference runs via `@litert-lm/core` 0.20.0 (0.18.0 refuses
+`.litertlm` web inference runs via `@litert-lm/core` 0.19.0 (0.18.0 refuses
 the GPU export: "Unsupported backend: 2"). The ESM doesn't assign
 window globals, so add this handshake to your `web/index.html` `<head>` — Dart
-awaits `window.litertLmReady` and reads the module from `window.litertLm`:
+awaits `window.litertLmReady` (which resolves to the `Engine` constructor):
 
 ```
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm');
-  window.litertLm = m;
-  return m;
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm');
+  window.Engine = m.Engine;
+  window.EmbeddingEngine = m.EmbeddingEngine;
+  return m.Engine;
 })();
 </script>
 ```

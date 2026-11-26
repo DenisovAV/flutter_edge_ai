@@ -199,8 +199,7 @@ Upgrading from 2.3: see [Migration](/docs/migration).
   [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-audio-and-combined-inputs).
 - **EmbeddingGemma 2 on the Web** (`flutter_edge_ai_litertlm` 1.13.1): text
   and images in the browser through `@litert-lm/core`, on WebGPU (the
-  browser needs it), and from 1.13.2 audio and combined inputs; add the
-  `@litert-lm/core` module script (`window.litertLm = m;`) to
+  browser needs it), and from 1.13.2 audio and combined inputs; add `window.EmbeddingEngine = m.EmbeddingEngine;` to
   `web/index.html`. See
   [Installation → Web](/docs/installation#web).
 - **EmbeddingGemma 2 images** (`flutter_edge_ai_litertlm` 1.13.1): the 440m

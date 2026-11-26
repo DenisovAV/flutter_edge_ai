@@ -132,7 +132,7 @@ final vector = await embedder.embed(
   (flutter_edge_ai_litertlm 1.13.0 for text, 1.13.1 for images and audio),
   and the Web (1.13.1 for text and images, 1.13.2 for audio and combined
   inputs), where it runs through `@litert-lm/core`'s EmbeddingEngine on
-  WebGPU and needs the module script with **window.litertLm = m;** in
+  WebGPU and needs **window.EmbeddingEngine = m.EmbeddingEngine;** in
   `web/index.html` ([Installation](/docs/installation#web)).
 - **Text on every bundle, images on the 440m and the 740m, audio on the
   740m.** On the 270m, **getActiveEmbedder(supportImage: true)** throws
@@ -199,14 +199,11 @@ final vector = await embedder.embed(
 - The NPU runs the per-SoC bundles
   ([below](#embeddinggemma-2-on-a-qualcomm-npu)); this bundle refuses
   **PreferredBackend.npu**. The Web has no CPU path for these bundles — the
-  CPU (WebAssembly) backend of `@litert-lm/core` 0.20.0 loads them but takes
-  110–225 s to load and 9–12 s per short text — so a browser without WebGPU
-  (no **navigator.gpu**, or no GPU adapter) throws **EmbeddingLoadException**
-  saying so before anything loads. Web vectors come from WebGPU and differ
-  slightly from the native CPU ones (on `@litert-lm/core` 0.20.0, Chrome 158 on
-  an Apple GPU, 2026-11-25: min cos 0.99713 for text, 0.99642 for images,
-  0.973–0.990 per audio clip; on 0.19, Chrome 155 on a Tesla T4: about 0.995
-  for text, 0.998 for images); retrieval
+  CPU (WebAssembly) backend of `@litert-lm/core` cannot read their
+  external weights — so a browser without WebGPU (no **navigator.gpu**, or no
+  GPU adapter) throws **EmbeddingLoadException** saying so before anything
+  loads. Web vectors come from WebGPU and differ slightly from the native CPU
+  ones (measured min cos about 0.995 for text, 0.998 for images); retrieval
   across platforms holds — web text queries find natively embedded images and
   native queries find web-embedded images, top-1 10/10 on the example's ten
   scenes.

@@ -103,7 +103,7 @@ transcription (see [Models](/docs/models)).
 | Android | ✅ Full |
 | iOS | ✅ Device only (Simulator is CPU-only / no GPU) |
 | Desktop (macOS/Windows/Linux) | ✅ `.litertlm` only (via FFI) |
-| Web | ✅ `.litertlm`: Gemma 4 E2B's GPU export on `@litert-lm/core` 0.20.0 |
+| Web | ✅ `.litertlm`: Gemma 4 E2B's GPU export on `@litert-lm/core` 0.19.0 |
 
 Enable audio with `supportAudio: true`:
 
@@ -232,7 +232,7 @@ final model = await FlutterEdgeAi.getActiveModel(
 
 ## Web limitations
 
-The web `.litertlm` path (`@litert-lm/core` 0.20.0, early preview) takes images
+The web `.litertlm` path (`@litert-lm/core` 0.19.0, early preview) takes images
 and audio with Gemma 4 E2B's GPU export (`LiteRtLmModels.gemma4E2bIt.webGpu`,
 installed with `WebStorageMode.streaming`): load it with `supportImage` and
 `supportAudio`; the vision encoder runs on the GPU and the audio encoder on the

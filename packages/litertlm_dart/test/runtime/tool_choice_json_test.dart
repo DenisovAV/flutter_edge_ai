@@ -15,41 +15,39 @@ Object? _json(ToolChoice? choice) {
 }
 
 void main() {
-  test(
-    'each choice as the C API documents it; auto and no choice send none',
-    () {
-      expect(_json(null), isNull);
-      expect(_json(ToolChoice.auto), isNull);
-      expect(_json(ToolChoice.none), 'none');
-      expect(_json(ToolChoice.required), 'required');
-      expect(_json(const ToolChoice.forcedFunction('set_color')), {
-        'type': 'function',
-        'function': {'name': 'set_color'},
-      });
-      expect(_json(const ToolChoice.allowedTools(['show_alert'])), {
-        'type': 'allowed_tools',
-        'allowed_tools': {
-          'mode': 'auto',
-          'tools': [
-            {
-              'type': 'function',
-              'function': {'name': 'show_alert'},
-            },
-          ],
-        },
-      });
-      expect(
-        (_json(
-              const ToolChoice.allowedTools([
-                'show_alert',
-                'set_color',
-              ], required: true),
-            )!
-            as Map)['allowed_tools']['mode'],
-        'required',
-      );
-    },
-  );
+  test('each choice as the C API documents it; auto is sent, no choice sends '
+      'none', () {
+    expect(_json(null), isNull);
+    expect(_json(ToolChoice.auto), 'auto');
+    expect(_json(ToolChoice.none), 'none');
+    expect(_json(ToolChoice.required), 'required');
+    expect(_json(const ToolChoice.forcedFunction('set_color')), {
+      'type': 'function',
+      'function': {'name': 'set_color'},
+    });
+    expect(_json(const ToolChoice.allowedTools(['show_alert'])), {
+      'type': 'allowed_tools',
+      'allowed_tools': {
+        'mode': 'auto',
+        'tools': [
+          {
+            'type': 'function',
+            'function': {'name': 'show_alert'},
+          },
+        ],
+      },
+    });
+    expect(
+      (_json(
+            const ToolChoice.allowedTools([
+              'show_alert',
+              'set_color',
+            ], required: true),
+          )!
+          as Map)['allowed_tools']['mode'],
+      'required',
+    );
+  });
 
   test('a choice the conversation cannot take is an ArgumentError', () {
     String? encode(
@@ -78,8 +76,18 @@ void main() {
       () => encode(const ToolChoice.allowedTools(['t', 'u'])),
       throwsArgumentError,
     );
-    // auto needs nothing: it is what native does without a choice.
-    expect(encode(ToolChoice.auto, tools: [], format: true), isNull);
+    // auto is sent whatever the conversation has, as Kotlin and Swift send
+    // it: native ignores it without tools or beside a format.
+    expect(encode(ToolChoice.auto, tools: [], format: true), '"auto"');
+  });
+
+  test('SpeculativeDecodingConfig: mode and lenience may each be left to '
+      'inherit', () {
+    final lenienceOnly = SpeculativeDecodingConfig(lenience: 0.25);
+    expect(lenienceOnly.mode, isNull);
+    expect(lenienceOnly.lenience, 0.25);
+    expect(SpeculativeDecodingConfig().mode, isNull);
+    expect(SpeculativeDecodingConfig(), SpeculativeDecodingConfig());
   });
 
   test('SpeculativeDecodingConfig: lenience in [0, 1]', () {

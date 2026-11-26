@@ -136,6 +136,7 @@ class _FakeHost extends EngineHost implements LiteRtLmNpuHost {
     required NpuDispatch? npuDispatch,
     required LiteRtLmLogLevel? nativeLogLevel,
     BenchmarkTokens? benchmarkTokens,
+    int? maxVisionTokensPerImage,
   }) async {
     gpuActivationReasons.add(gpuActivationReason);
     nativeLogLevels.add(nativeLogLevel);
@@ -208,6 +209,7 @@ class _InitCapturingClient extends LiteRtLmFfiClient {
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
     BenchmarkTokens? benchmarkTokens,
+    int? maxVisionTokensPerImage,
   }) async {
     this.gpuActivationReason = gpuActivationReason;
     this.nativeLogLevel = nativeLogLevel;

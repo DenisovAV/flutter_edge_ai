@@ -25,6 +25,8 @@ import 'package:litertlm_dart/src/bundle/litertlm_bundle_sampler.dart'
     show executorMetadataHasLinearAttention;
 import 'package:test/test.dart';
 
+import '../litertlm_container_fixture.dart';
+
 /// A minimal FlatBuffer writer: objects are appended in order, and a
 /// reference is patched once its target, always written later (a FlatBuffer
 /// `uoffset` points forward), is placed.
@@ -483,5 +485,79 @@ void main() {
         expect(lengths.toSet(), hasLength(lengths.length));
       }, skip: path == null ? '$env is not set' : null);
     }
+  });
+
+  group('readLiteRtLmVisionTokenBudgets', () {
+    Future<List<int>?> budgetsOf(List<Section> sections) async {
+      final dir = Directory.systemTemp.createTempSync('vision_budgets');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final path = '${dir.path}/m.litertlm';
+      File(path).writeAsBytesSync(litertlmContainer(sections));
+      return readLiteRtLmVisionTokenBudgets(path, await readBundleInfo(path));
+    }
+
+    test(
+      "the N of each vision_<N> signature, ascending; others ignored",
+      () async {
+        final budgets = await budgetsOf([
+          (
+            type: sectionTfliteModel,
+            modelType: 'tf_lite_prefill_decode',
+            bytes: _tflite([
+              ('decode', 'input_pos', [1]),
+            ]),
+          ),
+          (
+            type: sectionTfliteModel,
+            modelType: 'tf_lite_vision_encoder',
+            bytes: _tflite([
+              ('vision_280', 'images', [1]),
+              ('vision_70', 'images', [1]),
+              ('vision', 'images', [1]),
+              ('vision_140', 'images', [1]),
+            ]),
+          ),
+        ]);
+        expect(budgets, [70, 140, 280]);
+      },
+    );
+
+    test(
+      'null without a vision encoder; empty without budget signatures',
+      () async {
+        expect(
+          await budgetsOf([
+            (
+              type: sectionTfliteModel,
+              modelType: 'tf_lite_prefill_decode',
+              bytes: _tflite([
+                ('decode', 'input_pos', [1]),
+              ]),
+            ),
+          ]),
+          isNull,
+        );
+        expect(
+          await budgetsOf([
+            (
+              type: sectionTfliteModel,
+              modelType: 'tf_lite_vision_encoder',
+              bytes: _tflite([
+                ('serving_default', 'images', [1]),
+              ]),
+            ),
+          ]),
+          isEmpty,
+        );
+      },
+    );
+
+    final path = _env('GEMMA4_E2B_LITERTLM');
+    test('GEMMA4_E2B_LITERTLM: 70, 140, 280', () async {
+      expect(
+        await readLiteRtLmVisionTokenBudgets(path!, await readBundleInfo(path)),
+        [70, 140, 280],
+      );
+    }, skip: path == null ? 'GEMMA4_E2B_LITERTLM is not set' : null);
   });
 }

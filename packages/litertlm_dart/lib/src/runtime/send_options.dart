@@ -43,6 +43,8 @@ final class SendOptions {
     this.thinkingTokenBudget,
     this.unconstrained = false,
     this.toolChoiceJson,
+    this.maxOutputTokens,
+    this.visualTokenBudget,
   });
 
   /// Template variables for this message, merged under the thinking switch.
@@ -63,8 +65,24 @@ final class SendOptions {
   /// null leaves the model's default.
   final String? toolChoiceJson;
 
+  /// This send's cap on generated tokens
+  /// (`litert_lm_conversation_optional_args_set_max_output_tokens`); null
+  /// leaves the conversation's.
+  final int? maxOutputTokens;
+
+  /// The most vision tokens one image of this send may take
+  /// (`litert_lm_conversation_optional_args_set_visual_token_budget`); null
+  /// leaves the engine's.
+  final int? visualTokenBudget;
+
   static const none = SendOptions();
 }
+
+/// The channel streamed tool-call tokens arrive in
+/// (`ConversationConfig.enableToolCallStreaming`): Swift's default
+/// `ExperimentalFlags.conversationToolCallStreamingChannelName`, and native's
+/// (`SetStreamToolCalls`, runtime/conversation/conversation.h).
+const toolCallStreamingChannel = 'tool_call';
 
 /// A conversation's extras beyond what every conversation is created with.
 @immutable
@@ -74,6 +92,8 @@ final class ConversationExtras {
     this.speculativeDecoding,
     this.loraPath,
     this.audioLoraPath,
+    this.chatTemplate,
+    this.streamToolCalls = false,
   });
 
   /// `conversation_config_set_extra_context`; empty sets nothing.
@@ -88,6 +108,14 @@ final class ConversationExtras {
   /// `session_config_set_audio_lora_path`: the audio encoder's LoRA weights;
   /// null sets none.
   final String? audioLoraPath;
+
+  /// `conversation_config_set_prompt_template`: the Jinja template that
+  /// replaces the model's own; null keeps the model's.
+  final String? chatTemplate;
+
+  /// `conversation_config_set_stream_tool_calls`: stream the tokens of a
+  /// tool call as text of the `tool_call` channel while it is generated.
+  final bool streamToolCalls;
 
   static const none = ConversationExtras();
 }

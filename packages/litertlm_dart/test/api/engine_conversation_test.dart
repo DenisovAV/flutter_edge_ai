@@ -294,4 +294,51 @@ void main() {
     expect(engine.createConversation, throwsStateError);
     expect(() => engine.tokenize('x'), throwsStateError);
   });
+
+  test("a conversation's chat template and tool call streaming reach its "
+      'native conversation', () async {
+    final client = _Client();
+    final engine = engineForTest(client, backing: OpenSessionBacking.native);
+    await engine.createConversation(
+      ConversationConfig(
+        chatTemplate: '{{ messages }}',
+        enableToolCallStreaming: true,
+      ),
+    );
+    final extras = client.creates.single.extras;
+    expect(extras.chatTemplate, '{{ messages }}');
+    expect(extras.streamToolCalls, isTrue);
+    await engine.createConversation();
+    expect(client.creates.last.extras.chatTemplate, isNull);
+    expect(client.creates.last.extras.streamToolCalls, isFalse);
+  });
+
+  test("a conversation's visual token budget is checked against the engine "
+      'before anything native', () async {
+    final client = _Client();
+    final engine = engineForTest(
+      client,
+      backing: OpenSessionBacking.native,
+      visionBackend: const Backend.cpu(),
+      visionBudgets: const [70, 140, 280],
+      visualTokenBudget: 140,
+    );
+    await engine.createConversation(ConversationConfig(visualTokenBudget: 70));
+    expect(client.creates, hasLength(1));
+    for (final budget in [280, 100]) {
+      await expectLater(
+        engine.createConversation(
+          ConversationConfig(visualTokenBudget: budget),
+        ),
+        throwsArgumentError,
+        reason: '$budget',
+      );
+    }
+    final noVision = engineForTest(client, backing: OpenSessionBacking.native);
+    await expectLater(
+      noVision.createConversation(ConversationConfig(visualTokenBudget: 70)),
+      throwsArgumentError,
+    );
+    expect(client.creates, hasLength(1));
+  });
 }

@@ -130,6 +130,14 @@ void main() {
       'engine_settings_set_selected_signatures',
       'conversation_config_set_extra_context',
       'optional_args_set_tool_choice',
+      'optional_args_set_max_output_tokens',
+      'optional_args_set_visual_token_budget',
+      'conversation_config_set_prompt_template',
+      'conversation_config_set_stream_tool_calls',
+      'engine_settings_set_max_vision_tokens_per_image',
+      'conversation_clone',
+      'conversation_render_',
+      'conversation_get_token_count',
     };
     final called = {
       for (final m in RegExp(r'b\.(litert_lm_[a-z_]+)\b').allMatches(sources))

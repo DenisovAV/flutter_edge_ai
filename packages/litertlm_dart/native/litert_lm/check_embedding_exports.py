@@ -134,11 +134,20 @@ THINKING_BUDGET_SYMBOLS = [
 # since v0.19.0, so every archive has them; a tarball without one would fail
 # the option's first use instead of the release.
 OPTION_SYMBOLS = [
+    "litert_lm_conversation_clone",
     "litert_lm_conversation_config_set_extra_context",
+    "litert_lm_conversation_config_set_prompt_template",
+    "litert_lm_conversation_config_set_stream_tool_calls",
+    "litert_lm_conversation_get_token_count",
+    "litert_lm_conversation_optional_args_set_max_output_tokens",
+    "litert_lm_conversation_optional_args_set_visual_token_budget",
+    "litert_lm_conversation_render_message_to_string",
+    "litert_lm_conversation_render_preface_to_string",
     "litert_lm_conversation_optional_args_set_no_repeat_ngram_config",
     "litert_lm_conversation_optional_args_set_repetition_penalty_config",
     "litert_lm_conversation_optional_args_set_suppress_tokens_config",
     "litert_lm_conversation_optional_args_set_tool_choice",
+    "litert_lm_engine_settings_set_max_vision_tokens_per_image",
     "litert_lm_engine_settings_set_num_threads",
     "litert_lm_engine_settings_set_selected_signatures",
     "litert_lm_engine_settings_set_speculative_decoding_config",

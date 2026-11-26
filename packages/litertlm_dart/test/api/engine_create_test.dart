@@ -12,6 +12,7 @@ import 'dart:typed_data';
 
 import 'package:litertlm_dart/internal_io.dart';
 import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/src/api/engine.dart' show checkVisionBudget;
 import 'package:litertlm_dart/src/ffi/native_asset_dir.dart'
     show liteRtLmOutsideFlutter;
 import 'package:test/test.dart';
@@ -36,6 +37,7 @@ typedef _Create = ({
   int? activationDataType,
   GpuActivationReason? gpuActivationReason,
   NpuDispatch? npuDispatch,
+  int? maxVisionTokensPerImage,
 });
 
 /// A client whose conversations are fakes: one create can fail, a send on
@@ -145,6 +147,7 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     required NpuDispatch? npuDispatch,
     required LiteRtLmLogLevel? nativeLogLevel,
     BenchmarkTokens? benchmarkTokens,
+    int? maxVisionTokensPerImage,
   }) async {
     if (initializeError case final e?) throw e;
     nativeLevels.add(nativeLogLevel);
@@ -169,6 +172,7 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
       activationDataType: activationDataType,
       gpuActivationReason: gpuActivationReason,
       npuDispatch: npuDispatch,
+      maxVisionTokensPerImage: maxVisionTokensPerImage,
     ));
   }
 }
@@ -681,6 +685,74 @@ void main() {
     expect(host.creates, isEmpty);
   });
 
+  test('a visual token budget needs a vision encoder and one of the '
+      "bundle's vision budgets; it reaches the engine's settings", () async {
+    final path = write('g.litertlm', _bundle());
+    await expectLater(
+      Engine.create(EngineConfig(modelPath: path, visualTokenBudget: 140)),
+      throwsA(
+        isA<ArgumentError>().having(
+          (e) => '${e.message}',
+          'message',
+          contains('needs a vision encoder'),
+        ),
+      ),
+    );
+    // This bundle's vision encoder has no vision_<N> signatures.
+    await expectLater(
+      Engine.create(
+        EngineConfig(
+          modelPath: path,
+          visionBackend: const Backend.cpu(),
+          visualTokenBudget: 140,
+        ),
+      ),
+      throwsA(
+        isA<ArgumentError>().having(
+          (e) => '${e.message}',
+          'message',
+          contains('no budget signatures'),
+        ),
+      ),
+    );
+    expect(host.creates, isEmpty);
+    // A file the reader does not know is left to native, which gets it.
+    final unknown = write('m.task', Uint8List.fromList(List.filled(64, 7)));
+    await (await Engine.create(
+      EngineConfig(
+        modelPath: unknown,
+        visionBackend: const Backend.cpu(),
+        visualTokenBudget: 70,
+      ),
+    )).close();
+    expect(host.creates.single.maxVisionTokensPerImage, 70);
+  });
+
+  test(
+    'checkVisionBudget: one of the budgets, at most the engine\'s',
+    () async {
+      final budgets = Future.value(const [70, 140, 280]);
+      await checkVisionBudget(
+        140,
+        visionLoaded: true,
+        budgets: budgets,
+        modelPath: 'm',
+      );
+      for (final (budget, engine) in [(100, null), (280, 140)]) {
+        await expectLater(
+          checkVisionBudget(
+            budget,
+            visionLoaded: true,
+            budgets: budgets,
+            modelPath: 'm',
+            engineBudget: engine,
+          ),
+          throwsArgumentError,
+        );
+      }
+    },
+  );
+
   test(
     'speculative decoding: off and on keep the boolean, adaptive or a '
     'lenience go through the config; the thread count reaches the CPU only',
@@ -695,6 +767,10 @@ void main() {
           mode: SpeculativeDecodingMode.on,
           lenience: 0.25,
         ),
+        // A lenience alone: the config carries it, the mode stays the
+        // runtime's, as Swift leaves it.
+        SpeculativeDecodingConfig(lenience: 0.5),
+        SpeculativeDecodingConfig(),
       ]) {
         await (await create(path, speculative: speculative)).close();
       }
@@ -712,6 +788,8 @@ void main() {
           (null, 2, null),
           (null, null, null),
           (null, 1, 0.25),
+          (null, null, 0.5),
+          (null, null, null),
         ],
       );
       host.creates.clear();

@@ -10,9 +10,30 @@ import 'package:meta/meta.dart' show immutable;
 /// [name] is LiteRT-LM's wire name (`cpu`, `gpu`, `npu`).
 enum BackendKind { cpu, gpu, npu }
 
-/// The numeric type of a GPU model's activations, LiteRT-LM's
-/// `ActivationDataType` without I16/I8.
-enum ActivationDataType { float32, float16 }
+/// The numeric type of a model's activations: LiteRT-LM's
+/// `ActivationDataType` (C API `LiteRtLmActivationDataType`), Kotlin's
+/// `ActivationDataType` (FLOAT32, FLOAT16, INT16, INT8; Config.kt) and Swift's
+/// (`.float32`, `.float16`, `.int16`, `.int8`; Config.swift).
+///
+/// Support depends on the model and the backend, as upstream says: most
+/// models run [float16] and [float32] on the GPU, and a type the model or
+/// backend does not support may fail the engine's create, which is
+/// LiteRT-LM's own error (`LiteRtLmEngineCreateException`). Only the GPU
+/// executor reads it. Measured on macOS arm64 with native-v0.20.0: on the
+/// CPU every type gives the float32 reply; on Metal LiteRT-LM 0.20.0
+/// accepts [int16] and [int8] for Gemma 4 E2B and FunctionGemma 270M,
+/// creates the engine, and decodes nonsense with both: those bundles are
+/// float models.
+enum ActivationDataType {
+  float32,
+  float16,
+
+  /// 16-bit integer activations.
+  int16,
+
+  /// 8-bit integer activations.
+  int8,
+}
 
 /// The sampler sent to LiteRT-LM, every value set.
 @immutable

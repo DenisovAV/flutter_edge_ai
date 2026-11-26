@@ -66,13 +66,15 @@ import '../runtime/response_text.dart';
 import '../runtime/runtime_log.dart';
 import '../runtime/send_options.dart';
 import '../runtime/tool_calls.dart';
+import '../runtime/tool_choice_json.dart' show autoToolChoiceJson;
 import '../runtime/types.dart' show BenchmarkInfo;
 import 'litert_lm_js.dart';
 import 'page_lock.dart';
 import 'web_runtime_version.dart';
 
 /// A [ConversationHandle] over one `@litert-lm/core` conversation.
-final class WebConversationHandle implements ConversationHandle {
+final class WebConversationHandle
+    implements ConversationHandle, ConversationStateAccess {
   WebConversationHandle(
     this._conversation, {
     required this._enableThinking,
@@ -86,8 +88,14 @@ final class WebConversationHandle implements ConversationHandle {
     this._audio = false,
     this.toolCallsOf = nativeToolCalls,
     this._onClose,
+    this._cloneWith,
     LiteRtLmPageLock? pageLock,
   }) : _pageLock = pageLock ?? liteRtLmPageLock;
+
+  /// A handle set up as this one, over [js]: what [cloneHandle] wraps the
+  /// runtime's clone in (the engine registers it as one of its own); null
+  /// refuses a clone.
+  final WebConversationHandle Function(JsLiteRtLmConversation js)? _cloneWith;
 
   JsLiteRtLmConversation _conversation;
 
@@ -811,7 +819,16 @@ final class WebConversationHandle implements ConversationHandle {
       if (options.noRepeatNgram != null) 'noRepeatNgramConfig',
       if (options.suppressTokens != null) 'suppressTokens',
       if (options.thinkingTokenBudget != null) 'a thinking token budget',
-      if (options.toolChoiceJson != null) 'tool choice (toolChoice)',
+      // Its SessionConfig.maxOutputTokens is fixed when the conversation is
+      // created.
+      if (options.maxOutputTokens != null) 'maxOutputTokens',
+      if (options.visualTokenBudget != null) 'visual token budget',
+      // Auto is what the web's unconstrained decoding already is (text,
+      // calls or both): taken. Every other choice needs a constraint the web
+      // conversation does not build.
+      if (options.toolChoiceJson case final choice?
+          when choice != autoToolChoiceJson)
+        'tool choice (toolChoice) other than auto',
     ];
     if (perMessage.isNotEmpty) {
       return UnsupportedError(
@@ -1038,6 +1055,75 @@ final class WebConversationHandle implements ConversationHandle {
   /// error. The conversation is then left to the page.
   @override
   Future<void> close() => _closedFuture ??= _close();
+
+  /// `@litert-lm/core`'s `Conversation.getTokenCount()`, holding the page
+  /// lock. A conversation rebuilt after a stop counts 0 until its next
+  /// message, which prefills the replayed history with it (N5), as natively
+  /// a rebuilt conversation does.
+  @override
+  Future<int> kvTokenCount() => _pageLock.run(() async {
+    if (_closed) throw StateError('Conversation handle is closed');
+    final count = await _conversation.getTokenCount().toDart;
+    // A JS number is a double under dart2wasm.
+    if (!count.isA<JSNumber>()) {
+      throw LiteRtLmNativeException(
+        '$liteRtLmWebRuntime gave a token count that is not a number.',
+      );
+    }
+    return count.toDartDouble.toInt();
+  });
+
+  @override
+  Future<String> renderMessage(String messageJson) async =>
+      throw UnsupportedError(_noRender);
+
+  @override
+  Future<String> renderPreface() async => throw UnsupportedError(_noRender);
+
+  static const _noRender =
+      'The web runtime ($liteRtLmWebRuntime) has no render call: its '
+      'Conversation renders a prompt only to send it.';
+
+  /// `@litert-lm/core`'s `Conversation.clone()` of the runtime conversation,
+  /// holding the page lock, after the conversation is rebuilt from a stop
+  /// that left it refusing sends. The clone keeps what this handle knows of
+  /// the conversation (its replayed history, the images it holds, a dead end
+  /// it reached).
+  @override
+  Future<ConversationHandle> cloneHandle() async {
+    final cloneWith = _cloneWith;
+    if (cloneWith == null) {
+      throw UnsupportedError('This conversation cannot be cloned.');
+    }
+    return _pageLock.run(() async {
+      if (_closed) throw StateError('Conversation handle is closed');
+      if (_deadEnd() case final error?) throw error;
+      if (_mustRebuild) await _rebuildConversation();
+      final missing = liteRtLmWebObjectMissing(_conversation, const ['clone']);
+      if (missing.isNotEmpty) {
+        throw UnsupportedError(
+          "The page's @litert-lm/core conversation has no clone(): this "
+          'release clones on $liteRtLmWebRuntime.',
+        );
+      }
+      final JSObject cloned;
+      try {
+        cloned = await _conversation.clone().toDart;
+      } catch (e) {
+        throw LiteRtLmNativeException(
+          '$liteRtLmWebRuntime could not clone the conversation: $e',
+        );
+      }
+      final handle = cloneWith(cloned as JsLiteRtLmConversation)
+        .._replayed = _replayed
+        .._replayedTokens = _replayedTokens
+        .._replayedKnown = _replayedKnown
+        .._rebuilt = _rebuilt
+        .._overheadAtLeast = _overheadAtLeast
+        .._images = _images;
+      return handle;
+    });
+  }
 
   Future<void> _close() async {
     _closed = true;

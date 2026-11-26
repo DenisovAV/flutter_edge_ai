@@ -10,7 +10,11 @@ import 'dart:convert' show JsonUnsupportedObjectError, jsonEncode;
 import '../ffi/native_turns.dart'
     show LiteRtLmTurnCancelledException, LiteRtLmTurnClosedException;
 import '../runtime/conversation_handle.dart'
-    show ConversationHandle, NativeBenchmark, NativeLastTurnEnd;
+    show
+        ConversationHandle,
+        ConversationStateAccess,
+        NativeBenchmark,
+        NativeLastTurnEnd;
 import '../runtime/send_options.dart';
 import '../runtime/tool_choice_json.dart';
 import '../runtime/errors.dart';
@@ -133,6 +137,14 @@ final class Conversation {
   /// [extraContext] adds template variables (JSON values: an argument that is
   /// not is an [ArgumentError]); [repetitionPenaltyConfig],
   /// [noRepeatNgramConfig] and [suppressTokens] shape this reply's decoding.
+  /// [maxOutputTokens] caps this message's reply, thinking included, in place
+  /// of [ConversationConfig.maxOutputTokens] (below 1 is an [ArgumentError]):
+  /// Kotlin's `maxOutputToken` and Swift's `maxOutputTokens` on
+  /// `sendMessage`/`sendMessageAsync`/`sendMessageStream`
+  /// (Conversation.kt, Conversation.swift), sent with each round of the
+  /// message, tool rounds included, as both do. On the web it is refused
+  /// ([UnsupportedError]): `@litert-lm/core` 0.20.0 takes an output cap per
+  /// conversation only (`SessionConfig.maxOutputTokens`).
   ///
   /// When the conversation runs tool calls itself
   /// ([ConversationConfig.automaticToolCalling]), the reply streams the text
@@ -157,6 +169,7 @@ final class Conversation {
     RepetitionPenaltyConfig? repetitionPenaltyConfig,
     NoRepeatNgramConfig? noRepeatNgramConfig,
     List<int>? suppressTokens,
+    int? maxOutputTokens,
     ThinkingConfig? thinkingConfig,
     ToolChoice? toolChoice,
   }) => _send(
@@ -165,6 +178,7 @@ final class Conversation {
     repetitionPenaltyConfig: repetitionPenaltyConfig,
     noRepeatNgramConfig: noRepeatNgramConfig,
     suppressTokens: suppressTokens,
+    maxOutputTokens: maxOutputTokens,
     thinkingConfig: thinkingConfig,
     toolChoice: toolChoice,
   );
@@ -177,6 +191,7 @@ final class Conversation {
     RepetitionPenaltyConfig? repetitionPenaltyConfig,
     NoRepeatNgramConfig? noRepeatNgramConfig,
     List<int>? suppressTokens,
+    int? maxOutputTokens,
     ThinkingConfig? thinkingConfig,
     ToolChoice? toolChoice,
     void Function()? onNextRound,
@@ -184,6 +199,13 @@ final class Conversation {
     if (_closed) throw StateError('The conversation is closed.');
     if (_engineClosed()) throw StateError('The engine is closed.');
     _checkNotSending();
+    if (maxOutputTokens != null && maxOutputTokens < 1) {
+      throw ArgumentError.value(
+        maxOutputTokens,
+        'maxOutputTokens',
+        'must be 1 or more',
+      );
+    }
     final thinking = thinkingConfig ?? _config.thinkingConfig;
     final enable = thinking?.enableThinking ?? false;
     final budget = enable ? thinking?.thinkingTokenBudget : null;
@@ -197,19 +219,34 @@ final class Conversation {
         'holds a value that is not JSON: ${e.unsupportedObject}',
       );
     }
-    // A tool choice is refused as the conversation's other constraints are:
-    // on the stream, before anything is sent.
-    if (toolChoice != null && toolChoice is! ToolChoiceAuto) {
+    // A tool choice, auto included (it builds the message's own constraint),
+    // is refused as the conversation's other constraints are: on the stream,
+    // before anything is sent.
+    if (toolChoice != null) {
       if (_constraintRefusal case final refusal?) {
         return Stream.error(ConstraintUnsupportedException(refusal));
       }
     }
+    final automaticTools = _automaticTools;
+    // Kotlin's and Swift's rule (Kotlin's `resolveResponseFormat`,
+    // Conversation.kt; Swift's `shouldApplyResponseFormat`,
+    // Conversation.swift): while automatic tools are pending, a message that
+    // is not a tool response goes without the response format, so that the
+    // model can call them; tool responses keep it.
+    final firstUnconstrained =
+        automaticTools != null &&
+        _config.responseFormat != null &&
+        message.role != Role.tool;
     final String? choiceJson;
     try {
       choiceJson = toolChoiceJson(
         toolChoice,
         toolNames: [for (final tool in _config.tools) tool.name],
-        hasResponseFormat: _config.responseFormat != null,
+        // Only a send that carries the format refuses a choice: the first
+        // send while automatic tools are pending goes without it, and there
+        // the choice applies, as in Kotlin and Swift.
+        hasResponseFormat:
+            _config.responseFormat != null && !firstUnconstrained,
       );
     } on ArgumentError catch (e, stack) {
       return Stream.error(e, stack);
@@ -224,7 +261,6 @@ final class Conversation {
       );
     }
     if (budget != null) _budgetCapsNothing();
-    final automaticTools = _automaticTools;
     SendOptions optionsFor({
       required bool unconstrained,
       String? toolChoiceJson,
@@ -238,18 +274,14 @@ final class Conversation {
       thinkingTokenBudget: budget,
       unconstrained: unconstrained,
       toolChoiceJson: toolChoiceJson,
+      maxOutputTokens: maxOutputTokens,
+      visualTokenBudget: _config.visualTokenBudget,
     );
-    // Kotlin's and Swift's rule: while automatic tools are pending, a
-    // message that is not a tool response goes without the response format,
-    // so that the model can call them; tool responses keep it.
     // The tool choice goes with the message's own send only, as in Kotlin
     // and Swift: the rounds that answer tool results run the default, so
     // `required` cannot loop.
     final options = optionsFor(
-      unconstrained:
-          automaticTools != null &&
-          _config.responseFormat != null &&
-          message.role != Role.tool,
+      unconstrained: firstUnconstrained,
       toolChoiceJson: choiceJson,
     );
     late final StreamController<Message> controller;
@@ -553,8 +585,13 @@ final class Conversation {
     final responses = <Content>[];
     for (final call in calls) {
       if (stopped()) return null;
+      // The call's id, when the reply gave one, goes back with its result.
       responses.add(
-        Content.toolResponse(call.name, await _runTool(call, tools[call.name])),
+        Content.toolResponse(
+          call.name,
+          await _runTool(call, tools[call.name]),
+          id: call.id,
+        ),
       );
     }
     return responses;
@@ -640,6 +677,7 @@ final class Conversation {
     RepetitionPenaltyConfig? repetitionPenaltyConfig,
     NoRepeatNgramConfig? noRepeatNgramConfig,
     List<int>? suppressTokens,
+    int? maxOutputTokens,
     ThinkingConfig? thinkingConfig,
     ToolChoice? toolChoice,
   }) async {
@@ -652,6 +690,7 @@ final class Conversation {
       repetitionPenaltyConfig: repetitionPenaltyConfig,
       noRepeatNgramConfig: noRepeatNgramConfig,
       suppressTokens: suppressTokens,
+      maxOutputTokens: maxOutputTokens,
       thinkingConfig: thinkingConfig,
       toolChoice: toolChoice,
       onNextRound: () {
@@ -697,6 +736,80 @@ final class Conversation {
   /// the web with an [UnsupportedError]: the runtime reports it only in its
   /// benchmark mode, which litertlm_dart does not turn on there.
   BenchmarkInfo getBenchmarkInfo() => _handle.getSessionMetrics();
+
+  /// The tokens in this conversation's KV cache, prefill and decode: Kotlin's
+  /// and Swift's `Conversation.getTokenCount()` (Conversation.kt,
+  /// Conversation.swift), over `litert_lm_conversation_get_token_count`. A
+  /// preface (system instruction, tools, initial messages) is prefilled with
+  /// the first message, so it counts from then on.
+  ///
+  /// Natively it waits for the turn before it and for the recovery of a
+  /// stopped one. Where conversations share one native conversation by
+  /// replay (see `Engine.createConversation`) it is an [UnsupportedError]:
+  /// there is no KV cache of this conversation's own. On the web it is
+  /// `@litert-lm/core`'s `Conversation.getTokenCount()`. A [StateError] while
+  /// a reply streams, or once the conversation or its engine is closed.
+  Future<int> getTokenCount() => _state((s) => s.kvTokenCount());
+
+  /// [message] as this conversation's prompt template renders it, for tests
+  /// and logs: Swift's `renderMessageIntoString(_:)` (Conversation.swift) and
+  /// Kotlin's experimental one (Conversation.kt), over
+  /// `litert_lm_conversation_render_message_to_string`, which takes no
+  /// template variables: Kotlin's `extraContext` argument has no C API
+  /// counterpart, so it is not here. Where conversations share one native
+  /// conversation by replay, and on the web (`@litert-lm/core` 0.20.0 has no
+  /// render call), an [UnsupportedError].
+  Future<String> renderMessageIntoString(Message message) =>
+      _state((s) => s.renderMessage(jsonEncode(messageJson(message))));
+
+  /// This conversation's preface (system instruction, tools, initial
+  /// messages) as its prompt template renders it: Swift's and Kotlin's
+  /// `renderPrefaceIntoString()`, over
+  /// `litert_lm_conversation_render_preface_to_string`. Refused as
+  /// [renderMessageIntoString] is.
+  Future<String> renderPrefaceIntoString() => _state((s) => s.renderPreface());
+
+  /// A new conversation with this one's history, state and configuration,
+  /// independent of it from then on: Kotlin's and Swift's
+  /// `Conversation.clone()` (Conversation.kt, Conversation.swift), over
+  /// `litert_lm_conversation_clone`, which copies the native conversation and
+  /// its KV cache. Natively it waits for the turn before it and for the
+  /// recovery of a stopped one. Where conversations share one native
+  /// conversation by replay, the clone is a new conversation of the same
+  /// configuration whose history is replayed when it first sends. On the
+  /// web it is `@litert-lm/core`'s `Conversation.clone()`.
+  ///
+  /// A [StateError] while a reply streams, or once the conversation or its
+  /// engine is closed.
+  Future<Conversation> clone() async {
+    final handle = await _state((s) => s.cloneHandle());
+    if (_closed || _engineClosed()) {
+      await handle.close();
+      throw StateError(
+        _closed ? 'The conversation is closed.' : 'The engine is closed.',
+      );
+    }
+    return Conversation._(
+      handle,
+      config: _config,
+      thinkingTokenBudgetCapsNothing: _budgetCapsNothing,
+      engineClosed: _engineClosed,
+      engineCloseListeners: _engineCloseListeners,
+      constraintRefusal: _constraintRefusal,
+    );
+  }
+
+  /// Runs [op] over the handle's state, between replies.
+  Future<T> _state<T>(Future<T> Function(ConversationStateAccess s) op) async {
+    if (_closed) throw StateError('The conversation is closed.');
+    if (_engineClosed()) throw StateError('The engine is closed.');
+    _checkNotSending();
+    final handle = _handle;
+    if (handle is! ConversationStateAccess) {
+      throw UnsupportedError('This conversation cannot read its own state.');
+    }
+    return op(handle as ConversationStateAccess);
+  }
 
   /// Ends the conversation. A reply still streaming ends with
   /// [ConversationClosedException]; a later send is a [StateError]. A second

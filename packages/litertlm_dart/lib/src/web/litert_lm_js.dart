@@ -309,6 +309,10 @@ extension type JsLiteRtLmConversation._(JSObject _) implements JSObject {
 
   /// Frees the conversation once its executor is free ([awaitIfThenable]).
   external JSAny? delete();
+
+  /// A copy of the conversation, independent of it from then on: its
+  /// history and state (`Conversation.clone()`, 0.20.0).
+  external JSPromise<JSObject> clone();
 }
 
 /// A JS AsyncIterator: `next()` is a Promise of `{value, done}`.

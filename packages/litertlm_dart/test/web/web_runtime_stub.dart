@@ -140,6 +140,14 @@ const _stub = r'''
       p.conversationDeletes++;
       if (p.deleteError) throw new Error(p.deleteError);
     };
+    // 0.20.0's Conversation.clone(): a copy with the history and state.
+    c.clone = async () => {
+      p.clones = (p.clones || 0) + 1;
+      const copy = conversation(options, maxImages);
+      copy.history = [...c.history];
+      copy.prefilled = c.prefilled;
+      return copy;
+    };
     if (p.missingMember) delete c[p.missingMember];
     return c;
   };

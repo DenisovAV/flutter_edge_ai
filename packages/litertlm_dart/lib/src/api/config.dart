@@ -217,7 +217,11 @@ final class RegexResponseFormat extends ResponseFormat {
 sealed class ToolChoice {
   const ToolChoice();
 
-  /// The model decides whether to call a tool (the default).
+  /// The model answers in text, calls tools, or both: Kotlin's `Auto` and
+  /// Swift's `.auto()`. Sent as an explicit `"auto"`, as Swift's
+  /// `ToolChoice.jsonString()` writes it, which builds this message's own
+  /// constraint in "text and/or calls" mode; no choice at all leaves the
+  /// model's default constraint, which on some bundles allows calls only.
   static const ToolChoice auto = ToolChoiceAuto();
 
   /// The model answers without calling a tool.
@@ -330,6 +334,7 @@ final class EngineConfig {
     List<String>? selectedSignatures,
     this.loraRank,
     this.audioLoraRank,
+    this.visualTokenBudget,
   }) : backend = backend ?? const Backend.cpu(),
        selectedSignatures = selectedSignatures == null
            ? null
@@ -351,6 +356,7 @@ final class EngineConfig {
         throw ArgumentError.value(rank, name, 'must be 0 or more');
       }
     }
+    checkVisualTokenBudget(visualTokenBudget);
   }
 
   /// The `.litertlm` file. On the web: a URL the page can fetch (`blob:`,
@@ -421,6 +427,30 @@ final class EngineConfig {
   /// `EngineConfig.audioLoraRank`; null or 0 sets none. Passed like
   /// [loraRank], with the audio setters. Refused on the web.
   final int? audioLoraRank;
+
+  /// The most vision tokens one image may take: which of the vision
+  /// encoder's budgets the engine prepares (Gemma 4: 70, 140, 280, 560 or
+  /// 1120, as many as the bundle has `vision_<N>` signatures; Gemma 4 E2B has
+  /// 70, 140 and 280). Fewer tokens is a faster, coarser look at the image.
+  /// Null takes the bundle's own (its largest).
+  ///
+  /// Swift's and Kotlin's `ExperimentalFlags.visualTokenBudget`, which both
+  /// pass at engine create (Swift's `Engine.initializeInternal` through
+  /// `litert_lm_engine_settings_set_max_vision_tokens_per_image`; Kotlin's
+  /// `Engine.initialize` to its JNI create), set here per engine as the C
+  /// API sets it. Natively it is checked before the engine is created: it
+  /// needs a [visionBackend], and must be one of the budgets the bundle's
+  /// vision encoder has (an [ArgumentError] names them). A conversation may
+  /// lower it per image with [ConversationConfig.visualTokenBudget]. On the
+  /// web it is `@litert-lm/core`'s `EngineSettings.maxVisionTokensPerImage`.
+  final int? visualTokenBudget;
+}
+
+/// Throws [ArgumentError] for a visual token budget below 1.
+void checkVisualTokenBudget(int? budget) {
+  if (budget != null && budget < 1) {
+    throw ArgumentError.value(budget, 'visualTokenBudget', 'must be 1 or more');
+  }
 }
 
 /// A conversation's LoRA adapters, as Kotlin's `LoraConfig`: `.tflite` LoRA
@@ -485,12 +515,19 @@ final class ConversationConfig {
     Map<String, Object?> extraContext = const {},
     this.automaticToolCalling = true,
     this.loraConfig,
+    this.visualTokenBudget,
+    this.chatTemplate,
+    this.enableToolCallStreaming = false,
   }) : initialMessages = List.unmodifiable(initialMessages),
        tools = List.unmodifiable(tools),
        extraContext = Map.unmodifiable(extraContext) {
     final cap = maxOutputTokens;
     if (cap != null && cap < 1) {
       throw ArgumentError.value(cap, 'maxOutputTokens', 'must be 1 or more');
+    }
+    checkVisualTokenBudget(visualTokenBudget);
+    if (chatTemplate case final template? when template.isEmpty) {
+      throw ArgumentError.value(template, 'chatTemplate', 'must not be empty');
     }
   }
 
@@ -573,4 +610,43 @@ final class ConversationConfig {
   /// the format while some tool has `execute` (the model must be free to call
   /// it); the replies to tool responses keep it.
   final bool automaticToolCalling;
+
+  /// The most vision tokens each image of this conversation's messages may
+  /// take, as Swift's `ConversationConfig.visualTokenBudget` (Config.swift),
+  /// which Swift's `makeOptionalArgs` (Conversation.swift) sends with every
+  /// message through
+  /// `litert_lm_conversation_optional_args_set_visual_token_budget`, as
+  /// here; Kotlin sends its `ExperimentalFlags.visualTokenBudget` with every
+  /// message (`Conversation.sendMessage`). Null takes the engine's
+  /// ([EngineConfig.visualTokenBudget], else the bundle's own).
+  ///
+  /// LiteRT-LM applies it to Gemma 4 only (`GetDataProcessorArguments`,
+  /// c/conversation.cc). Checked when the conversation is created: it needs
+  /// an engine with a vision encoder, must be one of the bundle's budgets,
+  /// and must not exceed the engine's [EngineConfig.visualTokenBudget] (an
+  /// [ArgumentError] each). Refused on the web: `@litert-lm/core` 0.20.0's
+  /// conversation takes its budget from the engine's
+  /// `maxVisionTokensPerImage` and has no setting of its own.
+  final int? visualTokenBudget;
+
+  /// A Jinja chat template that replaces the model's own for this
+  /// conversation; null keeps the model's. Kotlin's and Swift's
+  /// `ConversationConfig.chatTemplate` (Config.kt, Config.swift), which
+  /// Swift's `Engine.createConversation` sets with
+  /// `litert_lm_conversation_config_set_prompt_template`, as here. Refused on
+  /// the web: `@litert-lm/core` 0.20.0's `ConversationConfig` has no
+  /// template.
+  final String? chatTemplate;
+
+  /// Whether the tokens of a tool call stream as they are generated, as text
+  /// of the `tool_call` channel (`Message.channels['tool_call']`), before the
+  /// call itself arrives in `Message.toolCalls`. Swift's
+  /// `ConversationConfig.enableToolCallStreaming` (Config.swift), which
+  /// `Engine.createConversation` passes to
+  /// `litert_lm_conversation_config_set_stream_tool_calls` with the channel
+  /// name `tool_call` (Swift's default
+  /// `ExperimentalFlags.conversationToolCallStreamingChannelName`); Kotlin
+  /// has none. Refused on the web: `@litert-lm/core` 0.20.0's
+  /// `ConversationConfig` has no such option.
+  final bool enableToolCallStreaming;
 }

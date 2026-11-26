@@ -93,6 +93,7 @@ export 'src/ffi/native_turns.dart'
 export 'src/runtime/conversation_handle.dart'
     show
         ConversationHandle,
+        ConversationStateAccess,
         NativeBenchmark,
         NativeBenchmarkTurn,
         NativeLastTurnEnd,

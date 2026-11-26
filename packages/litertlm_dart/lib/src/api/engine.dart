@@ -261,6 +261,7 @@ class EngineHost {
     required NpuDispatch? npuDispatch,
     required LiteRtLmLogLevel? nativeLogLevel,
     BenchmarkTokens? benchmarkTokens,
+    int? maxVisionTokensPerImage,
   }) => client.initialize(
     modelPath: modelPath,
     backend: backend,
@@ -284,6 +285,7 @@ class EngineHost {
     npuDispatch: npuDispatch,
     nativeLogLevel: nativeLogLevel,
     benchmarkTokens: benchmarkTokens,
+    maxVisionTokensPerImage: maxVisionTokensPerImage,
   );
 
   /// Whether the model at [path] keeps linear attention state; null when the
@@ -336,10 +338,21 @@ final class Engine {
     this._toolCallsOf = nativeToolCalls,
     this._constraintRefusal,
     this._modelPath,
+    this._visualTokenBudget,
+    this._visionBudgets,
   });
 
   /// The model file; null for a test engine without one.
   final String? _modelPath;
+
+  /// [EngineConfig.visualTokenBudget]: the most a conversation's budget may
+  /// be; null when the engine set none (the bundle's own largest).
+  final int? _visualTokenBudget;
+
+  /// The vision budgets the bundle's vision encoder has
+  /// ([readLiteRtLmVisionTokenBudgets]); null when the engine loaded no
+  /// vision encoder or the file was not read for them.
+  final Future<List<int>?>? _visionBudgets;
 
   /// How many LoRA inputs the model's `decode` signature has, read from the
   /// file once, on the first conversation with a [LoraConfig].
@@ -646,6 +659,19 @@ final class Engine {
         );
       }
     }
+    // Read once per engine with a vision encoder, on the first budget asked
+    // for; a file the reader does not know (bundle null) is left to native.
+    final Future<List<int>?>? visionBudgets = supportImage && bundle != null
+        ? readLiteRtLmVisionTokenBudgets(path, bundle)
+        : null;
+    if (config.visualTokenBudget case final budget?) {
+      await checkVisionBudget(
+        budget,
+        visionLoaded: supportImage,
+        budgets: visionBudgets,
+        modelPath: path,
+      );
+    }
     final speculative = config.speculativeDecoding;
     final client = host.createClient();
     try {
@@ -690,11 +716,13 @@ final class Engine {
             true,
           _ => null,
         },
+        // A mode left null is not set: the runtime's (off) stays, as
+        // Swift's makeCSpeculativeDecodingConfig leaves it (Engine.swift).
         speculativeDecodingMode:
             speculative != null &&
                 (speculative.mode == SpeculativeDecodingMode.adaptive ||
                     speculative.lenience != null)
-            ? speculative.mode.index
+            ? speculative.mode?.index
             : null,
         speculativeDecodingLenience: speculative?.lenience,
         selectedSignatures: selected,
@@ -709,6 +737,7 @@ final class Engine {
         npuDispatch: dispatch,
         nativeLogLevel: nativeLevel,
         benchmarkTokens: benchmarkTokens,
+        maxVisionTokensPerImage: config.visualTokenBudget,
       );
     } on LiteRtLmEngineCreateException catch (e, st) {
       await _shutdownAfterFailure(client);
@@ -772,6 +801,8 @@ final class Engine {
           npuVendor: kind == BackendKind.npu ? vendor : null,
         ),
         modelPath: path,
+        visualTokenBudget: config.visualTokenBudget,
+        visionBudgets: visionBudgets,
       );
     } catch (_) {
       // The engine exists: it is deleted before the failure reaches the
@@ -911,6 +942,15 @@ final class Engine {
     final c = config ?? ConversationConfig();
     final lora = c.loraConfig;
     if (lora != null) await _checkLora(lora);
+    if (c.visualTokenBudget case final budget?) {
+      await checkVisionBudget(
+        budget,
+        visionLoaded: visionBackend != null,
+        budgets: _visionBudgets,
+        modelPath: _modelPath,
+        engineBudget: _visualTokenBudget,
+      );
+    }
     // An adapter belongs to one native session: a conversation with one never
     // shares a native conversation by replay.
     final ownConversation = own || lora != null;
@@ -938,6 +978,8 @@ final class Engine {
       speculativeDecoding: c.speculativeDecoding,
       loraPath: lora?.loraPath,
       audioLoraPath: lora?.audioLoraPath,
+      chatTemplate: c.chatTemplate,
+      streamToolCalls: c.enableToolCallStreaming,
     );
     final filter = _filtersChannelContent;
     final ConversationHandle handle;
@@ -1296,6 +1338,56 @@ Future<String> engineRenderUserMessage(Engine engine, String content) {
   return engine._client.renderUserMessage(content);
 }
 
+/// Checks a visual token budget against the engine it is for: an
+/// [ArgumentError] when the engine loads no vision encoder
+/// ([visionLoaded]), when the bundle's vision encoder has no budget
+/// signatures, or when [budget] is not one of them ([budgets], read from
+/// [modelPath]); [engineBudget] is the engine's own, which a conversation's
+/// must not exceed (native refuses it at the send otherwise). Null [budgets]
+/// with a vision encoder loaded is a file the reader does not know: left to
+/// native.
+Future<void> checkVisionBudget(
+  int budget, {
+  required bool visionLoaded,
+  required Future<List<int>?>? budgets,
+  required String? modelPath,
+  int? engineBudget,
+}) async {
+  if (!visionLoaded) {
+    throw ArgumentError.value(
+      budget,
+      'visualTokenBudget',
+      'needs a vision encoder: create the engine with a visionBackend',
+    );
+  }
+  final known = await budgets;
+  if (known != null) {
+    if (known.isEmpty) {
+      throw ArgumentError.value(
+        budget,
+        'visualTokenBudget',
+        'cannot apply: the vision encoder of $modelPath has no budget '
+            'signatures (vision_<N>)',
+      );
+    }
+    if (!known.contains(budget)) {
+      throw ArgumentError.value(
+        budget,
+        'visualTokenBudget',
+        'is not one of the budgets the vision encoder of $modelPath has '
+            '(${known.join(', ')})',
+      );
+    }
+  }
+  if (engineBudget != null && budget > engineBudget) {
+    throw ArgumentError.value(
+      budget,
+      'visualTokenBudget',
+      "exceeds the engine's EngineConfig.visualTokenBudget ($engineBudget)",
+    );
+  }
+}
+
 /// An engine over [client], for tests that drive conversations with a fake
 /// client.
 Engine engineForTest(
@@ -1308,11 +1400,16 @@ Engine engineForTest(
   String? constraintRefusal,
   String? modelPath,
   Backend? audioBackend,
+  Backend? visionBackend,
   BundleInfo? bundleInfo,
+  int? visualTokenBudget,
+  List<int>? visionBudgets,
 }) => Engine._(
   client: client,
   backend: backend,
-  visionBackend: null,
+  visionBackend: visionBackend,
+  visualTokenBudget: visualTokenBudget,
+  visionBudgets: visionBudgets == null ? null : Future.value(visionBudgets),
   audioBackend: audioBackend,
   maxNumTokens: maxNumTokens,
   activationDataType: null,

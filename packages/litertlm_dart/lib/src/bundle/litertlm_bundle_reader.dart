@@ -136,6 +136,48 @@ Future<List<String>> readLiteRtLmMainSignatureKeys(String path) async {
   }
 }
 
+/// The vision token budgets the vision encoder of the `.litertlm` LLM at
+/// [info] (read from [path]) is exported for: the `N` of each `vision_<N>`
+/// signature of its `tf_lite_vision_encoder` section, ascending (Gemma 4 E2B:
+/// 70, 140, 280). Null when the bundle has no vision encoder section; empty
+/// when its vision encoder has no budget signatures (a model whose vision
+/// encoder runs at one size).
+///
+/// Throws [LiteRtLmBundleException] ([LiteRtLmBundleProblem.malformed]) for
+/// a vision encoder it cannot walk.
+Future<List<int>?> readLiteRtLmVisionTokenBudgets(
+  String path,
+  BundleInfo info,
+) async {
+  final vision = info.visionEncoder;
+  if (vision == null) return null;
+  final file = await File(path).open();
+  try {
+    final keys = await readLiteRtLmSignatureKeys(
+      file,
+      await file.length(),
+      vision.begin,
+      vision.end,
+    );
+    return [
+      for (final key in keys)
+        if (_visionBudgetSignature.firstMatch(key) case final m?)
+          int.parse(m.group(1)!),
+    ]..sort();
+  } on Object catch (e) {
+    if (e is! FormatException && e is! RangeError) rethrow;
+    throw LiteRtLmBundleException(
+      LiteRtLmBundleProblem.malformed,
+      '$path: the signatures of its vision encoder could not be read ($e)',
+      path: path,
+    );
+  } finally {
+    await file.close();
+  }
+}
+
+final _visionBudgetSignature = RegExp(r'^vision_(\d+)$');
+
 /// How many LoRA weight inputs the `decode` signature of the `.litertlm`
 /// LLM at [path] has: its main model section's ([readLiteRtLmLoraInputCount]).
 /// Zero for a model exported without LoRA input signatures, and for a bundle

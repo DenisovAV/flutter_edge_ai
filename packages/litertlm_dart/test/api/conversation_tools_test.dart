@@ -636,22 +636,23 @@ void main() {
     expect(handle.options.map((o) => o.toolChoiceJson), ['"required"', null]);
   });
 
-  test('ToolChoice.auto and no choice send none; a choice the conversation '
-      'cannot take is an ArgumentError on the stream, before anything is '
-      'sent', () async {
-    for (final choice in [null, ToolChoice.auto]) {
+  test('no choice sends none, ToolChoice.auto an explicit "auto"; a choice '
+      'the conversation cannot take is an ArgumentError on the stream, '
+      'before anything is sent', () async {
+    for (final (choice, json) in [(null, null), (ToolChoice.auto, '"auto"')]) {
       final handle = _Handle();
       _conversation(
         handle,
         [_tool('t', [])],
       ).sendMessageStream(Message.user('x'), toolChoice: choice).listen((_) {});
       await pumpEventQueue();
-      expect(handle.options.single.toolChoiceJson, isNull);
+      expect(handle.options.single.toolChoiceJson, json);
     }
     for (final (tools, format, choice) in [
       (<Tool>[], null, ToolChoice.none),
+      // A send that carries the format: no automatic tools.
       (
-        [_tool('t', [])],
+        [Tool(name: 't')],
         ResponseFormat.json(const {'type': 'object'}),
         ToolChoice.required,
       ),

@@ -7,20 +7,31 @@ import 'dart:convert' show jsonEncode;
 
 import '../api/config.dart';
 
+/// [ToolChoice.auto] as the C API's JSON.
+const autoToolChoiceJson = '"auto"';
+
 /// [choice] for a message of a conversation whose tools are [toolNames], as
-/// the C API's JSON; null for no choice or [ToolChoice.auto], which is what
-/// native does without one, so such a send reaches it exactly as before.
+/// the C API's JSON; null for no choice, which leaves the model's default.
+///
+/// [ToolChoice.auto] is sent as `"auto"`, as Swift's `ToolChoice.jsonString()`
+/// writes it (swift/ToolChoice.swift, `case .auto: json = "auto"`) and as
+/// Kotlin passes its `Auto` (type 1 in `toNativeType`, ToolChoice.kt): native
+/// then builds this message's own constraint in "text and/or calls" mode,
+/// which is not the model's default on every bundle (Gemma 4's default is
+/// calls only). Native ignores it in a conversation without tools.
 ///
 /// An [ArgumentError] for a choice other than auto in a conversation with no
-/// tools or with a response format ([hasResponseFormat]; native would ignore
-/// it there), a forced function or allowed tools that name no tool or one the
-/// conversation does not have, and an empty list of allowed tools.
+/// tools or on a send that carries a response format ([hasResponseFormat];
+/// native would ignore it there), a forced function or allowed tools that
+/// name no tool or one the conversation does not have, and an empty list of
+/// allowed tools.
 String? toolChoiceJson(
   ToolChoice? choice, {
   required List<String> toolNames,
   required bool hasResponseFormat,
 }) {
-  if (choice == null || choice is ToolChoiceAuto) return null;
+  if (choice == null) return null;
+  if (choice is ToolChoiceAuto) return autoToolChoiceJson;
   if (toolNames.isEmpty) {
     throw ArgumentError.value(
       choice,
@@ -54,7 +65,7 @@ String? toolChoiceJson(
     'function': {'name': name},
   };
   return switch (choice) {
-    ToolChoiceAuto() => null,
+    ToolChoiceAuto() => autoToolChoiceJson,
     ToolChoiceNone() => jsonEncode('none'),
     ToolChoiceRequired() => jsonEncode('required'),
     ToolChoiceForcedFunction(:final name) => () {

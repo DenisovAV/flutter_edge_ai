@@ -372,7 +372,8 @@ StoppedTurnRewind stoppedTurnRewindOutcome(
 ///
 /// Lifetime contract: the caller must call [close] when done. The owning
 /// client closes any remaining handles on [LiteRtLmFfiClient.shutdown].
-class LiteRtLmConversationHandle implements ConversationHandle {
+class LiteRtLmConversationHandle
+    implements ConversationHandle, ConversationStateAccess {
   LiteRtLmConversationHandle._(
     this._client,
     this._conversation,
@@ -574,6 +575,30 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   int? get lastTurnCode {
     final conv = _conversation;
     return conv == null ? null : _client._lastTurnEnds[conv]?.code;
+  }
+
+  @override
+  Future<int> kvTokenCount() {
+    _assertOpen();
+    return _client._kvTokenCountOn(_conversation!);
+  }
+
+  @override
+  Future<String> renderMessage(String messageJson) {
+    _assertOpen();
+    return _client._renderOn(_conversation!, messageJson);
+  }
+
+  @override
+  Future<String> renderPreface() {
+    _assertOpen();
+    return _client._renderOn(_conversation!, null);
+  }
+
+  @override
+  Future<LiteRtLmConversationHandle> cloneHandle() {
+    _assertOpen();
+    return _client._cloneOn(this);
   }
 
   /// Whether this conversation can still take an input, or null when that
@@ -1032,6 +1057,7 @@ class EngineCreateRequest {
     this.listWeightBanks = false,
     this.benchmarkPrefillTokens,
     this.benchmarkDecodeTokens,
+    this.maxVisionTokensPerImage,
   });
 
   final String modelPath;
@@ -1065,8 +1091,9 @@ class EngineCreateRequest {
   /// config (adaptive has no boolean); null sets none.
   final int? speculativeDecodingMode;
 
-  /// The speculative decoding config's lenience, set with
-  /// [speculativeDecodingMode]; null leaves LiteRT-LM's.
+  /// The speculative decoding config's lenience, set through a speculative
+  /// decoding config (with [speculativeDecodingMode] when that is set too);
+  /// null leaves LiteRT-LM's.
   final double? speculativeDecodingLenience;
 
   /// `engine_settings_set_selected_signatures`; null runs every signature.
@@ -1081,6 +1108,10 @@ class EngineCreateRequest {
 
   /// The CPU executor's threads; null leaves LiteRT-LM's default.
   final int? numThreads;
+
+  /// `engine_settings_set_max_vision_tokens_per_image`
+  /// (`EngineConfig.visualTokenBudget`); null leaves the bundle's.
+  final int? maxVisionTokensPerImage;
 
   /// The C API's number; null leaves the engine's own choice.
   final int? activationDataType;
@@ -1287,6 +1318,17 @@ EngineCreateResult createEngineWith(
           ),
         );
       }
+      // EngineConfig.visualTokenBudget, as Swift's Engine.initializeInternal
+      // sets ExperimentalFlags.visualTokenBudget.
+      if (r.maxVisionTokensPerImage case final budget?) {
+        setter(
+          'litert_lm_engine_settings_set_max_vision_tokens_per_image',
+          b.litert_lm_engine_settings_set_max_vision_tokens_per_image(
+            settings,
+            budget,
+          ),
+        );
+      }
 
       // MTP / speculative decoding (LiteRT-LM v0.11.0+). Skip when null so
       // the SDK uses the model's default; only call when caller explicitly
@@ -1302,30 +1344,19 @@ EngineCreateResult createEngineWith(
         );
       }
       final speculativeMode = r.speculativeDecodingMode;
-      if (speculativeMode != null) {
+      if (speculativeMode != null || r.speculativeDecodingLenience != null) {
         final config = createLiteRtLm(
           'litert_lm_speculative_decoding_config_create',
           b.litert_lm_speculative_decoding_config_create,
           b.lastError,
         );
         try {
-          setter(
-            'litert_lm_speculative_decoding_config_set_mode',
-            b.litert_lm_speculative_decoding_config_set_mode(
-              config,
-              LiteRtLmSpeculativeDecodingMode.fromValue(speculativeMode),
-            ),
+          applySpeculativeDecodingFields(
+            b,
+            config,
+            mode: speculativeMode,
+            lenience: r.speculativeDecodingLenience,
           );
-          final lenience = r.speculativeDecodingLenience;
-          if (lenience != null) {
-            setter(
-              'litert_lm_speculative_decoding_config_set_lenience',
-              b.litert_lm_speculative_decoding_config_set_lenience(
-                config,
-                lenience,
-              ),
-            );
-          }
           setter(
             'litert_lm_engine_settings_set_speculative_decoding_config',
             b.litert_lm_engine_settings_set_speculative_decoding_config(
@@ -2576,6 +2607,7 @@ class LiteRtLmFfiClient {
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
     BenchmarkTokens? benchmarkTokens,
+    int? maxVisionTokensPerImage,
   }) async {
     if (backend == 'npu' && npuDispatch == null) {
       throw ArgumentError.notNull('npuDispatch');
@@ -2714,6 +2746,7 @@ class LiteRtLmFfiClient {
         audioLoraRank: audioLoraRank,
         numThreads: numThreads,
         activationDataType: activationDataType,
+        maxVisionTokensPerImage: maxVisionTokensPerImage,
         nativeLogLevel: nativeLogLevel,
         dispatchLibDir: npuDispatchDir,
         useHwMaskingForNpu: useHwMasking,
@@ -3180,6 +3213,7 @@ class LiteRtLmFfiClient {
               ),
             );
           }
+          applyConversationExtras(b, convConfig, extras);
         } catch (_) {
           b.litert_lm_conversation_config_delete(convConfig);
           rethrow;
@@ -3285,23 +3319,15 @@ class LiteRtLmFfiClient {
       b.lastError,
     );
     try {
-      check(
-        'litert_lm_speculative_decoding_config_set_mode',
-        b.litert_lm_speculative_decoding_config_set_mode(
-          config,
-          LiteRtLmSpeculativeDecodingMode.fromValue(speculative.mode.index),
-        ),
+      // A mode left null inherits the engine's: native keeps a field that is
+      // not set (`litert_lm_session_config_set_speculative_decoding_config`),
+      // as Kotlin's and Swift's conversation configs leave it.
+      applySpeculativeDecodingFields(
+        b,
+        config,
+        mode: speculative.mode?.index,
+        lenience: speculative.lenience,
       );
-      final lenience = speculative.lenience;
-      if (lenience != null) {
-        check(
-          'litert_lm_speculative_decoding_config_set_lenience',
-          b.litert_lm_speculative_decoding_config_set_lenience(
-            config,
-            lenience,
-          ),
-        );
-      }
       check(
         'litert_lm_session_config_set_speculative_decoding_config',
         b.litert_lm_session_config_set_speculative_decoding_config(
@@ -5038,6 +5064,118 @@ class LiteRtLmFfiClient {
         if (textPtr != null) calloc.free(textPtr);
       }
     });
+  }
+
+  /// The tokens in [conv]'s KV cache (`litert_lm_conversation_get_token_count`),
+  /// read under [_nativeMutex]: a turn on any conversation of the engine ends
+  /// before it. Throws [StateError] when the conversation or the engine is
+  /// gone, [LiteRtLmNativeException] when native fails.
+  Future<int> _kvTokenCountOn(Pointer<LiteRtLmConversation> conv) =>
+      _protectNativeMutex(() async {
+        final b = _liveBindingsFor(conv);
+        try {
+          return readLiteRtLmSize(
+            'litert_lm_conversation_get_token_count',
+            (out) => b.litert_lm_conversation_get_token_count(conv, out),
+            b.lastError,
+          );
+        } on LiteRtLmCallException catch (e) {
+          throw LiteRtLmNativeException('$e');
+        }
+      });
+
+  /// [messageJson] rendered by [conv]'s template
+  /// (`litert_lm_conversation_render_message_to_string`), or its preface
+  /// when null (`litert_lm_conversation_render_preface_to_string`). Under
+  /// [_nativeMutex]; the string native returns is copied before the lock
+  /// goes, as the next render replaces it.
+  Future<String> _renderOn(
+    Pointer<LiteRtLmConversation> conv,
+    String? messageJson,
+  ) => _protectNativeMutex(() async {
+    final b = _liveBindingsFor(conv);
+    final json = messageJson?.toNativeUtf8();
+    try {
+      final call = json == null
+          ? 'litert_lm_conversation_render_preface_to_string'
+          : 'litert_lm_conversation_render_message_to_string';
+      final Pointer<Char> text;
+      try {
+        b.litert_lm_clear_last_error();
+        text = readLiteRtLmPointer<Char>(
+          call,
+          (out) => json == null
+              ? b.litert_lm_conversation_render_preface_to_string(conv, out)
+              : b.litert_lm_conversation_render_message_to_string(
+                  conv,
+                  json.cast(),
+                  out,
+                ),
+          b.lastError,
+        );
+      } on LiteRtLmCallException catch (e) {
+        throw LiteRtLmNativeException('$e');
+      }
+      if (text == nullptr) {
+        throw LiteRtLmNativeException('$call returned no text');
+      }
+      return nativeText(text.cast());
+    } finally {
+      if (json != null) calloc.free(json);
+    }
+  });
+
+  /// A new native conversation holding [source]'s state
+  /// (`litert_lm_conversation_clone`: its history and KV cache), as a handle
+  /// of its own, registered as one this client created. Under
+  /// [_nativeMutex], held off [shutdown].
+  Future<LiteRtLmConversationHandle> _cloneOn(
+    LiteRtLmConversationHandle source,
+  ) => _guardCreate(
+    () => _protectNativeMutex(() async {
+      final conv = source._conversation;
+      if (conv == null) throw StateError('Conversation handle is closed');
+      final b = _liveBindingsFor(conv);
+      final Pointer<LiteRtLmConversation> cloned;
+      try {
+        b.litert_lm_clear_last_error();
+        cloned = createLiteRtLm<LiteRtLmConversation>(
+          'litert_lm_conversation_clone',
+          (out) => b.litert_lm_conversation_clone(conv, out),
+          b.lastError,
+        );
+      } on LiteRtLmCallException catch (e) {
+        throw LiteRtLmNativeException('$e');
+      }
+      // The clone runs the session's clone, which may switch the executor's
+      // context.
+      _executor.unknown();
+      _liveConvs.add(cloned);
+      if (_conversationSampling[conv] case final sampling?) {
+        _conversationSampling[cloned] = sampling;
+      }
+      final handle = LiteRtLmConversationHandle._(
+        this,
+        cloned,
+        source._multimodalOrder,
+        source._constraint,
+      );
+      _handles.add(handle);
+      return handle;
+    }),
+  );
+
+  /// The bindings, for a native call on [conv]: a [StateError] when the
+  /// engine is gone or [conv] is no longer one of its conversations.
+  LiteRtLmBindings _liveBindingsFor(Pointer<LiteRtLmConversation> conv) {
+    final b = _bindings;
+    if (b == null ||
+        _isShuttingDown ||
+        _engine == null ||
+        !_liveConvs.contains(conv)) {
+      throw StateError('The conversation or its engine is closed.');
+    }
+    return b;
   }
 
   /// The engine's token ids for [text], with no BOS added: what the option

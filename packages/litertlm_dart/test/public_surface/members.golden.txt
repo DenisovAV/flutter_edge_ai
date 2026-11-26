@@ -6,6 +6,8 @@
 enum ActivationDataType
   value float16
   value float32
+  value int16
+  value int8
 
 final class AudioBytesContent extends Content
   constructor AudioBytesContent(Uint8List bytes)
@@ -19,6 +21,7 @@ final class AudioFileContent extends Content
 
 sealed class Backend
   constructor const factory Backend.cpu({int? threadCount})
+  constructor factory Backend.googleTensor()
   constructor const factory Backend.gpu()
   constructor const factory Backend.npu({String? dispatchDir})
 
@@ -87,24 +90,30 @@ sealed class Content
   constructor factory Content.imageBytes(Uint8List bytes)
   constructor const factory Content.imageFile(String path)
   constructor const factory Content.text(String text)
-  constructor const factory Content.toolResponse(String name, Object? response)
+  constructor const factory Content.toolResponse(String name, Object? response, {String? id})
 
 final class ContextFullException extends LiteRtLmException
   constructor const ContextFullException(String message)
 
 final class Conversation
   method void cancel()
+  method Future<Conversation> clone()
   method Future<void> close()
   method BenchmarkInfo getBenchmarkInfo()
-  method Future<Message> sendMessage(Message message, {Map<String, Object?>? extraContext, RepetitionPenaltyConfig? repetitionPenaltyConfig, NoRepeatNgramConfig? noRepeatNgramConfig, List<int>? suppressTokens, ThinkingConfig? thinkingConfig, ToolChoice? toolChoice})
-  method Stream<Message> sendMessageStream(Message message, {Map<String, Object?>? extraContext, RepetitionPenaltyConfig? repetitionPenaltyConfig, NoRepeatNgramConfig? noRepeatNgramConfig, List<int>? suppressTokens, ThinkingConfig? thinkingConfig, ToolChoice? toolChoice})
+  method Future<int> getTokenCount()
+  method Future<String> renderMessageIntoString(Message message)
+  method Future<String> renderPrefaceIntoString()
+  method Future<Message> sendMessage(Message message, {Map<String, Object?>? extraContext, RepetitionPenaltyConfig? repetitionPenaltyConfig, NoRepeatNgramConfig? noRepeatNgramConfig, List<int>? suppressTokens, int? maxOutputTokens, ThinkingConfig? thinkingConfig, ToolChoice? toolChoice})
+  method Stream<Message> sendMessageStream(Message message, {Map<String, Object?>? extraContext, RepetitionPenaltyConfig? repetitionPenaltyConfig, NoRepeatNgramConfig? noRepeatNgramConfig, List<int>? suppressTokens, int? maxOutputTokens, ThinkingConfig? thinkingConfig, ToolChoice? toolChoice})
 
 final class ConversationClosedException extends LiteRtLmException
   constructor const ConversationClosedException(String message)
 
 final class ConversationConfig
-  constructor ConversationConfig({String? systemInstruction, List<Message> initialMessages = const [], List<Tool> tools = const [], SamplerConfig? samplerConfig, int? maxOutputTokens, ThinkingConfig? thinkingConfig, ResponseFormat? responseFormat, SpeculativeDecodingConfig? speculativeDecoding, Map<String, Object?> extraContext = const {}, bool automaticToolCalling = true, LoraConfig? loraConfig})
+  constructor ConversationConfig({String? systemInstruction, List<Message> initialMessages = const [], List<Tool> tools = const [], SamplerConfig? samplerConfig, int? maxOutputTokens, ThinkingConfig? thinkingConfig, ResponseFormat? responseFormat, SpeculativeDecodingConfig? speculativeDecoding, Map<String, Object?> extraContext = const {}, bool automaticToolCalling = true, LoraConfig? loraConfig, int? visualTokenBudget, String? chatTemplate, bool enableToolCallStreaming = false})
   field final bool automaticToolCalling
+  field final String? chatTemplate
+  field final bool enableToolCallStreaming
   field final Map<String, Object?> extraContext
   field final List<Message> initialMessages
   field final LoraConfig? loraConfig
@@ -115,6 +124,7 @@ final class ConversationConfig
   field final String? systemInstruction
   field final ThinkingConfig? thinkingConfig
   field final List<Tool> tools
+  field final int? visualTokenBudget
 
 final class CpuBackend extends Backend
   constructor const CpuBackend({int? threadCount})
@@ -186,7 +196,7 @@ final class Engine
   method Future<List<int>> tokenize(String text)
 
 final class EngineConfig
-  constructor EngineConfig({required String modelPath, Backend? backend, Backend? visionBackend, Backend? audioBackend, int? maxNumTokens, int? maxNumImages, String? cacheDir, ActivationDataType? activationDataType, SpeculativeDecodingConfig? speculativeDecoding, List<String>? selectedSignatures, int? loraRank, int? audioLoraRank})
+  constructor EngineConfig({required String modelPath, Backend? backend, Backend? visionBackend, Backend? audioBackend, int? maxNumTokens, int? maxNumImages, String? cacheDir, ActivationDataType? activationDataType, SpeculativeDecodingConfig? speculativeDecoding, List<String>? selectedSignatures, int? loraRank, int? audioLoraRank, int? visualTokenBudget})
   field final ActivationDataType? activationDataType
   field final Backend? audioBackend
   field final int? audioLoraRank
@@ -199,6 +209,7 @@ final class EngineConfig
   field final List<String>? selectedSignatures
   field final SpeculativeDecodingConfig? speculativeDecoding
   field final Backend? visionBackend
+  field final int? visualTokenBudget
 
 final class GpuBackend extends Backend
   constructor const GpuBackend()
@@ -380,9 +391,9 @@ final class ScoringRun
   field final List<List<double>> tokenScores
 
 final class SpeculativeDecodingConfig
-  constructor SpeculativeDecodingConfig({required SpeculativeDecodingMode mode, double? lenience})
+  constructor SpeculativeDecodingConfig({SpeculativeDecodingMode? mode, double? lenience})
   field final double? lenience
-  field final SpeculativeDecodingMode mode
+  field final SpeculativeDecodingMode? mode
   getter int hashCode
   method bool ==(Object other)
   method String toString()
@@ -413,8 +424,9 @@ final class Tool
   field final Map<String, Object?> parameters
 
 final class ToolCall
-  constructor ToolCall(String name, Map<String, Object?> arguments)
+  constructor ToolCall(String name, Map<String, Object?> arguments, {String? id})
   field final Map<String, Object?> arguments
+  field final String? id
   field final String name
   method String toString()
 
@@ -454,7 +466,8 @@ final class ToolChoiceRequired extends ToolChoice
   method String toString()
 
 final class ToolResponseContent extends Content
-  constructor const ToolResponseContent(String name, Object? response)
+  constructor const ToolResponseContent(String name, Object? response, {String? id})
+  field final String? id
   field final String name
   field final Object? response
   method String toString()

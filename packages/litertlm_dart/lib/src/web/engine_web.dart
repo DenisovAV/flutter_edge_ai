@@ -165,6 +165,20 @@ final class Engine {
     if (c.speculativeDecoding != null) {
       throw UnsupportedError(_webSpeculativeDecodingRefusal);
     }
+    final perConversation = [
+      if (c.visualTokenBudget != null)
+        'per-conversation visual token budget (visualTokenBudget; its '
+            "conversation takes the engine's maxVisionTokensPerImage)",
+      if (c.chatTemplate != null) 'chat template (chatTemplate)',
+      if (c.enableToolCallStreaming)
+        'tool call streaming (enableToolCallStreaming)',
+    ];
+    if (perConversation.isNotEmpty) {
+      throw UnsupportedError(
+        'The web runtime ($liteRtLmWebRuntime) has no '
+        '${perConversation.join(', ')}: its ConversationConfig takes none.',
+      );
+    }
     if (c.loraConfig != null) {
       throw UnsupportedError(
         'The web runtime ($liteRtLmWebRuntime) takes no LoRA adapter: its '
@@ -299,23 +313,42 @@ final class Engine {
     }
     _pendingCreates.remove(pending.future);
     pending.complete();
-    late final WebConversationHandle handle;
-    handle = WebConversationHandle(
-      js,
-      enableThinking: enableThinking,
-      extraContext: c.extraContext,
-      onGeneration: () => _noteGeneration(sampling, explicit: explicit),
-      rebuild: create,
-      preface: base,
-      vision: visionBackend != null,
-      maxImages: visionBackend == null ? null : _maxNumImages,
-      maxTokens: maxNumTokens,
-      audio: audioBackend != null,
-      toolCallsOf: _toolCallsOf,
-      onClose: () => _handles.remove(handle),
-      pageLock: _pageLock,
-    );
-    _handles.add(handle);
+    // One handle per runtime conversation, the first and each clone
+    // (Conversation.clone), each registered for the engine's close.
+    WebConversationHandle handleFor(JsLiteRtLmConversation js) {
+      late final WebConversationHandle handle;
+      handle = WebConversationHandle(
+        js,
+        enableThinking: enableThinking,
+        extraContext: c.extraContext,
+        onGeneration: () => _noteGeneration(sampling, explicit: explicit),
+        rebuild: create,
+        preface: base,
+        vision: visionBackend != null,
+        maxImages: visionBackend == null ? null : _maxNumImages,
+        maxTokens: maxNumTokens,
+        audio: audioBackend != null,
+        toolCallsOf: _toolCallsOf,
+        onClose: () => _handles.remove(handle),
+        cloneWith: (clone) {
+          if (_closed) {
+            // Nobody else will delete it.
+            unawaited(
+              awaitIfThenable(
+                clone.delete(),
+              ).catchError((Object e) => noteWebDeleteFailure('A clone', e)),
+            );
+            throw StateError('The engine is closed.');
+          }
+          return handleFor(clone);
+        },
+        pageLock: _pageLock,
+      );
+      _handles.add(handle);
+      return handle;
+    }
+
+    final handle = handleFor(js);
     return newConversation(
       handle,
       config: c,
@@ -452,6 +485,19 @@ Future<Engine> createWebEngine(
   }
   if (config.audioBackend case final audio?) {
     settings['audioBackend'] = _webBackendValue(audio, ids).toJS;
+  }
+  // EngineConfig.visualTokenBudget: the runtime's own engine setting. The
+  // page cannot read the file's vision budgets, so a budget the encoder
+  // lacks is the runtime's to refuse.
+  if (config.visualTokenBudget case final budget?) {
+    if (config.visionBackend == null) {
+      throw ArgumentError.value(
+        budget,
+        'visualTokenBudget',
+        'needs a vision encoder: create the engine with a visionBackend',
+      );
+    }
+    settings['maxVisionTokensPerImage'] = budget.toJS;
   }
   final executor = JSObject();
   // A GPU_ARTISAN model (Gemma 4's web exports) reserves its images' space

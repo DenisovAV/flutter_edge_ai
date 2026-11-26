@@ -524,19 +524,12 @@ final vector = await embedder.embed(
   over Metal on macOS). Windows x64 was refused on native-v0.18.0-h, whose
   accelerator ended the process at the first load (#744); on 0.19 the 270m
   runs on the GPU on Panther Lake (Arc B390) and Lunar Lake (Arc 140V), and
-  the 270m and 740m text towers on Metal (24 ms per text, C probe,
-  2026-11-04). iOS, Android and Linux arm64 are not measured: there `gpu` is
-  not applied.
-  Measured on the 270m, 2026-10-22: Linux on a Tesla T4 32-64 ms per text vs
-  232-308 ms on its CPU (Windows on Lunar Lake, on native-v0.18.0-g: 22 ms vs
-  83-90 ms); min cos 0.997 to the
-  CPU vectors (0.998 for a ~900-token text: the GPU runs FP16 activations),
-  and the CPU's distance to Sentence Transformers fp32. On LiteRT-LM 0.20
-  (litertlm_dart 0.20.0) the min cos to CPU is 0.9969-0.9991 on the T4,
-  0.9959-0.9988 on an Arc B390 and 0.9971 at least on Metal (2026-11-25/26). A load takes 1.7-3.6 s
-  against 0.3-0.6 s on CPU; the very first also builds the GPU caches (8.2 s
-  on the T4; 5.9 s on Lunar Lake on native-v0.18.0-g). Measured in one process with a GPU LLM
-  (Gemma 4 E2B), the embedder loaded before and after it.
+  the 270m and 740m text towers on Metal. iOS, Android and Linux arm64 are not
+  measured: there `gpu` is not applied.
+  GPU vectors are close to the CPU ones but not identical, so CPU and GPU
+  vectors do not mix in one index: give each its own profile. The measured
+  speeds and cosines per host are on
+  [flutteredge.ai](https://flutteredge.ai/docs/embeddings-and-rag).
   - Only the text tower runs on the GPU. On the 440m and 740m the vision and
     audio towers run on CPU (each named `cpu` at create, declared or not), so
     images and audio embed at CPU speed and with CPU vectors. A text-only
@@ -548,10 +541,9 @@ final vector = await embedder.embed(
     embeds one probe text and refuses a non-finite or zero vector. The
     adapter is Dawn's choice, and a software one is not excluded: on a Linux
     box whose NVIDIA driver was not loaded, Vulkan offered only Mesa's
-    llvmpipe and `gpu` ran there, reported as `gpu`, with correct vectors
-    (min cos 0.997 to CPU), a 37-48 s load, and a ~900-token text failed
-    with `DEADLINE_EXCEEDED` (measured 2026-10-22). Ask for `gpu` only where
-    a real GPU driver is installed.
+    llvmpipe and `gpu` ran there, reported as `gpu`, very slowly, and a long
+    text failed with `DEADLINE_EXCEEDED`. Ask for `gpu` only where a real GPU
+    driver is installed.
   - The GPU writes its own caches beside the CPU's: ML Drift's
     `…_mldrift_weight_cache.bin` (68 MB) and `…_mldrift_program_cache.bin`
     (9 MB) for the text tower. `requireWeightCache` covers them (1.19.0):
@@ -578,15 +570,15 @@ final vector = await embedder.embed(
     Linux arm64 are not measured. `npu` is refused
     for this bundle: the NPU runs the per-SoC bundles
     ([below](#embeddinggemma-2-on-a-qualcomm-npu)). The web has no CPU path for
-  these bundles: the CPU (WebAssembly) backend of `@litert-lm/core` cannot
-  read their external weights, so a browser without WebGPU (no
+  these bundles: the CPU (WebAssembly) backend of `@litert-lm/core` 0.20.0
+  loads them but is far too slow to use, so a browser without WebGPU (no
   `navigator.gpu`, or no GPU adapter) fails `getActiveEmbedder()` with an
   `EmbeddingLoadException` that says so, before any engine is created. Web
-  vectors come from WebGPU and differ slightly from the native CPU ones:
-  measured min cos about 0.995 for text and 0.998 for images (Chrome 155,
-  Tesla T4). Retrieval across platforms holds: web text queries find natively
-  embedded images and native queries find web-embedded images, top-1 10/10 on
-  the example's ten scenes.
+  vectors come from WebGPU: close to the native CPU ones but not identical
+  (measurements on
+  [flutteredge.ai](https://flutteredge.ai/docs/embeddings-and-rag)).
+  Retrieval across platforms holds: web text queries find natively embedded
+  images and native queries find web-embedded images.
 - **Disk:** the 165 MB bundle plus a 71 MB weight cache the engine writes at
   its first load. The 440m bundle adds a 218 MB vision cache and the 740m
   bundle writes 385 MB of caches in total, even for text-only use. The cache

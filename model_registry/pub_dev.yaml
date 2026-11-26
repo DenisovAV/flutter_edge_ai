@@ -8,7 +8,7 @@
 packages:
   flutter_edge_ai_litertlm: 1.22.0
   flutter_edge_ai_speech: 0.6.3
-litertlm_dart: 0.20.0
+litertlm_dart: 0.20.0+1
 native_release: native-v0.20.0
 archives:
   android_arm64: dbce6e6d333fcc4aa3dce086a832dc2ed5df7eeeb9b06e2a863f1d535c006bf3

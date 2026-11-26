@@ -280,7 +280,13 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       :enableThinking,
       :tools,
       :maxOutputTokens,
+      :toolChoice,
     ) = request;
+    // Core's ToolChoice.none: the conversation gets no tools, so the model
+    // never sees them, as natively. The page's runtime takes no per-message
+    // tool choice, so ToolChoice.required reaches the model only through
+    // core's tools prompt, on the models that have one.
+    final sessionTools = toolChoice == ToolChoice.none ? const <Tool>[] : tools;
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
@@ -320,7 +326,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         sampling: sampling,
         systemInstruction: systemInstruction,
         enableThinking: enableThinking,
-        tools: tools,
+        tools: sessionTools,
         maxOutputTokens: maxOutputTokens,
       );
     } finally {
@@ -336,7 +342,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     late final LiteRtLmWebSession session;
     session = LiteRtLmWebSession(
       conversation: conversation,
-      declaresTools: tools.isNotEmpty,
+      declaresTools: sessionTools.isNotEmpty,
       modelType: modelType,
       fileType: fileType,
       generationMutex: generationMutex,

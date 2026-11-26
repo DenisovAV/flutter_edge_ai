@@ -353,6 +353,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     required List<Tool> tools,
     required int? maxOutputTokens,
     String? jsonSchema,
+    String? loraPath,
   }) {
     return lm.ConversationConfig(
       systemInstruction: systemInstruction,
@@ -366,6 +367,11 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           : lm.ResponseFormat.json(
               (jsonDecode(jsonSchema) as Map).cast<String, Object?>(),
             ),
+      // Core's loraPath is the conversation's text LoRA adapter, as Kotlin's
+      // LoraConfig. litertlm_dart refuses it by name where it cannot work: a
+      // file that is not there, a model exported without LoRA inputs, an NPU
+      // engine.
+      loraConfig: loraPath == null ? null : lm.LoraConfig(loraPath: loraPath),
     );
   }
 
@@ -386,14 +392,6 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
-      );
-    }
-
-    if (loraPath != null) {
-      throw UnsupportedError(
-        'LoRA weights are not supported on the .litertlm FFI path '
-        '(loraPath=$loraPath). Track upstream LiteRT-LM C API support; '
-        'remove loraPath or use a MediaPipe .task model on Android/iOS.',
       );
     }
 
@@ -447,6 +445,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
             systemInstruction: systemInstruction,
             tools: tools,
             maxOutputTokens: maxOutputTokens,
+            loraPath: loraPath,
           ),
           _defaultSampler(explicit, sampling),
         );
@@ -528,6 +527,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       :tools,
       :maxOutputTokens,
       :responseFormat,
+      :toolChoice,
     ) = request;
     final jsonSchema = responseFormat?.schemaJson;
     if (_isClosed) {
@@ -535,13 +535,19 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         'Model is closed. Create a new instance to use it again',
       );
     }
-    if (loraPath != null) {
-      throw UnsupportedError(
-        'LoRA weights are not supported on the .litertlm FFI path '
-        '(loraPath=$loraPath). Remove loraPath or use a MediaPipe .task '
-        'model on Android/iOS.',
-      );
-    }
+    // Core's tool choice where LiteRT-LM renders the tools (Gemma 4 and
+    // FunctionGemma; core's own tools prompt follows the choice for every
+    // other model): none opens the conversation without them, so the model
+    // never sees them (declared, LiteRT-LM's none only keeps a call out of
+    // the reply, and the model may write it as text); required goes with
+    // each user turn as litertlm_dart's per-message choice, never with the
+    // turn answering tool results, so the model can answer them.
+    final sessionTools = toolChoice == ToolChoice.none ? const <Tool>[] : tools;
+    final userTurnToolChoice =
+        toolChoice == ToolChoice.required &&
+            _nativeTools(sessionTools).isNotEmpty
+        ? lm.ToolChoice.required
+        : null;
     final cap = maxConcurrentSessions;
     if (cap != null && _openSessions.length + _openSessionsPending >= cap) {
       throw StateError(
@@ -572,9 +578,10 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           explicit: explicit,
           sampling: sampling,
           systemInstruction: systemInstruction,
-          tools: tools,
+          tools: sessionTools,
           maxOutputTokens: maxOutputTokens,
           jsonSchema: jsonSchema,
+          loraPath: loraPath,
         ),
         _defaultSampler(explicit, sampling),
       );
@@ -599,7 +606,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     late final FfiInferenceModelSession session;
     session = FfiInferenceModelSession(
       conversation: conversation,
-      declaresTools: tools.isNotEmpty,
+      declaresTools: sessionTools.isNotEmpty,
       multimodalOrder: multimodalOrder,
       thinkingTokenBudget: thinkingTokenBudget,
       modelType: modelType,
@@ -608,6 +615,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       supportAudio: enableAudioModality ?? supportAudio,
       enableThinking: enableThinking,
       maxOutputTokens: maxOutputTokens,
+      userTurnToolChoice: userTurnToolChoice,
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);
@@ -767,8 +775,14 @@ class FfiInferenceModelSession extends InferenceModelSession
     this.enableThinking = false,
     this.thinkingTokenBudget,
     this.maxOutputTokens,
+    this.userTurnToolChoice,
     required this.onClose,
   });
+
+  /// The tool choice each user turn is sent with (core's
+  /// [ToolChoice.required] on a model whose tools LiteRT-LM renders); null
+  /// sends none. A turn answering tool results never carries it.
+  final lm.ToolChoice? userTurnToolChoice;
 
   /// The session's conversation.
   final lm.Conversation conversation;
@@ -945,6 +959,7 @@ class FfiInferenceModelSession extends InferenceModelSession
           enableThinking: enableThinking,
           thinkingTokenBudget: thinkingTokenBudget,
         ),
+        toolChoice: message.role == lm.Role.tool ? null : userTurnToolChoice,
       )
       .handleError((Object error, StackTrace stack) {
         if (error is lm.ConstraintUnsupportedException) {

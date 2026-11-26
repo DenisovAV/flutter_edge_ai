@@ -76,6 +76,7 @@ FfiInferenceModelSession ffiSessionForHandle({
   int? thinkingTokenBudget,
   int? maxOutputTokens,
   List<lm.Tool> tools = const [],
+  lm.ToolChoice? userTurnToolChoice,
   required VoidCallback onClose,
 }) => FfiInferenceModelSession(
   declaresTools: tools.isNotEmpty,
@@ -91,6 +92,7 @@ FfiInferenceModelSession ffiSessionForHandle({
   enableThinking: enableThinking,
   thinkingTokenBudget: thinkingTokenBudget,
   maxOutputTokens: maxOutputTokens,
+  userTurnToolChoice: userTurnToolChoice,
   onClose: onClose,
 );
 

@@ -876,10 +876,18 @@ void main() {
   });
 
   group('a structured chat turn\'s failures', () {
+    // Queuing the message counts its text too; these tests are about the
+    // reply's count, so the queue runs without [sizeError] and [sizeCalls]
+    // starts after it.
     Future<(_Model, InferenceChat)> chatOver(_Session engine) async {
       final model = _Model(support: _all)..nextSession = () => engine;
       final chat = await model.openChat(responseFormat: _order);
+      final sizeError = engine.sizeError;
+      engine.sizeError = null;
       await chat.addQueryChunk(const Message(text: 'Hi', isUser: true));
+      engine
+        ..sizeError = sizeError
+        ..sizeCalls = 0;
       return (model, chat);
     }
 

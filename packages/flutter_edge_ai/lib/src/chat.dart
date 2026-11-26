@@ -193,7 +193,18 @@ class InferenceChat {
   }
 
   /// Tokens in use: the engine's count when its session keeps one
-  /// ([ChatTurnHooks.tokenCount]), else this chat's.
+  /// ([ChatTurnHooks.tokenCount]), else this chat's estimate — each queued
+  /// message's text as the session counts it, 257 per image, and each reply;
+  /// audio is not counted.
+  ///
+  /// When a message about to be queued takes the count to
+  /// `maxTokens - tokenBuffer`, the chat drops the oldest exchanges the model
+  /// holds and rebuilds its session from the rest before the message is sent;
+  /// when even dropping all of them would not make room, nothing is dropped
+  /// and the engine refuses the turn. A streamed or structured reply that
+  /// reaches it trims after the reply; a plain (non-structured)
+  /// [generateChatResponse] counts its reply and leaves the trim to the next
+  /// message. [fullHistory] keeps every message.
   int get currentTokens {
     final current = _sessionIfAny;
     return (current == null ? null : _hooks.tokenCount(_engine(current))) ??
@@ -247,48 +258,7 @@ class InferenceChat {
     _throwIfRebuildFailed();
     final hooked = _hooks.addQueryChunk(_engine(session), message);
     if (hooked != null) return hooked;
-    _stagedFrom ??= (
-      full: _fullHistory.length,
-      model: _modelHistory.length,
-      prefixes: _prefixes.length,
-      tokens: _currentTokens,
-      toolsInstructionSent: _toolsInstructionSent,
-    );
     var messageToSend = message;
-
-    // Only add tools prompt for the first user text message (not a tool response)
-    // and only if the model supports function calls.
-    // Runtime-injected declarations are exempt: when the runtime/SDK renders the
-    // tools itself (today the `tools_json` LiteRT-LM gets at conversation
-    // creation for Gemma 4 and for FunctionGemma on .litertlm; in future, e.g. a
-    // web Prompt API arm passing native `tools`), a Dart-side prompt injection
-    // would double-wrap them. Gated on [runtimeInjectsToolDeclarations], not a
-    // hardcoded model type.
-    if (message.isUser &&
-        message.type == MessageType.text &&
-        !_toolsInstructionSent &&
-        tools.isNotEmpty &&
-        !noTool &&
-        supportsFunctionCalls &&
-        toolChoice != ToolChoice.none &&
-        !runtimeInjectsToolDeclarations) {
-      _toolsInstructionSent = true;
-      final toolsPrompt = createToolsPrompt();
-
-      // Create tools prompt message for both storage and session
-      final toolsPromptMessage = Message(text: toolsPrompt, isUser: true);
-
-      // Send to session
-      await session.addQueryChunk(toolsPromptMessage);
-
-      // Store in _prefixes for replay
-      _prefixes.add(toolsPromptMessage);
-    } else if (!supportsFunctionCalls && tools.isNotEmpty && !noTool) {
-      // Log warning if model doesn't support function calls but tools are provided
-      edgeAiLog(
-        'WARNING: Model does not support function calls, but tools were provided. Tools will be ignored.',
-      );
-    }
 
     // Qwen3: append /no_think to suppress thinking at model level when not
     // requested. Only to a plain text turn: in a tool response it is noise,
@@ -306,6 +276,58 @@ class InferenceChat {
         !message.text.endsWith(_noThinkSuffix)) {
       messageToSend = messageToSend.copyWith(
         text: '${messageToSend.text}$_noThinkSuffix',
+      );
+    }
+
+    // Only add tools prompt for the first user text message (not a tool response)
+    // and only if the model supports function calls.
+    // Runtime-injected declarations are exempt: when the runtime/SDK renders the
+    // tools itself (today the `tools_json` LiteRT-LM gets at conversation
+    // creation for Gemma 4 and for FunctionGemma on .litertlm; in future, e.g. a
+    // web Prompt API arm passing native `tools`), a Dart-side prompt injection
+    // would double-wrap them. Gated on [runtimeInjectsToolDeclarations], not a
+    // hardcoded model type.
+    final sendsToolsPrompt =
+        message.isUser &&
+        message.type == MessageType.text &&
+        !_toolsInstructionSent &&
+        tools.isNotEmpty &&
+        !noTool &&
+        supportsFunctionCalls &&
+        toolChoice != ToolChoice.none &&
+        !runtimeInjectsToolDeclarations;
+    final toolsPromptMessage = sendsToolsPrompt
+        ? Message(text: createToolsPrompt(), isUser: true)
+        : null;
+
+    // Sized before anything reaches the session, so a failed count sends
+    // nothing. A message (with the tools prompt going out before it) that
+    // would take the count to the limit first drops the oldest history, as
+    // a reply that reaches it does.
+    final toolsSize = toolsPromptMessage == null
+        ? 0
+        : await _tokensOf(toolsPromptMessage);
+    final size = await _tokensOf(messageToSend);
+    await _trimBeforeTurn(messageToSend, incoming: toolsSize + size);
+
+    _stagedFrom ??= (
+      full: _fullHistory.length,
+      model: _modelHistory.length,
+      prefixes: _prefixes.length,
+      tokens: _currentTokens,
+      toolsInstructionSent: _toolsInstructionSent,
+    );
+
+    if (toolsPromptMessage != null) {
+      await session.addQueryChunk(toolsPromptMessage);
+      // Stored in _prefixes for replay, and counted, once it was sent.
+      _prefixes.add(toolsPromptMessage);
+      _currentTokens += toolsSize;
+      _toolsInstructionSent = true;
+    } else if (!supportsFunctionCalls && tools.isNotEmpty && !noTool) {
+      // Log warning if model doesn't support function calls but tools are provided
+      edgeAiLog(
+        'WARNING: Model does not support function calls, but tools were provided. Tools will be ignored.',
       );
     }
 
@@ -334,9 +356,7 @@ class InferenceChat {
       _modelHistory.add(messageToSend);
     }
 
-    if (message.hasImage) {
-      _currentTokens += 257;
-    }
+    _currentTokens += size;
   }
 
   /// Runs one generation and returns its answer: text or the tool call(s).
@@ -369,6 +389,7 @@ class InferenceChat {
   /// changes a chat's turns through [ChatTurnHooks].
   @nonVirtual
   Future<ModelResponse> generateChatResponse() async {
+    _throwIfRebuildFailed();
     if (responseFormat != null) {
       return _collectResponses(_streamStructuredResponse());
     }
@@ -517,11 +538,12 @@ class InferenceChat {
 
   /// Records the model's text reply in the history; an empty one is not a
   /// turn worth recording (#325).
-  void _commitText(String text) {
-    if (text.isEmpty) return;
+  Message? _commitText(String text) {
+    if (text.isEmpty) return null;
     final chatMessage = Message(text: text, isUser: false);
     _fullHistory.add(chatMessage);
     _modelHistory.add(chatMessage);
+    return chatMessage;
   }
 
   /// Decision H (B90): a plain turn that the session's or model's close ended
@@ -580,8 +602,12 @@ class InferenceChat {
             text: cleanRaw,
             calls: allCalls,
           );
+          // Counted before it is committed: a failed count leaves no call
+          // in the history waiting for an answer.
+          final callTokens = await _tokensOf(toolCallMessage);
           _fullHistory.add(toolCallMessage);
           _modelHistory.add(toolCallMessage);
+          _currentTokens += callTokens;
           if (allCalls.length == 1) return allCalls.first;
           return ParallelFunctionCallResponse(calls: allCalls);
         }
@@ -616,8 +642,10 @@ class InferenceChat {
           text: cleanedResponse,
           calls: allCalls,
         );
+        final callTokens = await _tokensOf(toolCallMessage);
         _fullHistory.add(toolCallMessage);
         _modelHistory.add(toolCallMessage);
+        _currentTokens += callTokens;
         edgeAiLog(
           'InferenceChat: Added tool call to history: ${toolCallMessage.text}',
           level: EdgeAiLogLevel.verbose,
@@ -629,8 +657,10 @@ class InferenceChat {
       }
     }
 
-    // Regular text response
+    // Regular text response, counted as the streamed path counts it; the
+    // trim it may call for runs before the next message is sent.
     _commitText(cleanedResponse);
+    _currentTokens += await session.sizeInTokens(cleanedResponse);
 
     // Clear model history for single-turn models (e.g., FunctionGemma)
     if (_isSingleTurnModel) {
@@ -696,6 +726,11 @@ class InferenceChat {
   /// changes a chat's turns through [ChatTurnHooks].
   @nonVirtual
   Stream<ModelResponse> generateChatResponseAsync() {
+    // A rebuild that failed earlier is this turn's error, not the closed
+    // session's.
+    if (_failedRebuild case (:final error, :final stack)) {
+      return Stream.error(error, stack);
+    }
     _lastTurnTakenBack = false;
     // Without a session yet, core's stream fails when it is listened to, as
     // it always has.
@@ -764,9 +799,9 @@ class InferenceChat {
     if (failure != null && _lastTurnTakenBack) {
       Error.throwWithStackTrace(failure, failureStack!);
     }
-    _commitText(response);
+    final committed = [?_commitText(response)];
     if (failure == null) {
-      await _accountReply(response, emittedFunctionCall: false);
+      await _accountReply(committed, emittedFunctionCall: false);
       return;
     }
     if (failure case IncompleteStructuredOutputException(end: TurnEnd.closed)) {
@@ -774,7 +809,7 @@ class InferenceChat {
     }
     try {
       await _accountReply(
-        response,
+        committed,
         emittedFunctionCall: false,
         onRebuildFailed: (error, stack) =>
             _failedRebuild = (error: error, stack: stack),
@@ -792,9 +827,10 @@ class InferenceChat {
   }
 
   /// A session rebuild that failed after a structured reply whose own
-  /// failure was that turn's error. The chat still holds the session it
-  /// closed, so every later turn throws this instead of a misleading "session
-  /// is closed", until [clearHistory] gets the chat a new session.
+  /// failure was that turn's error, or in the trim before a message is sent.
+  /// The chat still holds the session it closed, so every later turn throws
+  /// this instead of a misleading "session is closed", until [clearHistory]
+  /// gets the chat a new session.
   ({Object error, StackTrace stack})? _failedRebuild;
 
   void _throwIfRebuildFailed() {
@@ -806,6 +842,9 @@ class InferenceChat {
   Stream<ModelResponse> _streamCoreResponse() async* {
     edgeAiLog('InferenceChat: Starting async stream generation');
     final buffer = StringBuffer();
+
+    // What this turn commits to the model's history, counted at its end.
+    final committed = <Message>[];
 
     // Smart function handling mode - continuous scanning for JSON patterns
     String funcBuffer = '';
@@ -980,6 +1019,7 @@ class InferenceChat {
                 );
                 _fullHistory.add(toolCallMessage);
                 _modelHistory.add(toolCallMessage);
+                committed.add(toolCallMessage);
                 edgeAiLog(
                   'InferenceChat: Added function call to history before yielding',
                 );
@@ -1112,6 +1152,7 @@ class InferenceChat {
           );
           _fullHistory.add(toolCallMessage);
           _modelHistory.add(toolCallMessage);
+          committed.add(toolCallMessage);
           if (allCalls.length == 1) {
             yield allCalls.first;
           } else {
@@ -1168,7 +1209,7 @@ class InferenceChat {
             level: EdgeAiLogLevel.verbose,
           );
           yield TextResponse(message);
-          _commitText(message);
+          committed.addAll([?_commitText(message)]);
           _throwIfClosed(end);
           return;
         }
@@ -1190,6 +1231,7 @@ class InferenceChat {
             );
             _fullHistory.add(toolCallMessage);
             _modelHistory.add(toolCallMessage);
+            committed.add(toolCallMessage);
             edgeAiLog(
               'InferenceChat: Added function call to history at end of stream',
             );
@@ -1219,24 +1261,25 @@ class InferenceChat {
     // stream stopped before any text token ends with response == '', and
     // that empty assistant turn would make later short replies come back
     // empty (#325).
-    if (!emittedFunctionCall) _commitText(response);
+    if (!emittedFunctionCall) committed.addAll([?_commitText(response)]);
     _throwIfClosed(end);
 
-    await _accountReply(response, emittedFunctionCall: emittedFunctionCall);
+    await _accountReply(committed, emittedFunctionCall: emittedFunctionCall);
 
     edgeAiLog(
       'InferenceChat: generateChatResponseAsync completed successfully',
     );
   }
 
-  /// After a committed reply: counts its tokens, rebuilds the session when
-  /// the context is nearly full, and starts a single-turn model's next turn
-  /// on a fresh session.
+  /// After a committed reply: counts what it [committed] to the model's
+  /// history (its text, or its tool call(s) without the prose streamed
+  /// before them), rebuilds the session when the context is nearly full, and
+  /// starts a single-turn model's next turn on a fresh session.
   ///
   /// With [onRebuildFailed], a failed rebuild goes to it instead of being
   /// thrown; a failed count is thrown either way.
   Future<void> _accountReply(
-    String response, {
+    Iterable<Message> committed, {
     required bool emittedFunctionCall,
     void Function(Object error, StackTrace stack)? onRebuildFailed,
   }) async {
@@ -1250,8 +1293,9 @@ class InferenceChat {
     }
 
     edgeAiLog('InferenceChat: Calculating response tokens...');
-    final responseTokens = await session.sizeInTokens(response);
-    _currentTokens += responseTokens;
+    for (final message in committed) {
+      _currentTokens += await _tokensOf(message);
+    }
     edgeAiLog('InferenceChat: Current total tokens: $_currentTokens');
     final used = _hooks.tokenCount(_engine(session)) ?? _currentTokens;
     if (used >= (maxTokens - tokenBuffer)) {
@@ -1509,6 +1553,135 @@ class InferenceChat {
     return message is String ? message : null;
   }
 
+  /// What one image adds to [currentTokens], whatever the engine: a rough
+  /// figure, the same when a message is queued and when it is dropped.
+  static const _tokensPerImage = 257;
+
+  /// The images [message] carries, read as the engines read them:
+  /// [Message.images] when it has any, else [Message.imageBytes].
+  static int _imageCount(Message message) => message.images.isNotEmpty
+      ? message.images.length
+      : (message.imageBytes != null ? 1 : 0);
+
+  /// What [message] adds to [currentTokens]: its text as the session counts
+  /// it, plus [_tokensPerImage] per image. Audio is not counted.
+  Future<int> _tokensOf(Message message) async =>
+      await session.sizeInTokens(message.text) +
+      _imageCount(message) * _tokensPerImage;
+
+  /// How many of the oldest [_modelHistory] messages a trim may drop: none
+  /// of those queued for the coming turn, and none of the tool calls still
+  /// waiting for their responses, or answered by a response being queued
+  /// ([incoming] or a queued one): a response without its call poisons the
+  /// turns after it.
+  int _keepFrom(Message? incoming) {
+    var keep = _stagedFrom?.model ?? _modelHistory.length;
+    final answering =
+        incoming?.type == MessageType.toolResponse ||
+        (keep < _modelHistory.length &&
+            _modelHistory[keep].type == MessageType.toolResponse);
+    if (answering) {
+      while (keep > 0 &&
+          _modelHistory[keep - 1].type == MessageType.toolResponse) {
+        keep--;
+      }
+    }
+    while (keep > 0 && _modelHistory[keep - 1].type == MessageType.toolCall) {
+      keep--;
+    }
+    return keep;
+  }
+
+  /// How many of the oldest [_modelHistory] messages to drop, and the tokens
+  /// they hold, so that the count plus [incoming] is below
+  /// `maxTokens - tokenBuffer`, dropping only the first [keep] messages and
+  /// in whole exchanges (a tool call with the responses that follow it).
+  /// Every message is sized before anything changes, so a count that throws
+  /// leaves the chat as it was. With [mustFit], null when dropping all [keep]
+  /// would still not fit.
+  Future<({int count, int tokens})?> _planDrop({
+    required int incoming,
+    required int keep,
+    bool mustFit = false,
+  }) async {
+    final limit = maxTokens - tokenBuffer;
+    var count = 0;
+    var tokens = 0;
+    while (_currentTokens - tokens + incoming >= limit && count < keep) {
+      var end = count + 1;
+      if (_modelHistory[count].type == MessageType.toolCall) {
+        while (end < keep &&
+            (_modelHistory[end].type == MessageType.toolCall ||
+                _modelHistory[end].type == MessageType.toolResponse)) {
+          end++;
+        }
+      }
+      for (var i = count; i < end; i++) {
+        tokens += await _tokensOf(_modelHistory[i]);
+      }
+      count = end;
+    }
+    if (mustFit && _currentTokens - tokens + incoming >= limit) return null;
+    return (count: count, tokens: tokens);
+  }
+
+  /// Drops the first [count] [_modelHistory] messages, which hold [tokens];
+  /// the take-back point of the turn being queued moves with them.
+  void _drop(int count, int tokens) {
+    if (count == 0) return;
+    _modelHistory.removeRange(0, count);
+    _currentTokens -= tokens;
+    if (_stagedFrom case final staged?) {
+      _stagedFrom = (
+        full: staged.full,
+        model: staged.model - count,
+        prefixes: staged.prefixes,
+        tokens: staged.tokens - tokens,
+        toolsInstructionSent: staged.toolsInstructionSent,
+      );
+    }
+  }
+
+  /// A new session holding the prefixes and [_modelHistory].
+  Future<void> _replayIntoNewSession() async {
+    await session.close();
+    session = await sessionCreator!();
+    for (final prefix in _prefixes) {
+      await session.addQueryChunk(prefix);
+    }
+    for (final message in _modelHistory) {
+      await session.addQueryChunk(message);
+    }
+  }
+
+  /// Before [message] (and [incoming] tokens with it) is sent: when that
+  /// takes the count to `maxTokens - tokenBuffer`, drops the oldest history
+  /// and rebuilds the session from the rest. Nothing is dropped when even
+  /// dropping all of it would not make room: the engine then refuses the
+  /// turn and the history stays. A rebuild that fails is thrown by every
+  /// later call, as after a reply, until [clearHistory].
+  Future<void> _trimBeforeTurn(Message message, {required int incoming}) async {
+    final used = _hooks.tokenCount(_engine(session)) ?? _currentTokens;
+    if (used + incoming < maxTokens - tokenBuffer) return;
+    // A session that keeps the transcript itself owns what fits.
+    if (_hooks.history(_engine(session)) != null) return;
+    final keep = _keepFrom(message);
+    if (keep == 0) return;
+    final plan = await _planDrop(incoming: incoming, keep: keep, mustFit: true);
+    if (plan == null || plan.count == 0) return;
+    edgeAiLog('InferenceChat: Token limit reached before a turn, trimming...');
+    _drop(plan.count, plan.tokens);
+    try {
+      await _replayIntoNewSession();
+    } catch (error, stack) {
+      _failedRebuild = (error: error, stack: stack);
+      rethrow;
+    }
+  }
+
+  /// Rebuilds the session after a reply took the count to
+  /// `maxTokens - tokenBuffer`, from the history left after dropping its
+  /// oldest exchanges until the count is below it.
   Future<void> _recreateSessionWithReducedChunks() async {
     // A session that keeps the transcript itself is rebuilt from it: the
     // engine owns what fits its context.
@@ -1525,31 +1698,9 @@ class InferenceChat {
       return;
     }
 
-    while (_currentTokens >= (maxTokens - tokenBuffer) &&
-        _modelHistory.isNotEmpty) {
-      final removedMessage = _modelHistory.removeAt(0);
-      final size = await session.sizeInTokens(removedMessage.text);
-      _currentTokens -= size;
-
-      // Count all images (message.images can have multiple)
-      final imageCount = removedMessage.images.length;
-      if (imageCount > 0) {
-        _currentTokens -= imageCount * 257;
-      }
-    }
-
-    await session.close();
-    session = await sessionCreator!();
-
-    // Replay prefixes first (explicit prefix messages)
-    for (final prefix in _prefixes) {
-      await session.addQueryChunk(prefix);
-    }
-
-    // Then replay model history
-    for (final message in _modelHistory) {
-      await session.addQueryChunk(message);
-    }
+    final plan = (await _planDrop(incoming: 0, keep: _keepFrom(null)))!;
+    _drop(plan.count, plan.tokens);
+    await _replayIntoNewSession();
   }
 
   void _resetHistory() {
@@ -1576,6 +1727,9 @@ class InferenceChat {
         await addQueryChunk(message);
       }
       await _hooks.replayFinished(_engine(session));
+      // The replayed messages are history, not a turn being queued: a later
+      // trim may drop them and a failed turn does not take them back.
+      _stagedFrom = null;
     } catch (error, stack) {
       try {
         _resetHistory();

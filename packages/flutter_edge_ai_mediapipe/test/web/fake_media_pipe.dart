@@ -74,7 +74,9 @@ WebInferenceModel testModel({
 /// Stands in for the page's MediaPipe globals for the rest of the test.
 /// `created` gets the options of each LlmInference.createFromOptions call;
 /// the LlmInference it creates answers generateResponse with 'ok' and adds
-/// each prompt it is given to `prompts`. `closed` gets each LlmInference
+/// each prompt it is given to `prompts`, and counts one token per character
+/// in sizeInTokens, which a chat calls for each message it queues. `closed`
+/// gets each LlmInference
 /// close() call, so `closed.length == created.length` means every model it
 /// made was released.
 ({List<JSObject> created, List<JSAny> prompts, List<JSObject> closed})
@@ -90,6 +92,10 @@ fakeMediaPipe() {
         prompts.add(prompt);
         return Future<JSString>.value('ok'.toJS).toJS;
       }).toJS,
+    )
+    ..setProperty(
+      'sizeInTokens'.toJS,
+      ((JSString text) => text.toDart.length.toJS).toJS,
     )
     ..setProperty('close'.toJS, (() => closed.add(instance)).toJS);
   replaceGlobal(

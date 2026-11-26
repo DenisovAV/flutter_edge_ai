@@ -1,0 +1,22 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-26",
+  "host": "windows_x64",
+  "device": "Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU)",
+  "commit": "cc652e8d8b7d9d5c51cdf97753d10d49b134fe09",
+  "packages": {
+    "flutter_edge_ai": "2.7.2",
+    "flutter_edge_ai_litertlm": "1.22.0",
+    "flutter_edge_ai_speech": "0.6.3"
+  },
+  "native": "ff8da8c4c7757b4d0bbcd40206e6866bcd8fb6fb92dd4a44b0199ebea5b9b95e",
+  "log_sha256": "44c7cef53abab347544f396e0820cf22d9558e5a0e040d69ea6df7741980c556",
+  "log_url": null,
+  "cells": {
+    "gemma-4-e2b-it/npu-lnl": {
+      "npu": [
+        "deterministic text"
+      ]
+    }
+  }
+}

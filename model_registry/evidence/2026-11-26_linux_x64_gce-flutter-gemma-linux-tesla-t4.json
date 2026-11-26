@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-26",
+  "host": "linux_x64",
+  "device": "GCE flutter-gemma-linux (Tesla T4)",
+  "commit": "cc652e8d8b7d9d5c51cdf97753d10d49b134fe09",
+  "packages": {
+    "flutter_edge_ai": "2.7.2",
+    "flutter_edge_ai_litertlm": "1.22.0",
+    "flutter_edge_ai_speech": "0.6.3"
+  },
+  "native": "207691315ba167e894c784db489ab740a7e3b86b8e378fa83740af263270727e",
+  "log_sha256": "5eb8af8f640d27c1bd93f3de978712ebed0f884919aac75184f18ddc031f0caf",
+  "log_url": null,
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "embeddinggemma-2-text-vision-440m/generic": {
+      "cpu": [
+        "text to image retrieval"
+      ]
+    },
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "audio",
+        "text",
+        "vision"
+      ],
+      "gpu": [
+        "text"
+      ]
+    },
+    "matcha-tts/bundle": {
+      "cpu": [
+        "synthesizes within the golden tolerance"
+      ]
+    },
+    "moonshine-tiny/f32": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    }
+  }
+}

@@ -834,6 +834,48 @@ void main() {
       ),
       hasLength(1),
     );
+    // N3 on @litert-lm/core 0.20.0 (recorded 2026-11-25): a conversation
+    // whose session asks for 0 output tokens still answers, and its history
+    // grew by exactly the message and that reply.
+    final emptyReply =
+        (record['history_after_empty_reply']! as Map)['value'] as Map;
+    expect(emptyReply['reply'], startsWith('answered:'));
+    expect(emptyReply['roles'], ['user', 'assistant']);
+    // What 0.20.0 does with a message its template cannot take. Each probe
+    // conversation answers a plain message afterwards.
+    Map malformed(String name) =>
+        (record['malformed_$name']! as Map)['value'] as Map;
+    List<String> rolesOf(Map value) => [
+      for (final entry in jsonDecode(value['history'] as String) as List)
+        (entry as Map)['role'] as String,
+    ];
+    // An unknown role is rendered and answered.
+    final unknownRole = malformed('unknown_role');
+    expect(unknownRole['end'], 'done');
+    expect(unknownRole['chunks'], greaterThan(0));
+    expect(rolesOf(unknownRole), ['narrator', 'assistant']);
+    expect(unknownRole['next'], startsWith('answered:'));
+    // An unknown part: the stream closes with no chunk and no error, and the
+    // message stays in the history with no reply (a refused send).
+    final unknownPart = malformed('unknown_part');
+    expect(unknownPart['end'], 'done');
+    expect(unknownPart['chunks'], 0);
+    expect(rolesOf(unknownPart), ['user']);
+    expect(unknownPart['next'], startsWith('answered:'));
+    // A tool response without tools: no chunk, and an empty assistant entry
+    // after it (what the web arm reads as an empty reply).
+    final toolResponse = malformed('tool_response_without_tools');
+    expect(toolResponse['end'], 'done');
+    expect(toolResponse['chunks'], 0);
+    final toolHistory = jsonDecode(toolResponse['history'] as String) as List;
+    expect(
+      [for (final e in toolHistory) (e as Map)['role']],
+      ['tool', 'assistant'],
+    );
+    expect((toolHistory.last as Map)['content'], [
+      {'type': 'text', 'text': ''},
+    ]);
+    expect(toolResponse['next'], startsWith('answered:'));
     // M1/N1: when the second image fails (0.19.0: "Image index 1 must be
     // less than 1."; 0.20.0 answers it), the failed message stays at the end
     // of the history with no reply, a rebuild with it fails again, and one

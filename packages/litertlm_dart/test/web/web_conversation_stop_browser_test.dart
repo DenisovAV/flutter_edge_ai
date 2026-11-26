@@ -558,13 +558,40 @@ void main() {
         ),
       );
       setOnPage('historyError', null);
+
+      // Whether the runtime kept an answer cannot be told: the next message
+      // goes to a conversation rebuilt from the history.
+      await exchange(conversation, 'Two', 'Dos');
+      expect(list('conversationOptions'), hasLength(2));
+      expect(list('sent').last, 'Two');
+    });
+
+    test('an earlier empty exchange at the end of the history is not this '
+        "turn's reply: a send the runtime refused without keeping it, after "
+        'one it answered empty, is refused', () async {
+      final quiet = conversation
+          .sendMessageStream(Message.user('Quiet'))
+          .drain<void>();
+      await settle();
+      js('__emptyReply');
+      await quiet;
+
+      setOnPage('refusedBeforeHistory', true);
+      final error = await refusedTurn('Quiet');
+
+      expect(
+        error,
+        errorWith<TurnFailedException>('refused the message without a reason'),
+      );
     });
 
     test(
       'a stop asked while the history is read ends the turn normally',
       () async {
         setOnPage('refuseNextSend', true);
+        // The read after the empty stream, not the one before the send.
         setOnPage('holdHistory', true);
+        setOnPage('holdHistorySkip', 1);
         final turn = conversation
             .sendMessageStream(Message.user('Bad'))
             .drain<void>();

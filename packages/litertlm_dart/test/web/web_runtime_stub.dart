@@ -38,6 +38,7 @@ const _stub = r'''
     resolvedBackend: 3, maxNumTokens: 4096,
     createError: null, conversationError: null, conversationErrorAfter: null,
     historyError: null, holdFence: false, holdHistory: false,
+    holdHistorySkip: 0,
     stuckOnCancel: false, deleteError: null, missingMember: null,
     noSettingsBackend: false, noSettingsTokens: false,
     resolvedVisionBackend: null, resolvedAudioBackend: null,
@@ -119,7 +120,10 @@ const _stub = r'''
         return Promise.resolve([...c.history, {role: 'user', content: [
           {type: 'image', blob: 42}]}, {role: 'assistant', content: 'x'}]);
       }
-      if (p.holdHistory) {
+      // holdHistorySkip: reads let through before holdHistory holds one.
+      if (p.holdHistory && p.holdHistorySkip > 0) {
+        p.holdHistorySkip--;
+      } else if (p.holdHistory) {
         return new Promise((resolve) => p.histories.push(() => resolve(c.history)));
       }
       return Promise.resolve([...c.history, ...(p.historyTail || [])]);

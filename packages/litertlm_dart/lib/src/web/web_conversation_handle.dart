@@ -615,6 +615,22 @@ final class WebConversationHandle implements ConversationHandle {
         finish(error: refusal, stack: StackTrace.current);
         return;
       }
+      // The history's length before the send: a reply that ends with no
+      // chunk is the model's empty reply only if the history then grew by
+      // exactly the message and an empty answer ([_settleEmptyTurn]).
+      try {
+        turn.historyBefore = (await _conversation.getHistory().toDart).length;
+      } catch (e) {
+        runtimeLog(
+          '[WebConversationHandle] could not read the history before a send '
+          '($e): an empty reply is told from a refused send by its tail '
+          'alone',
+        );
+      }
+      if (turn.asked) {
+        finishAsked(StackTrace.current);
+        return;
+      }
       try {
         start();
       } catch (e, st) {
@@ -651,7 +667,7 @@ final class WebConversationHandle implements ConversationHandle {
     read().then(
       (history) {
         if (turn.finished) return;
-        if (_isEmptyReply(history, turn.message)) {
+        if (_isEmptyReply(history, turn.message, before: turn.historyBefore)) {
           if (turn.asked) {
             finishAsked(StackTrace.current);
           } else {
@@ -680,6 +696,12 @@ final class WebConversationHandle implements ConversationHandle {
       },
       onError: (Object e, StackTrace st) {
         if (turn.finished) return;
+        // Whether the runtime answered or refused the message cannot be
+        // told: the next turn rebuilds the conversation from its history,
+        // leaving the message out if it stands there unanswered.
+        _mustRebuild = true;
+        _failed = turn.message;
+        _rebuildCause = 'a reply whose history could not be read';
         if (turn.asked) {
           finishAsked(st);
           return;
@@ -697,12 +719,17 @@ final class WebConversationHandle implements ConversationHandle {
   }
 
   /// Whether [history] ends with [message] answered by an empty assistant
-  /// entry (no text, no tool call): the model's own empty reply.
+  /// entry (no text, no tool call): the model's own empty reply. With the
+  /// history's length [before] the send known, it must have grown by exactly
+  /// those two entries, so an earlier identical exchange is not read as this
+  /// one.
   static bool _isEmptyReply(
     List<Object?> history,
-    Map<String, Object?> message,
-  ) {
+    Map<String, Object?> message, {
+    int? before,
+  }) {
     if (history.length < 2) return false;
+    if (before != null && history.length != before + 2) return false;
     final reply = history.last;
     if (reply is! Map || reply['role'] != 'assistant') return false;
     if (reply['tool_calls'] case final List<Object?> calls
@@ -1141,6 +1168,10 @@ final class _Turn {
 
   /// `sendMessageStreaming` was called for it.
   bool sent = false;
+
+  /// How many entries the runtime's history held right before the send;
+  /// null when it could not be read.
+  int? historyBefore;
 
   bool stopAsked = false;
   bool closeAsked = false;

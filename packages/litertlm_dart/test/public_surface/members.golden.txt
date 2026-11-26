@@ -172,18 +172,30 @@ final class EmbeddingEngine
   field final EmbedderInfo info
   getter String? cacheDir
   method Future<void> close()
-  method Future<Float32List> computeEmbedding(List<Content> contents)
+  method Future<Float32List> computeEmbedding(List<Content> contents, {EmbeddingOptions options = const EmbeddingOptions()})
   method static Future<EmbeddingEngine> create(EmbeddingEngineConfig config)
 
 final class EmbeddingEngineConfig
-  constructor EmbeddingEngineConfig({required String modelPath, String? cacheDir, Backend? backend, Backend? visionBackend, Backend? audioBackend, int? visionTokensPerImage, bool requireWeightCache = false})
+  constructor EmbeddingEngineConfig({required String modelPath, String? cacheDir, Backend? backend, Backend? visionBackend, Backend? audioBackend, int? visionTokensPerImage, bool requireWeightCache = false, int? maxInputLength, ActivationDataType? activationDataType})
+  field final ActivationDataType? activationDataType
   field final Backend? audioBackend
   field final Backend backend
   field final String? cacheDir
+  field final int? maxInputLength
   field final String modelPath
   field final bool requireWeightCache
   field final Backend? visionBackend
   field final int? visionTokensPerImage
+
+final class EmbeddingOptions
+  constructor const EmbeddingOptions({bool? normalize, bool? insertSpecialTokens, int? outputSize, int? visionTokensPerImage})
+  field final bool? insertSpecialTokens
+  field final bool? normalize
+  field final int? outputSize
+  field final int? visionTokensPerImage
+  getter int hashCode
+  method bool ==(Object other)
+  method String toString()
 
 final class Engine
   field final ActivationDataType? activationDataType
@@ -508,7 +520,7 @@ final class ToolResponseContent extends Content
 final class TurnFailedException extends LiteRtLmException
   constructor const TurnFailedException(String message, {Object? cause})
 
-function Future<LlmBenchmarkResult> benchmark({required String modelPath, required Backend backend, Backend? visionBackend, Backend? audioBackend, int prefillTokens = 256, int decodeTokens = 256, String prompt = 'How are you', int? maxNumTokens, String? cacheDir, SamplerConfig? samplerConfig, SpeculativeDecodingConfig? speculativeDecoding})
+function Future<LlmBenchmarkResult> benchmark({required String modelPath, required Backend backend, Backend? visionBackend, Backend? audioBackend, int prefillTokens = 256, int decodeTokens = 256, String prompt = 'How are you', int? maxNumTokens, String? cacheDir, SamplerConfig? samplerConfig, SpeculativeDecodingConfig? speculativeDecoding, LoraConfig? loraConfig, RepetitionPenaltyConfig? repetitionPenaltyConfig})
 
 variable const int maxThinkingTokenBudget
 

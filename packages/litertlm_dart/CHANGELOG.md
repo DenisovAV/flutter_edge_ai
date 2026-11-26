@@ -17,6 +17,9 @@
 - Android Qualcomm NPU on QNN 2.52.0; Linux arm64 on QAIRT 2.51.1.
 - Windows Intel GPU: prefill up to ~2x slower than 0.19 (E2B 1.1-1.4x) to keep Gemma 4 12B answering.
 - `LlmBenchmarkResult.initTime` counts the engine creation only, as in LiteRT-LM 0.20.
+- `EmbeddingOptions` per request on `computeEmbedding`: `outputSize`, `normalize`, special tokens, vision budget.
+- `EmbeddingEngineConfig.maxInputLength` and `activationDataType` (native), as Kotlin's.
+- `benchmark()` takes `loraConfig` and `repetitionPenaltyConfig`, as Kotlin's.
 
 ## 0.19.1+4
 - Plain Dart programs (`dart run`, `dart test`, `dart build cli`) on every backend; see the README.

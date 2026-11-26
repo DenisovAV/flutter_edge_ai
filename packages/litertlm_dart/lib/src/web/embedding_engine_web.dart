@@ -10,7 +10,10 @@ import '../api/backend.dart';
 import '../api/embedding_engine_config.dart';
 import '../api/message.dart';
 import '../embedder/embedder_constants.dart'
-    show liteRtLmDefaultVisionTokensPerImage, liteRtLmVisionTokenBudgets;
+    show
+        liteRtLmDefaultVisionTokensPerImage,
+        liteRtLmMaxInputLength,
+        liteRtLmVisionTokenBudgets;
 import '../embedder/embedder_types.dart';
 import '../runtime/runtime_log.dart';
 import '../runtime/types.dart' show BackendKind;
@@ -36,9 +39,17 @@ final class EmbeddingEngine {
   ///
   /// Throws [UnsupportedError] for what does not run here: the CPU text
   /// tower, the NPU, a CPU thread count, a `cacheDir` or `requireWeightCache`
-  /// (the web runtime keeps no weight cache); [EmbedderLoadException] for a
+  /// (the web runtime keeps no weight cache), an `activationDataType` (its
+  /// `EmbeddingEngine` settings take none); [EmbedderLoadException] for a
   /// bundle or a page that cannot run as asked.
   static Future<EmbeddingEngine> create(EmbeddingEngineConfig config) async {
+    if (config.activationDataType != null) {
+      throw UnsupportedError(
+        'The web runtime ($liteRtLmWebRuntime) takes no activation type for '
+        'an EmbeddingEngine (its EmbeddingEngineSettings have none): leave '
+        'activationDataType unset on the web.',
+      );
+    }
     if (config.cacheDir != null || config.requireWeightCache) {
       throw UnsupportedError(
         'The web runtime ($liteRtLmWebRuntime) keeps no weight cache: leave '
@@ -85,6 +96,7 @@ final class EmbeddingEngine {
           if (audio != null) EmbedderModality.audio,
         },
         visionTokensPerImage: budget,
+        maxInputLength: config.maxInputLength ?? liteRtLmMaxInputLength,
         backend: backend,
         audioBackend: audio == null
             ? liteRtLmWebAudioBackend
@@ -129,13 +141,19 @@ final class EmbeddingEngine {
 
   /// The embedding of [contents]: at most one text part (its task prefix
   /// already in front), any image parts and at most one audio part, one
-  /// vector for all of them. Throws [EmbedderInputTooLongException] for an
-  /// input over the limit (never truncated), [ArgumentError] for contents it
-  /// does not take and [StateError] after [close].
-  Future<Float32List> computeEmbedding(List<Content> contents) async {
+  /// vector for all of them, computed with [options] (the runtime's own
+  /// `EmbeddingOptions`, as Kotlin's and Swift's). Throws
+  /// [EmbedderInputTooLongException] for an input over the limit (never
+  /// truncated), [ArgumentError] for contents it does not take or [options]
+  /// it cannot apply (a vision budget other than the engine's: the runtime
+  /// prepares that one vision signature) and [StateError] after [close].
+  Future<Float32List> computeEmbedding(
+    List<Content> contents, {
+    EmbeddingOptions options = const EmbeddingOptions(),
+  }) async {
     if (_closed) throw StateError('The embedding engine is closed.');
     final input = embedderInputOfContents(contents, info.modalities);
-    return Float32List.fromList(await _embedder.embed(input));
+    return Float32List.fromList(await _embedder.embed(input, options: options));
   }
 
   /// Deletes the engine.

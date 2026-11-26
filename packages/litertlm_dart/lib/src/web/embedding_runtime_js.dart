@@ -23,8 +23,9 @@
 ///     maxInputLength, minInputLength?, visionTokensPerImage?})
 ///   // Promise<EmbeddingEngine>
 /// engine.computeEmbedding(input, {normalize, insertSpecialTokens,
-///     inputOverflowStrategy})  // Promise<{embedding: number[], inputLength,
-///                              //   truncatedLength?, numChunks}>
+///     inputOverflowStrategy, outputSize?, visionTokensPerImage?})
+///   // Promise<{embedding: number[], inputLength, truncatedLength?,
+///   //   numChunks}>
 ///   // input: a string, {type: 'image', data: ArrayBuffer},
 ///   // {type: 'audio', data: ArrayBuffer}, or an array of them (one vector)
 /// engine.delete()                                   // Promise<void>
@@ -308,6 +309,13 @@ final class _WindowEngine implements LiteRtLmWebEngine {
       ..['inputOverflowStrategy'] = _overflowValue(
         options.inputOverflowStrategy,
       ).toJS;
+    // Absent, never null: the runtime passes them on as optional values.
+    if (options.outputSize case final size?) {
+      jsOptions['outputSize'] = size.toJS;
+    }
+    if (options.visionTokensPerImage case final budget?) {
+      jsOptions['visionTokensPerImage'] = budget.toJS;
+    }
     final response = await _engine.computeEmbedding(part, jsOptions).toDart;
     final values =
         response.embedding ??

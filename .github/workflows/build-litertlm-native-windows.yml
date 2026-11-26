@@ -124,7 +124,9 @@ jobs:
           if ('${{ inputs.compiler }}' -eq 'clang-cl') {
             $env:BAZEL_LLVM = 'C:\Program Files\LLVM'
             & "$env:BAZEL_LLVM\bin\clang-cl.exe" --version
-            $compilerFlags = @('--compiler=clang-cl')
+            # XNNPACK's amd64 .S microkernels go to MASM (ml64) under this
+            # toolchain and fail; the CPU kernels play no part in the GPU A/B.
+            $compilerFlags = @('--compiler=clang-cl', '--define=xnn_enable_assembly=false')
           }
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build -c opt `

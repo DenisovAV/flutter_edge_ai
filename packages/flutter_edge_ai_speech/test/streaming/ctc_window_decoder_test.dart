@@ -138,4 +138,50 @@ void main() {
       );
     });
   });
+
+  group('ctcValidFraction', () {
+    test(
+      'less than one hop of audio decodes nothing, not the whole window',
+      () {
+        final fraction = ctcValidFraction(
+          validSamples: 159,
+          hopLength: 160,
+          melFrames: 500,
+        );
+        // Every frame argmax token 3, not blank: decoding the window would
+        // emit it.
+        final logits = Float32List(10 * 4);
+        for (var t = 0; t < 10; t++) {
+          logits[t * 4 + 3] = 1;
+        }
+        final tokens = ctcWindowTokens(
+          logits,
+          numFrames: 10,
+          vocabSize: 4,
+          validFraction: fraction,
+          blankId: 0,
+        );
+        expect(tokens.where((t) => !t.isEndOfChunk), isEmpty);
+      },
+    );
+
+    test('whole mel frames of the valid audio, capped at the window', () {
+      expect(
+        ctcValidFraction(
+          validSamples: 160 * 250,
+          hopLength: 160,
+          melFrames: 500,
+        ),
+        0.5,
+      );
+      expect(
+        ctcValidFraction(
+          validSamples: 160 * 600,
+          hopLength: 160,
+          melFrames: 500,
+        ),
+        1,
+      );
+    });
+  });
 }

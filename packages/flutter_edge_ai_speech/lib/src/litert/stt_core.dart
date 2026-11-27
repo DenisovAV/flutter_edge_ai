@@ -38,7 +38,6 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -50,7 +49,8 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:litertlm_dart/litert_bindings.dart';
 
 import '../model/stt_model_profile.dart';
-import '../streaming/ctc_window_decoder.dart' show ctcWindowTokens;
+import '../streaming/ctc_window_decoder.dart'
+    show ctcValidFraction, ctcWindowTokens;
 import '../tokenizer/stt_special_tokens.dart'
     show ResolvedSuppression, SttSpecialTokenResolver;
 import '../tokenizer/stt_tokenizer.dart' show SttTokenizer;
@@ -617,16 +617,15 @@ class SttCore {
       final logits = hidden.alloc.aligned.cast<Float>().asTypedList(
         hidden.frames * hidden.dim,
       );
-      final melFrames = _profile.melFrames!;
-      final validMelFrames = math.min(
-        validSamples ~/ _profile.hopLength!,
-        melFrames,
-      );
       final tokens = ctcWindowTokens(
         logits,
         numFrames: hidden.frames,
         vocabSize: hidden.dim,
-        validFraction: validMelFrames / melFrames,
+        validFraction: ctcValidFraction(
+          validSamples: validSamples,
+          hopLength: _profile.hopLength!,
+          melFrames: _profile.melFrames!,
+        ),
         startFraction: startFraction,
         blankId: _profile.blankId,
       );

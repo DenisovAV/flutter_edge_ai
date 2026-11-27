@@ -93,3 +93,18 @@ List<DecodedToken> ctcWindowTokens(
   tokens.add(DecodedToken.endOfChunk(timestampMs: numFrames - firstReported));
   return tokens;
 }
+
+/// The `validFraction` [ctcWindowTokens] takes for a window whose first
+/// [validSamples] are audio: whole mel frames of [hopLength] samples, out of
+/// [melFrames]. Less than one hop of audio gives the smallest positive
+/// fraction, so nothing is decoded: [ctcWindowTokens] reads 0 as "the whole
+/// window", which would decode the zero padding.
+double ctcValidFraction({
+  required int validSamples,
+  required int hopLength,
+  required int melFrames,
+}) {
+  final frames = validSamples ~/ hopLength;
+  if (frames <= 0) return double.minPositive;
+  return frames >= melFrames ? 1 : frames / melFrames;
+}

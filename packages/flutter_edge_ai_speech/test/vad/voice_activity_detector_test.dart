@@ -245,11 +245,13 @@ void main() {
     await waitForLine(log, 'frame');
     release(log);
     // All three frames through the model, then the reply's turn on the
-    // chain, where a wrong resume would land.
+    // chain, where a wrong resume would land. The reply and that turn give
+    // no signal of their own: a machine slower than this wait lets the test
+    // pass without having seen the turn, but it never fails wrongly.
     while ('\n'.allMatches(log.readAsStringSync()).length < 3) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await Future<void>.delayed(const Duration(seconds: 1));
     expect(live.isPaused, isTrue, reason: 'the consumer paused the stream');
   });
 

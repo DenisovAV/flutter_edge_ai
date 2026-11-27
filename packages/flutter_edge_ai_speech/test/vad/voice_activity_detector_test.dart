@@ -215,6 +215,35 @@ void main() {
     expect(error, isA<FormatException>());
   });
 
+  test('a producer that refills the buffer it handed over does not change '
+      'what was analysed', () async {
+    final vad = await create();
+    addTearDown(vad.close);
+    final expected = await vad.detect(chunked(speech, 1024)).toList();
+    expect(expected, isNotEmpty);
+    // One buffer for every chunk, refilled right after each delivery, as a
+    // microphone plugin with a scratch buffer may do.
+    final events = await vad.detect(_ReusedBufferStream(speech, 1024)).toList();
+    expect(events, expected);
+  });
+
+  test('a chunk delivered inside listen() does not undo a pause of the '
+      'consumer', () async {
+    final vad = await create();
+    addTearDown(vad.close);
+    final live = StreamController<Uint8List>();
+    addTearDown(live.close);
+    final sub = vad
+        .detect(_EagerThenLive([audio(0.1, loud: false)], live.stream))
+        .listen((_) {});
+    addTearDown(sub.cancel);
+    sub.pause();
+    // Let the eagerly delivered chunk go through the model.
+    await vad.probabilities(Uint8List(0)).catchError((_) => Float32List(0));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    expect(live.isPaused, isTrue, reason: 'the consumer paused the stream');
+  });
+
   test('a worker that dies while the input is idle ends the stream with '
       'StateError', () async {
     final vad = await create('/fake/dies-idle.tflite');
@@ -490,5 +519,73 @@ final class _EagerStream extends Stream<Uint8List> {
       return const Stream<Uint8List>.empty().listen(null);
     }
     return const Stream<Uint8List>.empty().listen(null, onDone: onDone);
+  }
+}
+
+/// Delivers [bytes] in [size]-byte chunks through ONE buffer, refilled with
+/// the next chunk right after each delivery, then ends.
+final class _ReusedBufferStream extends Stream<Uint8List> {
+  _ReusedBufferStream(this._bytes, this._size);
+  final Uint8List _bytes;
+  final int _size;
+
+  @override
+  StreamSubscription<Uint8List> listen(
+    void Function(Uint8List)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    final out = StreamController<Uint8List>(sync: true);
+    final buffer = Uint8List(_size);
+    out.onListen = () async {
+      // Not inside onListen: the controller would hold the first event until
+      // listen() returns, after the refill.
+      await Future<void>.delayed(Duration.zero);
+      for (var i = 0; i < _bytes.length; i += _size) {
+        // A producer that respects pause: while paused the controller would
+        // keep a view of the buffer this then overwrites.
+        while (out.isPaused) {
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+        }
+        final end = i + _size > _bytes.length ? _bytes.length : i + _size;
+        buffer.setRange(0, end - i, _bytes, i);
+        out.add(Uint8List.sublistView(buffer, 0, end - i));
+        // Refill with garbage at once: whatever reads it later is wrong.
+        buffer.fillRange(0, _size, 0x7f);
+        await Future<void>.delayed(Duration.zero);
+      }
+      await out.close();
+    };
+    return out.stream.listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    );
+  }
+}
+
+/// Delivers [_eager] from inside [listen], before it returns, then forwards
+/// [_live].
+final class _EagerThenLive extends Stream<Uint8List> {
+  _EagerThenLive(this._eager, this._live);
+  final List<Uint8List> _eager;
+  final Stream<Uint8List> _live;
+
+  @override
+  StreamSubscription<Uint8List> listen(
+    void Function(Uint8List)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    _eager.forEach(onData ?? (_) {});
+    return _live.listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    );
   }
 }

@@ -158,12 +158,19 @@ final class VoiceActivityDetector {
         try {
           input = pcm16kMono.listen(
             (chunk) {
-              input?.pause();
-              chain = chain
-                  .then((_) => done ? null : analyse(framer.add(chunk)))
-                  .then((_) {
-                    if (!done) input?.resume();
-                  }, onError: finish);
+              // Framed now, not when its turn comes: a producer may refill
+              // the buffer it handed over as soon as this returns.
+              final frames = framer.add(chunk);
+              // Only a pause this handler made is undone below: a chunk
+              // delivered inside listen() has no subscription to pause yet,
+              // and resuming then would cancel a pause of the consumer's.
+              final paused = input;
+              paused?.pause();
+              chain = chain.then((_) => done ? null : analyse(frames)).then((
+                _,
+              ) {
+                if (!done) paused?.resume();
+              }, onError: finish);
             },
             // After the chunks received before it, so an error never
             // overtakes audio already delivered.

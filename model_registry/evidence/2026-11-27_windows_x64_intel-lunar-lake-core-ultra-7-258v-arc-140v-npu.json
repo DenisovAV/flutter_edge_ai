@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-27",
+  "host": "windows_x64",
+  "device": "Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU)",
+  "commit": "91a8ac76571f3e5db63bbae19323d8f093262efa",
+  "packages": {
+    "flutter_edge_ai": "2.8.0",
+    "flutter_edge_ai_litertlm": "1.22.1",
+    "flutter_edge_ai_speech": "0.7.0"
+  },
+  "native": "ff8da8c4c7757b4d0bbcd40206e6866bcd8fb6fb92dd4a44b0199ebea5b9b95e",
+  "log_sha256": "5afb78a5f65dd12383b5ccf26b75b4088a06924ffec24e527f7ef22bc92ff33b",
+  "log_url": null,
+  "cells": {
+    "matcha-tts/bundle": {
+      "cpu": [
+        "synthesizes within the golden tolerance"
+      ]
+    },
+    "moonshine-tiny/f32": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    }
+  }
+}

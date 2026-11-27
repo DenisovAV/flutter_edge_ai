@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-27",
+  "host": "linux_x64",
+  "device": "GCE flutter-gemma-linux (Tesla T4)",
+  "commit": "91a8ac76571f3e5db63bbae19323d8f093262efa",
+  "packages": {
+    "flutter_edge_ai": "2.8.0",
+    "flutter_edge_ai_litertlm": "1.22.1",
+    "flutter_edge_ai_speech": "0.7.0"
+  },
+  "native": "207691315ba167e894c784db489ab740a7e3b86b8e378fa83740af263270727e",
+  "log_sha256": "7c1c9c94544881d50f93b1619f161225e3a68d72bd843b9c016a457a5304043e",
+  "log_url": null,
+  "cells": {
+    "matcha-tts/bundle": {
+      "cpu": [
+        "synthesizes within the golden tolerance"
+      ]
+    },
+    "moonshine-tiny/f32": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    }
+  }
+}

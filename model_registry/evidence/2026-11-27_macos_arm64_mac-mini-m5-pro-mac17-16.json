@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-27",
+  "host": "macos_arm64",
+  "device": "Mac mini (M5 Pro, Mac17,16)",
+  "commit": "91a8ac76571f3e5db63bbae19323d8f093262efa",
+  "packages": {
+    "flutter_edge_ai": "2.8.0",
+    "flutter_edge_ai_litertlm": "1.22.1",
+    "flutter_edge_ai_speech": "0.7.0"
+  },
+  "native": "e820e3acc547edbbb11380c02958d1c95160a79147b437ec3f2b1a5f9f361fa6",
+  "log_sha256": "10a9593428bae33e5712ed17658e2dfab89965538b2df96c3fbcf1383de4fc5d",
+  "log_url": null,
+  "cells": {
+    "matcha-tts/bundle": {
+      "cpu": [
+        "synthesizes within the golden tolerance"
+      ]
+    },
+    "moonshine-tiny/f32": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    }
+  }
+}

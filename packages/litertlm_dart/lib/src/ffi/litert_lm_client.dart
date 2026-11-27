@@ -3511,6 +3511,7 @@ class LiteRtLmFfiClient {
       filterChannelContent: liteRtLmFiltersChannelContent(
         npu: _backend == 'npu',
         linearAttentionState: await _loadedLinearAttentionState(),
+        hasTools: toolsJson != null,
       ),
     );
     // A shutdown that landed while we were suspended already closed this handle

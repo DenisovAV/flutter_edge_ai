@@ -516,16 +516,35 @@ decoding already does; any other choice is refused, as its runtime has no
 tool choice.
 
 After an action tool's result (a `{'status': 'success'}`, say), Gemma 4 E2B
-can end its reply with no text. Measured on Hugging Face's prompt with
-thinking off, it did so in 30 of 30 sampled runs for a `show_alert` and in 13
-of 30 for a background-colour change; a tool that returns data was answered
-every time. With thinking on it thinks first and then answers. The Gemma 4 E2B
-and E4B `.litertlm` files on litert-community (the generic, Google Tensor,
-Qualcomm and Intel E2B builds, and the generic E4B) embed an older chat
-template, which starts no thought after a tool result and puts
-`<|tool_response>` in the context twice. On native platforms, conversations on
-those files render LiteRT-LM's canonical Gemma 4 template instead; every other
-file, and every file on the web, keeps its own template.
+can end its reply with no text. On Hugging Face's prompt with thinking off
+(a raw session, LiteRT-LM 0.20.0, CPU, 30 sampled runs each) it did so every time after a
+`show_alert` and in 24 of 30 after a background-colour change; a tool that
+returns data was answered every time. With thinking on it usually thinks first
+and then answers. Natively, two things bring that about on the Gemma 4 E2B and
+E4B `.litertlm` files on litert-community:
+
+- These files embed an older chat template. It starts no thought after a tool
+  result and puts `<|tool_response>` in the context twice, because decoding
+  stops on that token and keeps it (LiteRT-LM's `models/gemma4/README.md`).
+  The template was read from the generic, Google Tensor G5/G6, Qualcomm
+  QCS8275 and Intel LNL/PTL E2B files and the generic E4B file. Conversations
+  on them render LiteRT-LM's canonical Gemma 4 template instead; a
+  `chatTemplate` you set wins, and every other file keeps its own.
+- A conversation with tools keeps the model's thoughts in its context.
+  LiteRT-LM strips a reply's thought as soon as the reply ends, a reply that
+  only called a tool included, and without the thought behind the call the
+  model called the same tool again. The cost is context: with thinking on,
+  four tool turns of Gemma 4 E2B left 1,018 tokens in the KV cache instead of
+  695 (`getTokenCount()` shows what a conversation of its own holds). A conversation
+  rebuilt from its history (after a stop or a full context, or on a backend
+  whose conversations share one native conversation) replays no thoughts.
+
+Measured with Gemma 4 E2B on the CPU and on Metal (macOS): with thinking on,
+replies to a tool result with no text fell from 18 of 54 to 2 (CPU) and from
+21 of 54 to 1 (Metal) with the file's sampler, and from 10 and 7 of 18 to none
+greedy. With `show_alert` as the only tool, the model still decided the
+request was done and answered nothing on either template. E4B and the NPU
+builds were not run. On the web the files keep their own template.
 
 ## Thinking
 
@@ -788,7 +807,8 @@ API's numbers, as Swift's `BenchmarkInfo`.
 | Activation types | `FLOAT32`, `FLOAT16`, `INT16`, `INT8` | the same four; int16/int8 refused on the GPU for Gemma 4 and FunctionGemma (measured nonsense on Metal) and for EmbeddingGemma 2 (ran as float16) |
 | `Backend.GOOGLE_TENSOR` (Kotlin) | the `GOOGLE_TENSOR_ARTISAN` executor | refused: the open-source LiteRT-LM registers none; the Tensor NPU is `Backend.npu()` |
 | Custom `channels`, `prefillPrefaceOnInit` (Kotlin) | through Kotlin's JNI | not offered: LiteRT-LM's C API has no setter for either |
-| Prompt template | the bundle's | the bundle's; natively, LiteRT-LM's canonical one on litert-community's Gemma 4 E2B and E4B files |
+| Prompt template | the bundle's | the bundle's; natively, LiteRT-LM's canonical one on litert-community's Gemma 4 E2B and E4B files unless `chatTemplate` is set |
+| Thoughts in a conversation with tools | stripped from the KV cache after each reply (LiteRT-LM's default; Kotlin's `ExperimentalFlags.filterChannelContentFromKvCache` changes it) | kept in a live native conversation, so the turn a tool result continues sees the thought behind the call; a conversation rebuilt from its history replays none |
 
 ## Where it runs today
 

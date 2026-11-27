@@ -1,5 +1,5 @@
 ## Unreleased
-- Gemma 4 E2B/E4B with thinking answers a tool result in text: LiteRT-LM's canonical chat template natively.
+- Gemma 4 with thinking answers tool results in text: canonical chat template, thoughts kept with tools.
 
 ## 0.20.0+2
 - Web: tool results go as user text; `@litert-lm/core` often answered tool messages empty.

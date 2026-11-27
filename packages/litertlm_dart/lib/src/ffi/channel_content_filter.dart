@@ -16,6 +16,14 @@
 /// attention state either, and it runs inside the native send, before Dart
 /// could rebuild the conversation instead.
 ///
+/// Nor in a conversation with tools ([hasTools]): the strip also takes the
+/// thought of a reply that only called a tool, before the turn continues with
+/// the tool's result, where Hugging Face's Gemma 4 template keeps the thoughts
+/// of the turn in progress. Without that thought, Gemma 4 E2B with thinking on
+/// called the same tool again (LiteRT-LM 0.20.0, `show_alert` greedy: four
+/// times, then the round limit; D8 tool cases on Metal, sampled: 4 of 54
+/// replies vs 1 of 54 with the filter off).
+///
 /// The cost where the filter is off: the thoughts stay in the native KV cache
 /// while core's history and the replay record only the visible reply, so a
 /// long chat fills its context faster than its history suggests, and a
@@ -24,4 +32,5 @@
 bool liteRtLmFiltersChannelContent({
   required bool npu,
   required bool? linearAttentionState,
-}) => !npu && linearAttentionState == false;
+  required bool hasTools,
+}) => !npu && linearAttentionState == false && !hasTools;

@@ -3,15 +3,20 @@ import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'
     show
+        FunctionCallResponse,
         InferenceChat,
         Message,
         ModelResponse,
+        SpeechChunk,
         SpeechRecognizer,
         SpeechSynthesizer,
+        SpeechTextStream,
+        StreamingSttInfo,
         TextResponse,
         ThinkingResponse,
-        FunctionCallResponse,
-        Tool;
+        Tool,
+        TranscribeStreamOptions,
+        TranscriptUpdate;
 import 'package:flutter_edge_ai_speech/src/voice/pcm_wav.dart';
 import 'package:flutter_edge_ai_speech/src/voice/voice_event.dart'
     show VoiceReplyTextEvent;
@@ -21,6 +26,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/noop_session.dart';
 
 class _NoopRecognizer implements SpeechRecognizer {
+  @override
+  StreamingSttInfo? get streaming => null;
+
+  @override
+  Stream<TranscriptUpdate> transcribeStream(
+    Stream<Uint8List> pcm16kMono, {
+    String? language,
+    TranscribeStreamOptions options = const TranscribeStreamOptions(),
+  }) => Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  Future<void> flush() =>
+      Future.error(StateError('flush: no transcribeStream is running'));
+
   @override
   String? language;
 
@@ -34,6 +53,20 @@ class _NoopRecognizer implements SpeechRecognizer {
 
 /// Fixed transcript so a turn actually runs.
 class _FixedRecognizer implements SpeechRecognizer {
+  @override
+  StreamingSttInfo? get streaming => null;
+
+  @override
+  Stream<TranscriptUpdate> transcribeStream(
+    Stream<Uint8List> pcm16kMono, {
+    String? language,
+    TranscribeStreamOptions options = const TranscribeStreamOptions(),
+  }) => Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  Future<void> flush() =>
+      Future.error(StateError('flush: no transcribeStream is running'));
+
   @override
   String? language;
 
@@ -80,6 +113,17 @@ class _ScriptChat extends InferenceChat {
 }
 
 class _NoopSynth implements SpeechSynthesizer {
+  @override
+  bool get supportsStreaming => false;
+
+  @override
+  Stream<SpeechChunk> synthesizeStream(String text) =>
+      Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  SpeechTextStream openTextStream() =>
+      throw UnsupportedError('this model does not stream');
+
   @override
   int get sampleRate => 22050;
   @override

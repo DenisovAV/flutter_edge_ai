@@ -196,6 +196,17 @@ void main() {
     engineFactory: _buildFake,
   );
 
+  test('a synthesizer that cannot stream says so; its streams fail on '
+      'listen, openTextStream at the call', () async {
+    final synth = await synthesizer(_Mode.fast, logFor('nostream'));
+    addTearDown(synth.close);
+    expect(synth.supportsStreaming, isFalse);
+    // Returned, not thrown: the error arrives when the stream is listened to.
+    final stream = synth.synthesizeStream('hi');
+    await expectLater(stream, emitsError(isA<UnsupportedError>()));
+    expect(synth.openTextStream, throwsUnsupportedError);
+  });
+
   group('TtsWorker serving', () {
     test('learns the sample rate at load and serves concurrent requests '
         'correlated by id', () async {

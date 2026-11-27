@@ -238,6 +238,13 @@ abstract base class SttVariant extends CatalogVariant {
   /// subclass may say more.
   ModelRuntimeDefaults get runtimeDefaults => const ModelRuntimeDefaults();
 
+  /// Whether the recognizer this build loads into streams (its
+  /// `SpeechRecognizer.streaming` is not null) on every backend it runs on here
+  /// ([backendsHere], this platform), so an app can pick a model for
+  /// streaming before installing it. False when any of them cannot stream;
+  /// false unless a subclass says so.
+  bool get supportsStreaming => false;
+
   /// [model] and [tokenizer], which is what the installer downloads; not
   /// overridable.
   @nonVirtual
@@ -264,6 +271,13 @@ abstract base class TtsVariant extends CatalogVariant {
   /// `FlutterEdgeAi.getActiveTts`. Empty by default (the SDK defaults); a
   /// subclass may say more.
   ModelRuntimeDefaults get runtimeDefaults => const ModelRuntimeDefaults();
+
+  /// Whether the synthesizer this build loads into streams (its
+  /// `SpeechSynthesizer.supportsStreaming`) on every backend it runs on here
+  /// ([backendsHere], this platform), so an app can pick a voice for
+  /// streaming before installing it. False when any of them cannot stream;
+  /// false unless a subclass says so.
+  bool get supportsStreaming => false;
 }
 
 /// A list of models, as one package or `FlutterEdgeAi.catalog` offers them.

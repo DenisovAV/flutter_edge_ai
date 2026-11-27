@@ -33,7 +33,7 @@ final class VoiceActivityDetector {
   static const int sampleRate = vadSampleRate;
 
   /// The audio each probability covers: 512 samples, 32 ms.
-  static const Duration frameDuration = Duration(milliseconds: 32);
+  static const Duration frameDuration = vadFrameDuration;
 
   final VadWorker _worker;
 

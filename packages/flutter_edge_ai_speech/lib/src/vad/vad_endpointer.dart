@@ -21,18 +21,12 @@
 // onset (both are counted in whole frames).
 library;
 
+import 'vad_constants.dart';
 import 'vad_event.dart';
 import 'vad_options.dart';
 
-/// Samples per Silero VAD frame at 16 kHz (32 ms).
-const int vadFrameSamples = 512;
-
-/// The only rate the bundled model runs at.
-const int vadSampleRate = 16000;
-
-/// [samples] at 16 kHz as a [Duration], exact to the microsecond.
-Duration vadSamplesToDuration(int samples) =>
-    Duration(microseconds: samples * 1000000 ~/ vadSampleRate);
+export 'vad_constants.dart'
+    show vadFrameDuration, vadFrameSamples, vadSampleRate, vadSamplesToDuration;
 
 int _durationToSamples(Duration d) =>
     (d.inMicroseconds * vadSampleRate / 1000000).round();

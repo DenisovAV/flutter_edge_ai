@@ -317,4 +317,37 @@ void main() {
       },
     );
   });
+
+  group('value types', () {
+    test('VadOptions equality looks at every field, the stored '
+        'negativeThreshold included', () {
+      const base = VadOptions();
+      expect(const VadOptions(), base);
+      expect(const VadOptions().hashCode, base.hashCode);
+      for (final other in [
+        const VadOptions(threshold: 0.6),
+        const VadOptions(negativeThreshold: 0.35),
+        const VadOptions(minSpeech: Duration(milliseconds: 251)),
+        const VadOptions(minSilence: Duration(milliseconds: 601)),
+        const VadOptions(speechPad: Duration(milliseconds: 31)),
+        const VadOptions(maxUtterance: Duration(seconds: 31)),
+      ]) {
+        expect(other, isNot(base), reason: '$other');
+      }
+      expect(base.toString(), contains('default (0.35'));
+      expect(
+        const VadOptions(negativeThreshold: 0.2).toString(),
+        contains('negativeThreshold: 0.2,'),
+      );
+    });
+
+    test('events refuse what cannot be (asserts)', () {
+      expect(() => VadSpeechStart(-1), throwsA(isA<AssertionError>()));
+      expect(
+        () => VadSpeechEnd(10, 5, VadEndReason.silence),
+        throwsA(isA<AssertionError>()),
+      );
+      expect(VadSpeechEnd(5, 5, VadEndReason.silence).endSample, 5);
+    });
+  });
 }

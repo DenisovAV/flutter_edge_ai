@@ -5,9 +5,10 @@
 > changes. See the [migration guide](https://flutteredge.ai/docs/migration).
 
 On-device speech for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai) — STT,
-TTS, and a `VoiceSession` voice loop — via the LiteRT C API + `dart:ffi`. Opt-in
-package: add it only if your app needs speech-to-text, text-to-speech, or a
-push-to-talk voice loop.
+TTS, voice activity detection and a `VoiceSession` voice loop — via the LiteRT C
+API + `dart:ffi`. Opt-in package: add it only if your app needs speech-to-text,
+text-to-speech, detecting speech in a microphone stream, or a push-to-talk voice
+loop.
 
 This package depends on `litertlm_dart`, which owns the shared `libLiteRtLm`
 native bundle and exposes the LiteRT C API bindings (`LiteRtBindings`) used here,

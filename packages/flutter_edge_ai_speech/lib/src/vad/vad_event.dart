@@ -1,10 +1,9 @@
 // What a VoiceActivityDetector reports. Pure Dart, safe on every platform.
 library;
 
-/// The rate every sample index here counts at.
-const int _rate = 16000;
+import 'vad_constants.dart';
 
-Duration _at(int sample) => Duration(microseconds: sample * 1000000 ~/ _rate);
+Duration _at(int sample) => vadSamplesToDuration(sample);
 
 /// One change in voice activity.
 ///
@@ -27,7 +26,8 @@ sealed class VadEvent {
 /// `VadOptions.minSpeech`). To hand the whole utterance to speech-to-text,
 /// keep that much audio, plus `VadOptions.speechPad` and one input chunk.
 final class VadSpeechStart extends VadEvent {
-  const VadSpeechStart(this.startSample);
+  const VadSpeechStart(this.startSample)
+    : assert(startSample >= 0, 'a sample index counts from 0');
 
   final int startSample;
 
@@ -59,7 +59,9 @@ enum VadEndReason {
 /// The utterance that began at [startSample] ended at [endSample], exclusive
 /// (padded by `VadOptions.speechPad`, never past the audio received).
 final class VadSpeechEnd extends VadEvent {
-  const VadSpeechEnd(this.startSample, this.endSample, this.reason);
+  const VadSpeechEnd(this.startSample, this.endSample, this.reason)
+    : assert(startSample >= 0, 'a sample index counts from 0'),
+      assert(endSample >= startSample, 'an utterance ends after it starts');
 
   final int startSample;
   final int endSample;

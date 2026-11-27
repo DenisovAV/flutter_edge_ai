@@ -105,8 +105,29 @@ final class VadOptions {
   }
 
   @override
+  bool operator ==(Object other) =>
+      other is VadOptions &&
+      other.threshold == threshold &&
+      other.negativeThreshold == negativeThreshold &&
+      other.minSpeech == minSpeech &&
+      other.minSilence == minSilence &&
+      other.speechPad == speechPad &&
+      other.maxUtterance == maxUtterance;
+
+  @override
+  int get hashCode => Object.hash(
+    threshold,
+    negativeThreshold,
+    minSpeech,
+    minSilence,
+    speechPad,
+    maxUtterance,
+  );
+
+  @override
   String toString() =>
       'VadOptions(threshold: $threshold, negativeThreshold: '
-      '$effectiveNegativeThreshold, minSpeech: $minSpeech, minSilence: '
-      '$minSilence, speechPad: $speechPad, maxUtterance: $maxUtterance)';
+      '${negativeThreshold ?? 'default ($effectiveNegativeThreshold)'}, '
+      'minSpeech: $minSpeech, minSilence: $minSilence, speechPad: '
+      '$speechPad, maxUtterance: $maxUtterance)';
 }

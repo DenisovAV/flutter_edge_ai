@@ -5,6 +5,7 @@ library;
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'vad_constants.dart';
 import 'vad_event.dart';
 import 'vad_options.dart';
 
@@ -17,10 +18,10 @@ final class VoiceActivityDetector {
   VoiceActivityDetector._(this.options);
 
   /// The sample rate [detect] and [probabilities] take.
-  static const int sampleRate = 16000;
+  static const int sampleRate = vadSampleRate;
 
   /// The audio each probability covers: 512 samples, 32 ms.
-  static const Duration frameDuration = Duration(milliseconds: 32);
+  static const Duration frameDuration = vadFrameDuration;
 
   /// The endpoint policy of [detect].
   final VadOptions options;

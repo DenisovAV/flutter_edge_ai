@@ -333,7 +333,7 @@ void main() {
   testWidgets('detect finds speech in the bundled clip', (_) async {
     final wav = await rootBundle.load('assets/test/test_audio.wav');
     final pcm = Uint8List.sublistView(
-      wav.buffer.asUint8List(),
+      wav.buffer.asUint8List(wav.offsetInBytes, wav.lengthInBytes),
       _wavHeaderBytes,
     );
     final clip = Duration(microseconds: pcm.length ~/ 2 * 1000000 ~/ _rate);

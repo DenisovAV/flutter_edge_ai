@@ -186,6 +186,74 @@ window, steady state over repeated transcriptions
   text. Run Matcha on the CPU: 6.9–8.0 s for a sentence of 3.4 s over three
   runs.
 
+## Streaming speech-to-text (Parakeet)
+
+Parakeet CTC also transcribes audio as it arrives. Its recognizer's
+`streaming` is not null; for moonshine and Whisper it is null and
+`transcribeStream` fails with `UnsupportedError` when listened to.
+
+```dart
+final recognizer = await FlutterEdgeAi.getActiveStt();
+
+await for (final update in recognizer.transcribeStream(microphonePcm16kMono)) {
+  transcript.write(update.confirmedDelta); // final from here on
+  showTail(update.unconfirmed);            // may still change
+  if (update.endpoint) { /* the utterance is complete */ }
+}
+// At a voice activity detector's end of utterance: await recognizer.flush();
+```
+
+The batch model reads overlapping 5 s windows (`StreamingLatency.lowLatency`:
+a window every 1.25 s, the default; `balanced`: every 2.5 s) and their words
+are merged by time. On LibriSpeech test-clean (int8, Mac CPU) that is 2.65%
+WER at `lowLatency` and 2.63% at `balanced`, against 5.33% for plain 5 s
+chunks; 2.52% and 2.31% on audio held out from tuning the merge. At
+microphone pace one 5 s window takes 235 ms on a Galaxy S24 and 661 ms on a
+Galaxy A34 (CPU, int8), so both presets keep up; on the Mac's Metal GPU the
+f32 build streams 8.8 s in 0.66 s.
+
+- Audio must already be 16 kHz mono 16-bit PCM: record at 16 kHz, or
+  resample. The recognizer copies what it keeps of a chunk, so a recorder
+  may reuse its buffer, and stopping the recorder stays the app's job.
+- One stream runs at a time; `transcribe` calls made meanwhile wait their
+  turn between two windows.
+- Audio that piles up faster than the model keeps up with is held up to
+  `TranscribeStreamOptions.maxBufferedAudio` (10 s), then the stream ends
+  with `SpeechStreamOverrunException`; `balanced` halves the work.
+- `flush()` closes an utterance without ending the stream: the next update
+  with `endpoint` true confirms everything heard before it.
+
+## Voice activity detection
+
+`VoiceActivityDetector` finds speech in 16 kHz mono 16-bit PCM with Silero
+VAD v6.3 (MIT), which ships with `flutter_edge_ai_speech` as a 1.25 MB asset:
+nothing to install or download. It runs on the CPU in a worker isolate of
+its own. Native platforms only.
+
+```dart
+final vad = await VoiceActivityDetector.create();
+await for (final event in vad.detect(microphonePcm16kMono)) {
+  switch (event) {
+    case VadSpeechStart(:final startSample): /* speech began */
+    case VadSpeechEnd(:final startSample, :final endSample, :final reason):
+      /* the utterance is pcm[2 * startSample, 2 * endSample) */
+  }
+}
+await vad.close();
+```
+
+A start is reported once the speech has lasted `VadOptions.minSpeech`
+(250 ms), timed back to where it began, and at most about 0.9 s after it with
+the defaults: keep that much audio, plus `speechPad` and one chunk, to hand
+the whole utterance to speech-to-text. An utterance ends after `minSilence`
+(600 ms) of silence, at `maxUtterance` (30 s), or when the input ends.
+`probabilities(pcm)` returns the raw probability of every 32 ms frame. On
+LibriSpeech with known pauses it missed no utterance and started on no noise
+down to 10 dB SNR, and ended an utterance a median 0.62-0.68 s after the
+speech; measured on a Mac, a Galaxy S24 and a Galaxy A34 (0.2-0.8 ms per
+frame). Silero hears any voice: barge-in needs the microphone's echo
+cancellation, or the microphone off while the reply plays.
+
 ## Text-to-speech (Matcha)
 
 TTS is opt-in the same way: pass `LiteRtTtsBackend()` to `initialize()`, then

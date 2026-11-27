@@ -67,6 +67,7 @@ late Uint8List pcm;
 late Uint8List pcm16kMono;
 late Uint8List germanPcm;
 late Uint8List frenchPcm;
+late Stream<Uint8List> microphone;
 late InferenceModel model;
 late InferenceModelSession session;
 late InferenceChat chat;

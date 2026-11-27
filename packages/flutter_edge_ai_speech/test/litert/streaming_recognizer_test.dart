@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
@@ -39,8 +40,9 @@ final class _FakeEngine implements SttWorkerEngine {
     required int validSamples,
     required double startFraction,
   }) {
-    final (_, log) = parseFakeConfig(_config);
+    final (mode, log) = parseFakeConfig(_config);
     appendLogLine(log, 'window');
+    if (mode == 'dies') Isolate.exit();
     if (_config.startsWith('gate')) blockUntilReleased(log);
     const frame = 1280;
     final frames = window.length ~/ frame;
@@ -414,6 +416,87 @@ void main() {
     await ended;
     await closing;
     await input.close();
+  });
+
+  group('the transcribeStream contract, one test per rule', () {
+    test(
+      'a paused stream keeps reading and analysing; its updates wait',
+      () async {
+        final log = File('${dir.path}/paused.log');
+        final recognizer = await create(config: 'fast@${log.path}');
+        addTearDown(recognizer.close);
+        final input = StreamController<Uint8List>();
+        final updates = <TranscriptUpdate>[];
+        final ended = Completer<void>();
+        final sub = recognizer
+            .transcribeStream(input.stream)
+            .listen(updates.add, onDone: ended.complete);
+        sub.pause();
+        // 8 s while paused, well inside the default 10 s limit only because
+        // the model keeps up: windows run although nobody listens.
+        for (final chunk in await _chunks(
+          _speech([1, 2, 3, 4]),
+          32000,
+        ).toList()) {
+          input.add(chunk);
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        while (!log.existsSync() ||
+            '\n'.allMatches(log.readAsStringSync()).length < 2) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(updates, isEmpty, reason: 'paused: updates wait in the stream');
+        sub.resume();
+        await input.close();
+        await ended.future;
+        expect(_transcript(updates), 'w1 w2 w3 w4');
+      },
+    );
+
+    test(
+      'flush before the stream is listened to fails in its future',
+      () async {
+        final recognizer = await create();
+        addTearDown(recognizer.close);
+        recognizer.transcribeStream(const Stream.empty()); // not listened
+        await expectLater(recognizer.flush(), throwsStateError);
+      },
+    );
+
+    test('flush after the input ended fails in its future', () async {
+      final log = gatedLog(dir, 'gate');
+      final recognizer = await create(config: 'gate@${log.path}');
+      addTearDown(recognizer.close);
+      final input = StreamController<Uint8List>();
+      final stream = recognizer.transcribeStream(input.stream).toList();
+      input.add(_speech([1], seconds: 5));
+      await waitForLine(log, 'window');
+      await input.close();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await expectLater(recognizer.flush(), throwsStateError);
+      release(log);
+      await stream;
+    });
+
+    test('an input error ends the stream with that error', () async {
+      final recognizer = await create();
+      addTearDown(recognizer.close);
+      final input = StreamController<Uint8List>();
+      final stream = recognizer.transcribeStream(input.stream).toList();
+      input.addError(const FormatException('mic failed'));
+      await expectLater(stream, throwsFormatException);
+      await input.close();
+    });
+
+    test('the worker dying ends the stream with a StateError', () async {
+      final recognizer = await create(config: 'dies');
+      addTearDown(recognizer.close);
+      final input = StreamController<Uint8List>();
+      final stream = recognizer.transcribeStream(input.stream).toList();
+      input.add(_speech([1], seconds: 5));
+      await expectLater(stream, throwsStateError);
+      await input.close();
+    });
   });
 
   test('audio piling up behind a slow model fails with an overrun', () async {

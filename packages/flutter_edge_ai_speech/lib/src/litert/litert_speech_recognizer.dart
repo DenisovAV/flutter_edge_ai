@@ -332,14 +332,8 @@ final class LiteRtStreamingSpeechRecognizer extends LiteRtSpeechRecognizer {
     String? language,
     TranscribeStreamOptions options = const TranscribeStreamOptions(),
   }) {
-    final set = options.maxBufferedAudio;
-    if (set != null && set < streaming.window) {
-      throw ArgumentError.value(
-        set,
-        'options.maxBufferedAudio',
-        'must be at least the model window, ${streaming.window}',
-      );
-    }
+    // Throws the ArgumentError for a value below the window.
+    options.maxBufferedAudioFor(streaming.window);
     final stream = _SttStream(this, pcm16kMono, language, options);
     return stream.updates;
   }

@@ -1,4 +1,4 @@
-## Unreleased
+## 2.8.0
 - **Breaking for `implements SpeechRecognizer`/`SpeechSynthesizer`:** add streaming members; `extends` inherits non-streaming defaults.
 
 ## 2.7.2

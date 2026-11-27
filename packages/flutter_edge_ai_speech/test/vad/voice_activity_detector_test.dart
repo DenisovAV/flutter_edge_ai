@@ -229,18 +229,27 @@ void main() {
 
   test('a chunk delivered inside listen() does not undo a pause of the '
       'consumer', () async {
-    final vad = await create();
+    final dir = Directory.systemTemp.createTempSync('vad_gate_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final log = gatedLog(dir, 'engine');
+    final vad = await create('/fake/silero.tflite@${log.path}');
     addTearDown(vad.close);
     final live = StreamController<Uint8List>();
     addTearDown(live.close);
+    // Three frames, delivered inside listen().
     final sub = vad
-        .detect(_EagerThenLive([audio(0.1, loud: false)], live.stream))
+        .detect(_EagerThenLive([Uint8List(3 * 1024)], live.stream))
         .listen((_) {});
     addTearDown(sub.cancel);
     sub.pause();
-    // Let the eagerly delivered chunk go through the model.
-    await vad.probabilities(Uint8List(0)).catchError((_) => Float32List(0));
-    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await waitForLine(log, 'frame');
+    release(log);
+    // All three frames through the model, then the reply's turn on the
+    // chain, where a wrong resume would land.
+    while ('\n'.allMatches(log.readAsStringSync()).length < 3) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 300));
     expect(live.isPaused, isTrue, reason: 'the consumer paused the stream');
   });
 
@@ -263,8 +272,15 @@ void main() {
   test('an input that fails to stop does not leak an uncaught error', () async {
     final vad = await create();
     addTearDown(vad.close);
+    var cancelCompleted = false;
     final input = StreamController<Uint8List>(
-      onCancel: () => Future<void>.error(StateError('mic stuck')),
+      onCancel: () async {
+        // A recorder that takes a while to let go of the microphone, then
+        // fails.
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        cancelCompleted = true;
+        throw StateError('mic stuck');
+      },
     );
     final events = vad.detect(input.stream).toList();
     await Future<void>.delayed(Duration.zero);
@@ -272,6 +288,7 @@ void main() {
     // close() ends the stream, which cancels the input; that cancel fails.
     await vad.close();
     await ended;
+    expect(cancelCompleted, isTrue, reason: 'done waits for the input');
     // An uncaught error in the zone would fail this test.
     await Future<void>.delayed(const Duration(milliseconds: 50));
   });

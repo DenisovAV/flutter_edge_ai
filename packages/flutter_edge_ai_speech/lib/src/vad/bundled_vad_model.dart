@@ -118,7 +118,10 @@ Future<String> _writeBundledModel() async {
 
 /// How old a `.partial` copy must be before a create deletes it: younger
 /// ones may belong to a writer in another process that is still at work.
-const Duration _stalePartialAge = Duration(minutes: 10);
+/// Should a writer be suspended longer than this mid-copy, its create fails
+/// with a FileSystemException when its file is gone, and the next create
+/// copies again.
+const Duration _stalePartialAge = Duration(hours: 1);
 
 /// Deletes the `.partial` copies a killed writer left behind.
 Future<void> _sweepStalePartials(Directory dir) async {

@@ -102,6 +102,10 @@ final class VoiceActivityDetector {
     // delivers several before listen() has returned (a sync controller
     // adding in onListen), when there is no subscription to pause yet.
     var chain = Future<void>.value();
+    // The input's cancel once finish() started it, its error already
+    // reported: the output's own cancel waits for it, so a stream that has
+    // ended has also let go of its input (a recorder's microphone).
+    Future<void>? inputCancelled;
 
     // Declared before use; assigned once [finish] exists.
     late final void Function(String) endDetect;
@@ -122,15 +126,14 @@ final class VoiceActivityDetector {
         // The stream has ended: an input that fails to stop (a recorder
         // that cannot release the microphone) has no stream to report to.
         // `print`, not edgeAiLog, so release builds see it.
-        unawaited(
-          cancelling.catchError((Object e) {
-            // ignore: avoid_print
-            print(
-              '[flutter_edge_ai_speech] WARNING: cancelling the input of a '
-              'VoiceActivityDetector.detect stream failed: $e',
-            );
-          }),
-        );
+        inputCancelled = cancelling.catchError((Object e) {
+          // ignore: avoid_print
+          print(
+            '[flutter_edge_ai_speech] WARNING: cancelling the input of a '
+            'VoiceActivityDetector.detect stream failed: $e',
+          );
+        });
+        unawaited(inputCancelled);
       }
     }
 
@@ -220,9 +223,9 @@ final class VoiceActivityDetector {
       }
       ..onCancel = () {
         // After the stream ended, finish() has cancelled the input and dealt
-        // with its result; returning that cancel again would hand its error
-        // to nobody.
-        if (done) return null;
+        // with its error: wait for that cancel, without its error, which
+        // would reach nobody.
+        if (done) return inputCancelled;
         done = true;
         release();
         return input?.cancel();

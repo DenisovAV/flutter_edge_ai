@@ -1,4 +1,4 @@
-## Unreleased
+## 0.7.0
 - Voice activity detection: `VoiceActivityDetector`, with Silero VAD v6.3 bundled.
 - Streaming speech-to-text for Parakeet CTC: `transcribeStream` and `flush`.
 

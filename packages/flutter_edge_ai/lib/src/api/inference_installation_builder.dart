@@ -53,10 +53,9 @@ class InferenceInstallationBuilder {
 
   /// Create builder with model identity
   InferenceInstallationBuilder({
-    required ModelType modelType,
-    ModelFileType fileType = ModelFileType.task,
-  }) : _modelType = modelType,
-       _fileType = fileType;
+    required this._modelType,
+    this._fileType = ModelFileType.task,
+  });
 
   /// Set model source from network URL (HTTP/HTTPS)
   ///

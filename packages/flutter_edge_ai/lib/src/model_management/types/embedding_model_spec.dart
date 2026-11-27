@@ -54,9 +54,7 @@ class EmbeddingModelFile extends ModelFile {
   final ModelSource _source;
   final String _filename;
 
-  EmbeddingModelFile({required ModelSource source, required String filename})
-    : _source = source,
-      _filename = filename;
+  EmbeddingModelFile({required this._source, required this._filename});
 
   /// Creates EmbeddingModelFile from ModelSource
   factory EmbeddingModelFile.fromSource(ModelSource source) {
@@ -82,11 +80,7 @@ class EmbeddingTokenizerFile extends ModelFile {
   final ModelSource _source;
   final String _filename;
 
-  EmbeddingTokenizerFile({
-    required ModelSource source,
-    required String filename,
-  }) : _source = source,
-       _filename = filename;
+  EmbeddingTokenizerFile({required this._source, required this._filename});
 
   /// Creates EmbeddingTokenizerFile from ModelSource, namespaced by
   /// [modelId] (the owning EmbeddingModelSpec's own model-file basename,
@@ -134,27 +128,23 @@ final class EmbeddingModelSpec extends ModelSpec {
   /// Throws [ArgumentError] when the resolved model filename is a `.litertlm` or `.gguf`
   /// container (ASCII case-insensitive) and a tokenizer is given — the bundle
   /// carries its own — or is anything else and no tokenizer is given; when
-  /// [tokenizerFilename] is given without [tokenizerSource]; and when the
+  /// [tokenizerFilename] is given without [_tokenizerSource]; and when the
   /// model and the tokenizer resolve to the same filename.
   EmbeddingModelSpec({
-    required String name,
-    required ModelSource modelSource,
-    ModelSource? tokenizerSource,
+    required this._name,
+    required this._modelSource,
+    this._tokenizerSource,
     String? modelFilename,
     String? tokenizerFilename,
-    ModelReplacePolicy replacePolicy = ModelReplacePolicy.keep,
-  }) : _name = name,
-       _modelSource = modelSource,
-       _tokenizerSource = tokenizerSource,
-       _modelFilename = _validateEmbeddingFilename(
+    this._replacePolicy = ModelReplacePolicy.keep,
+  }) : _modelFilename = _validateEmbeddingFilename(
          modelFilename,
          'modelFilename',
        ),
        _tokenizerFilename = _validateEmbeddingFilename(
          tokenizerFilename,
          'tokenizerFilename',
-       ),
-       _replacePolicy = replacePolicy {
+       ) {
     _checkEmbeddingSpec(this);
   }
 

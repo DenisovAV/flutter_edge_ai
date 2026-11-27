@@ -5,9 +5,7 @@ class InferenceModelFile extends ModelFile {
   final ModelSource _source;
   final String _filename;
 
-  InferenceModelFile({required ModelSource source, required String filename})
-    : _source = source,
-      _filename = filename;
+  InferenceModelFile({required this._source, required this._filename});
 
   /// Creates InferenceModelFile from ModelSource
   factory InferenceModelFile.fromSource(ModelSource source) {
@@ -45,9 +43,7 @@ class LoraModelFile extends ModelFile {
   final ModelSource _source;
   final String _filename;
 
-  LoraModelFile({required ModelSource source, required String filename})
-    : _source = source,
-      _filename = filename;
+  LoraModelFile({required this._source, required this._filename});
 
   /// Creates LoraModelFile from ModelSource, namespaced by [modelId] — the
   /// owning InferenceModelSpec's own model-file basename (without
@@ -95,12 +91,10 @@ class DirectoryBundleFile extends ModelFile {
   // never bypassed (a raw ctor could key a sibling on installedModelFileName —
   // two files fighting for the persist-identity slot).
   DirectoryBundleFile._({
-    required ModelSource source,
-    required String filename,
-    required String prefsKey,
-  }) : _source = source,
-       _filename = filename,
-       _prefsKey = prefsKey;
+    required this._source,
+    required this._filename,
+    required this._prefsKey,
+  });
 
   /// Builds one bundle member from its [modelId] (the subdirectory), its BARE
   /// leaf [bareName], and the bundle's [primaryName] (the file the engine loads
@@ -168,21 +162,17 @@ class InferenceModelSpec extends ModelSpec {
   /// source's file name. It keeps the source's extension, which the engines
   /// and tools read; a directory model takes none.
   InferenceModelSpec({
-    required String name,
+    required this._name,
     required ModelSource modelSource,
     ModelSource? loraSource,
-    ModelReplacePolicy replacePolicy = ModelReplacePolicy.keep,
-    required ModelType modelType,
-    ModelFileType fileType = ModelFileType.task,
+    this._replacePolicy = ModelReplacePolicy.keep,
+    required this._modelType,
+    this._fileType = ModelFileType.task,
     List<DirectoryBundleFile>? directoryFiles,
     String? filename,
   }) : _filename = filename,
-       _name = name,
        _modelSource = modelSource,
        _loraSource = loraSource,
-       _replacePolicy = replacePolicy,
-       _modelType = modelType,
-       _fileType = fileType,
        // Defensive copy: every other facet of this immutable spec is protected,
        // so the bundle must not stay aliased to a list the caller can mutate.
        _directoryFiles = directoryFiles == null

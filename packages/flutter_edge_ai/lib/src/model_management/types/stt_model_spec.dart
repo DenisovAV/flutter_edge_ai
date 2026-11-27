@@ -11,9 +11,7 @@ class SttModelFile extends ModelFile {
   final ModelSource _source;
   final String _filename;
 
-  SttModelFile({required ModelSource source, required String filename})
-    : _source = source,
-      _filename = filename;
+  SttModelFile({required this._source, required this._filename});
 
   /// Creates SttModelFile from ModelSource
   factory SttModelFile.fromSource(ModelSource source) {
@@ -39,9 +37,7 @@ class SttTokenizerFile extends ModelFile {
   final ModelSource _source;
   final String _filename;
 
-  SttTokenizerFile({required ModelSource source, required String filename})
-    : _source = source,
-      _filename = filename;
+  SttTokenizerFile({required this._source, required this._filename});
 
   /// Creates SttTokenizerFile from ModelSource, namespaced by [modelId]
   /// (the owning SttModelSpec's own model-file basename, without
@@ -84,16 +80,12 @@ class SttModelSpec extends ModelSpec {
   final ModelReplacePolicy _replacePolicy;
 
   SttModelSpec({
-    required String name,
-    required ModelSource modelSource,
-    required ModelSource tokenizerSource,
-    required SttModelType sttModelType,
-    ModelReplacePolicy replacePolicy = ModelReplacePolicy.keep,
-  }) : _name = name,
-       _modelSource = modelSource,
-       _tokenizerSource = tokenizerSource,
-       _sttModelType = sttModelType,
-       _replacePolicy = replacePolicy;
+    required this._name,
+    required this._modelSource,
+    required this._tokenizerSource,
+    required this._sttModelType,
+    this._replacePolicy = ModelReplacePolicy.keep,
+  });
 
   @override
   ModelManagementType get type => ModelManagementType.stt;

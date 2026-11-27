@@ -5,7 +5,6 @@ import 'package:flutter_edge_ai/src/lifecycle/inference_model_cache.dart';
 import 'package:flutter_edge_ai/src/lifecycle/speech_model_cache.dart';
 
 import 'package:flutter/foundation.dart';
-import 'package:meta/meta.dart' show internal;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
 import 'package:flutter_edge_ai/src/registry/stt_registry.dart';

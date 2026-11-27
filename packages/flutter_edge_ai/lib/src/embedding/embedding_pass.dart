@@ -118,10 +118,10 @@ final class EmbeddingPassInfo {
 final class EmbeddingPassDescriptor<C extends Object> {
   const EmbeddingPassDescriptor({
     required this.engineTag,
-    required EmbeddingPass Function(C config) factory,
+    required this._factory,
     required this.config,
     required this.activeBackend,
-  }) : _factory = factory;
+  });
 
   /// The engine's name in messages and errors, e.g. `LiteRT`.
   final String engineTag;

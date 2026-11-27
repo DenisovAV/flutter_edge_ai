@@ -313,7 +313,7 @@ class SttInstallationBuilder {
       steps,
       known: {
         for (final (i, file) in spec.files.indexed)
-          if (expectations[i].size case final size?) file.prefsKey: size,
+          file.prefsKey: ?expectations[i].size,
       },
       cancelToken: _cancelToken,
       bundle: spec.name,

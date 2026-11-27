@@ -58,8 +58,9 @@ final class EmbeddingFailure {
   /// ([EmbeddingFailure.closedBeforeRun]).
   ///
   /// An exception's `cause` may not be sendable, so with [causeInMessage]
-  /// (the isolate host) its text is appended to the message — `<message>
-  /// (cause: <cause>)`, the line `EmbeddingException.toString` prints anyway.
+  /// (the isolate host) its text is appended to the message —
+  /// `<message> (cause: <cause>)`, the line `EmbeddingException.toString`
+  /// prints anyway.
   /// The inline host passes false and attaches the cause object itself
   /// (`toException(cause:)`), so both print the same. An `EmbeddingException`
   /// subtype that has no kind of its own is named in the message.

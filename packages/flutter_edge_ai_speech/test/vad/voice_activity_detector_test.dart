@@ -276,6 +276,40 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 50));
   });
 
+  test('each detect stream starts from a fresh model state', () async {
+    // The fake calls speech from the 40th frame since a reset: two streams
+    // of 30 silent frames reach it only if the second one is not reset.
+    final vad = await create('/fake/stateful.tflite');
+    addTearDown(vad.close);
+    final frames = Uint8List(30 * 1024);
+    expect(await vad.detect(chunked(frames, 1024)).toList(), isEmpty);
+    expect(await vad.detect(chunked(frames, 1024)).toList(), isEmpty);
+  });
+
+  test('close while a chunk is in the model ends the stream with one '
+      'StateError and drops the late events', () async {
+    final dir = Directory.systemTemp.createTempSync('vad_gate_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final log = gatedLog(dir, 'engine');
+    final vad = await create('/fake/silero.tflite@${log.path}');
+    final input = StreamController<Uint8List>();
+    final events = <VadEvent>[];
+    final errors = <Object>[];
+    final ended = Completer<void>();
+    vad
+        .detect(input.stream)
+        .listen(events.add, onError: errors.add, onDone: ended.complete);
+    input.add(audio(0.5, loud: true));
+    await waitForLine(log, 'frame');
+    final closing = vad.close();
+    release(log);
+    await ended.future;
+    await closing;
+    expect(errors, [isA<StateError>()]);
+    expect(events, isEmpty);
+    await input.close();
+  });
+
   test('a worker that dies while the input is idle ends the stream with '
       'StateError', () async {
     final vad = await create('/fake/dies-idle.tflite');

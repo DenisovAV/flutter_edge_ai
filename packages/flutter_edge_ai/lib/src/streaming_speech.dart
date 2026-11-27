@@ -4,8 +4,8 @@
 //
 // Core may add members to the speech classes in a minor release, each with a
 // default body (a class that extends them inherits it; one that implements
-// them adds it), and fields to these types. A value added to one of the
-// enums breaks an app's `switch` over it that has no default arm.
+// them adds it), and fields to these types. Values may be added to the enums
+// too: a `switch` over one that lists every value then needs the new case.
 library;
 
 import 'dart:typed_data';
@@ -53,9 +53,9 @@ final class TranscriptUpdate {
   /// it.
   final List<WordTiming> confirmedWords;
 
-  /// Whether this update closes an utterance: the input ended, or
-  /// [SpeechRecognizer.flush] was called. [unconfirmed] is then
-  /// empty.
+  /// Whether this update closes an utterance: the input ended,
+  /// [SpeechRecognizer.flush] was called, or a model that detects the end of
+  /// an utterance itself did so. [unconfirmed] is then empty.
   final bool endpoint;
 
   @override
@@ -79,15 +79,16 @@ final class TranscriptUpdate {
   @override
   String toString() =>
       'TranscriptUpdate(+"$confirmedDelta", ~"$unconfirmed", '
-      'until $confirmedUntil${endpoint ? ', endpoint' : ''})';
+      'until $confirmedUntil, ${confirmedWords.length} words'
+      '${endpoint ? ', endpoint' : ''})';
 }
 
 /// How far behind the audio a windowed recognizer may run. The window
 /// length is the model's ([StreamingSttInfo.window]); the overlap decides
 /// how often a window runs and how soon text is confirmed.
 ///
-/// Values may be added in a minor release: give a `switch` over it a
-/// default arm.
+/// Values may be added in a minor release: a `switch` that lists every value
+/// then needs the new case.
 enum StreamingLatency {
   /// Windows overlap by three quarters: a window runs every quarter window
   /// of audio (1.25 s for a 5 s window), four times the work of a batch
@@ -109,7 +110,8 @@ final class TranscribeStreamOptions {
     this.maxBufferedAudio,
   });
 
-  /// For a windowed model; an incremental one ignores it.
+  /// How often a windowed model runs a window. An incremental model may map
+  /// it to its chunk size, or ignore it.
   final StreamingLatency latency;
 
   /// The most audio received but not analysed yet (the overlap a windowed
@@ -120,10 +122,20 @@ final class TranscribeStreamOptions {
   final Duration? maxBufferedAudio;
 
   /// [maxBufferedAudio] for a model whose window is [window], the default
-  /// applied.
+  /// applied. Throws [ArgumentError] for a set value shorter than [window]:
+  /// the check every `transcribeStream` makes.
   Duration maxBufferedAudioFor(Duration window) {
     final set = maxBufferedAudio;
-    if (set != null) return set;
+    if (set != null) {
+      if (set < window) {
+        throw ArgumentError.value(
+          set,
+          'options.maxBufferedAudio',
+          'must be at least the model window, $window',
+        );
+      }
+      return set;
+    }
     const fallback = Duration(seconds: 10);
     return window > fallback ? window : fallback;
   }
@@ -145,8 +157,8 @@ final class TranscribeStreamOptions {
 
 /// How a streaming recognizer's model works.
 ///
-/// Values may be added in a minor release: give a `switch` over it a
-/// default arm.
+/// Values may be added in a minor release: a `switch` that lists every value
+/// then needs the new case.
 enum StreamingKind {
   /// It re-reads overlapping windows of a fixed length, so text near the
   /// newest audio can still change ([TranscriptUpdate.unconfirmed]).
@@ -159,7 +171,9 @@ enum StreamingKind {
 
 /// What [SpeechRecognizer.streaming] reports.
 final class StreamingSttInfo {
-  const StreamingSttInfo({required this.kind, required this.window});
+  // Not const: a const constructor cannot check a Duration.
+  StreamingSttInfo({required this.kind, required this.window})
+    : assert(window > Duration.zero, 'a window holds some audio');
 
   final StreamingKind kind;
 
@@ -195,8 +209,9 @@ final class SpeechStreamOverrunException implements Exception {
   @override
   String toString() =>
       'SpeechStreamOverrunException: $buffered of audio waiting for the '
-      'model, over the $limit limit; the model runs slower than the audio '
-      'arrives on this device';
+      'model, over the $limit limit: the model runs slower than the audio '
+      'arrives on this device, or a transcribe() call held it that long. '
+      'StreamingLatency.balanced halves the work of a windowed model';
 }
 
 /// One piece of synthesized audio.
@@ -221,6 +236,9 @@ final class SpeechChunk {
 
   /// 0 for the first chunk of a stream, then 1, 2, …
   final int index;
+
+  // No == / hashCode on purpose: pcm is a large buffer that is not copied,
+  // and comparing it by identity would mislead.
 
   /// The words whose audio starts in this chunk; empty when the model gives
   /// no timings.
@@ -255,7 +273,8 @@ abstract interface class SpeechTextStream {
   Stream<SpeechChunk> get audio;
 
   /// Drops the text not yet spoken and the audio not yet delivered (a
-  /// barge-in), whether or not [audio] has a listener. Synthesis stops at
+  /// barge-in; chunks the app has already handed to its player keep playing
+  /// until it stops the player), whether or not [audio] has a listener. Synthesis stops at
   /// the next step boundary (the step in flight finishes, its audio is
   /// dropped); this completes when it has stopped, and [audio] then ends
   /// without an error. Calling it again, or after [audio] has ended,
@@ -274,14 +293,20 @@ abstract interface class SpeechTextStream {
 /// stream so far. [audioStart] and [audioEnd] (half-open too, `audioStart <=
 /// audioEnd`) count from the stream's first sample, pauses included.
 final class WordTiming {
-  const WordTiming({
+  // Not const: a const constructor cannot check a Duration.
+  WordTiming({
     required this.word,
     required this.start,
     required this.end,
     required this.audioStart,
     required this.audioEnd,
-  }) : assert(start >= 0 && start <= end, 'start and end index the text'),
-       assert(end - start == word.length, 'word is the text start..end');
+  }) : assert(word.isNotEmpty, 'a word has some text'),
+       assert(start >= 0 && start <= end, 'start and end index the text'),
+       assert(end - start == word.length, 'word is the text start..end'),
+       assert(
+         !audioStart.isNegative && audioStart <= audioEnd,
+         'audio times count from the stream start, the end after the start',
+       );
 
   final String word;
   final int start;

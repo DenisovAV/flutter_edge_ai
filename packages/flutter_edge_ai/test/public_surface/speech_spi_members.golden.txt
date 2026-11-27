@@ -56,7 +56,7 @@ enum StreamingKind
   value windowed
 
 final class StreamingSttInfo
-  constructor const StreamingSttInfo({required StreamingKind kind, required Duration window})
+  constructor StreamingSttInfo({required StreamingKind kind, required Duration window})
   field final StreamingKind kind
   field final Duration window
   getter int hashCode
@@ -78,7 +78,7 @@ final class SpeechChunk
   method String toString()
 
 final class WordTiming
-  constructor const WordTiming({required String word, required int start, required int end, required Duration audioStart, required Duration audioEnd})
+  constructor WordTiming({required String word, required int start, required int end, required Duration audioStart, required Duration audioEnd})
   field final Duration audioEnd
   field final Duration audioStart
   field final int end

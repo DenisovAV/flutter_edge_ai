@@ -9,47 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../catalog/catalog_fixtures.dart';
 
-class _PlainRecognizer implements SpeechRecognizer {
-  @override
-  String? language;
-  @override
-  Future<String> transcribe(Uint8List pcm16kMono, {String? language}) async =>
-      '';
-  @override
-  StreamingSttInfo? get streaming => null;
-  @override
-  Stream<TranscriptUpdate> transcribeStream(
-    Stream<Uint8List> pcm16kMono, {
-    String? language,
-    TranscribeStreamOptions options = const TranscribeStreamOptions(),
-  }) => Stream.error(UnsupportedError('this model does not stream'));
-  @override
-  Future<void> flush() => Future.error(StateError('no stream'));
-  @override
-  void addCloseListener(void Function() listener) {}
-  @override
-  Future<void> close() async {}
-}
-
-class _PlainSynth implements SpeechSynthesizer {
-  @override
-  int get sampleRate => 24000;
-  @override
-  Future<Uint8List> synthesize(String text) async => Uint8List(0);
-  @override
-  bool get supportsStreaming => false;
-  @override
-  Stream<SpeechChunk> synthesizeStream(String text) =>
-      Stream.error(UnsupportedError('this model does not stream'));
-  @override
-  SpeechTextStream openTextStream() =>
-      throw UnsupportedError('this model does not stream');
-  @override
-  void addCloseListener(void Function() listener) {}
-  @override
-  Future<void> close() async {}
-}
-
 /// A recognizer written before streaming, as speech 0.6.x's are: it
 /// extends the class and declares none of the streaming members.
 class _OldRecognizer extends SpeechRecognizer {
@@ -92,27 +51,6 @@ void main() {
     expect(synth.openTextStream, throwsUnsupportedError);
   });
 
-  test(
-    'a recognizer that cannot stream says so and refuses on listen',
-    () async {
-      final SpeechRecognizer recognizer = _PlainRecognizer();
-      expect(recognizer.streaming, isNull);
-      final stream = recognizer.transcribeStream(const Stream.empty());
-      await expectLater(stream, emitsError(isA<UnsupportedError>()));
-      await expectLater(recognizer.flush(), throwsStateError);
-    },
-  );
-
-  test('a synthesizer that cannot stream says so and refuses', () async {
-    final SpeechSynthesizer synthesizer = _PlainSynth();
-    expect(synthesizer.supportsStreaming, isFalse);
-    await expectLater(
-      synthesizer.synthesizeStream('hi'),
-      emitsError(isA<UnsupportedError>()),
-    );
-    expect(synthesizer.openTextStream, throwsUnsupportedError);
-  });
-
   test('catalog variants do not stream unless they say so', () {
     expect(TestStt().supportsStreaming, isFalse);
     expect(TestTts().supportsStreaming, isFalse);
@@ -131,13 +69,6 @@ void main() {
       const Duration(seconds: 30),
       reason: 'the default never refuses a model with a longer window',
     );
-    expect(
-      const TranscribeStreamOptions(
-        maxBufferedAudio: Duration(seconds: 3),
-      ).maxBufferedAudioFor(const Duration(seconds: 30)),
-      const Duration(seconds: 3),
-      reason: 'a set value is returned as is; transcribeStream checks it',
-    );
     final update = TranscriptUpdate(
       confirmedDelta: ' hello',
       unconfirmed: 'wor',
@@ -154,7 +85,7 @@ void main() {
       ),
     );
     final words = [
-      const WordTiming(
+      WordTiming(
         word: 'a',
         start: 0,
         end: 1,
@@ -171,7 +102,7 @@ void main() {
     words.clear();
     expect(withWords.confirmedWords, hasLength(1), reason: 'copied');
     expect(() => withWords.confirmedWords.clear(), throwsUnsupportedError);
-    const word = WordTiming(
+    final word = WordTiming(
       word: 'hello',
       start: 1,
       end: 6,
@@ -180,7 +111,7 @@ void main() {
     );
     expect(
       word,
-      const WordTiming(
+      WordTiming(
         word: 'hello',
         start: 1,
         end: 6,
@@ -211,7 +142,7 @@ void main() {
       confirmedWords: words,
       endpoint: endpoint,
     );
-    const word = WordTiming(
+    final word = WordTiming(
       word: 'a',
       start: 1,
       end: 2,
@@ -228,10 +159,14 @@ void main() {
         update(unconfirmed: 'x'),
         update(until: 101),
         update(words: [word]),
-        update(endpoint: true),
       ]) {
         expect(other, isNot(base), reason: '$other');
       }
+      expect(
+        update(unconfirmed: '', endpoint: true),
+        isNot(update(unconfirmed: '')),
+        reason: 'endpoint alone',
+      );
       expect(update(words: [word]), update(words: [word]));
       expect(update(words: [word]).hashCode, update(words: [word]).hashCode);
     });
@@ -239,7 +174,7 @@ void main() {
     test('WordTiming', () {
       expect(
         word.hashCode,
-        const WordTiming(
+        WordTiming(
           word: 'a',
           start: 1,
           end: 2,
@@ -248,28 +183,28 @@ void main() {
         ).hashCode,
       );
       for (final other in [
-        const WordTiming(
+        WordTiming(
           word: 'b',
           start: 1,
           end: 2,
           audioStart: Duration(milliseconds: 10),
           audioEnd: Duration(milliseconds: 20),
         ),
-        const WordTiming(
+        WordTiming(
           word: 'a',
           start: 2,
           end: 3,
           audioStart: Duration(milliseconds: 10),
           audioEnd: Duration(milliseconds: 20),
         ),
-        const WordTiming(
+        WordTiming(
           word: 'a',
           start: 1,
           end: 2,
           audioStart: Duration(milliseconds: 11),
           audioEnd: Duration(milliseconds: 20),
         ),
-        const WordTiming(
+        WordTiming(
           word: 'a',
           start: 1,
           end: 2,
@@ -283,26 +218,26 @@ void main() {
     });
 
     test('StreamingSttInfo', () {
-      const info = StreamingSttInfo(
+      final info = StreamingSttInfo(
         kind: StreamingKind.windowed,
         window: Duration(seconds: 5),
       );
       expect(
         info.hashCode,
-        const StreamingSttInfo(
+        StreamingSttInfo(
           kind: StreamingKind.windowed,
           window: Duration(seconds: 5),
         ).hashCode,
       );
       expect(
-        const StreamingSttInfo(
+        StreamingSttInfo(
           kind: StreamingKind.incremental,
           window: Duration(seconds: 5),
         ),
         isNot(info),
       );
       expect(
-        const StreamingSttInfo(
+        StreamingSttInfo(
           kind: StreamingKind.windowed,
           window: Duration(seconds: 4),
         ),
@@ -315,12 +250,14 @@ void main() {
       const options = TranscribeStreamOptions(
         maxBufferedAudio: Duration(seconds: 20),
       );
-      expect(
-        options.hashCode,
-        const TranscribeStreamOptions(
-          maxBufferedAudio: Duration(seconds: 20),
-        ).hashCode,
+      // Not const: two const literals are one instance, which would pass
+      // any ==.
+      final seconds = 20;
+      final same = TranscribeStreamOptions(
+        maxBufferedAudio: Duration(seconds: seconds),
       );
+      expect(same, options);
+      expect(same.hashCode, options.hashCode);
       expect(
         const TranscribeStreamOptions(
           latency: StreamingLatency.balanced,
@@ -334,6 +271,31 @@ void main() {
   });
 
   group('value types refuse what cannot be (asserts)', () {
+    test('WordTiming audio times and text', () {
+      WordTiming make({String word = 'a', int startMs = 0, int endMs = 10}) =>
+          WordTiming(
+            word: word,
+            start: 0,
+            end: word.length,
+            audioStart: Duration(milliseconds: startMs),
+            audioEnd: Duration(milliseconds: endMs),
+          );
+      expect(() => make(word: ''), throwsA(isA<AssertionError>()));
+      expect(() => make(startMs: 20), throwsA(isA<AssertionError>()));
+      expect(() => make(startMs: -1), throwsA(isA<AssertionError>()));
+      expect(make(startMs: 10).audioEnd, const Duration(milliseconds: 10));
+    });
+
+    test('StreamingSttInfo window', () {
+      expect(
+        () => StreamingSttInfo(
+          kind: StreamingKind.windowed,
+          window: Duration.zero,
+        ),
+        throwsA(isA<AssertionError>()),
+      );
+    });
+
     test('TranscriptUpdate', () {
       expect(
         () => TranscriptUpdate(
@@ -378,9 +340,32 @@ void main() {
     });
   });
 
+  test('maxBufferedAudioFor refuses a set value below the window', () {
+    const options = TranscribeStreamOptions(
+      maxBufferedAudio: Duration(seconds: 3),
+    );
+    expect(
+      () => options.maxBufferedAudioFor(const Duration(seconds: 5)),
+      throwsArgumentError,
+    );
+    expect(
+      options.maxBufferedAudioFor(const Duration(seconds: 3)),
+      const Duration(seconds: 3),
+    );
+  });
+
+  test('the overrun message names both causes and the way out', () {
+    final text = const SpeechStreamOverrunException(
+      buffered: Duration(seconds: 11),
+      limit: Duration(seconds: 10),
+    ).toString();
+    expect(text, contains('transcribe()'));
+    expect(text, contains('StreamingLatency.balanced'));
+  });
+
   test('SpeechChunk copies its words and keeps them unmodifiable', () {
     final words = [
-      const WordTiming(
+      WordTiming(
         word: 'a',
         start: 0,
         end: 1,

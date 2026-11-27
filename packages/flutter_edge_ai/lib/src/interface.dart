@@ -1439,9 +1439,20 @@ abstract class SpeechRecognizer {
   /// Transcribes [pcm16kMono], 16 kHz mono 16-bit little-endian PCM in chunks
   /// of any size, as it arrives. The returned stream is single-subscription.
   ///
+  /// - The audio must already be 16 kHz mono: raw bytes carry no rate, so a
+  ///   48 kHz microphone tap passed as is comes out as wrong text with every
+  ///   time and buffer limit three times off. Resample before (record at
+  ///   16 kHz, or convert).
+  /// - The recognizer copies what it keeps of a chunk before the chunk's
+  ///   event returns, so a producer may reuse its buffer afterwards. It only
+  ///   listens to [pcm16kMono]: the recorder behind it stays the caller's to
+  ///   stop, also when the stream ends or is refused (cancelling the
+  ///   subscription of a recorder's stream does not always release the
+  ///   microphone).
   /// - When [streaming] is null (the model cannot stream), the stream ends
   ///   with an [UnsupportedError] when it is listened to, before any other
-  ///   check: no [ArgumentError] for [options], no [StateError].
+  ///   check: no [ArgumentError] for [options], no [StateError], and
+  ///   [pcm16kMono] is never listened to.
   /// - One stream runs at a time per recognizer. The stream claims the
   ///   recognizer when it is listened to, not when this is called, so a
   ///   stream nobody listens to holds nothing. If another stream holds it
@@ -1466,7 +1477,9 @@ abstract class SpeechRecognizer {
   ///   byte left when the input ends (half a sample) is dropped.
   /// - Pausing this stream pauses neither reading [pcm16kMono] nor the
   ///   model: windows keep running and their updates wait in the stream
-  ///   until it resumes, so a pause never causes an overrun.
+  ///   until it resumes (all of them, without a cap: updates are small, but
+  ///   a stream paused for long holds every one), so a pause never causes
+  ///   an overrun.
   /// - The stream ends after the input ends and the last update is out, with
   ///   [TranscriptUpdate.endpoint] true. An input error ends it with that
   ///   error. Closing the recognizer, or its worker ending, stops reading the
@@ -1488,8 +1501,8 @@ abstract class SpeechRecognizer {
   /// Finalises what the running stream has received so far, without ending
   /// its input; for a voice activity detector's end of utterance.
   ///
-  /// The first update that covers all audio received before this call
-  /// confirms all of it and has [TranscriptUpdate.endpoint] true; with no
+  /// The first endpoint update ([TranscriptUpdate.endpoint] true) that
+  /// covers all audio received before this call confirms all of it; with no
   /// new audio since the last update, that is an update with empty texts.
   /// Completes after that update has been added to the stream, also while
   /// its listener is paused (the update then waits in the stream). Calls
@@ -1555,7 +1568,9 @@ abstract class SpeechSynthesizer {
   ///
   /// The stream is single-subscription and synthesis runs only a few chunks
   /// ahead of its listener. Cancelling the subscription stops synthesis at
-  /// the next step boundary; the cancel future completes when it has
+  /// the next step boundary (what a step is depends on the model: a clause,
+  /// or a whole phrase for a model that synthesizes one in a single run, so
+  /// this is no latency promise); the cancel future completes when it has
   /// stopped. A synthesis failure ends the stream with its error; closing the
   /// synthesizer ends it with a [StateError].
   Stream<SpeechChunk> synthesizeStream(String text) => Stream.error(

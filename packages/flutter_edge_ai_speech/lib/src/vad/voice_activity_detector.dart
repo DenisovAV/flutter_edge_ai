@@ -117,7 +117,21 @@ final class VoiceActivityDetector {
       release();
       if (error != null) out.addError(error, stack);
       unawaited(out.close());
-      unawaited(input?.cancel());
+      final cancelling = input?.cancel();
+      if (cancelling != null) {
+        // The stream has ended: an input that fails to stop (a recorder
+        // that cannot release the microphone) has no stream to report to.
+        // `print`, not edgeAiLog, so release builds see it.
+        unawaited(
+          cancelling.catchError((Object e) {
+            // ignore: avoid_print
+            print(
+              '[flutter_edge_ai_speech] WARNING: cancelling the input of a '
+              'VoiceActivityDetector.detect stream failed: $e',
+            );
+          }),
+        );
+      }
     }
 
     endDetect = (reason) => finish(StateError(reason));
@@ -205,6 +219,10 @@ final class VoiceActivityDetector {
         input?.resume();
       }
       ..onCancel = () {
+        // After the stream ended, finish() has cancelled the input and dealt
+        // with its result; returning that cancel again would hand its error
+        // to nobody.
+        if (done) return null;
         done = true;
         release();
         return input?.cancel();
@@ -246,9 +264,9 @@ final class VoiceActivityDetector {
 
   /// Frees the model and ends the worker. A [detect] stream still running
   /// ends with a [StateError]; a [probabilities] call already sent is
-  /// answered first. Completes normally even when the native dispose fails:
-  /// that is only printed as a warning, and the model may stay resident.
-  /// Idempotent.
+  /// answered first. Completes normally even when the native dispose fails
+  /// or the worker dies before it confirms: both are only printed as
+  /// warnings, and the model may stay resident. Idempotent.
   Future<void> close() {
     _markClosed('VoiceActivityDetector was closed');
     return _worker.close();
@@ -261,7 +279,12 @@ final class VoiceActivityDetector {
 
   StateError? _refusal(String call) {
     if (_closed || _worker.isClosed) {
-      return StateError('VoiceActivityDetector.$call: the detector is closed');
+      final death = _worker.deathReason;
+      return StateError(
+        death == null
+            ? 'VoiceActivityDetector.$call: the detector is closed'
+            : 'VoiceActivityDetector.$call: the detector stopped: $death',
+      );
     }
     if (_owner != null) {
       return StateError(

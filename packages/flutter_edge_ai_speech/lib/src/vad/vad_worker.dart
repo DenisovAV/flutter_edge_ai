@@ -105,6 +105,9 @@ final class VadWorker {
   /// Whether [close] was called or the worker died.
   bool get isClosed => _closing;
 
+  /// Why the worker ended without being closed, or null.
+  String? get deathReason => _deathReason;
+
   /// Spawns the worker and loads [modelPath] in it. Throws [StateError] with
   /// the worker's message when the load fails.
   static Future<VadWorker> spawn({

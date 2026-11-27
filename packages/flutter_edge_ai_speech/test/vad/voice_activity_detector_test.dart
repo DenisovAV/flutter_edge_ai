@@ -244,6 +244,38 @@ void main() {
     expect(live.isPaused, isTrue, reason: 'the consumer paused the stream');
   });
 
+  test('after the worker died, a call says so rather than "closed"', () async {
+    final vad = await create('/fake/dies-idle.tflite');
+    addTearDown(vad.close);
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    await expectLater(
+      vad.probabilities(Uint8List(2)),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('exited unexpectedly'),
+        ),
+      ),
+    );
+  });
+
+  test('an input that fails to stop does not leak an uncaught error', () async {
+    final vad = await create();
+    addTearDown(vad.close);
+    final input = StreamController<Uint8List>(
+      onCancel: () => Future<void>.error(StateError('mic stuck')),
+    );
+    final events = vad.detect(input.stream).toList();
+    await Future<void>.delayed(Duration.zero);
+    final ended = expectLater(events, throwsStateError);
+    // close() ends the stream, which cancels the input; that cancel fails.
+    await vad.close();
+    await ended;
+    // An uncaught error in the zone would fail this test.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  });
+
   test('a worker that dies while the input is idle ends the stream with '
       'StateError', () async {
     final vad = await create('/fake/dies-idle.tflite');

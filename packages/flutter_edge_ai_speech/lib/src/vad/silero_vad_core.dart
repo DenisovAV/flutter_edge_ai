@@ -69,13 +69,21 @@ final class SileroVadCore {
           ],
           outputShapes: _outputShapes(bindings, graph.compiledModel, 2),
         );
+      } on FormatException catch (e) {
+        throw StateError(
+          'VoiceActivityDetector: $modelPath is not a Silero VAD model with '
+          'inputs [1,1,512] and [1,$sileroStateWidth] and outputs [1,1,1] '
+          'and [1,$sileroStateWidth]: ${e.message}',
+        );
+      }
+      // The layout is right: a failure here is the runtime's or a graph
+      // that does not compute a probability, and says which.
+      try {
         core.probability(Float32List(vadFrameSamples));
         core.reset();
       } catch (e) {
         throw StateError(
-          'VoiceActivityDetector: $modelPath is not a Silero VAD model with '
-          'inputs [1,1,512] and [1,$sileroStateWidth] and outputs [1,1,1] '
-          'and [1,$sileroStateWidth]: $e',
+          'VoiceActivityDetector: $modelPath failed its first frame: $e',
         );
       }
       edgeAiLog('[SileroVadCore] loaded $modelPath');

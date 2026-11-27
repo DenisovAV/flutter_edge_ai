@@ -133,7 +133,8 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   String? get noRewindReason => engineNoRewindReason(engine);
 
   /// Whether LiteRT-LM may strip a finished reply's thought from the KV
-  /// cache ([lm.Engine.filtersChannelContent]).
+  /// cache of a conversation without tools ([lm.Engine.filtersChannelContent]);
+  /// one with tools keeps its thoughts.
   @visibleForTesting
   bool get filterChannelContent => engineFiltersChannelContent(engine);
   final ModelType modelType;

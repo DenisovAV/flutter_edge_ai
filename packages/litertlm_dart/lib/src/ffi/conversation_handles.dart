@@ -765,6 +765,12 @@ class VirtualConversationHandle
     // Snapshot history BEFORE this turn — the live message is sent separately.
     final historySnapshot = List<Map<String, Object?>>.from(_history);
     final assistantText = StringBuffer();
+    // The reply without its thoughts: what the history replays. A chat
+    // template renders a model message's text as it is (LiteRT-LM's Gemma 4
+    // template strips no thought), and a native conversation's recorded
+    // history holds none either (RecoveringConversationHandle records only the
+    // visible text).
+    final assistantVisible = StringBuffer();
     final assistantRaw = StringBuffer();
     var recorded = false;
     var failed = false;
@@ -776,7 +782,7 @@ class VirtualConversationHandle
       _history.add(
         assistantTurnMessage(
           toolCallsOf,
-          assistantText.toString(),
+          assistantVisible.toString(),
           assistantRaw.toString(),
         ),
       );
@@ -803,6 +809,9 @@ class VirtualConversationHandle
       )) {
         final chunkText = LiteRtLmFfiClient.extractTextFromResponse(rawChunk);
         assistantText.write(chunkText);
+        if (!chunkText.startsWith(thoughtChunkPrefix)) {
+          assistantVisible.write(chunkText);
+        }
         assistantRaw.write(rawChunk);
         yield raw ? rawChunk : chunkText;
       }
@@ -829,7 +838,7 @@ class VirtualConversationHandle
               ? null
               : assistantTurnMessage(
                   toolCallsOf,
-                  assistantText.toString(),
+                  assistantVisible.toString(),
                   assistantRaw.toString(),
                 ),
           extraContext: extraContext,

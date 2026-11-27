@@ -1,3 +1,4 @@
+import 'dart:convert' show utf8;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -217,6 +218,38 @@ void main() {
           Uint8List.sublistView(bytes, 0, bytes.length - 6),
         ),
         throwsFormatException,
+      );
+    });
+  });
+
+  group('llmMetadataJinjaTemplate', () {
+    test('reads jinja_prompt_template (field 7) among other fields', () {
+      final metadata = Uint8List.fromList([
+        ..._bytes(1, 'unrelated'.codeUnits),
+        ..._bytes(7, utf8.encode('{{ bos_token }}<|turn>user\n')),
+        ..._int(5, 4096),
+      ]);
+      expect(
+        llmMetadataJinjaTemplate(metadata),
+        '{{ bos_token }}<|turn>user\n',
+      );
+    });
+
+    test('is null without one', () {
+      expect(llmMetadataJinjaTemplate(_llmMetadata([])), isNull);
+    });
+
+    test('a truncated proto is an error; bytes that are not UTF-8 are not', () {
+      final full = _bytes(7, 'abc'.codeUnits);
+      expect(
+        () => llmMetadataJinjaTemplate(
+          Uint8List.fromList(full.sublist(0, full.length - 1)),
+        ),
+        throwsFormatException,
+      );
+      expect(
+        llmMetadataJinjaTemplate(Uint8List.fromList(_bytes(7, [0x61, 0xff]))),
+        'a\uFFFD',
       );
     });
   });

@@ -1,3 +1,4 @@
+import 'dart:convert' show utf8;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -27,18 +28,23 @@ Future<BundleSampler> readBundleSampler(String modelPath) async =>
     (await readBundleMetadata(modelPath)).sampler;
 
 /// What [readBundleSampler] reads, plus whether the bundle's `LlmMetadata`
-/// declares an output channel ([llmMetadataDeclaresChannel]). A bundle with
-/// no `LlmMetadata` section ships neither.
-Future<({BundleSampler sampler, bool declaresChannel})> readBundleMetadata(
-  String modelPath,
-) async {
+/// declares an output channel ([llmMetadataDeclaresChannel]) and its Jinja
+/// prompt template ([llmMetadataJinjaTemplate]). A bundle with no
+/// `LlmMetadata` section ships none of them.
+Future<({BundleSampler sampler, bool declaresChannel, String? jinjaTemplate})>
+readBundleMetadata(String modelPath) async {
   final metadata = await _readLlmMetadata(modelPath);
   if (metadata == null) {
-    return (sampler: const BundleSampler(), declaresChannel: false);
+    return (
+      sampler: const BundleSampler(),
+      declaresChannel: false,
+      jinjaTemplate: null,
+    );
   }
   return (
     sampler: samplerFromLlmMetadata(metadata),
     declaresChannel: llmMetadataDeclaresChannel(metadata),
+    jinjaTemplate: llmMetadataJinjaTemplate(metadata),
   );
 }
 
@@ -131,6 +137,7 @@ Future<BundleSamplerRead> tryReadBundleSampler(String modelPath) async {
     return BundleSamplerRead(
       metadata.sampler,
       declaresChannel: metadata.declaresChannel,
+      jinjaTemplate: metadata.jinjaTemplate,
     );
   } on Object catch (e, st) {
     if (e is! FileSystemException &&
@@ -145,16 +152,22 @@ Future<BundleSamplerRead> tryReadBundleSampler(String modelPath) async {
 /// The outcome of reading a bundle's sampler: [sampler], empty when the bundle
 /// ships none, or the [error] that stopped the read.
 final class BundleSamplerRead {
-  const BundleSamplerRead(this.sampler, {this.declaresChannel}) : error = null;
+  const BundleSamplerRead(
+    this.sampler, {
+    this.declaresChannel,
+    this.jinjaTemplate,
+  }) : error = null;
 
   const BundleSamplerRead.failed(String this.error)
     : sampler = const BundleSampler(),
-      declaresChannel = null;
+      declaresChannel = null,
+      jinjaTemplate = null;
 
   const BundleSamplerRead.notRead()
     : sampler = const BundleSampler(),
       error = null,
-      declaresChannel = null;
+      declaresChannel = null,
+      jinjaTemplate = null;
 
   final BundleSampler sampler;
 
@@ -162,6 +175,10 @@ final class BundleSamplerRead {
   /// thinking budget caps; null when the bundle was not read, or the read
   /// failed.
   final bool? declaresChannel;
+
+  /// The bundle's Jinja prompt template (`LlmMetadata.jinja_prompt_template`);
+  /// null when it has none, or was not read.
+  final String? jinjaTemplate;
 
   /// Why the read failed, with its type and stack; null when it worked.
   final String? error;
@@ -268,6 +285,25 @@ bool llmMetadataDeclaresChannel(Uint8List llmMetadata) {
     return _ProtoReader(
       llmMetadata,
     ).fields().any((f) => f.number == 8 && f.bytes != null);
+  } on RangeError {
+    throw const FormatException('LlmMetadata proto is truncated');
+  }
+}
+
+/// The Jinja prompt template of a serialized `LlmMetadata`
+/// (`jinja_prompt_template = 7`), or null when it has none. Throws
+/// [FormatException] for a truncated proto; bytes that are not UTF-8 are
+/// decoded with replacement characters, so they cost the read of nothing
+/// else (such a template matches no known one).
+String? llmMetadataJinjaTemplate(Uint8List llmMetadata) {
+  try {
+    String? template;
+    for (final f in _ProtoReader(llmMetadata).fields()) {
+      if (f.number == 7 && f.bytes != null) {
+        template = utf8.decode(f.bytes!, allowMalformed: true);
+      }
+    }
+    return template;
   } on RangeError {
     throw const FormatException('LlmMetadata proto is truncated');
   }

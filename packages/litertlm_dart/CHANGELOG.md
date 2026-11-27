@@ -1,3 +1,6 @@
+## Unreleased
+- Gemma 4 with thinking answers tool results in text: canonical chat template, thoughts kept with tools.
+
 ## 0.20.0+2
 - Web: tool results go as user text; `@litert-lm/core` often answered tool messages empty.
 

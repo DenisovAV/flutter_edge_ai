@@ -169,6 +169,35 @@ void main() {
     }
   });
 
+  test(
+    'a conversation with tools keeps its thoughts, on either backing: '
+    'the turn a tool result continues needs the thought behind the call',
+    () async {
+      for (final backing in OpenSessionBacking.values) {
+        final client = _Client();
+        final engine = engineForTest(
+          client,
+          backend: const Backend.cpu(),
+          backing: backing,
+          linearAttentionState: false,
+        );
+        final withTools = await engine.createConversation(
+          ConversationConfig(tools: [Tool(name: 'show_alert')]),
+        );
+        final without = await engine.createConversation();
+        if (backing == OpenSessionBacking.native) {
+          expect(client.creates.map((c) => c.filterChannelContent), [
+            false,
+            true,
+          ]);
+        }
+        expect(engineFiltersChannelContent(engine), isTrue);
+        await withTools.close();
+        await without.close();
+      }
+    },
+  );
+
   test('a send after the engine closed is a StateError at the call, on '
       'either backing', () async {
     for (final backing in OpenSessionBacking.values) {

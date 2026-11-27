@@ -992,10 +992,13 @@ final class Engine {
   /// Whether LiteRT-LM may strip a finished reply's thought from the KV
   /// cache, which it does by rewinding over the reply: only where every
   /// conversation is known to rewind (not on the NPU, not on a model with
-  /// linear attention state or one whose state could not be read).
+  /// linear attention state or one whose state could not be read). A
+  /// conversation with tools keeps its thoughts regardless
+  /// (liteRtLmFiltersChannelContent).
   bool get _filtersChannelContent => liteRtLmFiltersChannelContent(
     npu: backendKindOf(backend) == BackendKind.npu,
     linearAttentionState: _linearAttentionState,
+    hasTools: false,
   );
 
   /// Starts a conversation. On the backends where several live native
@@ -1055,7 +1058,11 @@ final class Engine {
       chatTemplate: c.chatTemplate,
       streamToolCalls: c.enableToolCallStreaming,
     );
-    final filter = _filtersChannelContent;
+    final filter = liteRtLmFiltersChannelContent(
+      npu: backendKindOf(backend) == BackendKind.npu,
+      linearAttentionState: _linearAttentionState,
+      hasTools: tools != null,
+    );
     final ConversationHandle handle;
     switch (ownConversation) {
       case true:
@@ -1595,7 +1602,7 @@ OpenSessionBacking engineConversationBacking(Engine engine) => engine._backing;
 String? engineNoRewindReason(Engine engine) => engine._noRewindReason;
 
 /// Whether LiteRT-LM may strip a finished reply's thought from the KV cache
-/// of [engine]'s conversations.
+/// of [engine]'s conversations without tools; one with tools keeps them.
 bool engineFiltersChannelContent(Engine engine) =>
     engine._filtersChannelContent;
 

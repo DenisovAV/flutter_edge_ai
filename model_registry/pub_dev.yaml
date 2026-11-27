@@ -6,8 +6,8 @@
 # hand. `dart run bin/registry.dart pub-check` compares it with
 # pub.dev. See README.md, "What pub.dev ships".
 packages:
-  flutter_edge_ai_litertlm: 1.22.0
-  flutter_edge_ai_speech: 0.6.3
+  flutter_edge_ai_litertlm: 1.22.1
+  flutter_edge_ai_speech: 0.7.0
 litertlm_dart: 0.20.0+2
 native_release: native-v0.20.0
 archives:

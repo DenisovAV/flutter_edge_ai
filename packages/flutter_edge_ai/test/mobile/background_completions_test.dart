@@ -2,7 +2,9 @@
 // again. background_downloader stores the final status update of a task that
 // finishes while the app is dead and `resumeFromBackground()` replays it once
 // per process, popping it as it does. These tests hold what core keeps from
-// that replay and when it lets the network install reuse the file.
+// that replay and when it lets the network install reuse the file. How core
+// wires it in (the stream, the task id, the startup reclaim, the registry) is
+// held by background_completions_wiring_test.dart.
 import 'dart:async';
 
 import 'package:background_downloader/background_downloader.dart';
@@ -27,7 +29,7 @@ DownloadTask _task({
 
 TaskStatusUpdate _complete({
   DownloadTask? task,
-  int statusCode = 200,
+  int? statusCode = 200,
   Map<String, String>? headers = const {'content-length': '2048'},
 }) => TaskStatusUpdate(
   task ?? _task(),
@@ -39,13 +41,19 @@ TaskStatusUpdate _complete({
 );
 
 /// A [BackgroundCompletions] over a broadcast stream, whose `resume` delivers
-/// [replay] into it as background_downloader's group callback does.
+/// [replay] into it as background_downloader's group callback does — after
+/// [resumeGate] completes, when one is given.
 ({
   BackgroundCompletions completions,
   List<bool> listenedAtResume,
   int Function() resumes,
 })
-_harness(List<TaskUpdate> replay, {Object? resumeError}) {
+_harness(
+  List<TaskUpdate> replay, {
+  Object? resumeError,
+  Future<void>? resumeGate,
+  Duration waitLimit = const Duration(seconds: 10),
+}) {
   final updates = StreamController<TaskUpdate>.broadcast();
   final listenedAtResume = <bool>[];
   var resumes = 0;
@@ -54,10 +62,12 @@ _harness(List<TaskUpdate> replay, {Object? resumeError}) {
     resume: () async {
       resumes += 1;
       listenedAtResume.add(updates.hasListener);
+      if (resumeGate != null) await resumeGate;
       if (resumeError != null) throw resumeError;
       replay.forEach(updates.add);
     },
     group: _group,
+    waitLimit: waitLimit,
   );
   return (
     completions: completions,
@@ -68,12 +78,24 @@ _harness(List<TaskUpdate> replay, {Object? resumeError}) {
 
 Future<bool> _inactive(String _) async => false;
 
+/// The lines [body] prints.
+Future<List<String>> _printed(Future<void> Function() body) async {
+  final lines = <String>[];
+  await runZoned(
+    body,
+    zoneSpecification: ZoneSpecification(
+      print: (_, _, _, line) => lines.add(line),
+    ),
+  );
+  return lines;
+}
+
 void main() {
   group('reconcile', () {
     test('listens before resumeFromBackground() and calls it once', () async {
       final h = _harness([_complete()]);
-      await h.completions.reconcile();
-      await h.completions.reconcile();
+      expect(await h.completions.reconcile(), isTrue);
+      expect(await h.completions.reconcile(), isTrue);
       await h.completions.takeFor('model', _url, isActive: _inactive);
       expect(h.resumes(), 1);
       expect(h.listenedAtResume, [isTrue]);
@@ -91,6 +113,7 @@ void main() {
         expect(completion, isNotNull);
         expect(completion!.url, _url);
         expect(completion.totalBytes, 2048);
+        expect(completion.statedBy, 'Content-Length');
       },
     );
 
@@ -112,17 +135,63 @@ void main() {
       }
     });
 
-    test(
-      'a failing resumeFromBackground() is no evidence, not an error',
-      () async {
-        final h = _harness([], resumeError: StateError('no plugin'));
-        await expectLater(h.completions.reconcile(), completes);
+    test('keeps only a 200 or 206 that stated the size', () async {
+      final h = _harness([
+        // trackTasks(markDownloadedComplete: true): a tracked file that merely
+        // exists, reported complete with no response at all.
+        _complete(
+          task: _task(taskId: 'tracked'),
+          statusCode: null,
+          headers: null,
+        ),
+        // Config.skipExistingFiles.
+        _complete(task: _task(taskId: 'skipped'), statusCode: 304),
+        _complete(
+          task: _task(taskId: 'no size'),
+          headers: const {},
+        ),
+        _complete(
+          task: _task(taskId: 'zero'),
+          headers: const {'content-length': '0'},
+        ),
+        _complete(
+          task: _task(taskId: 'resumed'),
+          statusCode: 206,
+          headers: const {'content-range': 'bytes 1024-2047/2048'},
+        ),
+      ]);
+      for (final id in ['tracked', 'skipped', 'no size', 'zero']) {
         expect(
-          await h.completions.takeFor('model', _url, isActive: _inactive),
+          await h.completions.takeFor(id, _url, isActive: _inactive),
           isNull,
+          reason: id,
         );
-      },
-    );
+      }
+      final resumed = await h.completions.takeFor(
+        'resumed',
+        _url,
+        isActive: _inactive,
+      );
+      expect(resumed?.totalBytes, 2048);
+      expect(resumed?.statedBy, 'Content-Range');
+    });
+
+    test('a failing resumeFromBackground() reports false, is no evidence, and '
+        'is said in release builds', () async {
+      final h = _harness([_complete()], resumeError: StateError('no plugin'));
+      late bool replayed;
+      final lines = await _printed(
+        () async => replayed = await h.completions.reconcile(),
+      );
+      expect(replayed, isFalse);
+      expect(lines.single, startsWith('[flutter_edge_ai] WARNING: '));
+      expect(lines.single, contains('no plugin'));
+      expect(
+        await h.completions.takeFor('model', _url, isActive: _inactive),
+        isNull,
+      );
+      expect(h.resumes(), 1);
+    });
 
     test(
       'an install before core\'s startup call triggers the replay',
@@ -134,17 +203,22 @@ void main() {
           isNotNull,
         );
         // The startup call then only waits.
-        await h.completions.reconcile();
+        expect(await h.completions.reconcile(), isTrue);
         expect(h.resumes(), 1);
       },
     );
   });
 
   group('takeFor', () {
-    test('a live or paused task is left to the attach/resume path', () async {
+    test('a live or paused task is left to the attach/resume path, and the '
+        'completion is used up all the same', () async {
       final h = _harness([_complete()]);
       expect(
         await h.completions.takeFor('model', _url, isActive: (_) async => true),
+        isNull,
+      );
+      expect(
+        await h.completions.takeFor('model', _url, isActive: _inactive),
         isNull,
       );
     });
@@ -164,14 +238,48 @@ void main() {
       },
     );
 
-    test('a refreshed signed link is the same source', () async {
+    test('another file told apart only by the query is not reused', () async {
+      const drive = 'https://drive.example.invalid/uc';
       final h = _harness([
-        _complete(task: _task(url: '$_url?X-Amz-Signature=old&expires=1')),
+        _complete(task: _task(url: '$drive?id=A&export=download')),
       ]);
       expect(
         await h.completions.takeFor(
           'model',
-          '$_url?X-Amz-Signature=new&expires=2',
+          '$drive?id=B&export=download',
+          isActive: _inactive,
+        ),
+        isNull,
+      );
+    });
+
+    test('the same query in another order is the same file', () async {
+      const drive = 'https://drive.example.invalid/uc';
+      final h = _harness([
+        _complete(task: _task(url: '$drive?id=A&export=download')),
+      ]);
+      expect(
+        await h.completions.takeFor(
+          'model',
+          '$drive?export=download&id=A',
+          isActive: _inactive,
+        ),
+        isNotNull,
+      );
+    });
+
+    test('a refreshed signed link is the same source', () async {
+      final h = _harness([
+        _complete(
+          task: _task(
+            url: '$_url?X-Amz-Signature=old&X-Amz-Date=1&Expires=1&rev=main',
+          ),
+        ),
+      ]);
+      expect(
+        await h.completions.takeFor(
+          'model',
+          '$_url?rev=main&X-Amz-Signature=new&X-Amz-Date=2&Expires=2',
           isActive: _inactive,
         ),
         isNotNull,
@@ -206,78 +314,89 @@ void main() {
     });
   });
 
-  group('through background_downloader\'s own dispatcher', () {
-    setUp(() async {
-      SmartDownloader.clearConfiguration();
-      await FileDownloader().resetUpdates();
-    });
-
-    tearDown(() async {
-      SmartDownloader.clearConfiguration();
-      await FileDownloader().resetUpdates();
-    });
-
-    test(
-      'a replayed completion reaches the capture via the group fan-out',
-      () async {
-        // `resume` replays as retrieveLocallyStoredData() does: the stored update
-        // goes through processStatusUpdate, i.e. the real group-callback dispatch.
-        final completions = BackgroundCompletions(
-          updates: SmartDownloader.debugResolveUpdatesStream,
-          resume: () async => FileDownloader().downloaderForTesting
-              .processStatusUpdate(_complete()),
-          group: _group,
-        );
-        final completion = await completions.takeFor(
+  group('the wait is bounded', () {
+    test('a replay that does not answer is no evidence, and says so; the '
+        'replay itself is not given up', () async {
+      final gate = Completer<void>();
+      final h = _harness(
+        [_complete()],
+        resumeGate: gate.future,
+        waitLimit: const Duration(milliseconds: 20),
+      );
+      BackgroundCompletion? completion;
+      final lines = await _printed(
+        () async => completion = await h.completions.takeFor(
           'model',
           _url,
           isActive: _inactive,
-        );
-        expect(completion?.totalBytes, 2048);
-      },
-    );
-
-    test('with a host hub configured the capture reads the hub, not a callback '
-        'of its own (#445)', () async {
-      final hub = StreamController<TaskUpdate>.broadcast();
-      addTearDown(hub.close);
-      SmartDownloader.configureDownloadUpdatesStream(hub.stream);
-      final completions = BackgroundCompletions(
-        updates: SmartDownloader.debugResolveUpdatesStream,
-        resume: () async => hub.add(_complete()),
-        group: _group,
+        ),
       );
+      expect(completion, isNull);
+      expect(lines.single, startsWith('[flutter_edge_ai] WARNING: '));
+
+      // The startup reclaim still waits for the real outcome, and the
+      // completion the late replay delivers is still there to take.
+      var reconciled = false;
+      unawaited(h.completions.reconcile().then((_) => reconciled = true));
+      await pumpEventQueue();
+      expect(reconciled, isFalse);
+      gate.complete();
+      expect(await h.completions.reconcile(), isTrue);
       expect(
-        await completions.takeFor('model', _url, isActive: _inactive),
+        await h.completions.takeFor('model', _url, isActive: _inactive),
         isNotNull,
       );
-      expect(SmartDownloader.debugGroupFanOutIsLive, isFalse);
+      expect(h.resumes(), 1);
+    });
+
+    test('a task lookup that does not answer is no evidence', () async {
+      final h = _harness([
+        _complete(),
+      ], waitLimit: const Duration(milliseconds: 20));
+      BackgroundCompletion? completion;
+      final lines = await _printed(
+        () async => completion = await h.completions.takeFor(
+          'model',
+          _url,
+          isActive: (_) => Completer<bool>().future,
+        ),
+      );
+      expect(completion, isNull);
+      expect(lines.single, startsWith('[flutter_edge_ai] WARNING: '));
     });
   });
 
-  group('totalBytesOf', () {
+  group('statedTotalOf', () {
     test('200: X-Linked-Size, then Content-Length, any letter case', () {
-      expect(totalBytesOf(200, {'Content-Length': '10'}), 10);
+      expect(statedTotalOf(200, {'Content-Length': '10'}), (
+        bytes: 10,
+        header: 'Content-Length',
+      ));
       expect(
-        totalBytesOf(200, {'x-linked-size': '99', 'content-length': '10'}),
-        99,
+        statedTotalOf(200, {'x-linked-size': '99', 'content-length': '10'}),
+        (bytes: 99, header: 'X-Linked-Size'),
       );
-      expect(totalBytesOf(200, {'X-LINKED-SIZE': ' 7 '}), 7);
+      expect(statedTotalOf(200, {'X-LINKED-SIZE': ' 7 '})?.bytes, 7);
     });
 
     test('206: the total of Content-Range', () {
-      expect(totalBytesOf(206, {'content-range': 'bytes 100-199/2048'}), 2048);
-      expect(totalBytesOf(206, {'Content-Range': 'bytes 0-0/*'}), isNull);
-      expect(totalBytesOf(206, {'content-length': '100'}), isNull);
+      expect(statedTotalOf(206, {'content-range': 'bytes 100-199/2048'}), (
+        bytes: 2048,
+        header: 'Content-Range',
+      ));
+      expect(statedTotalOf(206, {'Content-Range': 'bytes 0-0/*'}), isNull);
+      expect(statedTotalOf(206, {'content-length': '100'}), isNull);
     });
 
     test('nothing usable is null', () {
-      expect(totalBytesOf(200, null), isNull);
-      expect(totalBytesOf(200, const {}), isNull);
-      expect(totalBytesOf(200, {'content-length': 'lots'}), isNull);
-      expect(totalBytesOf(200, {'content-length': '-1'}), isNull);
-      expect(totalBytesOf(null, {'content-length': '10'}), isNull);
-      expect(totalBytesOf(304, {'content-length': '10'}), isNull);
+      expect(statedTotalOf(200, null), isNull);
+      expect(statedTotalOf(200, const {}), isNull);
+      expect(statedTotalOf(200, {'content-length': 'lots'}), isNull);
+      expect(statedTotalOf(200, {'content-length': '-1'}), isNull);
+      expect(statedTotalOf(200, {'content-length': '0'}), isNull);
+      expect(statedTotalOf(206, {'content-range': 'bytes */0'}), isNull);
+      expect(statedTotalOf(null, {'content-length': '10'}), isNull);
+      expect(statedTotalOf(304, {'content-length': '10'}), isNull);
     });
   });
 }

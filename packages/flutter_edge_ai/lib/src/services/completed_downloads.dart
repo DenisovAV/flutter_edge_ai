@@ -11,10 +11,10 @@ abstract interface class CompletedDownloads {
   /// Evidence that the file at [targetPath] was downloaded from [url]'s source
   /// while the app was not running, or null when there is none.
   ///
-  /// Otherwise the size of the whole file, as the download's final response
-  /// stated it — null when it did not say. Reusing the file still needs its
-  /// size to match; that is the caller's check.
-  Future<({int? totalBytes})?> completedWhileAway(
+  /// The evidence is the size of the whole file as the download's final
+  /// response stated it, and the header that stated it. Reusing the file
+  /// still needs its size to match; that is the caller's check.
+  Future<({int totalBytes, String statedBy})?> completedWhileAway(
     String url,
     String targetPath,
   );

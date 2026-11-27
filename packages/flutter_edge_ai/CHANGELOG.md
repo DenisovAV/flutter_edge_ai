@@ -1,5 +1,5 @@
 ## Unreleased
-- A model download that finished while the app was closed is not downloaded again (#873).
+- Android: a model download that finished while the app was closed is not downloaded again (#873).
 
 ## 2.7.2
 - `DeciderAnswer.confidence` docs: it equals Jev's confidence for Choice answers only.

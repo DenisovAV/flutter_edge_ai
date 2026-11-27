@@ -33,6 +33,8 @@ DownloadService createDownloadService(
 RemoteSizeProbe createRemoteSizeProbe() => HttpRemoteSizeProbe();
 
 /// Downloads that finished while the app was closed (#873), for core's own
-/// [BackgroundDownloaderService]: it answers on Android, null elsewhere.
+/// [BackgroundDownloaderService]. Returned on every `dart:io` platform; only
+/// on Android does it find any — elsewhere its answer is always null (the
+/// platform check is in `SmartDownloader.completedWhileAway`).
 CompletedDownloads? createCompletedDownloads() =>
     const BackgroundCompletedDownloads();

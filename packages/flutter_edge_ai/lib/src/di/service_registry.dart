@@ -196,7 +196,6 @@ class ServiceRegistry {
     String? huggingFaceToken,
     int maxDownloadRetries, {
     CompletedDownloads? completedDownloads,
-    RemoteSizeProbe? sizeProbe,
   }) {
     if (kIsWeb) {
       // Web: Use WebNetworkSourceHandler with cache-aware metadata saving
@@ -216,7 +215,6 @@ class ServiceRegistry {
         huggingFaceToken: huggingFaceToken,
         maxDownloadRetries: maxDownloadRetries,
         completedDownloads: completedDownloads,
-        sizeProbe: sizeProbe,
       );
     }
   }
@@ -331,7 +329,6 @@ class ServiceRegistry {
       huggingFaceToken,
       maxDownloadRetries,
       completedDownloads: completedDownloads,
-      sizeProbe: remoteSizeProbe,
     );
 
     _assetHandler = _createAssetSourceHandler(

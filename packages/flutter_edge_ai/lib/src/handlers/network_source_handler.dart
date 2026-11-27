@@ -5,8 +5,8 @@ import 'package:flutter_edge_ai/src/services/completed_downloads.dart';
 import 'package:flutter_edge_ai/src/services/download_service.dart';
 import 'package:flutter_edge_ai/src/services/file_system_service.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart';
-import 'package:flutter_edge_ai/src/services/remote_size_probe.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/src/utils/network_url.dart';
 import 'package:path/path.dart' as path;
 
 /// Handles installation of models from network URLs (HTTP/HTTPS)
@@ -27,9 +27,6 @@ class NetworkSourceHandler implements SourceHandler {
   /// recorded instead of downloaded again (#873). Null: none are reused.
   final CompletedDownloads? completedDownloads;
 
-  /// The size of a file whose finished download did not state it (#873).
-  final RemoteSizeProbe? sizeProbe;
-
   NetworkSourceHandler({
     required this.downloadService,
     required this.fileSystem,
@@ -37,7 +34,6 @@ class NetworkSourceHandler implements SourceHandler {
     this.huggingFaceToken,
     this.maxDownloadRetries = 10,
     this.completedDownloads,
-    this.sizeProbe,
   });
 
   @override
@@ -66,7 +62,6 @@ class NetworkSourceHandler implements SourceHandler {
     if (!await _finishedWhileClosed(
       source.url,
       targetPath,
-      token: effectiveToken,
       cancelToken: cancelToken,
     )) {
       await downloadService.download(
@@ -120,7 +115,6 @@ class NetworkSourceHandler implements SourceHandler {
     if (await _finishedWhileClosed(
       source.url,
       targetPath,
-      token: effectiveToken,
       cancelToken: cancelToken,
     )) {
       // Finished while the app was closed (#873): nothing to download, but the
@@ -174,36 +168,40 @@ class NetworkSourceHandler implements SourceHandler {
   ///
   /// Only on evidence: [completedDownloads] has a completion of this source
   /// for it, with no live or paused task, and the file is exactly the size
-  /// the download's final response stated — or, when it stated none, the size
-  /// [sizeProbe] reports. Anything less, and the file is downloaded as before,
-  /// over whatever is there; nothing is deleted first.
+  /// the download's final response stated. Anything less, and the file is
+  /// downloaded as before, over whatever is there; nothing is deleted first.
+  ///
+  /// The decision is printed in release builds too, once there is a
+  /// completion: a file recorded without a download should leave a trace.
+  /// Throws [DownloadCancelledException] when [cancelToken] was cancelled
+  /// before the file could be recorded.
   Future<bool> _finishedWhileClosed(
     String url,
     String targetPath, {
-    String? token,
     CancelToken? cancelToken,
   }) async {
     final completed = completedDownloads;
     if (completed == null) return false;
     final completion = await completed.completedWhileAway(url, targetPath);
     if (completion == null) return false;
-    final total =
-        completion.totalBytes ??
-        await sizeProbe?.sizeOf(url, token: token, cancelToken: cancelToken);
-    if (total == null || total <= 0) return false;
     final size = await fileSystem.getFileSize(targetPath);
-    if (size != total) {
-      edgeAiLog(
-        'NetworkSourceHandler: $targetPath finished while the app was closed '
-        'but is $size bytes, not $total: downloading it again',
-      );
+    final what =
+        '$targetPath (${downloadSourceKey(url)}) finished downloading while '
+        'the app was closed; the file is $size bytes, the response stated '
+        '${completion.totalBytes} (${completion.statedBy})';
+    if (size != completion.totalBytes) {
+      _notice('$what: downloading it again.');
       return false;
     }
-    edgeAiLog(
-      'NetworkSourceHandler: $targetPath finished while the app was closed '
-      '($size bytes): recording it instead of downloading again',
-    );
+    cancelToken?.throwIfCancelled();
+    _notice('$what: recording it instead of downloading again.');
     return true;
+  }
+
+  /// Printed in every build: [edgeAiLog] is silent in release.
+  static void _notice(String message) {
+    // ignore: avoid_print
+    print('[flutter_edge_ai] ${sanitizeForLog(message)}');
   }
 
   /// Checks if URL is a HuggingFace URL that may require authentication

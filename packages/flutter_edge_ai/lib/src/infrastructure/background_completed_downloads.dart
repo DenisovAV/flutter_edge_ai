@@ -7,7 +7,7 @@ final class BackgroundCompletedDownloads implements CompletedDownloads {
   const BackgroundCompletedDownloads();
 
   @override
-  Future<({int? totalBytes})?> completedWhileAway(
+  Future<({int totalBytes, String statedBy})?> completedWhileAway(
     String url,
     String targetPath,
   ) async {
@@ -15,6 +15,8 @@ final class BackgroundCompletedDownloads implements CompletedDownloads {
       url,
       targetPath,
     );
-    return completion == null ? null : (totalBytes: completion.totalBytes);
+    return completion == null
+        ? null
+        : (totalBytes: completion.totalBytes, statedBy: completion.statedBy);
   }
 }

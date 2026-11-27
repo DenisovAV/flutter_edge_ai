@@ -123,7 +123,8 @@ final class TranscribeStreamOptions {
 
   /// [maxBufferedAudio] for a model whose window is [window], the default
   /// applied. Throws [ArgumentError] for a set value shorter than [window]:
-  /// the check every `transcribeStream` makes.
+  /// the check `transcribeStream` makes on a model that streams (one that
+  /// cannot never checks the options).
   Duration maxBufferedAudioFor(Duration window) {
     final set = maxBufferedAudio;
     if (set != null) {

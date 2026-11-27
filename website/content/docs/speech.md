@@ -37,8 +37,8 @@ yourself only when you also run `.litertlm` inference, and never
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.7.2
-  flutter_edge_ai_speech: ^0.6.3
+  flutter_edge_ai: ^2.8.0
+  flutter_edge_ai_speech: ^0.7.0
 ```
 
 ## Register the backend

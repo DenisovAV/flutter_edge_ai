@@ -1,10 +1,25 @@
 ---
 title: Migration
-description: Upgrade to flutter_edge_ai_litertlm 1.22.0 (litertlm_dart 0.20.0, the web module line), Flutter Edge AI 2.7 (Hugging Face resolvers per role, the litertlm_dart runtime and its user_defines key), 2.6 (engine session/chat/turn SPI, decider SPI on InferenceModel, typed responses and failed-turn rollback), 2.5 (openModel and embedding providers), and earlier releases.
+description: Upgrade to Flutter Edge AI 2.8 (streaming speech members), flutter_edge_ai_litertlm 1.22.0 (litertlm_dart 0.20.0, the web module line), Flutter Edge AI 2.7 (Hugging Face resolvers per role, the litertlm_dart runtime and its user_defines key), 2.6 (engine session/chat/turn SPI, decider SPI on InferenceModel, typed responses and failed-turn rollback), 2.5 (openModel and embedding providers), and earlier releases.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
+
+## flutter_edge_ai 2.8.0: streaming speech members
+
+`SpeechRecognizer` gains `streaming`, `transcribeStream` and `flush`;
+`SpeechSynthesizer` gains `supportsStreaming`, `synthesizeStream` and
+`openTextStream`. Each has a default body that reports "cannot stream", so a
+class that `extends` either one compiles unchanged and callers see the
+non-streaming answer (`streaming` null, `supportsStreaming` false; the streams
+end with an `UnsupportedError`, `openTextStream` throws one, `flush` fails with
+a `StateError`). A class that `implements` either one must add its three
+members: return those defaults, or extend the class instead. Apps that
+only call `installStt`/`installTts` and their models change nothing;
+`flutter_edge_ai_speech` 0.7.0 implements the streaming members for Parakeet CTC
+and needs core 2.8.0, and `flutter_edge_ai_litertlm` 1.22.1 is the first adapter
+that resolves with it.
 
 ## flutter_edge_ai_litertlm 1.22.0 and litertlm_dart 0.20.0: one web shim line
 
@@ -863,12 +878,12 @@ dependencies:
   flutter_gemma: ^0.16.3
 ```
 
-**After (current 2.7 set):**
+**After (current 2.8 set):**
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.7.2                 # core — always required
-  flutter_edge_ai_litertlm: ^1.22.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai: ^2.8.0                 # core — always required
+  flutter_edge_ai_litertlm: ^1.22.1       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
   flutter_edge_ai_mediapipe: ^1.3.1       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.3.3      # add if you compute embeddings with a tokenizer file (needs a backend, see above)
   flutter_edge_ai_rag: ^1.3.0             # add for on-device RAG (RagIndex) + one store below

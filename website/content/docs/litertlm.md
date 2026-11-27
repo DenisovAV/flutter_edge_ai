@@ -60,8 +60,8 @@ engines your app uses:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.7.2
-  flutter_edge_ai_litertlm: ^1.22.0   # .litertlm inference engine
+  flutter_edge_ai: ^2.8.0
+  flutter_edge_ai_litertlm: ^1.22.1   # .litertlm inference engine
 ```
 
 ```dart

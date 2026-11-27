@@ -515,6 +515,18 @@ on a conversation that declares no tools is an `ArgumentError`. On the web `auto
 decoding already does; any other choice is refused, as its runtime has no
 tool choice.
 
+After an action tool's result (a `{'status': 'success'}`, say), Gemma 4 E2B
+can end its reply with no text. Measured on Hugging Face's prompt with
+thinking off, it did so in 30 of 30 sampled runs for a `show_alert` and in 13
+of 30 for a background-colour change; a tool that returns data was answered
+every time. With thinking on it thinks first and then answers. The Gemma 4 E2B
+and E4B `.litertlm` files on litert-community (the generic, Google Tensor,
+Qualcomm and Intel E2B builds, and the generic E4B) embed an older chat
+template, which starts no thought after a tool result and puts
+`<|tool_response>` in the context twice. On native platforms, conversations on
+those files render LiteRT-LM's canonical Gemma 4 template instead; every other
+file, and every file on the web, keeps its own template.
+
 ## Thinking
 
 ```dart
@@ -776,6 +788,7 @@ API's numbers, as Swift's `BenchmarkInfo`.
 | Activation types | `FLOAT32`, `FLOAT16`, `INT16`, `INT8` | the same four; int16/int8 refused on the GPU for Gemma 4 and FunctionGemma (measured nonsense on Metal) and for EmbeddingGemma 2 (ran as float16) |
 | `Backend.GOOGLE_TENSOR` (Kotlin) | the `GOOGLE_TENSOR_ARTISAN` executor | refused: the open-source LiteRT-LM registers none; the Tensor NPU is `Backend.npu()` |
 | Custom `channels`, `prefillPrefaceOnInit` (Kotlin) | through Kotlin's JNI | not offered: LiteRT-LM's C API has no setter for either |
+| Prompt template | the bundle's | the bundle's; natively, LiteRT-LM's canonical one on litert-community's Gemma 4 E2B and E4B files |
 
 ## Where it runs today
 

@@ -29,6 +29,7 @@ import 'stream_start_failure.dart';
 import '../runtime/build_mode.dart';
 import '../runtime/conversation_handle.dart';
 import '../runtime/errors.dart';
+import '../runtime/gemma4_chat_template.dart';
 import '../runtime/response_text.dart';
 import '../runtime/runtime_log.dart';
 import '../runtime/types.dart';
@@ -1600,6 +1601,13 @@ class LiteRtLmFfiClient {
   bool? get bundleDeclaresChannel => _bundleSamplerRead.declaresChannel;
   BundleSamplerRead _bundleSamplerRead = const BundleSamplerRead.notRead();
 
+  /// The prompt template every conversation of this engine renders instead
+  /// of the bundle's own ([promptTemplateOverrideFor]); null keeps the
+  /// bundle's.
+  @visibleForTesting
+  String? get promptTemplateOverride => _promptTemplateOverride;
+  String? _promptTemplateOverride;
+
   /// How long starting the last `send_message_stream` call held the calling
   /// isolate, in microseconds. The native call itself always runs on a spawned
   /// isolate because it synchronously performs prefill before returning; this
@@ -2880,6 +2888,14 @@ class LiteRtLmFfiClient {
   @visibleForTesting
   void acceptBundleSamplerRead(BundleSamplerRead read) {
     _bundleSamplerRead = read;
+    _promptTemplateOverride = promptTemplateOverrideFor(read.jinjaTemplate);
+    if (_promptTemplateOverride != null) {
+      runtimeLog(
+        '[LiteRtLmFfi] the bundle embeds litert-community\'s Gemma 4 chat '
+        'template; conversations render LiteRT-LM\'s canonical one '
+        '(gemma4_chat_template.dart)',
+      );
+    }
     final error = read.error;
     if (error == null) {
       final sampler = read.sampler;
@@ -3180,6 +3196,11 @@ class LiteRtLmFfiClient {
           b.litert_lm_conversation_config_create,
           b.lastError,
         );
+        // A caller's chatTemplate (applyConversationExtras) replaces the
+        // bundle's template itself, so the override is not set under it.
+        final templatePtr = extras.chatTemplate == null
+            ? _promptTemplateOverride?.toNativeUtf8()
+            : null;
         final systemPtr = systemMessage?.toNativeUtf8();
         final toolsPtr = toolsJson?.toNativeUtf8();
         final messagesPtr = messagesJson?.toNativeUtf8();
@@ -3194,6 +3215,15 @@ class LiteRtLmFfiClient {
               sessionConfig,
             ),
           );
+          if (templatePtr != null) {
+            check(
+              'litert_lm_conversation_config_set_prompt_template',
+              b.litert_lm_conversation_config_set_prompt_template(
+                convConfig,
+                templatePtr.cast(),
+              ),
+            );
+          }
           if (systemPtr != null) {
             check(
               'litert_lm_conversation_config_set_system_message',
@@ -3242,6 +3272,7 @@ class LiteRtLmFfiClient {
           b.litert_lm_conversation_config_delete(convConfig);
           rethrow;
         } finally {
+          if (templatePtr != null) calloc.free(templatePtr);
           if (systemPtr != null) calloc.free(systemPtr);
           if (toolsPtr != null) calloc.free(toolsPtr);
           if (messagesPtr != null) calloc.free(messagesPtr);
@@ -5027,6 +5058,7 @@ class LiteRtLmFfiClient {
     _activationDataType = null;
     _gpuActivationReason = null;
     _bundleSamplerRead = const BundleSamplerRead.notRead();
+    _promptTemplateOverride = null;
     _modelPath = null;
     _maxTokens = null;
     _prefillLengths = null;

@@ -125,6 +125,50 @@ window, steady state over repeated transcriptions
   text. Run Matcha on the CPU: 6.9–8.0 s for a sentence of 3.4 s over three
   runs.
 
+### Streaming speech-to-text (Parakeet)
+
+Parakeet CTC also transcribes audio as it arrives: its recognizer's
+`streaming` is not null (it is null for moonshine and Whisper, whose
+`transcribeStream` fails with `UnsupportedError`).
+
+```dart
+final recognizer = await FlutterEdgeAi.getActiveStt();
+
+await for (final update in recognizer.transcribeStream(microphonePcm16kMono)) {
+  transcript.write(update.confirmedDelta); // final from here on
+  showTail(update.unconfirmed);            // may still change
+  if (update.endpoint) { /* the utterance is complete */ }
+}
+// At a voice activity detector's end of utterance: await recognizer.flush();
+```
+
+It runs the batch model over 5 s windows that overlap
+(`StreamingLatency.lowLatency`: a window every 1.25 s; `balanced`: every
+2.5 s) and merges their words by time, with the windowing and merging of
+LiteRT-LM Omni (`third_party/litert_lm_omni/`), with three changes to the
+merge measured on LibriSpeech. On 87 test-clean streams of about 60 s
+(93 min), fed in 100 ms chunks on a Mac CPU with
+`parakeet_ctc_0.6b_5s_i8.tflite`: 2.65% WER at `lowLatency` (0.13 s of
+compute per second of audio), 2.63% at `balanced` (0.08 s), against 5.33%
+for plain 5 s chunks. Those streams were used to tune the merge; on the
+next minute of each chapter (80 streams, 85 min), held out from it: 2.52%
+and 2.31%. Those numbers are the Mac CPU with the int8 build. On the Mac's
+Metal GPU the f32 build streams the example's 8.8 s clip in 0.66 s (int8
+does not load on the GPU, as on phones). `lowLatency` does four times the
+work of a batch transcription and `balanced` twice. On phone CPUs (int8,
+`example/integration_test/stt_streaming_realtime_test.dart`: 45 s fed at
+microphone pace) one 5 s window took 235 ms on a Galaxy S24 (SM8650) and
+661 ms on a Galaxy A34 (Dimensity 1080), and both presets kept up to the
+end, every sentence transcribed; a slower phone, or one throttled by heat,
+can fall behind at `lowLatency`, and the stream then ends with
+`SpeechStreamOverrunException`: `balanced` halves the work.
+Builds compiled for an NPU do not stream. One stream runs at a time;
+`transcribe` calls made meanwhile wait their turn. Audio that arrives faster
+than the model keeps up with is held up to
+`TranscribeStreamOptions.maxBufferedAudio` (10 s), then the stream fails with
+`SpeechStreamOverrunException`; raise it to stream a file faster than real
+time. Audio must already be 16 kHz mono (record at 16 kHz, or resample).
+
 ### Speech-to-text output language (Whisper)
 
 Whisper's shipped checkpoints are multilingual. The output language is one token

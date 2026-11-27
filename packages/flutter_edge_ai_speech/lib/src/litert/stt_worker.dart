@@ -50,6 +50,14 @@ abstract interface class SttWorkerEngine {
   /// Transcribes one window. May block the isolate in synchronous FFI.
   String transcribe(Float32List samples, {String? language});
 
+  /// The CTC tokens of one streaming [window] with their encoder frames
+  /// ([SttCore.ctcWindow]). May block the isolate in synchronous FFI.
+  CtcWindowTokens ctcWindow(
+    Float32List window, {
+    required int validSamples,
+    required double startFraction,
+  });
+
   /// Frees every native handle. Called exactly once, also after a failed
   /// [load], so it must cope with a partial one.
   void dispose();
@@ -79,10 +87,22 @@ class _Ready {
 /// decoder-prompt language for this one request (`null` = use the default);
 /// a plain `String?` is sendable, so it crosses the port like [id] does.
 class _TranscribeRequest {
-  _TranscribeRequest(this.id, this.samples, this.language);
+  _TranscribeRequest(this.id, this.samples, this.language, [this.window]);
   final int id;
   final Float32List samples;
   final String? language;
+
+  /// Set for a streaming window: the reply carries its CTC tokens instead of
+  /// text. It shares the queue with transcriptions, so a `transcribe` made
+  /// during a stream runs between two of its windows.
+  final _WindowArgs? window;
+}
+
+/// What a streaming window request adds to [_TranscribeRequest].
+class _WindowArgs {
+  _WindowArgs(this.validSamples, this.startFraction);
+  final int validSamples;
+  final double startFraction;
 }
 
 /// Reply carrying the transcript (or an error message).
@@ -91,6 +111,7 @@ class _TranscribeReply {
     this.id,
     this.text,
     this.error, {
+    this.tokens,
     this.badArgument = false,
     this.argName,
     this.argValue,
@@ -98,6 +119,9 @@ class _TranscribeReply {
   final int id;
   final String? text;
   final String? error;
+
+  /// The reply to a streaming window request.
+  final CtcWindowTokens? tokens;
 
   /// [ArgumentError.name] and [ArgumentError.invalidValue], carried separately
   /// so the rebuilt error keeps them. Rebuilding from `toString()` alone gives
@@ -208,7 +232,7 @@ class SttWorker {
 
   final Duration _slowCloseNotice;
 
-  final _pending = <int, Completer<String>>{};
+  final _pending = <int, Completer<Object>>{};
   int _nextId = 0;
 
   /// True from the moment [close] is called, or the worker dies; [transcribe]
@@ -409,7 +433,7 @@ class SttWorker {
               : StateError(msg.error!),
         );
       } else {
-        completer.complete(msg.text!);
+        completer.complete(msg.tokens ?? msg.text!);
       }
     } else if (msg is _CloseAck) {
       _acked = true;
@@ -488,10 +512,41 @@ class SttWorker {
         ),
       );
     }
-    final id = _nextId++;
-    final completer = Completer<String>();
-    _pending[id] = completer;
-    _commandPort.send(_TranscribeRequest(id, samples, language));
+    return _request(
+      _TranscribeRequest(_nextId++, samples, language),
+    ).then((text) => text as String);
+  }
+
+  /// The CTC tokens of one streaming [window] (exactly the model's window
+  /// length; [validSamples] of it audio, [startFraction] already reported).
+  /// Queued with transcriptions, in arrival order.
+  Future<CtcWindowTokens> ctcWindow(
+    Float32List window, {
+    required int validSamples,
+    required double startFraction,
+  }) {
+    if (_closing) {
+      final death = _deathReason;
+      return Future.error(
+        StateError(
+          death == null ? 'SttWorker is closed' : 'SttWorker is closed: $death',
+        ),
+      );
+    }
+    return _request(
+      _TranscribeRequest(
+        _nextId++,
+        window,
+        null,
+        _WindowArgs(validSamples, startFraction),
+      ),
+    ).then((tokens) => tokens as CtcWindowTokens);
+  }
+
+  Future<Object> _request(_TranscribeRequest request) {
+    final completer = Completer<Object>();
+    _pending[request.id] = completer;
+    _commandPort.send(request);
     return completer.future;
   }
 
@@ -586,6 +641,23 @@ final class _SttCoreEngine implements SttWorkerEngine {
       throw StateError('SttCore used before it was loaded');
     }
     return core.transcribe(samples, language: language);
+  }
+
+  @override
+  CtcWindowTokens ctcWindow(
+    Float32List window, {
+    required int validSamples,
+    required double startFraction,
+  }) {
+    final core = _core;
+    if (core == null) {
+      throw StateError('SttCore used before it was loaded');
+    }
+    return core.ctcWindow(
+      window,
+      validSamples: validSamples,
+      startFraction: startFraction,
+    );
   }
 
   @override
@@ -713,6 +785,16 @@ Future<void> _workerEntry(_WorkerInit init) async {
 /// Never throws, so one bad input cannot stop the loop that serves the rest.
 void _serve(_TranscribeRequest msg, SttWorkerEngine engine, SendPort replyTo) {
   try {
+    final window = msg.window;
+    if (window != null) {
+      final tokens = engine.ctcWindow(
+        msg.samples,
+        validSamples: window.validSamples,
+        startFraction: window.startFraction,
+      );
+      replyTo.send(_TranscribeReply(msg.id, null, null, tokens: tokens));
+      return;
+    }
     final text = engine.transcribe(msg.samples, language: msg.language);
     replyTo.send(_TranscribeReply(msg.id, text, null));
   } catch (e) {

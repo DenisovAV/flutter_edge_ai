@@ -6,15 +6,25 @@
 // The native code lives in `stt_core.dart` (driven inside the worker
 // isolate); this file is the public, async, main-isolate API generic over
 // [SttModelProfile] — moonshine/whisper/parakeet select a profile, not a
-// recognizer subclass.
+// recognizer subclass, except that a streaming profile gets
+// [LiteRtStreamingSpeechRecognizer].
+//
+// The base class keeps core's non-streaming defaults (streaming null);
+// LiteRtStreamingSpeechRecognizer overrides them for Parakeet.
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io' show File;
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../model/stt_model_profile.dart';
+import '../streaming/detokenizer.dart' show DecodedToken, TokenIdsToUtf8;
+import '../streaming/windowed_transcriber.dart';
+import '../tokenizer/stt_tokenizer.dart' show SttTokenizer;
+import 'stt_core.dart' show resolveSttSpecialTokens;
 import 'stt_worker.dart';
 
 /// Signature for the `onClose` callback. Same name Flutter uses.
@@ -145,6 +155,11 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
       language,
       supportsLanguage: profile.languagePromptIndex != null,
     );
+    // A streaming profile detokenizes on this isolate: read its tokenizer
+    // first, so a bad file fails before a worker is spawned.
+    final TokenIdsToUtf8? tokenIdsToUtf8 = profile.streamsThroughWindows
+        ? await _tokenIdsToUtf8(profile, tokenizerPath)
+        : null;
     final worker = await SttWorker.spawn(
       modelPath: modelPath,
       tokenizerPath: tokenizerPath,
@@ -154,6 +169,15 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
     );
     // Kept as the mutable default rather than baked into the profile: the
     // caller may retarget it later without a reload (see [language]).
+    if (tokenIdsToUtf8 != null) {
+      return LiteRtStreamingSpeechRecognizer._(
+        worker,
+        onClose ?? () {},
+        language,
+        profile,
+        tokenIdsToUtf8,
+      );
+    }
     return LiteRtSpeechRecognizer._(
       worker,
       onClose ?? () {},
@@ -161,6 +185,28 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
       language,
     );
   }
+
+  /// How the detokenizer turns token ids into text: the profile's own
+  /// tokenizer, as the worker decodes with it.
+  static Future<TokenIdsToUtf8> _tokenIdsToUtf8(
+    SttModelProfile profile,
+    String tokenizerPath,
+  ) async {
+    final json =
+        jsonDecode(await File(tokenizerPath).readAsString())
+            as Map<String, dynamic>;
+    final tokenizer = SttTokenizer.forProfileKind(
+      profile.tokenizerKind,
+      json,
+      eosId: resolveSttSpecialTokens(profile, json).eosId,
+    );
+    return (ids, {required skipSpecialTokens}) =>
+        utf8.encode(tokenizer.decode(ids));
+  }
+
+  /// Ends a running stream when the recognizer closes or its worker dies;
+  /// only [LiteRtStreamingSpeechRecognizer] runs streams.
+  void _endStreams(String reason) {}
 
   void _assertNotClosed() {
     if (_isClosed) {
@@ -207,6 +253,7 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
 
   Future<void> _close() async {
     _isClosed = true;
+    _endStreams('the recognizer was closed');
     try {
       await _worker.close();
     } finally {
@@ -230,6 +277,7 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
   void _onWorkerDied(String reason) {
     _deathReason = reason;
     _isClosed = true;
+    _endStreams(reason);
     try {
       _notifyClosed();
     } catch (e, st) {
@@ -241,6 +289,355 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
         '[flutter_edge_ai_speech] WARNING: a close listener threw while a '
         'speech recognizer whose worker had died was being closed: $e\n$st',
       );
+    }
+  }
+}
+
+/// A [LiteRtSpeechRecognizer] whose profile streams ([SttMode.streaming]):
+/// Parakeet's CTC, through overlapping windows and a timestamp merger
+/// ([WindowedTranscriber]). Every window is a request on the recognizer's
+/// worker, in the same queue as `transcribe`, so a transcription made during
+/// a stream runs between two of its windows.
+final class LiteRtStreamingSpeechRecognizer extends LiteRtSpeechRecognizer {
+  LiteRtStreamingSpeechRecognizer._(
+    SttWorker worker,
+    VoidCallback onClose,
+    String? language,
+    this._profile,
+    this._tokenIdsToUtf8,
+  ) : super._(worker, onClose, _profile.languagePromptIndex != null, language);
+
+  final SttModelProfile _profile;
+  final TokenIdsToUtf8 _tokenIdsToUtf8;
+
+  /// The running stream, or null.
+  _SttStream? _active;
+
+  @override
+  void _endStreams(String reason) =>
+      _active?._fail(StateError('transcribeStream ended: $reason'));
+
+  @override
+  StreamingSttInfo get streaming => StreamingSttInfo(
+    kind: StreamingKind.windowed,
+    window: Duration(
+      microseconds: _profile.windowSamples * 1000000 ~/ _profile.sampleRate,
+    ),
+  );
+
+  @override
+  Stream<TranscriptUpdate> transcribeStream(
+    Stream<Uint8List> pcm16kMono, {
+    String? language,
+    TranscribeStreamOptions options = const TranscribeStreamOptions(),
+  }) {
+    // Throws the ArgumentError for a value below the window.
+    options.maxBufferedAudioFor(streaming.window);
+    final stream = _SttStream(this, pcm16kMono, language, options);
+    return stream.updates;
+  }
+
+  @override
+  Future<void> flush() {
+    final active = _active;
+    if (active == null || active.inputEnded) {
+      return Future.error(
+        StateError('flush: no transcribeStream is running on this recognizer'),
+      );
+    }
+    return active.flush();
+  }
+}
+
+/// One `transcribeStream` call: its claim, its input, its queue of audio and
+/// flush marks, and its [WindowedTranscriber].
+final class _SttStream {
+  _SttStream(this._owner, this._input, this._language, this._options) {
+    _out = StreamController<TranscriptUpdate>(
+      onListen: _start,
+      onCancel: _cancel,
+    );
+  }
+
+  final LiteRtStreamingSpeechRecognizer _owner;
+  final Stream<Uint8List> _input;
+  final String? _language;
+  final TranscribeStreamOptions _options;
+  late final StreamController<TranscriptUpdate> _out;
+
+  StreamSubscription<Uint8List>? _subscription;
+  WindowedTranscriber? _transcriber;
+
+  /// Audio not handed to the transcriber yet, and flush marks, in order.
+  final _queue = <Object>[];
+
+  /// Samples received and not analysed yet: those in [_queue] and the chunk
+  /// the transcriber is working on.
+  /// Whether any text has been confirmed in this stream: the first
+  /// confirmed delta has no leading space.
+  bool _anyConfirmed = false;
+
+  /// The flushes the transcriber is running now (taken off [_queue]).
+  List<Completer<void>> _flushing = const [];
+
+  /// What the last update said, so an unchanged one is not sent again.
+  String _lastUnconfirmed = '';
+  int _lastConfirmedUntil = 0;
+
+  /// A trailing byte of the last chunk: half a 16-bit sample.
+  int? _oddByte;
+
+  bool _done = false;
+  bool _claimed = false;
+  bool inputEnded = false;
+  Future<void>? _draining;
+
+  Stream<TranscriptUpdate> get updates => _out.stream;
+
+  int get _rate => _owner._profile.sampleRate;
+
+  Duration _at(int samples) =>
+      Duration(microseconds: samples * 1000000 ~/ _rate);
+
+  void _start() {
+    final owner = _owner;
+    if (owner._isClosed) {
+      _fail(
+        StateError(
+          'transcribeStream: the recognizer is closed'
+          '${owner._deathReason == null ? '' : ' (${owner._deathReason})'}',
+        ),
+      );
+      return;
+    }
+    if (owner._active != null) {
+      _fail(
+        StateError(
+          'transcribeStream: another stream is running on this recognizer; '
+          'one runs at a time',
+        ),
+      );
+      return;
+    }
+    try {
+      validateSttLanguage(
+        _language ?? owner.language,
+        supportsLanguage: owner._supportsLanguage,
+      );
+    } catch (e, st) {
+      _fail(e, st);
+      return;
+    }
+    owner._active = this;
+    _claimed = true;
+    final profile = owner._profile;
+    _transcriber = WindowedTranscriber(
+      windowSamples: profile.windowSamples,
+      overlapRatio: switch (_options.latency) {
+        StreamingLatency.lowLatency => 0.75,
+        StreamingLatency.balanced => 0.5,
+      },
+      tokenIdsToUtf8: owner._tokenIdsToUtf8,
+      runWindow: _runWindow,
+    );
+    try {
+      _subscription = _input.listen(
+        _onChunk,
+        onError: _fail,
+        onDone: () {
+          inputEnded = true;
+          _pump();
+        },
+        cancelOnError: true,
+      );
+    } catch (e, st) {
+      _fail(e, st);
+    }
+  }
+
+  Future<List<DecodedToken>> _runWindow(
+    Float32List window, {
+    required int validSamples,
+    required double startFraction,
+  }) async {
+    final w = await _owner._worker.ctcWindow(
+      window,
+      validSamples: validSamples,
+      startFraction: startFraction,
+    );
+    return [
+      for (var i = 0; i < w.tokenIds.length; i++)
+        DecodedToken(w.tokenIds[i], timestampMs: w.frames[i]),
+      DecodedToken.endOfChunk(timestampMs: w.windowFrames),
+    ];
+  }
+
+  void _onChunk(Uint8List chunk) {
+    if (_done) return;
+    var bytes = chunk;
+    final odd = _oddByte;
+    if (odd != null) {
+      bytes = Uint8List(chunk.length + 1)
+        ..[0] = odd
+        ..setRange(1, chunk.length + 1, chunk);
+      _oddByte = null;
+    }
+    if (bytes.length.isOdd) {
+      _oddByte = bytes.last;
+      bytes = Uint8List.sublistView(bytes, 0, bytes.length - 1);
+    }
+    if (bytes.isEmpty) return;
+    final samples = pcm16LEToFloat32(bytes);
+    _queue.add(samples);
+    // Received and not analysed yet: what waits in the queue, and what the
+    // transcriber holds that no window has run over (a window in flight
+    // counts as not analysed until it returns).
+    var pending = _transcriber?.pendingSamples ?? 0;
+    for (final item in _queue) {
+      if (item is Float32List) pending += item.length;
+    }
+    final limitTime = _options.maxBufferedAudioFor(_owner.streaming.window);
+    final limit = limitTime.inMicroseconds * _rate ~/ 1000000;
+    if (pending > limit) {
+      _fail(
+        SpeechStreamOverrunException(buffered: _at(pending), limit: limitTime),
+      );
+      return;
+    }
+    _pump();
+  }
+
+  Future<void> flush() {
+    final mark = Completer<void>();
+    // A flush already running covers all audio received so far when none
+    // has arrived since: this call shares it.
+    if (_flushing.isNotEmpty && !_queue.any((item) => item is Float32List)) {
+      _flushing.add(mark);
+      return mark.future;
+    }
+    _queue.add(mark);
+    _pump();
+    return mark.future;
+  }
+
+  /// Runs the queue, one item at a time; one pump runs at once.
+  void _pump() {
+    if (_draining != null || _done) return;
+    _draining = _drain().whenComplete(() => _draining = null);
+  }
+
+  Future<void> _drain() async {
+    final transcriber = _transcriber;
+    if (transcriber == null) return;
+    try {
+      while (!_done && _queue.isNotEmpty) {
+        final item = _queue.removeAt(0);
+        if (item is Float32List) {
+          final result = await transcriber.add(item);
+          _emit(result, endpoint: false);
+        } else if (item is Completer<void>) {
+          final pending = <Completer<void>>[item];
+          // Flushes asked for before this one ran share it.
+          while (_queue.isNotEmpty && _queue.first is Completer<void>) {
+            pending.add(_queue.removeAt(0) as Completer<void>);
+          }
+          // Reachable from _release while the flush runs, so a stream that
+          // ends meanwhile fails them instead of leaving them pending.
+          _flushing = pending;
+          final result = await transcriber.flush();
+          if (_done) break;
+          _emit(result, endpoint: true);
+          _flushing = const [];
+          for (final c in pending) {
+            if (!c.isCompleted) c.complete();
+          }
+        }
+      }
+      if (!_done && inputEnded && _queue.isEmpty) {
+        final result = await transcriber.finish();
+        _emit(result, endpoint: true);
+        _finish();
+      }
+    } catch (e, st) {
+      _fail(e, st);
+    }
+  }
+
+  void _emit(WindowedResult result, {required bool endpoint}) {
+    if (_done) return;
+    final unconfirmed = endpoint ? '' : result.unconfirmed;
+    // Nothing new: no update (a short chunk that completed no window).
+    if (!endpoint &&
+        result.confirmed.isEmpty &&
+        unconfirmed == _lastUnconfirmed &&
+        result.confirmedUntil == _lastConfirmedUntil) {
+      return;
+    }
+    _lastUnconfirmed = unconfirmed;
+    _lastConfirmedUntil = result.confirmedUntil;
+    final hadConfirmed = _anyConfirmed;
+    if (result.confirmed.isNotEmpty) _anyConfirmed = true;
+    _out.add(
+      TranscriptUpdate(
+        confirmedDelta: result.confirmed.isEmpty
+            ? ''
+            : '${hadConfirmed ? ' ' : ''}${result.confirmed}',
+        unconfirmed: unconfirmed,
+        confirmedUntil: _at(result.confirmedUntil),
+        endpoint: endpoint,
+      ),
+    );
+  }
+
+  void _release() {
+    if (_claimed && identical(_owner._active, this)) _owner._active = null;
+    _claimed = false;
+    for (final item in [..._flushing, ..._queue]) {
+      if (item is Completer<void> && !item.isCompleted) {
+        item.completeError(StateError('the stream ended before this flush'));
+      }
+    }
+    _flushing = const [];
+    _queue.clear();
+    // Let go of the windows and the merger state now: a finished stream may
+    // stay referenced by its listener for a while.
+    _transcriber = null;
+  }
+
+  void _finish() {
+    if (_done) return;
+    _done = true;
+    _release();
+    unawaited(_out.close());
+  }
+
+  void _fail(Object error, [StackTrace? stack]) {
+    if (_done) return;
+    _done = true;
+    // Windows not started yet do not run: the recognizer is released below
+    // and the next stream's windows should not wait behind them.
+    _transcriber?.stop();
+    unawaited(_subscription?.cancel());
+    _release();
+    _out.addError(error, stack);
+    unawaited(_out.close());
+  }
+
+  /// The subscription's cancel: stop reading and emitting at once; the
+  /// returned future completes after a window already in native code. A
+  /// stream that has already ended (done or with an error) released its claim
+  /// then and waits for nothing here: `Stream.toList` and the like cancel
+  /// after an error and wait for this.
+  Future<void> _cancel() async {
+    if (_done) return;
+    _done = true;
+    _transcriber?.stop();
+    try {
+      await _subscription?.cancel();
+      final draining = _draining;
+      if (draining != null) await draining;
+    } finally {
+      _release();
     }
   }
 }

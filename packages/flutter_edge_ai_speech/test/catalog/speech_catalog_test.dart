@@ -86,6 +86,19 @@ void main() {
     });
   });
 
+  test('Parakeet streams where it runs; on the web, where nothing runs, '
+      'nothing streams', () {
+    final parakeet = LiteRtSpeechModels.stt
+        .expand((m) => m.variants)
+        .where((v) => v.type == SttModelType.parakeet && v.npuTarget == null)
+        .toList();
+    expect(parakeet, isNotEmpty);
+    for (final v in parakeet) {
+      expect(_on(false, () => v.supportsStreaming), isTrue, reason: v.id);
+      expect(_on(true, () => v.supportsStreaming), isFalse, reason: v.id);
+    }
+  });
+
   test('the package hides its test hooks', () {
     final barrel = File('lib/flutter_edge_ai_speech.dart').readAsStringSync();
     final export = RegExp(

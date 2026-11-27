@@ -53,7 +53,7 @@ final class VoiceActivityDetector {
   /// Loads the detector. [modelPath] is a Silero VAD `.tflite` with the
   /// bundled model's tensors (`[1,1,512]` audio and `[1,320]` state in, the
   /// probability and the state out); `null` uses the model this package
-  /// ships, copied once into the app's support directory and checked against
+  /// ships, copied once into the app's cache directory and checked against
   /// the SHA-256 the package pins; that needs the Flutter binding
   /// (`rootBundle`, `path_provider`), so a plain Dart program or a
   /// background isolate without it passes [modelPath].

@@ -1,5 +1,5 @@
 // The model VoiceActivityDetector uses by default: the Silero VAD asset this
-// package ships, copied once into the app's support directory because LiteRT
+// package ships, copied once into the app's cache directory because LiteRT
 // opens models by path, and checked against its SHA-256 there. Not exported:
 // the test hooks below are for this package's tests only.
 library;
@@ -13,7 +13,7 @@ import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart'
-    show getApplicationSupportDirectory;
+    show getApplicationCacheDirectory;
 
 import 'vad_worker.dart' show VadWorkerEngineFactory;
 
@@ -42,7 +42,7 @@ VadWorkerEngineFactory? debugVadEngineFactory;
 Future<Uint8List> Function()? debugBundledModelBytes;
 
 /// The directory the bundled model is copied to in tests, instead of the
-/// app's support directory. Setting it forgets the path already resolved.
+/// app's cache directory. Setting it forgets the path already resolved.
 @visibleForTesting
 set debugVadModelCacheDir(Directory? dir) {
   _debugCacheDir = dir;
@@ -58,14 +58,18 @@ Future<String>? _bundledPath;
 /// The path of the bundled model's checked copy, writing it if needed.
 Future<String> bundledVadModelPath() => _bundledPath ??= _writeBundledModel();
 
-/// Copies the bundled model to `<app support>/flutter_edge_ai_speech/vad/`
-/// unless a copy with the right SHA-256 is there already. The copy is
+/// Copies the bundled model to `<app cache>/flutter_edge_ai_speech/vad/`
+/// unless a copy with the right SHA-256 is there already. The cache
+/// directory, not the support one: the copy can always be rebuilt from the
+/// asset, so it stays out of iCloud and Android Auto Backup (whose 25 MB
+/// quota it would eat into), and a purge by the OS costs one copy at the
+/// next create. The copy is
 /// written under a unique name and renamed into place, so two writers never
 /// share a partial file and a reader never opens one; a rename that fails
 /// because another writer got there first uses that copy once it checks.
 Future<String> _writeBundledModel() async {
   try {
-    final base = _debugCacheDir ?? await getApplicationSupportDirectory();
+    final base = _debugCacheDir ?? await getApplicationCacheDirectory();
     final dir = Directory('${base.path}/flutter_edge_ai_speech/vad');
     final file = File('${dir.path}/silero_vad_16k_v6.3.tflite');
     if (await _isBundledModel(file)) return file.path;
@@ -79,6 +83,7 @@ Future<String> _writeBundledModel() async {
       );
     }
     await dir.create(recursive: true);
+    await _sweepStalePartials(dir);
     final partial = File(
       '${file.path}.$pid.${Random().nextInt(1 << 32)}.partial',
     );
@@ -92,15 +97,40 @@ Future<String> _writeBundledModel() async {
       try {
         if (await partial.exists()) await partial.delete();
       } on FileSystemException {
-        // Best effort: the unique name never collides with a later write.
+        // Best effort: the unique name never collides with a later write,
+        // and a later create sweeps it once it is stale.
       }
-      if (!await _isBundledModel(file)) rethrow;
+      var good = false;
+      try {
+        good = await _isBundledModel(file);
+      } on FileSystemException {
+        // Reading the other copy failed too: report the write's error.
+      }
+      if (!good) rethrow;
     }
     return file.path;
   } catch (_) {
     // Let a later create try again instead of repeating this failure.
     _bundledPath = null;
     rethrow;
+  }
+}
+
+/// How old a `.partial` copy must be before a create deletes it: younger
+/// ones may belong to a writer in another process that is still at work.
+const Duration _stalePartialAge = Duration(minutes: 10);
+
+/// Deletes the `.partial` copies a killed writer left behind.
+Future<void> _sweepStalePartials(Directory dir) async {
+  final now = DateTime.now();
+  await for (final entity in dir.list()) {
+    if (entity is! File || !entity.path.endsWith('.partial')) continue;
+    try {
+      final age = now.difference(await entity.lastModified());
+      if (age > _stalePartialAge) await entity.delete();
+    } on FileSystemException {
+      // Gone already (another create swept it), or not ours to delete.
+    }
   }
 }
 

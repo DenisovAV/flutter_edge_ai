@@ -469,6 +469,24 @@ void main() {
       );
     });
 
+    test('a create sweeps partial copies a killed writer left, but not a '
+        'fresh one another writer may still be writing', () async {
+      final vadDir = Directory('${dir.path}/flutter_edge_ai_speech/vad')
+        ..createSync(recursive: true);
+      final stale =
+          File('${vadDir.path}/silero_vad_16k_v6.3.tflite.1.2.partial')
+            ..writeAsBytesSync([1, 2, 3])
+            ..setLastModifiedSync(
+              DateTime.now().subtract(const Duration(hours: 1)),
+            );
+      final fresh = File(
+        '${vadDir.path}/silero_vad_16k_v6.3.tflite.3.4.partial',
+      )..writeAsBytesSync([1, 2, 3]);
+      await (await VoiceActivityDetector.create()).close();
+      expect(stale.existsSync(), isFalse);
+      expect(fresh.existsSync(), isTrue);
+    });
+
     test(
       'a copy of the right size with the wrong bytes is written again',
       () async {

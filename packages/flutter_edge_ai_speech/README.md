@@ -179,11 +179,14 @@ of every 32 ms frame for a policy of your own. One `detect` stream or
 `probabilities` call holds the model at a time (a stream from when it is
 listened to); `close()` ends a running stream with a `StateError`.
 
-The model is copied once into the app's support directory, because LiteRT
-opens models by path, and checked against its SHA-256 there. That needs the
-Flutter binding (`rootBundle`, `path_provider`): in a plain Dart program or
-a background isolate without it, pass `create(modelPath:)` a copy of the
-`.tflite`.
+The model is copied once into the app's cache directory (kept out of
+iCloud and Android Auto Backup; a purge by the OS costs one copy at the next
+`create`), because LiteRT opens models by path, and checked against its
+SHA-256 there. That needs the Flutter binding (`rootBundle`,
+`path_provider`): in a plain Dart program or a background isolate without
+it, pass `create(modelPath:)` a copy of the `.tflite`. The asset is part of
+every app that depends on this package, web builds included (where it is
+never downloaded), whether or not the app uses the detector.
 
 Silero detects any voice, not only the user's. On LibriSpeech speech with
 known pauses (40 streams per condition, macOS CPU) it missed no utterance and

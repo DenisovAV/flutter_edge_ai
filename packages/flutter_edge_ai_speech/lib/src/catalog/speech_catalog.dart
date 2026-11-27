@@ -144,10 +144,16 @@ final class LiteRtSttVariant extends SttVariant {
 
   /// Parakeet's CTC builds stream (their recognizer's `streaming` is not
   /// null on every backend it loads on); moonshine and Whisper do not yet.
-  /// A build compiled for an NPU does not load at all.
+  /// A build compiled for an NPU does not load at all, and where no backend
+  /// runs the build (the web) nothing streams. Not read from
+  /// `SttModelProfile`, which would bring the tokenizers' dart:io into the
+  /// web graph; a test holds this equal to what the recognizer loads into,
+  /// for every build.
   @override
   bool get supportsStreaming =>
-      type == SttModelType.parakeet && npuTarget == null;
+      npuTarget == null &&
+      backendsHere.isNotEmpty &&
+      type == SttModelType.parakeet;
 }
 
 /// A text-to-speech model this package runs.

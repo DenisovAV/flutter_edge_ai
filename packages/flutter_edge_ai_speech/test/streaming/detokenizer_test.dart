@@ -463,4 +463,22 @@ void main() {
       ]);
     });
   });
+
+  test('a tokenizer that throws fails the window instead of being skipped', () {
+    final fake = _FakeTokenizer()
+      // Whole texts decode; the repeated pairs and triples the per-token
+      // pieces are read from fail.
+      ..tokenIdsToTextFn = (ids) => ids.length > 1 && ids.toSet().length == 1
+          ? throw StateError('tokenizer broke')
+          : _s([for (final id in ids) id == 1 ? 'hello' : ' world'].join());
+    final detokenizer = TokenizerDetokenizer(fake.tokenIdsToUtf8);
+    expect(
+      () => detokenizer.detokenize([
+        const DecodedToken(1, timestampMs: 100),
+        const DecodedToken(2, timestampMs: 200),
+        const DecodedToken.endOfChunk(timestampMs: 10),
+      ]),
+      throwsStateError,
+    );
+  });
 }

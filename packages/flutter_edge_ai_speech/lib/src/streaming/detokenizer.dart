@@ -51,7 +51,9 @@ final class DecodedToken {
   final int tokenId;
 
   /// Emission time relative to the start of the window, in the decoder's
-  /// timestamp unit; null when the decoder reports none.
+  /// timestamp unit (the name is Omni's: for this package's CTC decoder it
+  /// is encoder frames, not milliseconds); null when the decoder reports
+  /// none.
   final int? timestampMs;
 
   /// True on the end-of-chunk sentinel of a progressive warm-start prefix
@@ -80,7 +82,8 @@ final class DetokenizedWord {
   final String text;
 
   /// Onset relative to the start of the window, in the decoder's timestamp
-  /// unit (on the sentinel: the end of the window).
+  /// unit (encoder frames for this package's CTC decoder; on the sentinel:
+  /// the end of the window).
   final int? timestampMs;
 
   /// True on the end-of-chunk sentinel word when this chunk is a progressive
@@ -152,24 +155,19 @@ final class TokenizerDetokenizer {
     // control token) and identical bytes never merge into one UTF-8 code
     // point, making it byte-safe and independent of the surrounding token
     // stream.
-    final List<int> d2;
-    final List<int> d3;
-    try {
-      d2 = _tokenIdsToUtf8([
-        tokenId,
-        tokenId,
-      ], skipSpecialTokens: skipSpecialTokens);
-      d3 = _tokenIdsToUtf8([
-        tokenId,
-        tokenId,
-        tokenId,
-      ], skipSpecialTokens: skipSpecialTokens);
-    } on Object {
-      // Omni's GetDecodedTokenPiece returns the tokenizer's error status and
-      // its caller skips the token; the word-onset mapping then falls back to
-      // linear interpolation if no word is resolved.
-      return null;
-    }
+    // Omni's GetDecodedTokenPiece returns the tokenizer's error status and
+    // its caller skips the token. Here a tokenizer that throws is a bug, not
+    // a status: it propagates and fails the window, instead of moving a
+    // word's timestamp to the wrong token without a word.
+    final d2 = _tokenIdsToUtf8([
+      tokenId,
+      tokenId,
+    ], skipSpecialTokens: skipSpecialTokens);
+    final d3 = _tokenIdsToUtf8([
+      tokenId,
+      tokenId,
+      tokenId,
+    ], skipSpecialTokens: skipSpecialTokens);
     if (d3.length < d2.length) return null;
     for (var i = 0; i < d2.length; ++i) {
       // "Decoded token triple does not start with decoded token pair."
@@ -324,7 +322,9 @@ final class TokenizerDetokenizer {
       List<int> text;
       try {
         text = _tokenIdsToUtf8(tokenIds, skipSpecialTokens: skipSpecialTokens);
-      } on ArgumentError {
+      } on ArgumentError catch (e) {
+        // An index out of range is a bug, not the unsupported option below.
+        if (e is RangeError) rethrow;
         // A SentencePiece tokenizer (used by Gemma ASR models) does not
         // support skipSpecialTokens = true; fall back to false.
         skipSpecialTokens = false;

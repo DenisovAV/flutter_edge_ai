@@ -152,11 +152,17 @@ merge measured on LibriSpeech. On 87 test-clean streams of about 60 s
 compute per second of audio), 2.63% at `balanced` (0.08 s), against 5.33%
 for plain 5 s chunks. Those streams were used to tune the merge; on the
 next minute of each chapter (80 streams, 85 min), held out from it: 2.52%
-and 2.31%. One stream runs at a time; `transcribe` calls made
-meanwhile wait their turn. Audio that arrives faster than the model keeps up
-with is held up to `TranscribeStreamOptions.maxBufferedAudio` (10 s), then
-the stream fails with `SpeechStreamOverrunException`; raise it to stream a
-file faster than real time.
+and 2.31%. Those numbers are the Mac CPU with the int8 build. On the Mac's
+Metal GPU the f32 build streams the example's 8.8 s clip in 0.66 s (int8
+does not load on the GPU, as on phones). `lowLatency` does four times the
+work of a batch transcription and `balanced` twice: on a phone CPU, where
+one 5 s window takes over a second, prefer `balanced` (numbers below).
+Builds compiled for an NPU do not stream. One stream runs at a time;
+`transcribe` calls made meanwhile wait their turn. Audio that arrives faster
+than the model keeps up with is held up to
+`TranscribeStreamOptions.maxBufferedAudio` (10 s), then the stream fails with
+`SpeechStreamOverrunException`; raise it to stream a file faster than real
+time. Audio must already be 16 kHz mono (record at 16 kHz, or resample).
 
 ### Speech-to-text output language (Whisper)
 

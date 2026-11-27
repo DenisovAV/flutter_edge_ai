@@ -157,8 +157,7 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
     );
     // A streaming profile detokenizes on this isolate: read its tokenizer
     // first, so a bad file fails before a worker is spawned.
-    final TokenIdsToUtf8? tokenIdsToUtf8 =
-        profile.supportsStreaming && profile.decodeType == SttDecodeType.ctc
+    final TokenIdsToUtf8? tokenIdsToUtf8 = profile.streamsThroughWindows
         ? await _tokenIdsToUtf8(profile, tokenizerPath)
         : null;
     final worker = await SttWorker.spawn(

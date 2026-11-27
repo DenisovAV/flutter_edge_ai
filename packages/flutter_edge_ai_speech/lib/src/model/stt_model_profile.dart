@@ -292,6 +292,12 @@ class SttModelProfile {
   /// True if this model can drive a streaming (incremental) transcription.
   bool get supportsStreaming => modes.contains(SttMode.streaming);
 
+  /// Whether the recognizer this profile loads into streams: a streaming
+  /// profile decoded with CTC, the windowed streaming this package
+  /// implements. The recognizer and the catalog both read it.
+  bool get streamsThroughWindows =>
+      supportsStreaming && decodeType == SttDecodeType.ctc;
+
   /// Resolve the runtime profile for [t].
   ///
   /// No `language` parameter, deliberately: the output language is a property

@@ -155,8 +155,13 @@ next minute of each chapter (80 streams, 85 min), held out from it: 2.52%
 and 2.31%. Those numbers are the Mac CPU with the int8 build. On the Mac's
 Metal GPU the f32 build streams the example's 8.8 s clip in 0.66 s (int8
 does not load on the GPU, as on phones). `lowLatency` does four times the
-work of a batch transcription and `balanced` twice: on a phone CPU, where
-one 5 s window takes over a second, prefer `balanced` (numbers below).
+work of a batch transcription and `balanced` twice. On phone CPUs (int8,
+`example/integration_test/stt_streaming_realtime_test.dart`: 45 s fed at
+microphone pace) one 5 s window took 235 ms on a Galaxy S24 (SM8650) and
+661 ms on a Galaxy A34 (Dimensity 1080), and both presets kept up to the
+end, every sentence transcribed; a slower phone, or one throttled by heat,
+can fall behind at `lowLatency`, and the stream then ends with
+`SpeechStreamOverrunException`: `balanced` halves the work.
 Builds compiled for an NPU do not stream. One stream runs at a time;
 `transcribe` calls made meanwhile wait their turn. Audio that arrives faster
 than the model keeps up with is held up to

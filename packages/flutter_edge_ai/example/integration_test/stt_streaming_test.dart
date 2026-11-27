@@ -7,6 +7,7 @@
 // Run: flutter test integration_test/stt_streaming_test.dart -d <device>
 //        [--dart-define=STT_MODEL_FILE=<path>/parakeet_ctc_0.6b_5s_i8.tflite
 //         --dart-define=STT_TOKENIZER_FILE=<path>/tokenizer.json]
+//        [--dart-define=STT_BACKEND=cpu|gpu]
 // Without the two files it installs the registry's Parakeet int8 build
 // (596 MB).
 import 'dart:async';
@@ -20,6 +21,9 @@ import 'package:integration_test/integration_test.dart';
 
 const _modelFile = String.fromEnvironment('STT_MODEL_FILE');
 const _tokenizerFile = String.fromEnvironment('STT_TOKENIZER_FILE');
+
+/// `cpu` or `gpu`; empty leaves the backend to the SDK.
+const _backend = String.fromEnvironment('STT_BACKEND');
 
 /// WAV data chunk starts after the 44-byte canonical PCM header.
 const _wavHeaderBytes = 44;
@@ -53,7 +57,13 @@ void main() {
       expect(variant.supportsStreaming, isTrue);
       await FlutterEdgeAi.installStt().fromCatalog(variant).install();
     }
-    final recognizer = await FlutterEdgeAi.getActiveStt();
+    final recognizer = await FlutterEdgeAi.getActiveStt(
+      preferredBackend: switch (_backend) {
+        'cpu' => PreferredBackend.cpu,
+        'gpu' => PreferredBackend.gpu,
+        _ => null,
+      },
+    );
     expect(recognizer.streaming, isNotNull, reason: 'Parakeet CTC streams');
     expect(recognizer.streaming!.window, const Duration(seconds: 5));
     final streaming = recognizer;
@@ -75,7 +85,8 @@ void main() {
     final text = _transcript(updates);
     debugPrint(
       'STT-STREAM-TRANSCRIPT<<<$text>>> ${updates.length} updates, '
-      '${watch.elapsedMilliseconds} ms for 8.8 s of audio',
+      '${watch.elapsedMilliseconds} ms for 8.8 s of audio'
+      '${_backend.isEmpty ? '' : ' on $_backend'}',
     );
     final low = text.toLowerCase();
     // Each repetition whole, once: the batch model reads the clip as "she had

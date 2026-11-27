@@ -5,9 +5,10 @@
 > changes. See the [migration guide](https://flutteredge.ai/docs/migration).
 
 On-device speech for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai) — STT,
-TTS, and a `VoiceSession` voice loop — via the LiteRT C API + `dart:ffi`. Opt-in
-package: add it only if your app needs speech-to-text, text-to-speech, or a
-push-to-talk voice loop.
+TTS, voice activity detection and a `VoiceSession` voice loop — via the LiteRT C
+API + `dart:ffi`. Opt-in package: add it only if your app needs speech-to-text,
+text-to-speech, detecting speech in a microphone stream, or a push-to-talk voice
+loop.
 
 This package depends on `litertlm_dart`, which owns the shared `libLiteRtLm`
 native bundle and exposes the LiteRT C API bindings (`LiteRtBindings`) used here,
@@ -143,6 +144,60 @@ default `'en'`. The setting changes what the model WRITES, not what it hears —
 `'en'` on German audio returns an English translation, not an error. moonshine
 and Parakeet have no language token and throw `ArgumentError` rather than
 ignoring the value.
+
+## Voice activity detection
+
+`VoiceActivityDetector` finds speech in 16 kHz mono 16-bit PCM with
+[Silero VAD](https://github.com/snakers4/silero-vad) (v6.3, MIT), which ships
+with this package as a 1.25 MB asset: nothing to install or download. It runs
+on the CPU in a worker isolate of its own, so it never waits behind
+speech-to-text or blocks the UI isolate. Native platforms only.
+
+```dart
+final vad = await VoiceActivityDetector.create();
+await for (final event in vad.detect(microphonePcm16kMono)) {
+  switch (event) {
+    case VadSpeechStart(:final startSample): /* speech began */
+    case VadSpeechEnd(:final startSample, :final endSample, :final reason):
+      /* the utterance is pcm[2 * startSample, 2 * endSample) */
+  }
+}
+await vad.close();
+```
+
+Positions are sample indices from the first sample of the stream (16 kHz),
+with `start`/`end` getters as `Duration`s. A start is reported once the
+speech has lasted `VadOptions.minSpeech` (250 ms), timed back to where it
+began. A pause shorter than `minSilence` before that counts towards it, so
+the start can come up to (less than) `minSpeech + minSilence` plus two
+32 ms frames (914 ms by default) after the voice began: to hand the whole utterance to
+speech-to-text, keep that much audio, plus `speechPad` and one input chunk.
+An utterance ends after `minSilence` (600 ms) of silence, at `maxUtterance`
+(30 s), or when the input ends. The thresholds, the hysteresis
+and the padding follow Silero's reference iterator; all of them are
+`VadOptions` fields. `probabilities(pcm)` returns the raw speech probability
+of every 32 ms frame for a policy of your own. One `detect` stream or
+`probabilities` call holds the model at a time (a stream from when it is
+listened to); `close()` ends a running stream with a `StateError`.
+
+The model is copied once into the app's cache directory (kept out of
+iCloud and Android Auto Backup; a purge by the OS costs one copy at the next
+`create`), because LiteRT opens models by path, and checked against its
+SHA-256 there. That needs the Flutter binding (`rootBundle`,
+`path_provider`): in a plain Dart program or a background isolate without
+it, pass `create(modelPath:)` a copy of the `.tflite`. The asset is part of
+every app that depends on this package, web builds included (where it is
+never downloaded), whether or not the app uses the detector.
+
+Silero detects any voice, not only the user's. On LibriSpeech speech with
+known pauses (40 streams per condition, macOS CPU) it missed no utterance and
+started on no noise, in quiet and in white noise down to 10 dB SNR, and ended
+an utterance a median 0.62-0.68 s after the speech stopped (`minSilence`,
+0.6 s, counts from the end of the first silent 32 ms frame, as in Silero's
+iterator). With other talkers in the background, three
+at -15 dB or one at -10 dB, as a reply playing without echo cancellation
+would be, it stayed in speech for seconds at a time. Barge-in needs the microphone's echo
+cancellation, or the microphone off while the reply plays.
 
 ## Voice loop
 

@@ -129,7 +129,8 @@ enum GpuActivationReason {
 
   /// The bundle's own (FP16): Gemma 4 with a context above
   /// [gemma4Fp16MaxContextTokens] on an Android GPU, where FP32 fails on
-  /// Adreno 8xx with this native build (OpenCL "Invalid work group size" at
-  /// the first decode, measured on a Galaxy S25 Ultra).
+  /// Adreno 8xx (OpenCL "Invalid work group size" at the first decode,
+  /// measured on a Galaxy S25 Ultra with LiteRT-LM 0.19 and 0.20,
+  /// google-ai-edge/LiteRT-LM#4825).
   gemma4LongContextAndroid,
 }

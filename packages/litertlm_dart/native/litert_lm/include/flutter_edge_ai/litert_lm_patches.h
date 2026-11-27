@@ -1,7 +1,7 @@
-// Declarations patch_c_api.sh adds to LiteRT-LM's C API: sections 2 and 3
+// Declarations patch_c_api.sh adds to LiteRT-LM's C API: sections 4b and 4c
 // (engine settings) in `c/engine.h`, sections 16 and 23 (the stopped-turn
 // rewind and the turn-end record) in `c/conversation.h`. Copied from the
-// patched tree at LiteRT-LM 771b06e1 (v0.19.0); section 14's two response
+// patched tree at LiteRT-LM 95df4c2a (v0.20.0); section 14's two response
 // getters stay in `c/embedding_engine.h`, as before. The bindings are
 // generated from upstream's headers plus this one, so `include/c/` stays
 // upstream's own and a pin bump that makes one of these upstream's shows.
@@ -18,12 +18,32 @@
 extern "C" {
 #endif  // __cplusplus
 
-// Sets whether to use hardware masking for NPU. Default is true which on
-// Intel LunarLake/PantherLake preview silicon causes engine_create to
-// crash because the NPU HW mask update path is not fully supported.
-// Pass false to force CPU/SIMD mask update fallback.
+// Sets NpuConfig.enable_neon_for_npu_greedy_sampling (NEON greedy sampling) on the main
+// executor (patch_c_api.sh section 4b). Unset, LiteRT-LM takes it from the
+// bundle's NPU executor metadata, else off (v0.20.0; up to v0.19.1 it was on).
+LITERT_LM_C_API_EXPORT
+LiteRtLmStatusCode litert_lm_engine_settings_set_enable_neon_for_npu_greedy_sampling(
+    LiteRtLmEngineSettings* settings, bool value);
+
+// Sets NpuConfig.use_hw_masking_for_npu (the hand-written mask update) on the main
+// executor (patch_c_api.sh section 4b). Unset, LiteRT-LM takes it from the
+// bundle's NPU executor metadata, else off (v0.20.0; up to v0.19.1 it was on).
 LITERT_LM_C_API_EXPORT
 LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_masking_for_npu(
+    LiteRtLmEngineSettings* settings, bool value);
+
+// Sets NpuConfig.use_hw_cache_update_for_npu (the hand-written KV-cache update) on the main
+// executor (patch_c_api.sh section 4b). Unset, LiteRT-LM takes it from the
+// bundle's NPU executor metadata, else off (v0.20.0; up to v0.19.1 it was on).
+LITERT_LM_C_API_EXPORT
+LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_cache_update_for_npu(
+    LiteRtLmEngineSettings* settings, bool value);
+
+// Sets NpuConfig.use_hw_ple_for_npu (the hand-written per-layer embedding lookup) on the main
+// executor (patch_c_api.sh section 4b). Unset, LiteRT-LM takes it from the
+// bundle's NPU executor metadata, else off (v0.20.0; up to v0.19.1 it was on).
+LITERT_LM_C_API_EXPORT
+LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_ple_for_npu(
     LiteRtLmEngineSettings* settings, bool value);
 
 // Lowers the GPU inference context priority (OpenCL kLow) so on-device GPU

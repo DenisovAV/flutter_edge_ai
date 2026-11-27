@@ -11,8 +11,6 @@ import 'dart:ffi';
 import 'package:litertlm_dart/src/ffi/litert_lm_client.dart';
 import 'package:litertlm_dart/src/ffi/litert_lm_library.dart';
 import 'package:litertlm_dart/src/ffi/native_asset_dir.dart';
-import 'package:litertlm_dart/src/runtime/load_errors.dart'
-    show LibraryLoadFailure, LiteRtLmEngineCreateException;
 import 'package:test/test.dart';
 
 void main() {
@@ -272,30 +270,12 @@ void main() {
         : 'the hook bundles LiteRT-LM for macOS, Linux and Windows hosts',
   );
 
-  // The plain-Dart load path end to end, without a model: this package's own
-  // test run sets no macos_companions define, so on macOS it must fail naming
-  // it; on Linux and Windows the libraries load, and only the model is
-  // missing.
-  test(
-    'openLiteRtLmLibrary opens the code asset (macOS: names the define)',
-    () {
-      if (Platform.isMacOS) {
-        expect(
-          openLiteRtLmLibrary,
-          throwsA(
-            isA<ArgumentError>().having(
-              (e) => '${e.message}',
-              'message',
-              contains('macos_companions: code_assets'),
-            ),
-          ),
-        );
-      } else {
-        expect(openLiteRtLmLibrary(), isA<DynamicLibrary>());
-      }
-    },
-    skip: hostHasArchive ? false : 'no native archive for this host',
-  );
+  // The plain-Dart load path end to end, without a model: on every host the
+  // libraries load (no hooks define is needed on macOS from litertlm_dart
+  // 0.20.0), and only the model is missing.
+  test('openLiteRtLmLibrary opens the code asset', () {
+    expect(openLiteRtLmLibrary(), isA<DynamicLibrary>());
+  }, skip: hostHasArchive ? false : 'no native archive for this host');
 
   test('a client loads the libraries, and only the model is missing', () async {
     const missing = '/no/such/model.litertlm';
@@ -305,20 +285,15 @@ void main() {
     } catch (e) {
       thrown = e;
     }
-    if (Platform.isMacOS) {
-      expect(thrown, isA<LibraryLoadFailure>());
-      expect('$thrown', contains('macos_companions: code_assets'));
-    } else {
-      // Only the model is missing: LiteRT-LM looked for it by its path.
-      expect(
-        thrown,
-        isA<LiteRtLmEngineCreateException>().having(
-          (e) => '$e',
-          'message',
-          contains(missing),
-        ),
-      );
-    }
+    // Only the model is missing: LiteRT-LM looked for it by its path.
+    expect(
+      thrown,
+      isA<LiteRtLmEngineCreateException>().having(
+        (e) => '$e',
+        'message',
+        contains(missing),
+      ),
+    );
   }, skip: hostHasArchive ? false : 'no native archive for this host');
 
   test('a plain Dart program on Windows loads the GPU libraries from the '

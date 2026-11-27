@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-26",
+  "host": "windows_x64",
+  "device": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU)",
+  "commit": "1963fc4e9604471c5298db1933b4d4bdaa150e52",
+  "packages": {
+    "flutter_edge_ai": "2.7.2",
+    "flutter_edge_ai_litertlm": "1.21.3",
+    "flutter_edge_ai_speech": "0.6.2",
+    "litertlm_dart": "0.20.0"
+  },
+  "native": "ff8da8c4c7757b4d0bbcd40206e6866bcd8fb6fb92dd4a44b0199ebea5b9b95e",
+  "log_sha256": "a3e9472bfb4ab402f401e92386a1c988e6cc2ab1e326f29e8d4ca00668fd55bc",
+  "log_url": null,
+  "log_location": "intel-ptl C:\\b\\v020-d8\\rcx\\smoke-eg2.log (UTF-16). A plain Dart program on litertlm_dart's public API (git archive of packages/litertlm_dart at the commit; no integration test, no FEA_EVIDENCE lines), the native-v0.20.0 archive downloaded and verified by the hook, no local prebuilt; D3D12 on the GPU. EmbeddingGemma 2 file C:\\b\\models\\embeddinggemma-2-text-270m.litertlm, sha256 2d079ee2f6f0... = embeddinggemma-2-text-270m/generic; dim 768, cos(CPU, GPU) 0.9959-0.9988 on three texts, query to relevant 0.854 vs unrelated 0.596 on both. Report: thread-storage thr_6r5zhn4fxm/v020-windows-0.20.md, 'Release archive check'.",
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "ranks the relevant text above the unrelated one"
+      ],
+      "gpu": [
+        "matches the CPU vectors (cos >= 0.995)",
+        "ranks the relevant text above the unrelated one"
+      ]
+    }
+  }
+}

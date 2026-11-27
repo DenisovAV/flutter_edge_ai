@@ -534,12 +534,30 @@ List<Float32List> nemoStftFrames(
 /// Full NeMo/parakeet log-mel pipeline: preemphasis -> centered-window STFT
 /// (via [nemoStftFrames]) -> power spectrum -> Slaney mel filterbank matmul
 /// -> natural log (`ln(mel + 2^-24)`) -> FULL-WINDOW per-mel-bin z-score
-/// (mean/std computed over ALL [melFrames], including any silence padding
-/// -- NOT masked to the valid-audio length; see the design spec's Risk #5.
-/// The masked/valid-length variant is a documented follow-on). Returns
-/// row-major `[melFrames, nMels]` (FRAME-FIRST -- opposite layout from
-/// [computeLogMelSpectrogram]'s melFirst, per parakeet's `[1,500,80]`
+/// (mean/std computed over ALL [melFrames], including any silence padding).
+/// Returns row-major `[melFrames, nMels]` (FRAME-FIRST -- opposite layout
+/// from [computeLogMelSpectrogram]'s melFirst, per parakeet's `[1,500,80]`
 /// encoder input contract).
+///
+/// Over the whole window, padding included, ON PURPOSE. NVIDIA/NeMo's
+/// `normalize_batch` and LiteRT-LM Omni's `NormalizeStandardMelSpectrogram`
+/// take the statistics over the real frames only and set the padded frames to
+/// 0, but they also keep the encoder or the decoder off the padding (NeMo's
+/// length mask, Omni's CTC decode range); the fixed-window export this runs
+/// has no length input. Measured with `parakeet_ctc_0.6b_5s_i8.tflite` on the
+/// 1,089 LibriSpeech test-clean utterances under 5 s (10,117 words, macOS
+/// CPU, 2026-11-25), word error rate:
+///
+/// | statistics | padded frames | CTC decodes | WER |
+/// |---|---|---|---|
+/// | whole window (this) | normalised as silence | every frame | 2.80% |
+/// | real frames only | normalised as silence | every frame or real ones | 2.89% |
+/// | real frames only | 0 (NeMo, Omni) | real frames (Omni) | 3.72% |
+/// | real frames only | 0 | every frame | 14.9% |
+///
+/// A 0 frame is the mean of speech, not silence, to an encoder that sees the
+/// padding: it emits words there. Change this only with a measurement like
+/// the one above.
 Float32List computeNemoLogMel(
   Float32List paddedPcm, {
   required int nFft,
@@ -577,7 +595,7 @@ Float32List computeNemoLogMel(
   }
 
   // Full-window per-mel-bin z-score: mean/std over ALL melFrames (including
-  // silence padding), floored at 1e-5.
+  // silence padding, on purpose: see the doc comment), floored at 1e-5.
   //
   // Uses the Bessel-corrected SAMPLE std (ddof=1, divide by N-1) — matching
   // NVIDIA/NeMo's `normalize_batch`, whose source literally comments "Subtract

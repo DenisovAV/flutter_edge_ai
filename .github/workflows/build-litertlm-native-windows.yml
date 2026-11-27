@@ -6,8 +6,9 @@ name: Build LiteRT-LM Native — Windows only
 # `build-litertlm-native.yml` workflow when changing all 3 desktop
 # platforms together.
 #
-# Triggered manually only — never on push. Same Windows job body as
-# build-litertlm-native.yml lines 123-226 (keep in sync when editing).
+# Triggered manually only — never on push. Same Windows job body as the
+# build-windows-x86_64 job of build-litertlm-native.yml (keep in sync when
+# editing).
 
 on:
   workflow_dispatch:
@@ -15,24 +16,24 @@ on:
       litertlm_version:
         description: 'LiteRT-LM ref (tag, branch, or commit SHA)'
         required: true
-        default: '7a03724cece417f1724c923b3d527b4319730841'
-      prebuilt_ref:
-        description: 'Upstream ref to take prebuilt companion libs from (blank = the exact v0.19.1 source SHA)'
-        required: false
+        default: '95df4c2a932b4917ace66fcfef6c154e8d2a6699'
 
 jobs:
   build-windows-x86_64:
     name: Windows x86_64
     runs-on: windows-latest
-    timeout-minutes: 150
+    # Raised with build-litertlm-native.yml: v0.20.0 builds libLiteRt.dll and
+    # the ML Drift WebGPU accelerator from source too (review-windows M7).
+    timeout-minutes: 240
     defaults:
       run:
         shell: pwsh
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '7a03724cece417f1724c923b3d527b4319730841' }}
-      # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: the
-      # v0.19.0 tag's own prebuilt is newer and its LiteRT pin contains #11120.
+      # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: from
+      # v0.20.0 the accelerator is built from LiteRT at the tag's pin. That pin
+      # no longer has #11120 (reverted upstream by 9d3824510e), so patch_c_api.sh
+      # section 10b re-applies it (patches/litert_intel_webgpu_no_dp4a.patch).
       ANDROID_NDK_HOME: ''
       BAZEL_OUTPUT_BASE: 'D:\b'
     steps:
@@ -56,47 +57,41 @@ jobs:
 
       - name: Clone LiteRT-LM
         run: |
+          # pwsh does not stop on a native command's exit code: check each.
           git clone https://github.com/google-ai-edge/LiteRT-LM C:\LiteRT-LM
+          if ($LASTEXITCODE -ne 0) { throw "git clone failed ($LASTEXITCODE)" }
           cd C:\LiteRT-LM
           git checkout "$env:LITERTLM_VERSION"
-          # Companions from a LATER upstream commit than the source: upstream's
-          # 2026-08-21 Constraint change (a8a8c445, a41b7c5c) put ComputeMask in
-          # the vtable slot ComputeBitmap had, and the prebuilt provider at the
-          # v0.17.0/v0.17.1 tags still implements the old one — a tool call
-          # segfaults in CompositeLogitMask::Apply. 4453b286 is upstream's own
-          # refresh of those binaries. Their wheel compiles the provider in, so
-          # their release lane never sees it.
-          git lfs pull --include="prebuilt/windows_x86_64/*"
-          # One file, from a different commit than the source: fetch it straight
-          # from the LFS media endpoint, where the ref is visible in the URL.
-          curl.exe -fsSL -o C:\LiteRT-LM\prebuilt\windows_x86_64\libGemmaModelConstraintProvider.dll `
-            "https://media.githubusercontent.com/media/google-ai-edge/LiteRT-LM/$env:PREBUILT_REF/prebuilt/windows_x86_64/libGemmaModelConstraintProvider.dll"
-          if ($LASTEXITCODE -ne 0) { throw "could not fetch the provider for $env:PREBUILT_REF" }
-          $provPath = "C:\LiteRT-LM\prebuilt\windows_x86_64\libGemmaModelConstraintProvider.dll"
-          Write-Host "provider: $((Get-Item $provPath).Length) bytes from $env:PREBUILT_REF"
-          # Fail before the hour of Bazel, not after it.
-          # Absolute paths on purpose: `cd` moves PowerShell's location, not the
-          # process working directory, so a .NET call with a relative path reads
-          # from the workspace root and fails there instead.
-          # Two-sided: a provider older than the runtime segfaults in
-          # CompositeLogitMask::Apply, and a newer one against an older runtime
-          # does the same — reachable whenever this builds a ref from before
-          # upstream's 2026-08-21 Constraint change.
-          $want = [bool](Select-String -Path C:\LiteRT-LM\runtime\components\constrained_decoding\constraint.h -Pattern 'ComputeMask' -Quiet)
-          $prov = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($provPath))
-          $have = $prov.Contains('LogitMask')
-          if ($want -ne $have) {
-            throw "provider/runtime Constraint ABI mismatch (source ComputeMask=$want, provider LogitMask=$have) - every tool call would segfault"
+          if ($LASTEXITCODE -ne 0) { throw "git checkout $env:LITERTLM_VERSION failed ($LASTEXITCODE)" }
+          $head = git rev-parse HEAD
+          $want = git rev-parse "${env:LITERTLM_VERSION}^{commit}"
+          if ($LASTEXITCODE -ne 0 -or $head -ne $want) {
+            throw "LiteRT-LM HEAD is $head, not $env:LITERTLM_VERSION ($want)"
           }
-          Write-Host "provider ABI: source and provider agree (ComputeMask=$want)"
+          # Only Dawn comes from upstream's prebuilt/. Up to native-v0.19.1
+          # Google's prebuilt libGemmaModelConstraintProvider.dll did too; from
+          # native-v0.20.0 the tool-call constraints are built with
+          # LLGuidance (patch_c_api.sh section 29) and no provider ships.
+          git lfs pull --include="prebuilt/windows_x86_64/*"
 
       - name: Patch C API
         shell: bash
         run: bash packages/litertlm_dart/native/litert_lm/patch_c_api.sh C:/LiteRT-LM
 
       - name: Build LiteRtLm.dll
-        # static_link_msvcrt: see build-litertlm-native.yml (#456).
+        # static_link_msvcrt: see build-litertlm-native.yml (#456); it reaches
+        # libLiteRt.dll through patches/litert_libLiteRt_static_crt.patch (D9).
+        # libLiteRt.dll and the WebGPU accelerator are built from LiteRT's
+        # source from v0.20.0: upstream's prebuilt/ no longer has them.
         run: |
+          # TensorFlow's repository rules run patch_cmds through BAZEL_SH
+          # (patch_c_api.sh section 32): a bare `bash` is found in System32 before
+          # PATH, and on this runner that is the WSL launcher with no distribution
+          # (measured 2026-11-25). Its sed comes from usr\bin, put first as on the
+          # Panther Lake box where this build passed; its link.exe does not shadow
+          # MSVC: Bazel calls the linker by the path it resolves from Visual Studio.
+          $env:PATH = "C:\Program Files\Git\usr\bin;$env:PATH"
+          $env:BAZEL_SH = "C:\Program Files\Git\usr\bin\bash.exe"
           cd C:\LiteRT-LM
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build -c opt `
@@ -107,13 +102,24 @@ jobs:
             --features=static_link_msvcrt `
             --spawn_strategy=local `
             --define=litert_runtime_link_mode=dynamic `
-            '//c:libLiteRtLm.dylib'
+            '//c:libLiteRtLm.dylib' `
+            '@litert//litert/c:libLiteRt' `
+            '@litert//litert/runtime/accelerators/gpu:libLiteRtWebGpuAccelerator'
+          if ($LASTEXITCODE -ne 0) { throw "LiteRtLm.dll / libLiteRt.dll / accelerator build failed (exit $LASTEXITCODE)" }
 
       - name: Build Intel NPU dispatch
         # Same pin as the runtime — see build-litertlm-native.yml for why the
         # previously carried-forward prebuilt (OpenVino 2026.2.0 against a
         # runtime pinned to 2026.3.0) is what broke backend=npu (#3217).
         run: |
+          # TensorFlow's repository rules run patch_cmds through BAZEL_SH
+          # (patch_c_api.sh section 32): a bare `bash` is found in System32 before
+          # PATH, and on this runner that is the WSL launcher with no distribution
+          # (measured 2026-11-25). Its sed comes from usr\bin, put first as on the
+          # Panther Lake box where this build passed; its link.exe does not shadow
+          # MSVC: Bazel calls the linker by the path it resolves from Visual Studio.
+          $env:PATH = "C:\Program Files\Git\usr\bin;$env:PATH"
+          $env:BAZEL_SH = "C:\Program Files\Git\usr\bin\bash.exe"
           cd C:\LiteRT-LM
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build -c opt `
@@ -164,9 +170,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path artifacts -Force
           Copy-Item C:\LiteRT-LM\bazel-bin\c\libLiteRtLm.dylib artifacts\LiteRtLm.dll
-          # The CRT check for #456 runs at the END of this step, once every DLL
-          # is in artifacts\ — see "the allow-list is what a Flutter Windows
-          # app already ships" below.
+          # The CRT check for #456 runs in its own step after the upload, once
+          # every DLL is in artifacts\ (Check DLL imports).
           Copy-Item StreamProxy.dll artifacts\
           $prebuilt = 'C:\LiteRT-LM\prebuilt\windows_x86_64'
           # No `else` used to mean a missing companion shipped silently. With
@@ -174,17 +179,63 @@ jobs:
           # imports of LiteRtLm.dll, so absence is a LoadLibrary failure on the
           # user's machine, not a degraded build. Test-Path is also true for a
           # ~130-byte git-lfs pointer stub, and Windows has no patchelf step to
-          # trip over one — so assert size as well.
+          # trip over one — so assert size as well. Both names of each are
+          # shipped: lib* for the PE imports, prefixless for Native Assets.
           # No GPU sampler on Windows since v0.19.0 (patch_c_api.sh section 20;
           # see build-litertlm-native.yml): neither linked in nor shipped.
+          if (-not (Test-Path artifacts\LiteRtLm.dll) -or (Get-Item artifacts\LiteRtLm.dll).Length -eq 0) {
+            throw 'artifacts\LiteRtLm.dll is missing or empty'
+          }
           $dll = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes('artifacts\LiteRtLm.dll'))
           if ($dll.Contains('AVTopKWebGpuSampler@lm@litert@@')) {
             throw 'LiteRtLm.dll links the TopK WebGPU sampler (section 20 did not apply)'
           }
-          foreach ($base in @('libGemmaModelConstraintProvider','libLiteRt','libLiteRtWebGpuAccelerator','libwebgpu_dawn')) {
-            $src = "$prebuilt\$base.dll"
+          # From v0.20.0 upstream's prebuilt/ holds only the constraint provider,
+          # which no longer ships (LLGuidance constraints, section 29), and
+          # webgpu_dawn.dll (c57b9ae0; cea62fa2 deleted libwebgpu_dawn.dll).
+          # libLiteRt.dll and the WebGPU accelerator are ours, built above from
+          # LiteRT at the tag's pin. A LiteRT runtime or accelerator back in
+          # prebuilt/ means upstream ships one again: decide which copy ships
+          # rather than letting this step pick.
+          $stale = @(Get-ChildItem -Path $prebuilt -Filter 'libLiteRt*.dll' -ErrorAction SilentlyContinue)
+          if ($stale.Count -ne 0) {
+            throw "$prebuilt carries $($stale.Name -join ', ') again; this workflow ships the LiteRT runtime and accelerator it builds"
+          }
+          # Each from its target's own output path, never from the first match
+          # of a recursive search: .runfiles mirrors (the accelerator is runtime
+          # data of //c:libLiteRtLm.dylib in dynamic mode, 769af92e; .bazelrc
+          # enables runfiles on Windows) and the _solib_ link farm hold copies.
+          # Any other real copy under bazel-bin must be the same bytes, or two
+          # builds of it exist and we would not know which ships (the same
+          # concern as the dispatch's unique match below).
+          $pickOne = {
+            param($name, $dir)
+            $want = "C:\LiteRT-LM\bazel-bin\external\litert\litert\$dir\$name"
+            if (-not (Test-Path $want)) { throw "$want was not built" }
+            $wantFull = (Get-Item $want).FullName
+            $wantHash = (Get-FileHash $want -Algorithm SHA256).Hash
+            $others = @(Get-ChildItem -Recurse -Filter $name -Path C:\LiteRT-LM\bazel-bin -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -notmatch '\.runfiles\\' -and $_.FullName -notmatch '\\_solib_' -and $_.FullName -ne $wantFull })
+            foreach ($o in $others) {
+              if ((Get-FileHash $o.FullName -Algorithm SHA256).Hash -ne $wantHash) {
+                throw "$($o.FullName) differs from ${want}: two builds of $name under bazel-bin"
+              }
+              Write-Host "  identical copy of ${name}: $($o.FullName)"
+            }
+            Write-Host "$name <- $want"
+            $want
+          }
+          $built = @{
+            'libLiteRt' = (& $pickOne 'libLiteRt.dll' 'c')
+            'libLiteRtWebGpuAccelerator' = (& $pickOne 'libLiteRtWebGpuAccelerator.dll' 'runtime\accelerators\gpu')
+          }
+          # Both names of each: lib* is what the PE imports name (LiteRtLm.dll
+          # imports libLiteRt.dll), the prefixless copy is the Native Assets
+          # name (LiteRt.dll is what LiteRtBindings and the preload open).
+          foreach ($base in $built.Keys) {
+            $src = $built[$base]
             if (-not (Test-Path $src)) {
-              throw "prebuilt companion missing: $base.dll - LiteRtLm.dll imports it"
+              throw "companion missing: $src - LiteRtLm.dll imports it"
             }
             $len = (Get-Item $src).Length
             if ($len -lt 100kb) {
@@ -194,15 +245,30 @@ jobs:
             $stripped = $base -replace '^lib',''
             Copy-Item $src "artifacts\$stripped.dll"
           }
-          # Same ABI assert as the Linux jobs: a provider from before upstream's
-          # ComputeMask change segfaults on the first tool call and nothing else
-          # in this build would notice.
-          $want = [bool](Select-String -Path C:\LiteRT-LM\runtime\components\constrained_decoding\constraint.h -Pattern 'ComputeMask' -Quiet)
-          $have = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes("artifacts\libGemmaModelConstraintProvider.dll")).Contains('LogitMask')
-          if ($want -ne $have) {
-            throw "provider/runtime Constraint ABI mismatch in the shipped artifact (source ComputeMask=$want, provider LogitMask=$have)"
+          # Dawn under its one name: the accelerator's import of it is a
+          # delay-load of webgpu_dawn.dll through a stub import library
+          # (runtime/components/BUILD webgpu_dawn_shared_lib). That stub is a
+          # DLL of the same name in bazel-bin (runtime\components\stub\), with
+          # empty functions: never take Dawn from bazel-bin, and assert that
+          # what ships is the prebuilt byte for byte.
+          $dawnSrc = "$prebuilt\webgpu_dawn.dll"
+          if (-not (Test-Path $dawnSrc)) { throw "prebuilt webgpu_dawn.dll missing under $prebuilt" }
+          if ((Get-Item $dawnSrc).Length -lt 1mb) {
+            throw "webgpu_dawn.dll is $((Get-Item $dawnSrc).Length) bytes - a git-lfs pointer or the stub, not Dawn"
           }
-          Write-Host "provider ABI: shipped artifact agrees with this source (ComputeMask=$want)"
+          Copy-Item $dawnSrc artifacts\webgpu_dawn.dll
+          if ((Get-FileHash artifacts\webgpu_dawn.dll).Hash -ne (Get-FileHash $dawnSrc).Hash) {
+            throw "artifacts\webgpu_dawn.dll is not upstream's prebuilt Dawn"
+          }
+          # No constraint provider: LiteRtLm.dll must neither import nor name
+          # one (LLGuidance constraints, patch_c_api.sh section 29).
+          if (-not (Test-Path artifacts\LiteRtLm.dll) -or (Get-Item artifacts\LiteRtLm.dll).Length -eq 0) {
+            throw 'artifacts\LiteRtLm.dll is missing or empty'
+          }
+          $lm = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes("artifacts\LiteRtLm.dll"))
+          if ($lm.Contains('GemmaModelConstraintProvider')) {
+            throw "LiteRtLm.dll still imports or names the Gemma constraint provider"
+          }
           foreach ($dxc in 'dxil.dll', 'dxcompiler.dll') {
             $src = Get-ChildItem -Recurse -Filter $dxc -Path dxc | Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1
             if (-not $src) {
@@ -408,41 +474,125 @@ jobs:
           Write-Host "OpenVino release verified: $sdkRelease (version.txt '$sdkBuild', openvino.dll '$($embedded[0])'); $($ovDlls.Count) DLLs byte-identical to the SDK"
           Write-Host "NPU stack: LiteRtDispatch + $($ovDlls.Count) OpenVino/TBB DLLs"
           Get-ChildItem artifacts\
-          # Every DLL we build ourselves, at the END of this step so that all
-          # three are actually in artifacts\ — the first version of this loop
-          # ran before StreamProxy and the dispatch were copied and skipped
-          # them with a silent `continue`, which is the same vacuity it was
-          # written to remove. Missing now means the build is broken: throw.
-          # The allow-list is what a Flutter Windows app already ships beside its
-          # exe, NOT what the redistributable installs — the redist also carries
-          # vcruntime140_threads.dll, and needing that is exactly #456. Checked
-          # over every DLL in the bundle, not only ours: openvino/tbb come from
-          # Intel's SDK and an SDK bump is precisely how a new CRT import would
-          # arrive unnoticed. LiteRtLm must import none at all; LiteRtDispatch
-          # links OpenVINO's C++ API and keeps the dynamic CRT.
-          $allowed = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
-          $shipped = @(Get-ChildItem artifacts\*.dll | ForEach-Object { $_.Name })
-          foreach ($must in @('LiteRtLm.dll', 'LiteRtDispatch.dll', 'StreamProxy.dll')) {
-            if ($shipped -notcontains $must) { throw "$must is not in artifacts - this step should have copied it" }
-          }
-          foreach ($ours in $shipped) {
-            $path = "artifacts\$ours"
-            $deps = dumpbin /dependents $path
-            if (-not ($deps -match '^\s+KERNEL32\.dll')) {
-              throw "dumpbin listed no imports for ${ours}:`n$($deps -join "`n")"
-            }
-            $crt = @($deps -match '^\s+(msvcp|vcruntime|concrt)\d' | ForEach-Object { $_.Trim().ToLower() })
-            $bad = @($crt | Where-Object { $allowed -notcontains $_ })
-            if ($ours -eq 'LiteRtLm.dll' -and $crt.Count -gt 0) {
-              throw "LiteRtLm.dll imports the VC++ runtime: $($crt -join ', ') - static_link_msvcrt did not apply"
-            }
-            if ($bad.Count -gt 0) {
-              throw "$ours imports a VC++ runtime a Flutter Windows app does not ship: $($bad -join ', ')"
-            }
-            Write-Host "$ours CRT imports: $(if ($crt.Count) { $crt -join ', ' } else { 'none' })"
-          }
 
       - uses: actions/upload-artifact@v4
         with:
           name: litertlm-windows_x86_64
           path: artifacts/
+
+      # After the upload, so a failing gate still leaves the bundle to read;
+      # the publish job needs this job green.
+      - name: Check DLL imports (C++ runtime and import closure)
+        # Every DLL in the bundle, ours and Intel's: an OpenVINO bump is how a
+        # new runtime import would arrive unnoticed. dumpbin /dependents lists
+        # normal AND delay-load imports; both count, because from v0.20.0 Dawn
+        # is a delay-load (a missing webgpu_dawn.dll then kills the process at
+        # the first wgpu call instead of failing LoadLibrary).
+        #
+        # 1. C++ runtime. The allow-list is what a Flutter Windows app already
+        #    ships beside its exe, NOT what the redistributable installs: the
+        #    redist also carries vcruntime140_threads.dll, and needing that is
+        #    exactly #456. vcomp140 (OpenMP), ucrtbased and the *d debug
+        #    runtimes are no Flutter app's either.
+        # 2. Import closure: every import is a file of this bundle, a Windows
+        #    system DLL (or API set), or an allowed C++ runtime DLL. A name only
+        #    the build machine has is a LoadLibrary failure on the user's.
+        run: |
+          $shipped = @(Get-ChildItem artifacts\*.dll | ForEach-Object { $_.Name })
+          $shippedLower = @($shipped | ForEach-Object { $_.ToLower() })
+          foreach ($must in @('LiteRtLm.dll', 'LiteRtDispatch.dll', 'StreamProxy.dll',
+                              'libLiteRt.dll', 'LiteRt.dll', 'libLiteRtWebGpuAccelerator.dll',
+                              'webgpu_dawn.dll')) {
+            if ($shipped -notcontains $must) { throw "$must is not in artifacts - Collect artifacts should have copied it" }
+          }
+          $allowedCrt = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
+          $crtPattern = '^(msvcp|vcruntime|concrt|vcomp|msvcr|vccorlib)\d|^ucrtbased\.dll$'
+          # Every DLL built from source carries its own C++ runtime (/MT):
+          # libLiteRt.dll through patches/litert_libLiteRt_static_crt.patch,
+          # which drops LiteRT's features = ["-static_link_msvcrt"] (D9;
+          # upstream's /MD build imports vcruntime140_threads.dll, #456).
+          $mustBeStatic = @('LiteRtLm.dll', 'StreamProxy.dll', 'libLiteRt.dll', 'LiteRt.dll',
+                            'libLiteRtWebGpuAccelerator.dll')
+          # Windows system DLLs and API sets this bundle may import by name.
+          # ze_loader.dll is Intel's Level Zero loader, installed with the
+          # Intel GPU/NPU driver (OpenVINO's NPU plugin, loaded only on
+          # PreferredBackend.npu).
+          $system = @(
+            'kernel32.dll', 'kernelbase.dll', 'ntdll.dll', 'user32.dll', 'gdi32.dll',
+            'advapi32.dll', 'shell32.dll', 'shlwapi.dll', 'ole32.dll', 'oleaut32.dll',
+            'combase.dll', 'ws2_32.dll', 'mswsock.dll', 'iphlpapi.dll', 'bcrypt.dll',
+            'bcryptprimitives.dll', 'crypt32.dll', 'secur32.dll', 'rpcrt4.dll',
+            'dbghelp.dll', 'version.dll', 'setupapi.dll', 'cfgmgr32.dll', 'psapi.dll',
+            'powrprof.dll', 'winmm.dll', 'comctl32.dll', 'ucrtbase.dll',
+            'd3d11.dll', 'd3d12.dll', 'dxgi.dll', 'dxcore.dll', 'd3dcompiler_47.dll',
+            'opengl32.dll', 'ze_loader.dll'
+          )
+          $systemPattern = '^(api-ms-win-|ext-ms-win-)'
+          $failures = @()
+          $dawnImporters = @()
+          foreach ($dll in $shipped) {
+            $out = dumpbin /dependents "artifacts\$dll"
+            if ($LASTEXITCODE -ne 0) { throw "dumpbin /dependents failed on ${dll}:`n$($out -join "`n")" }
+            $section = $null
+            $imports = @()
+            $delay = @()
+            foreach ($line in $out) {
+              if ($line -match 'Image has the following delay load dependencies') { $section = 'delay'; continue }
+              if ($line -match 'Image has the following dependencies') { $section = 'import'; continue }
+              if ($line -match '^\s+Summary\s*$') { $section = $null; continue }
+              if ($section -and $line -match '^\s+(\S+\.dll)\s*$') {
+                if ($section -eq 'delay') { $delay += $Matches[1].ToLower() } else { $imports += $Matches[1].ToLower() }
+              }
+            }
+            # A parse that found nothing reads as "imports nothing", which is
+            # the answer this check exists to distrust.
+            if ($imports -notcontains 'kernel32.dll') {
+              throw "dumpbin listed no KERNEL32.dll import for ${dll}:`n$($out -join "`n")"
+            }
+            $all = @($imports + $delay | Sort-Object -Unique)
+            $crt = @($all | Where-Object { $_ -match $crtPattern })
+            Write-Host "${dll}: imports [$($imports -join ', ')]"
+            Write-Host "    delay-load [$(if ($delay.Count) { $delay -join ', ' } else { 'none' })]; C++ runtime [$(if ($crt.Count) { $crt -join ', ' } else { 'none' })]"
+            if ($all -contains 'webgpu_dawn.dll') {
+              $dawnImporters += "$dll ($(if ($delay -contains 'webgpu_dawn.dll') { 'delay-load' } else { 'import' }))"
+            }
+            if ($mustBeStatic -contains $dll -and $crt.Count -gt 0) {
+              $failures += "$dll imports the VC++ runtime: $($crt -join ', ') - static_link_msvcrt did not apply"
+            }
+            $badCrt = @($crt | Where-Object { $allowedCrt -notcontains $_ })
+            if ($badCrt.Count -gt 0) {
+              $failures += "$dll imports a C++ runtime a Flutter Windows app does not ship: $($badCrt -join ', ')"
+            }
+            foreach ($i in $all) {
+              if ($shippedLower -contains $i) { continue }
+              if ($system -contains $i -or $i -match $systemPattern) { continue }
+              if ($allowedCrt -contains $i) { continue }
+              $failures += "$dll imports $i, which is neither in the bundle nor a Windows system DLL"
+            }
+          }
+          Write-Host "webgpu_dawn.dll imported by: $(if ($dawnImporters.Count) { $dawnImporters -join ', ' } else { 'nothing (it is loaded only by name at run time)' })"
+          if ($failures.Count -gt 0) {
+            throw "DLL import check failed:`n$($failures -join "`n")"
+          }
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Load the bundle in a plain Dart program
+        # tool/plain_dart_check against these artifacts (the hook takes a
+        # populated native\litert_lm\prebuilt\windows_x86_64\ before any
+        # download): LiteRt.dll, the accelerator, Dawn, the shader compiler and
+        # LiteRtLm.dll preloaded the way the client loads them, and an engine
+        # create that gets as far as the missing model. The runner has the VC++
+        # redistributable installed, so this does not prove the CRT question
+        # above; it proves every normal import resolves. No GPU on the runner.
+        run: |
+          $dest = 'packages\litertlm_dart\native\litert_lm\prebuilt\windows_x86_64'
+          New-Item -ItemType Directory -Path $dest -Force | Out-Null
+          Copy-Item artifacts\* $dest
+          cd packages\litertlm_dart\tool\plain_dart_check
+          dart pub get
+          if ($LASTEXITCODE -ne 0) { throw "dart pub get failed" }
+          dart run bin/plain_dart_check.dart
+          if ($LASTEXITCODE -ne 0) { throw "plain_dart_check failed (exit $LASTEXITCODE)" }

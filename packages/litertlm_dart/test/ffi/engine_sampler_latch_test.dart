@@ -1,4 +1,6 @@
 import 'package:litertlm_dart/src/ffi/engine_sampler_latch.dart';
+import 'package:litertlm_dart/src/ffi/litert_lm_runtime_check.dart'
+    show liteRtLmSamplerFixedAtFirstGeneration;
 import 'package:test/test.dart';
 import 'package:litertlm_dart/src/runtime/types.dart';
 
@@ -50,5 +52,40 @@ void main() {
     latch.reset();
     expect(latch.onGeneration(_greedy, explicit: true), isNull);
     expect(latch.onGeneration(_defaults, explicit: true)?.warn, isTrue);
+  });
+
+  test('only a native library of C API 1.0 (LiteRT-LM 0.19) keeps the first '
+      "generation's sampler; from 1.1 (0.20) the latch is not consulted", () {
+    expect(
+      liteRtLmSamplerFixedAtFirstGeneration((
+        code: 0,
+        major: 1,
+        minor: 0,
+        patch: 0,
+      )),
+      isTrue,
+    );
+    for (final minor in [1, 2]) {
+      expect(
+        liteRtLmSamplerFixedAtFirstGeneration((
+          code: 0,
+          major: 1,
+          minor: minor,
+          patch: 0,
+        )),
+        isFalse,
+        reason: '1.$minor',
+      );
+    }
+    // A version that cannot be read keeps the warning.
+    expect(
+      liteRtLmSamplerFixedAtFirstGeneration((
+        code: 13,
+        major: 0,
+        minor: 0,
+        patch: 0,
+      )),
+      isTrue,
+    );
   });
 }

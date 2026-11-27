@@ -131,7 +131,17 @@ void main() {
         'lib/src/litert/tts_core.dart',
         'lib/src/litert/inflect_tts_core.dart',
         'lib/src/qwen3/qwen3_tts_core.dart',
+        'lib/src/vad/silero_vad_core.dart',
       ]),
+    );
+    // The VAD graph goes through loadLiteRtGraph too, but on the CPU only:
+    // no backend reaches it, so it never meets the GPU options.
+    expect(
+      _count(
+        sources['lib/src/vad/silero_vad_core.dart']!,
+        r'loadLiteRtGraph\([^;]*kLiteRtHwAcceleratorCpu,',
+      ),
+      1,
     );
   });
 

@@ -1,0 +1,19 @@
+# What an app that resolves the catalog packages from pub.dev
+# bundles today. The site (registry.md, models.json) counts a
+# run as verified only on this native build and these minor
+# versions. Written by `dart run bin/registry.dart pin
+# <package>` in the release commit of that package; never by
+# hand. `dart run bin/registry.dart pub-check` compares it with
+# pub.dev. See README.md, "What pub.dev ships".
+packages:
+  flutter_edge_ai_litertlm: 1.22.0
+  flutter_edge_ai_speech: 0.6.3
+litertlm_dart: 0.20.0+2
+native_release: native-v0.20.0
+archives:
+  android_arm64: dbce6e6d333fcc4aa3dce086a832dc2ed5df7eeeb9b06e2a863f1d535c006bf3
+  ios_arm64: d94c23c97f86fd2b30b597d2a9fdde08c526060457ac36a8b3b4fa77c7e6f680
+  linux_arm64: e3f5a0ba6eb1e31c5baab680f1ebf95575d8395ae7a397613da8725742ef969c
+  linux_x64: 207691315ba167e894c784db489ab740a7e3b86b8e378fa83740af263270727e
+  macos_arm64: e820e3acc547edbbb11380c02958d1c95160a79147b437ec3f2b1a5f9f361fa6
+  windows_x64: ff8da8c4c7757b4d0bbcd40206e6866bcd8fb6fb92dd4a44b0199ebea5b9b95e

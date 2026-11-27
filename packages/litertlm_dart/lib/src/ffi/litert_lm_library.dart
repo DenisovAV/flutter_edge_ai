@@ -69,9 +69,8 @@ DynamicLibrary openLiteRtLmLibrary() {
   // (native_asset_dir.dart).
   final assetDir = liteRtLmOutsideFlutter ? requireNativeAssetDir() : null;
   if (Platform.isLinux) {
-    // RUNPATH $ORIGIN: its NEEDED libLiteRt.so and
-    // libGemmaModelConstraintProvider.so resolve from the bundle's lib/ (in
-    // a plain Dart program, from the code assets' directory).
+    // RUNPATH $ORIGIN: its NEEDED libLiteRt.so resolves from the bundle's
+    // lib/ (in a plain Dart program, from the code assets' directory).
     final path = assetDir == null
         ? 'libLiteRtLm.so'
         : nativeAssetPath(assetDir, 'libLiteRtLm.so');

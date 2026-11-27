@@ -157,6 +157,25 @@ void main() {
       expect(reads, 1);
     });
 
+    test('a conversation with tools keeps its thoughts', () async {
+      final client = _RecordingClient()
+        ..loadedModelForTest(backend: 'cpu', modelPath: 'model.litertlm')
+        ..linearAttentionStateReader = (_) async => false;
+      await client.createConversation(
+        sampling: sampling,
+        toolsJson: '[{"type":"function","function":{"name":"show_alert"}}]',
+      );
+      expect(client.recorder.filterCalls, [false]);
+      expect(
+        liteRtLmFiltersChannelContent(
+          npu: false,
+          linearAttentionState: false,
+          hasTools: true,
+        ),
+        isFalse,
+      );
+    });
+
     test('no loaded model counts as cannot rewind', () async {
       final client = _RecordingClient()..loadedModelForTest(backend: 'cpu');
       await client.createConversation(sampling: sampling);

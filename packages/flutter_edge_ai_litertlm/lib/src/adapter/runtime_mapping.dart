@@ -32,9 +32,12 @@ extension ActivationDataTypeToRuntime on ActivationDataType {
 }
 
 extension ActivationTypeToCore on lm.ActivationDataType {
-  ActivationDataType get toCore => switch (this) {
+  /// Core's type; null for the integer types, which core does not have (core
+  /// never asks for them, so an engine loaded through core never runs them).
+  ActivationDataType? get toCore => switch (this) {
     lm.ActivationDataType.float32 => ActivationDataType.float32,
     lm.ActivationDataType.float16 => ActivationDataType.float16,
+    lm.ActivationDataType.int16 || lm.ActivationDataType.int8 => null,
   };
 }
 

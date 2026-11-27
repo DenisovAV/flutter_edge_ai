@@ -381,9 +381,14 @@ void main() {
     for (final (i, cos) in vsCpu.indexed) {
       expect(cos, greaterThanOrEqualTo(0.70), reason: _golden[i].id);
     }
-    for (var i = 0; i < 6; i++) {
+    // The pairs the golden holds (q0..d0 and on): the count comes from it, so
+    // a regenerated golden cannot leave the loop asking for a missing id.
+    final pairs = _golden.where((item) => item.role == 'query').length;
+    expect(pairs, _golden.where((item) => item.role == 'document').length);
+    expect(pairs, greaterThan(1));
+    for (var i = 0; i < pairs; i++) {
       final scores = [
-        for (var j = 0; j < 6; j++) _cos(vectors['q$i']!, vectors['d$j']!),
+        for (var j = 0; j < pairs; j++) _cos(vectors['q$i']!, vectors['d$j']!),
       ];
       final best = scores.indexOf(scores.reduce(math.max));
       expect(best, i, reason: 'q$i ranks d$best first: $scores');

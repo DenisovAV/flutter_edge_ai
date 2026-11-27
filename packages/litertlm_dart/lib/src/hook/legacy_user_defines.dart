@@ -1,17 +1,21 @@
-// The hook's defines under both keys: `hooks.user_defines.litertlm_dart`
-// (what the hooks framework hands this hook) and, for apps written before the
-// hook moved here, `hooks.user_defines.flutter_edge_ai_litertlm`.
+// The hook's defines: `hooks.user_defines.litertlm_dart`, what the hooks
+// framework hands this hook. Up to litertlm_dart 0.19.1+4 the hook also read,
+// with a warning, the key apps used before it moved here,
+// `hooks.user_defines.flutter_edge_ai_litertlm`, until the next upstream
+// LiteRT-LM version. From 0.20.0 a define still under the old key fails the
+// build and names the new key: dropping it silently would turn an app's NPU
+// opt-ins off without a word.
 //
 // The framework hands a hook only its own package's defines, so the old key is
 // read from the pubspec the framework read them from: the workspace root, the
 // directory whose `.dart_tool/hooks_runner/` holds this hook's shared output
-// directory. A value under the new key wins; one taken from the old key is
-// said on stderr, once per key. To be removed with the next upstream
-// LiteRT-LM version.
+// directory.
 
 import 'dart:io';
 
 import 'package:yaml/yaml.dart';
+
+import 'macos_companions.dart' show macOSCompanionsDefine;
 
 /// The package whose `user_defines` key this hook still reads.
 const legacyUserDefinesPackage = 'flutter_edge_ai_litertlm';
@@ -63,55 +67,51 @@ Object? _plain(Object? value) => switch (value) {
   _ => value,
 };
 
-/// The hook's defines: the current key's, then the legacy key's.
+/// Why the build stops when [legacy] (the defines under
+/// [legacyUserDefinesPackage] in [pubspec]) is not empty; null when it is.
+///
+/// Each define is to be moved to `litertlm_dart:`, except
+/// [macOSCompanionsDefine], which no release reads any more: that one is to
+/// be deleted.
+String? legacyUserDefinesRefusal(Map<String, Object?> legacy, String pubspec) {
+  if (legacy.isEmpty) return null;
+  final keys = legacy.keys.toList()..sort();
+  final move = [
+    for (final k in keys)
+      if (k != macOSCompanionsDefine) k,
+  ];
+  final obsolete = keys.contains(macOSCompanionsDefine);
+  return [
+    'litertlm_dart: $pubspec sets ${keys.map((k) => 'hooks.user_defines.'
+            '$legacyUserDefinesPackage.$k').join(', ')}. That key is no longer '
+        'read (since litertlm_dart 0.20.0).',
+    if (move.isNotEmpty)
+      'Move ${move.length == 1 ? _old(move.single) : move.map(_old).join(', ')} '
+          'to '
+          'hooks.user_defines.litertlm_dart '
+          '(${move.map((k) => 'litertlm_dart: $k').join(', ')}) in the same '
+          'pubspec.yaml.',
+    if (obsolete)
+      'Delete ${_old(macOSCompanionsDefine)}: it is obsolete, macOS needs no '
+          'companion library any more.',
+  ].join(' ');
+}
+
+String _old(String key) => 'hooks.user_defines.$legacyUserDefinesPackage.$key';
+
+/// The hook's defines, from `hooks.user_defines.litertlm_dart`.
 final class HookDefines {
-  HookDefines({
-    required this._current,
-    required this._currentPath,
-    this._legacy = const {},
-    this._legacyBase,
-    void Function(String message)? warn,
-  }) : _warn = warn ?? stderr.writeln;
+  HookDefines({required this._current, required this._currentPath});
 
   final Object? Function(String key) _current;
   final Uri? Function(String key) _currentPath;
-  final Map<String, Object?> _legacy;
-  final Uri? _legacyBase;
-  final void Function(String message) _warn;
-  final Set<String> _warned = {};
 
-  /// The value of [key], from the current key when it sets it.
-  Object? operator [](String key) {
-    final value = _current(key);
-    if (value != null) return value;
-    if (!_legacy.containsKey(key)) return null;
-    _said(key);
-    return _legacy[key];
-  }
+  /// The value of [key].
+  Object? operator [](String key) => _current(key);
 
-  /// The `user_defines` package key [key]'s value comes from: litertlm_dart's
-  /// own, or [legacyUserDefinesPackage] when only that one sets it.
-  String packageOf(String key) =>
-      _current(key) == null && _legacy.containsKey(key)
-      ? legacyUserDefinesPackage
-      : 'litertlm_dart';
+  /// The `user_defines` package key [key]'s value comes from (for errors).
+  String packageOf(String key) => 'litertlm_dart';
 
   /// [key]'s value as a path, resolved against the pubspec that set it.
-  Uri? path(String key) {
-    final value = _currentPath(key);
-    if (value != null) return value;
-    final legacy = _legacy[key];
-    if (legacy is! String || _legacyBase == null) return null;
-    _said(key);
-    return _legacyBase.resolveUri(Uri.file(legacy));
-  }
-
-  void _said(String key) {
-    if (!_warned.add(key)) return;
-    _warn(
-      '[litertlm_dart] hooks.user_defines.$legacyUserDefinesPackage.$key is '
-      'read for now; move it to hooks.user_defines.litertlm_dart.$key in the '
-      "app's (or workspace root's) pubspec.yaml.",
-    );
-  }
+  Uri? path(String key) => _currentPath(key);
 }

@@ -126,12 +126,17 @@ class _FakeHost extends EngineHost implements LiteRtLmNpuHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? speculativeDecodingMode,
+    double? speculativeDecodingLenience,
+    List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     required int? numThreads,
     required int? activationDataType,
     required GpuActivationReason? gpuActivationReason,
     required NpuDispatch? npuDispatch,
     required LiteRtLmLogLevel? nativeLogLevel,
     BenchmarkTokens? benchmarkTokens,
+    int? maxVisionTokensPerImage,
   }) async {
     gpuActivationReasons.add(gpuActivationReason);
     nativeLogLevels.add(nativeLogLevel);
@@ -193,6 +198,10 @@ class _InitCapturingClient extends LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? speculativeDecodingMode,
+    double? speculativeDecodingLenience,
+    List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     int? numThreads,
     int? activationDataType,
     GpuActivationReason? gpuActivationReason,
@@ -200,6 +209,7 @@ class _InitCapturingClient extends LiteRtLmFfiClient {
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
     BenchmarkTokens? benchmarkTokens,
+    int? maxVisionTokensPerImage,
   }) async {
     this.gpuActivationReason = gpuActivationReason;
     this.nativeLogLevel = nativeLogLevel;
@@ -661,7 +671,7 @@ void main() {
       expect(host.preparedFor, [NpuStack.qualcomm]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/qualcomm',
-        useHwMasking: null,
+        useHwMasking: true,
         stagesWeightBanks: false,
       ));
       await stamped.close();
@@ -710,7 +720,7 @@ void main() {
         expect(host.preparedFor, [NpuStack.googleTensor], reason: soc);
         expect(host.npuDispatches.single, (
           dir: '/fake/npu/googleTensor',
-          useHwMasking: null,
+          useHwMasking: true,
           stagesWeightBanks: false,
         ));
       }
@@ -747,7 +757,7 @@ void main() {
       expect(host.preparedFor, [NpuStack.mediatek]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/mediatek',
-        useHwMasking: null,
+        useHwMasking: true,
         stagesWeightBanks: false,
       ));
     },

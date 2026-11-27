@@ -1,0 +1,39 @@
+flutter_edge_ai (patch_c_api.sh section 30): c/engine.cc at LiteRT-LM v0.20.0
+puts `#if defined(_WIN32) ... #else ... #endif` inside the arguments of
+LITERT_LM_C_ASSIGN_OR_RETURN (litert_lm_engine_settings_create_from_raw_file_descriptor).
+MSVC's traditional preprocessor rejects a directive inside macro arguments
+(C2143, C2661, C1019), so //c:libLiteRtLm.dylib does not build on Windows;
+upstream's Windows CI builds //runtime/engine:litert_lm_main and never
+compiles c/engine.cc. Found building the tag on Panther Lake (MSVC 14.51,
+2026-11-25). The directive moves out of the macro; behaviour is unchanged.
+
+--- a/c/engine.cc
++++ b/c/engine.cc
+@@ -708,17 +708,19 @@
+     return litert::lm::c::ReturnError(absl::StatusCode::kInvalidArgument,
+                                       "Invalid file descriptor.");
+   }
+-  LITERT_LM_C_ASSIGN_OR_RETURN(
+-      ModelAssets model_assets,
+-      ModelAssets::Create(
++  // No preprocessor directive inside the macro's arguments: MSVC's
++  // traditional preprocessor rejects one (C2143/C1019).
+ #if defined(_WIN32)
+-          std::make_shared<litert::lm::ScopedFile>(litert::lm::ScopedFile(
+-              reinterpret_cast<litert::lm::ScopedFile::PlatformFile>(
+-                  _get_osfhandle(fd))))));
++  auto scoped_file = std::make_shared<litert::lm::ScopedFile>(
++      litert::lm::ScopedFile(
++          reinterpret_cast<litert::lm::ScopedFile::PlatformFile>(
++              _get_osfhandle(fd))));
+ #else
+-          std::make_shared<litert::lm::ScopedFile>(
+-              litert::lm::ScopedFile(fd))));
++  auto scoped_file =
++      std::make_shared<litert::lm::ScopedFile>(litert::lm::ScopedFile(fd));
+ #endif
++  LITERT_LM_C_ASSIGN_OR_RETURN(ModelAssets model_assets,
++                               ModelAssets::Create(scoped_file));
+   ABSL_VLOG(1) << "LiteRT-LM successfully created EngineSettings directly "
+                   "from raw File Descriptor: "
+                << fd;

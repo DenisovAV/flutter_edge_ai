@@ -6,6 +6,8 @@
 //   dart run bin/registry.dart live
 //   dart run bin/registry.dart freeze <package>
 //   dart run bin/registry.dart release-check <package>
+//   dart run bin/registry.dart pin <package>
+//   dart run bin/registry.dart pub-check
 //
 // `check` validates model_registry/ (the repo root's) and that every
 // generated file is what `generate` would write; it exits 1 on any problem.
@@ -16,7 +18,11 @@
 // fields a release of <package> ships (published/<package>/<version>.json);
 // `release-check` says whether <package> may be published: the registry and
 // every generated file are current, the frozen fields are written, and its
-// cells in release_critical.yaml are verified.
+// cells in release_critical.yaml are verified. `pin` records in
+// model_registry/pub_dev.yaml that <package> ships at its workspace version
+// (for flutter_edge_ai_litertlm also the litertlm_dart it pins and that
+// package's native build); the site judges evidence against that file.
+// `pub-check` compares the file with pub.dev (network).
 // See ../../model_registry/README.md.
 
 import 'dart:convert';
@@ -26,6 +32,7 @@ import 'package:model_registry/check.dart';
 import 'package:model_registry/evidence.dart';
 import 'package:model_registry/generate.dart';
 import 'package:model_registry/live.dart';
+import 'package:model_registry/pub_dev.dart';
 import 'package:model_registry/release.dart';
 import 'package:model_registry/site.dart';
 import 'package:path/path.dart' as p;
@@ -49,11 +56,14 @@ Future<void> _main(List<String> args) async {
     'live',
     'freeze',
     'release-check',
+    'pin',
+    'pub-check',
   };
   if (!commands.contains(command)) {
     stderr.writeln(
       'usage: dart run bin/registry.dart check|generate|live [--registry <dir>]\n'
-      '       dart run bin/registry.dart freeze|release-check <package>\n'
+      '       dart run bin/registry.dart freeze|release-check|pin <package>\n'
+      '       dart run bin/registry.dart pub-check\n'
       '       dart run bin/registry.dart evidence --device <device> '
       '[--log-url <url>] [--date <yyyy-mm-dd>] [--allow-dirty] <log>...',
     );
@@ -66,13 +76,17 @@ Future<void> _main(List<String> args) async {
 
   // freeze and release-check name a package: without one, the usage, before
   // anything the registry says.
-  if ((command == 'freeze' || command == 'release-check') &&
+  if ((command == 'freeze' || command == 'release-check' || command == 'pin') &&
       (args.length < 2 || args[1].startsWith('--'))) {
     stderr.writeln('$command needs a package: $command <package>');
     exit(64);
   }
   final registry = Directory(option('--registry') ?? _defaultRegistry());
   final repoRoot = p.dirname(p.absolute(registry.path));
+  // Before the rest of the registry is read: pin is how a stale pin is fixed,
+  // and pub-check asks pub.dev, not the registry.
+  if (command == 'pin') exit(_pin(registry, repoRoot, args[1]));
+  if (command == 'pub-check') exit(await _pubCheck(registry));
   final result = checkRegistry(registry);
   final site = SiteInputs.read(registry, result.problems);
   checkClaims(site, result.entries, result.problems);
@@ -155,6 +169,10 @@ Future<void> _main(List<String> args) async {
       ]))
         '$path is not committed: the check would not stand for HEAD',
       if (stale > 0) '$stale generated file(s) not current',
+      if (site.pin?.packages[package] != version)
+        'model_registry/$pinFile names $package '
+            '${site.pin?.packages[package]}, not $version: run '
+            '`dart run bin/registry.dart pin $package`, then generate',
       if (!published.existsSync() || published.readAsStringSync() != snapshot)
         '${p.relative(published.path, from: repoRoot)} is not what '
             '`dart run bin/registry.dart freeze $package` writes',
@@ -322,6 +340,62 @@ int _evidence(
   stdout.writeln(
     'wrote ${p.relative(out.path, from: repoRoot)}: $cells cell(s) on '
     '${run.host}; run `dart run bin/registry.dart generate`',
+  );
+  return 0;
+}
+
+/// `pin`: [pinFile] moved to [package]'s workspace version. Exit code.
+int _pin(Directory registry, String repoRoot, String package) {
+  final problems = <Problem>[];
+  final file = File(p.join(registry.path, pinFile));
+  final old = file.existsSync() ? readPin(registry, problems) : null;
+  if (problems.isNotEmpty) {
+    problems.forEach(stdout.writeln);
+    return 1;
+  }
+  final PubDevPin pin;
+  try {
+    pin = movePin(old, repoRoot, package);
+  } on StateError catch (e) {
+    stderr.writeln(e.message);
+    return 1;
+  }
+  file.writeAsStringSync(pin.toYaml());
+  stdout.writeln(
+    'wrote model_registry/$pinFile: $package ${pin.packages[package]}, '
+    'litertlm_dart ${pin.litertlmDart}, ${pin.nativeRelease}; run '
+    '`dart run bin/registry.dart generate`',
+  );
+  return 0;
+}
+
+/// `pub-check`: [pinFile] against pub.dev. Exit code.
+Future<int> _pubCheck(Directory registry) async {
+  final problems = <Problem>[];
+  final pin = readPin(registry, problems);
+  if (pin == null) {
+    problems.forEach(stdout.writeln);
+    return 1;
+  }
+  final List<String> diffs;
+  try {
+    diffs = await pubCheck(pin);
+  } on IOException catch (e) {
+    stdout.writeln('pub.dev could not be read: $e');
+    return 1;
+  }
+  diffs.forEach(stdout.writeln);
+  if (diffs.isNotEmpty) {
+    stdout.writeln(
+      '$pinFile disagrees with pub.dev: the release that published the '
+      'newer version did not run `registry.dart pin`',
+    );
+    return 1;
+  }
+  stdout.writeln(
+    '$pinFile matches pub.dev: '
+    '${pin.packages.entries.map((e) => '${e.key} ${e.value}').join(', ')}, '
+    'litertlm_dart ${pin.litertlmDart}, ${pin.nativeRelease}',
   );
   return 0;
 }

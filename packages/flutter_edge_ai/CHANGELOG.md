@@ -1,4 +1,5 @@
 ## Unreleased
+- **Breaking for `implements SpeechRecognizer`/`SpeechSynthesizer`:** add streaming members; `extends` inherits non-streaming defaults.
 - Android: a model download that finished while the app was closed is not downloaded again (#873).
 
 ## 2.7.2

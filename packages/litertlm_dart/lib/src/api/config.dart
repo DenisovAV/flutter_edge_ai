@@ -207,6 +207,139 @@ final class RegexResponseFormat extends ResponseFormat {
   final String pattern;
 }
 
+/// Which tools the model may or must call for one message: Kotlin's and
+/// Swift's `ToolChoice`, OpenAI's `tool_choice`. Passed to
+/// `Conversation.sendMessage`/`sendMessageStream`, it applies to that
+/// message's first round only; the rounds that answer tool results go with
+/// no choice (the model's default), as in Kotlin and Swift, so [required]
+/// cannot loop. A choice other than [auto] is refused (an [UnsupportedError]
+/// on the stream) for a model whose family does not apply one: LiteRT-LM
+/// 0.20.0 builds a tool-choice constraint for Gemma 3, Gemma 3n, Gemma 4 and
+/// FunctionGemma bundles only, and every other family drops the choice. A
+/// bundle whose family cannot be read is refused too.
+@immutable
+sealed class ToolChoice {
+  const ToolChoice();
+
+  /// The model answers in text, calls tools, or both: Kotlin's `Auto` and
+  /// Swift's `.auto()`. Sent as an explicit `"auto"`, as Swift's
+  /// `ToolChoice.jsonString()` writes it, which builds this message's own
+  /// constraint in "text and/or calls" mode; no choice at all leaves the
+  /// model's default constraint, which on some bundles allows calls only.
+  static const ToolChoice auto = ToolChoiceAuto();
+
+  /// The model answers without calling a tool.
+  static const ToolChoice none = ToolChoiceNone();
+
+  /// The model calls at least one tool.
+  static const ToolChoice required = ToolChoiceRequired();
+
+  /// The model calls the tool [name].
+  const factory ToolChoice.forcedFunction(String name) =
+      ToolChoiceForcedFunction;
+
+  /// The model may call only the tools [names]; with [required] it must call
+  /// one of them.
+  const factory ToolChoice.allowedTools(List<String> names, {bool required}) =
+      ToolChoiceAllowedTools;
+}
+
+/// [ToolChoice.auto].
+final class ToolChoiceAuto extends ToolChoice {
+  const ToolChoiceAuto();
+
+  @override
+  bool operator ==(Object other) => other is ToolChoiceAuto;
+
+  @override
+  int get hashCode => (ToolChoiceAuto).hashCode;
+
+  @override
+  String toString() => 'ToolChoice.auto';
+}
+
+/// [ToolChoice.none].
+final class ToolChoiceNone extends ToolChoice {
+  const ToolChoiceNone();
+
+  @override
+  bool operator ==(Object other) => other is ToolChoiceNone;
+
+  @override
+  int get hashCode => (ToolChoiceNone).hashCode;
+
+  @override
+  String toString() => 'ToolChoice.none';
+}
+
+/// [ToolChoice.required].
+final class ToolChoiceRequired extends ToolChoice {
+  const ToolChoiceRequired();
+
+  @override
+  bool operator ==(Object other) => other is ToolChoiceRequired;
+
+  @override
+  int get hashCode => (ToolChoiceRequired).hashCode;
+
+  @override
+  String toString() => 'ToolChoice.required';
+}
+
+/// [ToolChoice.forcedFunction].
+final class ToolChoiceForcedFunction extends ToolChoice {
+  const ToolChoiceForcedFunction(this.name);
+
+  /// The tool the model calls.
+  final String name;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ToolChoiceForcedFunction && other.name == name;
+
+  @override
+  int get hashCode => Object.hash(ToolChoiceForcedFunction, name);
+
+  @override
+  String toString() => 'ToolChoice.forcedFunction($name)';
+}
+
+/// [ToolChoice.allowedTools].
+///
+/// The constructor is `const`, so [names] is kept as given, not copied: pass
+/// a list that does not change afterwards (a `const` list, or one made for
+/// the call). Each send reads it when the message is sent.
+final class ToolChoiceAllowedTools extends ToolChoice {
+  const ToolChoiceAllowedTools(this.names, {this.required = false});
+
+  /// The tools the model may call.
+  final List<String> names;
+
+  /// Whether it must call one of them; false lets it answer without a tool.
+  final bool required;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! ToolChoiceAllowedTools ||
+        other.required != required ||
+        other.names.length != names.length) {
+      return false;
+    }
+    for (var i = 0; i < names.length; i++) {
+      if (other.names[i] != names[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(ToolChoiceAllowedTools, required, Object.hashAll(names));
+
+  @override
+  String toString() =>
+      'ToolChoice.allowedTools($names${required ? ', required: true' : ''})';
+}
+
 /// What an `Engine` loads, and on what: LiteRT-LM's `EngineConfig`.
 @immutable
 final class EngineConfig {
@@ -220,7 +353,33 @@ final class EngineConfig {
     this.cacheDir,
     this.activationDataType,
     this.speculativeDecoding,
-  }) : backend = backend ?? const Backend.cpu();
+    List<String>? selectedSignatures,
+    this.loraRank,
+    this.audioLoraRank,
+    this.visualTokenBudget,
+  }) : backend = backend ?? const Backend.cpu(),
+       selectedSignatures = selectedSignatures == null
+           ? null
+           : List.unmodifiable(selectedSignatures) {
+    final selected = this.selectedSignatures;
+    if (selected != null &&
+        (selected.isEmpty || selected.any((name) => name.isEmpty))) {
+      throw ArgumentError.value(
+        selectedSignatures,
+        'selectedSignatures',
+        'must name at least one signature, none of them empty',
+      );
+    }
+    for (final (name, rank) in [
+      ('loraRank', loraRank),
+      ('audioLoraRank', audioLoraRank),
+    ]) {
+      if (rank != null && rank < 0) {
+        throw ArgumentError.value(rank, name, 'must be 0 or more');
+      }
+    }
+    checkVisualTokenBudget(visualTokenBudget);
+  }
 
   /// The `.litertlm` file. On the web: a URL the page can fetch (`blob:`,
   /// `https:`) of a build the web runtime loads, such as Gemma 4's GPU
@@ -263,7 +422,104 @@ final class EngineConfig {
   final ActivationDataType? activationDataType;
 
   /// Speculative decoding (MTP); null is LiteRT-LM's default (off).
-  final SpeculativeDecodingMode? speculativeDecoding;
+  final SpeculativeDecodingConfig? speculativeDecoding;
+
+  /// The main model's signatures to compile and run, for example
+  /// `['prefill_1024', 'decode']`; null runs every signature. Keep at least
+  /// one prefill signature and `decode`, and `verify` with speculative
+  /// decoding. Each name is checked against the model before the engine is
+  /// created: one the model does not have is an [ArgumentError]. Refused on
+  /// the web, whose runtime takes none.
+  final List<String>? selectedSignatures;
+
+  /// The rank of the text LoRA weights, as Swift's `EngineConfig.loraRank`;
+  /// null or 0 sets none. LoRA itself needs no rank: a conversation's
+  /// [ConversationConfig.loraConfig] works without one on the CPU and the GPU,
+  /// whose LoRA rank is read from the model's LoRA inputs. Above 0 it is
+  /// passed as Swift passes it, with `set_lora_rank` and
+  /// `set_supported_lora_ranks([rank])`; LiteRT-LM keeps the supported ranks
+  /// only for its GPU_ARTISAN backend, which this package does not offer, and
+  /// logs an ERROR line ("supported_lora_ranks is only supported for
+  /// GpuArtisanConfig. The provided lora ranks will be ignored.") on every
+  /// other backend each time an engine is created with a rank. Refused on the
+  /// web.
+  final int? loraRank;
+
+  /// The rank of the audio encoder's LoRA weights, as Swift's
+  /// `EngineConfig.audioLoraRank`; null or 0 sets none. Passed like
+  /// [loraRank], with the audio setters. Refused on the web.
+  final int? audioLoraRank;
+
+  /// The most vision tokens one image may take: which of the vision
+  /// encoder's budgets the engine prepares (Gemma 4: 70, 140, 280, 560 or
+  /// 1120, as many as the bundle has `vision_<N>` signatures; Gemma 4 E2B has
+  /// 70, 140 and 280). Fewer tokens is a faster, coarser look at the image.
+  /// Null takes the bundle's own (its largest).
+  ///
+  /// Swift's and Kotlin's `ExperimentalFlags.visualTokenBudget`, which both
+  /// pass at engine create (Swift's `Engine.initializeInternal` through
+  /// `litert_lm_engine_settings_set_max_vision_tokens_per_image`; Kotlin's
+  /// `Engine.initialize` to its JNI create), set here per engine as the C
+  /// API sets it. Natively it is checked before the engine is created: it
+  /// needs a [visionBackend], and must be one of the budgets the bundle's
+  /// vision encoder has (an [ArgumentError] names them). A conversation may
+  /// lower it per image with [ConversationConfig.visualTokenBudget]. On the
+  /// web it is `@litert-lm/core`'s `EngineSettings.maxVisionTokensPerImage`.
+  final int? visualTokenBudget;
+}
+
+/// Throws [ArgumentError] for a visual token budget below 1.
+void checkVisualTokenBudget(int? budget) {
+  if (budget != null && budget < 1) {
+    throw ArgumentError.value(budget, 'visualTokenBudget', 'must be 1 or more');
+  }
+}
+
+/// A conversation's LoRA adapters, as Kotlin's `LoraConfig`: `.tflite` LoRA
+/// weights for the text model ([loraPath]) and for the audio encoder
+/// ([audioLoraPath]) of a bundle that has one.
+///
+/// The model must be exported with LoRA input signatures (LiteRT-LM's LoRA
+/// Colab, step 3): a bundle whose `decode` signature has no LoRA inputs is
+/// refused, because LiteRT-LM would take the adapter and leave it without
+/// effect. A conversation without a [LoraConfig] on such a model runs the base
+/// weights (its LoRA inputs bound to zeros). Native only: refused on the web
+/// and on an NPU.
+@immutable
+final class LoraConfig {
+  /// At least one of the two paths; an empty path is refused.
+  LoraConfig({this.loraPath, this.audioLoraPath}) {
+    if (loraPath == null && audioLoraPath == null) {
+      throw ArgumentError('A LoraConfig needs loraPath or audioLoraPath.');
+    }
+    for (final (name, path) in [
+      ('loraPath', loraPath),
+      ('audioLoraPath', audioLoraPath),
+    ]) {
+      if (path != null && path.isEmpty) {
+        throw ArgumentError.value(path, name, 'must not be empty');
+      }
+    }
+  }
+
+  /// The text model's LoRA weights (`.tflite`).
+  final String? loraPath;
+
+  /// The audio encoder's LoRA weights (`.tflite`).
+  final String? audioLoraPath;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LoraConfig &&
+      other.loraPath == loraPath &&
+      other.audioLoraPath == audioLoraPath;
+
+  @override
+  int get hashCode => Object.hash(loraPath, audioLoraPath);
+
+  @override
+  String toString() =>
+      'LoraConfig(loraPath: $loraPath, audioLoraPath: $audioLoraPath)';
 }
 
 /// One conversation's setup: LiteRT-LM's `ConversationConfig`.
@@ -280,12 +536,20 @@ final class ConversationConfig {
     this.speculativeDecoding,
     Map<String, Object?> extraContext = const {},
     this.automaticToolCalling = true,
+    this.loraConfig,
+    this.visualTokenBudget,
+    this.chatTemplate,
+    this.enableToolCallStreaming = false,
   }) : initialMessages = List.unmodifiable(initialMessages),
        tools = List.unmodifiable(tools),
        extraContext = Map.unmodifiable(extraContext) {
     final cap = maxOutputTokens;
     if (cap != null && cap < 1) {
       throw ArgumentError.value(cap, 'maxOutputTokens', 'must be 1 or more');
+    }
+    checkVisualTokenBudget(visualTokenBudget);
+    if (chatTemplate case final template? when template.isEmpty) {
+      throw ArgumentError.value(template, 'chatTemplate', 'must not be empty');
     }
   }
 
@@ -303,10 +567,14 @@ final class ConversationConfig {
   final List<Tool> tools;
 
   /// The caller's sampler; null takes the model file's sampler, field by
-  /// field, then 0.8 / 40 / 0.95 / seed 1. Set, it is the caller's choice:
-  /// when it differs from the sampler the engine's first generation fixed
-  /// (LiteRT-LM#2080), the conversation says so once. On the web the file's
-  /// sampler cannot be read, so null is 0.8 / 40 / 0.95 / seed 1.
+  /// field, then 0.8 / 40 / 0.95 / seed 1. Natively each conversation's
+  /// sampler is its own on the CPU and the GPU (LiteRT-LM 0.20; measured on
+  /// macOS arm64 CPU and Metal, Linux x64 CPU and a Tesla T4, Windows x64 CPU
+  /// and an Arc B390, Android Adreno 830 and Mali-G715; not measured on iOS,
+  /// Linux arm64 or PowerVR); the NPU decodes greedily. On
+  /// the web the engine's first generation fixes the sampler
+  /// (LiteRT-LM#2080), and a set one that differs is said once; the file's
+  /// sampler cannot be read there, so null is 0.8 / 40 / 0.95 / seed 1.
   final SamplerConfig? samplerConfig;
 
   /// The most tokens a reply may have, thinking included.
@@ -319,7 +587,22 @@ final class ConversationConfig {
   final ResponseFormat? responseFormat;
 
   /// Speculative decoding for this conversation; null is the engine's.
-  final SpeculativeDecodingMode? speculativeDecoding;
+  final SpeculativeDecodingConfig? speculativeDecoding;
+
+  /// This conversation's LoRA adapters, as Kotlin's
+  /// `ConversationConfig.loraConfig`; null runs the base weights. Checked
+  /// before the conversation is created: a file that does not exist, a model
+  /// without LoRA inputs, an audio adapter without an audio encoder, an NPU
+  /// engine and the web are refused.
+  ///
+  /// Measured with a text adapter on macOS arm64 (CPU and Metal) and Android
+  /// (Galaxy S24, Adreno; Pixel 8a, Mali; GPU and CPU), through this API and
+  /// through an app built on it. A conversation with an adapter always has its
+  /// own native conversation, also where conversations otherwise share one
+  /// by replay (iOS, Android CPU and PowerVR, Linux and Windows GPUs): there,
+  /// a LoRA conversation beside another live conversation of the same engine
+  /// has not been measured.
+  final LoraConfig? loraConfig;
 
   /// Variables for the model's prompt template.
   final Map<String, Object?> extraContext;
@@ -349,4 +632,43 @@ final class ConversationConfig {
   /// the format while some tool has `execute` (the model must be free to call
   /// it); the replies to tool responses keep it.
   final bool automaticToolCalling;
+
+  /// The most vision tokens each image of this conversation's messages may
+  /// take, as Swift's `ConversationConfig.visualTokenBudget` (Config.swift),
+  /// which Swift's `makeOptionalArgs` (Conversation.swift) sends with every
+  /// message through
+  /// `litert_lm_conversation_optional_args_set_visual_token_budget`, as
+  /// here; Kotlin sends its `ExperimentalFlags.visualTokenBudget` with every
+  /// message (`Conversation.sendMessage`). Null takes the engine's
+  /// ([EngineConfig.visualTokenBudget], else the bundle's own).
+  ///
+  /// LiteRT-LM applies it to Gemma 4 only (`GetDataProcessorArguments`,
+  /// c/conversation.cc). Checked when the conversation is created: it needs
+  /// an engine with a vision encoder, must be one of the bundle's budgets,
+  /// and must not exceed the engine's [EngineConfig.visualTokenBudget] (an
+  /// [ArgumentError] each). Refused on the web: `@litert-lm/core` 0.20.0's
+  /// conversation takes its budget from the engine's
+  /// `maxVisionTokensPerImage` and has no setting of its own.
+  final int? visualTokenBudget;
+
+  /// A Jinja chat template that replaces the model's own for this
+  /// conversation; null keeps the model's. Kotlin's and Swift's
+  /// `ConversationConfig.chatTemplate` (Config.kt, Config.swift), which
+  /// Swift's `Engine.createConversation` sets with
+  /// `litert_lm_conversation_config_set_prompt_template`, as here. Refused on
+  /// the web: `@litert-lm/core` 0.20.0's `ConversationConfig` has no
+  /// template.
+  final String? chatTemplate;
+
+  /// Whether the tokens of a tool call stream as they are generated, as text
+  /// of the `tool_call` channel (`Message.channels['tool_call']`), before the
+  /// call itself arrives in `Message.toolCalls`. Swift's
+  /// `ConversationConfig.enableToolCallStreaming` (Config.swift), which
+  /// `Engine.createConversation` passes to
+  /// `litert_lm_conversation_config_set_stream_tool_calls` with the channel
+  /// name `tool_call` (Swift's default
+  /// `ExperimentalFlags.conversationToolCallStreamingChannelName`); Kotlin
+  /// has none. Refused on the web: `@litert-lm/core` 0.20.0's
+  /// `ConversationConfig` has no such option.
+  final bool enableToolCallStreaming;
 }

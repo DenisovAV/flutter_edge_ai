@@ -31,10 +31,11 @@ void main() {
 
   group('an Engine lacking a member the release calls is refused before '
       'the runtime creates anything', () {
-    for (final member in ['createConversation', 'delete']) {
+    for (final member in ['createConversation', 'createSession', 'delete']) {
       test(member, () async {
-        ((globalContext['Engine']! as JSObject)['prototype']! as JSObject)
-            .delete(member.toJS);
+        ((stubModule['Engine']! as JSObject)['prototype']! as JSObject).delete(
+          member.toJS,
+        );
 
         await expectLater(Engine.create(webConfig()), _incomplete(member));
 
@@ -43,7 +44,7 @@ void main() {
     }
 
     test('create', () async {
-      (globalContext['Engine']! as JSObject).delete('create'.toJS);
+      (stubModule['Engine']! as JSObject).delete('create'.toJS);
 
       await expectLater(Engine.create(webConfig()), _incomplete('create'));
     });
@@ -51,7 +52,14 @@ void main() {
 
   group('a conversation lacking a member the release calls is refused, and '
       'deleted', () {
-    for (final member in web.webConversationMembers) {
+    for (final member in [
+      'sendMessageStreaming',
+      'cancel',
+      'getHistory',
+      'getTokenCount',
+      'clone',
+      'delete',
+    ]) {
       test(member, () async {
         final engine = await webEngine();
         setOnPage('missingMember', member);
@@ -60,6 +68,45 @@ void main() {
 
         // `delete` itself is the member missing: there is nothing to call.
         expect(count('conversationDeletes'), member == 'delete' ? 0 : 1);
+        await engine.close();
+      });
+    }
+  });
+
+  group('a session lacking a member the release calls is refused, and '
+      'deleted', () {
+    for (final member in [
+      'runPrefill',
+      'runDecode',
+      'cancel',
+      'clone',
+      'delete',
+    ]) {
+      test(member, () async {
+        final engine = await webEngine();
+        setOnPage('missingSessionMember', member);
+
+        await expectLater(engine.createSession(), _incomplete(member));
+
+        // `delete` itself is the member missing: there is nothing to call.
+        expect(
+          page['sessionDeletes'].dartify(),
+          member == 'delete' ? isNull : 1,
+        );
+        await engine.close();
+      });
+    }
+  });
+
+  group("a session's Responses lacking a member the release calls is "
+      'refused', () {
+    for (final member in ['getTexts', 'delete']) {
+      test(member, () async {
+        final engine = await webEngine();
+        final session = await engine.createSession();
+        setOnPage('missingResponsesMember', member);
+
+        await expectLater(session.runDecode(), _incomplete(member));
         await engine.close();
       });
     }
@@ -89,8 +136,8 @@ void main() {
   );
 
   group('the resolved settings', () {
-    test('backend 4 (GPU) is Backend.gpu', () async {
-      setOnPage('resolvedBackend', 4);
+    test('the module\'s GPU is Backend.gpu', () async {
+      setOnPage('resolvedBackend', backendId('GPU'));
 
       final engine = await Engine.create(webConfig());
 

@@ -2,8 +2,8 @@
 // (#689): flutter_tester is not inside an app, so after LiteRtLm.framework
 // the local prebuilts and the build hook's cache are tried.
 //
-// Its own file, so the real constraint provider never loads into the process
-// of macos_load_error_test.dart, whose real-Mach-O test needs it absent.
+// Its own file, so the library it loads stays out of the process of
+// macos_load_error_test.dart, whose real-Mach-O test loads its own copy.
 
 import 'dart:ffi';
 import 'dart:io';
@@ -26,8 +26,8 @@ void main() {
   test(
     'LiteRtBindings.open() loads a host copy of libLiteRtLm',
     () {
-      // dart test is a plain Dart program without macos_companions:
-      // code_assets; only this package's own tests may use a host copy.
+      // dart test is a plain Dart program: it opens its code asset, and only
+      // this package's own tests may fall back to a host copy.
       debugUseHostLiteRtLmCopies = true;
       addTearDown(() => debugUseHostLiteRtLmCopies = false);
       expect(LiteRtBindings.open, returnsNormally);

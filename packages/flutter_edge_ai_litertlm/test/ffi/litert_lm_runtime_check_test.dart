@@ -57,8 +57,8 @@ void main() {
   group('checkLiteRtLmCApiVersion', () {
     bool all(String _) => true;
 
-    test('passes a library on C API 1.x', () {
-      for (final minor in [0, 3]) {
+    test('passes a library on C API 1.1 or a later 1.x', () {
+      for (final minor in [1, 3]) {
         expect(
           () => checkLiteRtLmCApiVersion(
             all,
@@ -117,23 +117,51 @@ void main() {
       }
     });
 
-    test('the major is the one the vendored headers declare', () {
+    test('refuses C API 1.0 (a LiteRT-LM 0.19 library) as a stale '
+        'prebuilt', () {
+      expect(
+        () => checkLiteRtLmCApiVersion(
+          all,
+          () => (code: 0, major: 1, minor: 0, patch: 0),
+          path: _iosPath,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('reports C API 1.0.0'),
+              contains('built against 1.1 or later'),
+              contains('stale local prebuilt'),
+              contains('flutter clean'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('the major and the oldest minor are the vendored headers\' ', () {
       final header = File(
         '../litertlm_dart/native/litert_lm/include/c/engine.h',
       ).readAsStringSync();
       expect(
         header,
-        contains('#define LITERT_LM_C_API_VERSION_MAJOR $liteRtLmCApiMajor\n'),
+        allOf(
+          contains(
+            '#define LITERT_LM_C_API_VERSION_MAJOR $liteRtLmCApiMajor\n',
+          ),
+          contains('#define LITERT_LM_C_API_VERSION_MINOR 1\n'),
+        ),
       );
     });
   });
 
   group('checkLiteRtLmLibrary, what every open runs', () {
-    test('our build on C API 1.x passes', () {
+    test('our build on C API 1.1 passes', () {
       expect(
         () => checkLiteRtLmLibrary(
           (_) => true,
-          () => (code: 0, major: 1, minor: 0, patch: 0),
+          () => (code: 0, major: 1, minor: 1, patch: 0),
           path: _iosPath,
         ),
         returnsNormally,

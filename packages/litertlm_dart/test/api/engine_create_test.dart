@@ -12,6 +12,9 @@ import 'dart:typed_data';
 
 import 'package:litertlm_dart/internal_io.dart';
 import 'package:litertlm_dart/litertlm_dart.dart';
+import 'package:litertlm_dart/src/ffi/session_ffi.dart' show SessionSettings;
+import 'package:litertlm_dart/src/api/engine.dart'
+    show checkVisionBudget, liteRtLmToolChoiceRefusal, memoisedRead;
 import 'package:litertlm_dart/src/ffi/native_asset_dir.dart'
     show liteRtLmOutsideFlutter;
 import 'package:test/test.dart';
@@ -28,10 +31,15 @@ typedef _Create = ({
   String audioBackend,
   bool? enableSpeculativeDecoding,
   int? speculativeDecodingMode,
+  double? speculativeDecodingLenience,
+  List<String>? selectedSignatures,
+  int? loraRank,
+  int? audioLoraRank,
   int? numThreads,
   int? activationDataType,
   GpuActivationReason? gpuActivationReason,
   NpuDispatch? npuDispatch,
+  int? maxVisionTokensPerImage,
 });
 
 /// A client whose conversations are fakes: one create can fail, a send on
@@ -69,6 +77,20 @@ class _BenchClient extends LiteRtLmFfiClient {
     shutdowns++;
     await super.shutdown();
   }
+}
+
+/// A [_BenchClient] whose sessions are addresses that count up.
+class _SessionClient extends _BenchClient {
+  final sessions = <SessionSettings>[];
+
+  @override
+  Future<int> createSession(SessionSettings settings) async {
+    sessions.add(settings);
+    return sessions.length;
+  }
+
+  @override
+  Future<void> sessionDelete(int session) async {}
 }
 
 class _Host extends EngineHost implements LiteRtLmNpuHost {
@@ -116,6 +138,12 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
   @override
   Future<bool?> linearAttentionState(String path) async => false;
 
+  /// The Android GPU family the host reports.
+  AndroidGpuFamily? gpuFamily;
+
+  @override
+  AndroidGpuFamily? androidGpuFamily() => gpuFamily;
+
   @override
   Future<void> initializeClient(
     LiteRtLmFfiClient client, {
@@ -131,12 +159,17 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? speculativeDecodingMode,
+    double? speculativeDecodingLenience,
+    List<String>? selectedSignatures,
+    int? loraRank,
+    int? audioLoraRank,
     required int? numThreads,
     required int? activationDataType,
     required GpuActivationReason? gpuActivationReason,
     required NpuDispatch? npuDispatch,
     required LiteRtLmLogLevel? nativeLogLevel,
     BenchmarkTokens? benchmarkTokens,
+    int? maxVisionTokensPerImage,
   }) async {
     if (initializeError case final e?) throw e;
     nativeLevels.add(nativeLogLevel);
@@ -153,10 +186,15 @@ class _Host extends EngineHost implements LiteRtLmNpuHost {
       audioBackend: audioBackend,
       enableSpeculativeDecoding: enableSpeculativeDecoding,
       speculativeDecodingMode: speculativeDecodingMode,
+      speculativeDecodingLenience: speculativeDecodingLenience,
+      selectedSignatures: selectedSignatures,
+      loraRank: loraRank,
+      audioLoraRank: audioLoraRank,
       numThreads: numThreads,
       activationDataType: activationDataType,
       gpuActivationReason: gpuActivationReason,
       npuDispatch: npuDispatch,
+      maxVisionTokensPerImage: maxVisionTokensPerImage,
     ));
   }
 }
@@ -241,7 +279,8 @@ void main() {
     Backend? audioBackend,
     int? maxNumTokens,
     ActivationDataType? activation,
-    SpeculativeDecodingMode? speculative,
+    SpeculativeDecodingConfig? speculative,
+    List<String>? selectedSignatures,
   }) => Engine.create(
     EngineConfig(
       modelPath: path,
@@ -251,6 +290,7 @@ void main() {
       maxNumTokens: maxNumTokens,
       activationDataType: activation,
       speculativeDecoding: speculative,
+      selectedSignatures: selectedSignatures,
     ),
   );
 
@@ -537,6 +577,31 @@ void main() {
     await gpu.close();
   });
 
+  test('integer activations on the GPU are refused for Gemma 4 and '
+      'FunctionGemma (measured nonsense on Metal); the CPU and other families '
+      'pass them on', () async {
+    final g4 = write('g4.litertlm', _bundle(family: 8));
+    final fg = write('fg.litertlm', _bundle(family: 3));
+    for (final path in [g4, fg]) {
+      for (final type in [ActivationDataType.int16, ActivationDataType.int8]) {
+        await expectLater(
+          create(path, backend: const Backend.gpu(), activation: type),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => '${e.message}',
+              'message',
+              contains('decodes nonsense'),
+            ),
+          ),
+        );
+      }
+    }
+    expect(host.creates, isEmpty, reason: 'refused before create');
+    final cpu = await create(g4, activation: ActivationDataType.int8);
+    await cpu.close();
+    expect(host.creates, hasLength(1));
+  });
+
   test('Gemma 4 on the GPU above 2,048 tokens runs float32; the CPU and a '
       'set value are left alone', () async {
     final path = write('g4.litertlm', _bundle(family: 8));
@@ -667,29 +732,344 @@ void main() {
     expect(host.creates, isEmpty);
   });
 
-  test('speculative decoding: off and on keep the boolean, adaptive goes '
-      'through the config; the thread count reaches the CPU only', () async {
+  test('a visual token budget needs a vision encoder and one of the '
+      "bundle's vision budgets; it reaches the engine's settings", () async {
     final path = write('g.litertlm', _bundle());
+    await expectLater(
+      Engine.create(EngineConfig(modelPath: path, visualTokenBudget: 140)),
+      throwsA(
+        isA<ArgumentError>().having(
+          (e) => '${e.message}',
+          'message',
+          contains('needs a vision encoder'),
+        ),
+      ),
+    );
+    // This bundle's vision encoder has no vision_<N> signatures.
+    await expectLater(
+      Engine.create(
+        EngineConfig(
+          modelPath: path,
+          visionBackend: const Backend.cpu(),
+          visualTokenBudget: 140,
+        ),
+      ),
+      throwsA(
+        isA<ArgumentError>().having(
+          (e) => '${e.message}',
+          'message',
+          contains('no budget signatures'),
+        ),
+      ),
+    );
+    expect(host.creates, isEmpty);
+    // A file the reader does not know is left to native, which gets it.
+    final unknown = write('m.task', Uint8List.fromList(List.filled(64, 7)));
+    await (await Engine.create(
+      EngineConfig(
+        modelPath: unknown,
+        visionBackend: const Backend.cpu(),
+        visualTokenBudget: 70,
+      ),
+    )).close();
+    expect(host.creates.single.maxVisionTokensPerImage, 70);
+  });
+
+  test('memoisedRead: nothing runs before the first ask, then one read, its '
+      'error kept for every ask and never left unhandled', () async {
+    var reads = 0;
+    final read = memoisedRead<List<int>?>(() async {
+      reads++;
+      throw const FormatException('unreadable vision section');
+    });
+    // An eager read would have run (and its error gone unhandled) here.
+    await Future<void>.delayed(Duration.zero);
+    expect(reads, 0);
+    await expectLater(read(), throwsFormatException);
+    await expectLater(read(), throwsFormatException);
+    expect(reads, 1);
+  });
+
+  test(
+    'checkVisionBudget: one of the budgets, at most the engine\'s',
+    () async {
+      Future<List<int>?> budgets() => Future.value(const [70, 140, 280]);
+      await checkVisionBudget(
+        140,
+        visionLoaded: true,
+        budgets: budgets,
+        modelPath: 'm',
+      );
+      for (final (budget, engine) in [(100, null), (280, 140)]) {
+        await expectLater(
+          checkVisionBudget(
+            budget,
+            visionLoaded: true,
+            budgets: budgets,
+            modelPath: 'm',
+            engineBudget: engine,
+          ),
+          throwsArgumentError,
+        );
+      }
+    },
+  );
+
+  test(
+    'speculative decoding: off and on keep the boolean, adaptive or a '
+    'lenience go through the config; the thread count reaches the CPU only',
+    () async {
+      final path = write('g.litertlm', _bundle());
+      for (final speculative in [
+        SpeculativeDecodingConfig(mode: SpeculativeDecodingMode.off),
+        SpeculativeDecodingConfig(mode: SpeculativeDecodingMode.on),
+        SpeculativeDecodingConfig(mode: SpeculativeDecodingMode.adaptive),
+        null,
+        SpeculativeDecodingConfig(
+          mode: SpeculativeDecodingMode.on,
+          lenience: 0.25,
+        ),
+        // A lenience alone: the config carries it, the mode stays the
+        // runtime's, as Swift leaves it.
+        SpeculativeDecodingConfig(lenience: 0.5),
+        SpeculativeDecodingConfig(),
+      ]) {
+        await (await create(path, speculative: speculative)).close();
+      }
+      expect(
+        host.creates.map(
+          (c) => (
+            c.enableSpeculativeDecoding,
+            c.speculativeDecodingMode,
+            c.speculativeDecodingLenience,
+          ),
+        ),
+        [
+          (false, null, null),
+          (true, null, null),
+          (null, 2, null),
+          (null, null, null),
+          (null, 1, 0.25),
+          (null, null, 0.5),
+          (null, null, null),
+        ],
+      );
+      host.creates.clear();
+      await (await create(
+        path,
+        backend: const Backend.cpu(threadCount: 3),
+      )).close();
+      await (await create(path, backend: const Backend.gpu())).close();
+      expect(host.creates.map((c) => c.numThreads), [3, null]);
+    },
+  );
+
+  test('speculation on or adaptive in a conversation or a session needs an '
+      'engine created speculating; a lenience alone or off does not', () async {
+    final path = write('g.litertlm', _bundle());
+    final client = _SessionClient();
+    host = _Host(client: client);
+    debugEngineHost = host;
+    final plain = await create(path);
     for (final mode in [
-      SpeculativeDecodingMode.off,
       SpeculativeDecodingMode.on,
       SpeculativeDecodingMode.adaptive,
-      null,
     ]) {
-      await (await create(path, speculative: mode)).close();
+      final asked = SpeculativeDecodingConfig(mode: mode);
+      await expectLater(
+        plain.createConversation(
+          ConversationConfig(speculativeDecoding: asked),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => '${e.message}',
+            'message',
+            contains('drafter at engine create only'),
+          ),
+        ),
+      );
+      await expectLater(
+        plain.createSession(SessionConfig(speculativeDecoding: asked)),
+        throwsArgumentError,
+      );
     }
-    expect(
-      host.creates.map(
-        (c) => (c.enableSpeculativeDecoding, c.speculativeDecodingMode),
-      ),
-      [(false, null), (true, null), (null, 2), (null, null)],
-    );
-    await (await create(
+    for (final fine in [
+      SpeculativeDecodingConfig(lenience: 0.5),
+      SpeculativeDecodingConfig(mode: SpeculativeDecodingMode.off),
+    ]) {
+      await (await plain.createConversation(
+        ConversationConfig(speculativeDecoding: fine),
+      )).close();
+    }
+    await plain.close();
+    final speculating = await create(
       path,
-      backend: const Backend.cpu(threadCount: 3),
+      speculative: SpeculativeDecodingConfig(
+        mode: SpeculativeDecodingMode.adaptive,
+      ),
+    );
+    await (await speculating.createConversation(
+      ConversationConfig(
+        speculativeDecoding: SpeculativeDecodingConfig(
+          mode: SpeculativeDecodingMode.on,
+        ),
+      ),
     )).close();
-    await (await create(path, backend: const Backend.gpu())).close();
-    expect(host.creates.skip(4).map((c) => c.numThreads), [3, null]);
+    await (await speculating.createSession(
+      SessionConfig(
+        speculativeDecoding: SpeculativeDecodingConfig(
+          mode: SpeculativeDecodingMode.on,
+        ),
+      ),
+    )).close();
+    expect(client.sessions.single.speculativeMode, 1);
+    await speculating.close();
+  });
+
+  test(
+    'createSession is refused by name on the PowerVR GPU and the MediaTek '
+    'NPU, where several native contexts were measured broken; Adreno and '
+    'Qualcomm get one, and a sampler set on an NPU is said to be ignored',
+    () async {
+      final client = _SessionClient();
+      host = _Host(abiName: 'android_arm64', npuShips: true, client: client)
+        ..gpuFamily = AndroidGpuFamily.powerVr;
+      debugEngineHost = host;
+      final generic = write('g.litertlm', _bundle());
+      final powerVr = await create(generic, backend: const Backend.gpu());
+      await expectLater(
+        powerVr.createSession(),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (e) => '${e.message}',
+            'message',
+            contains('PowerVR'),
+          ),
+        ),
+      );
+      await powerVr.close();
+      host.gpuFamily = AndroidGpuFamily.adreno;
+      final adreno = await create(generic, backend: const Backend.gpu());
+      await (await adreno.createSession()).close();
+      await adreno.close();
+
+      final mediatek = await create(
+        write('m.litertlm', _bundle(npu: ('MediaTek', 'MT6989'))),
+        backend: Backend.npu(),
+      );
+      await expectLater(
+        mediatek.createSession(),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (e) => '${e.message}',
+            'message',
+            contains('#4256'),
+          ),
+        ),
+      );
+      await mediatek.close();
+
+      final qualcomm = await create(
+        write('q.litertlm', _bundle(npu: ('Qualcomm', 'SM8750'))),
+        backend: Backend.npu(),
+      );
+      client.loadedModelForTest(backend: 'npu');
+      final printed = <String>[];
+      await runZoned(
+        () async {
+          await (await qualcomm.createSession()).close();
+          expect(printed, isEmpty, reason: 'no sampler set: nothing said');
+          await (await qualcomm.createSession(
+            SessionConfig(
+              samplerConfig: SamplerConfig(
+                topK: 8,
+                topP: 0.9,
+                temperature: 0.7,
+              ),
+            ),
+          )).close();
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => printed.add(line),
+        ),
+      );
+      expect(
+        printed.where((l) => l.contains('decodes greedily')),
+        hasLength(1),
+      );
+      await qualcomm.close();
+    },
+  );
+
+  test('a tool choice other than auto: applied for Gemma 3, Gemma 3n, Gemma 4 '
+      'and FunctionGemma, refused by name for another family, a bundle naming '
+      'none and one whose family cannot be read', () async {
+    expect(liteRtLmToolChoiceRefusal(LlmModelFamily.gemma3), isNull);
+    expect(liteRtLmToolChoiceRefusal(LlmModelFamily.gemma3n), isNull);
+    expect(liteRtLmToolChoiceRefusal(LlmModelFamily.gemma4), isNull);
+    expect(liteRtLmToolChoiceRefusal(LlmModelFamily.functionGemma), isNull);
+    expect(
+      liteRtLmToolChoiceRefusal(LlmModelFamily.other),
+      contains('drops it'),
+    );
+    expect(liteRtLmToolChoiceRefusal(null), contains('names no model'));
+    expect(
+      liteRtLmToolChoiceRefusal(LlmModelFamily.gemma4, readError: 'truncated'),
+      contains('could not be read (truncated)'),
+    );
+
+    host = _Host(client: _BenchClient());
+    debugEngineHost = host;
+    Future<Object?> sendError(Engine engine, ToolChoice choice) async {
+      final conversation = await engine.createConversation(
+        ConversationConfig(
+          tools: [Tool(name: 'f', description: 'f')],
+        ),
+      );
+      try {
+        await conversation
+            .sendMessageStream(Message.user('hi'), toolChoice: choice)
+            .drain<void>();
+        return null;
+      } catch (e) {
+        return e;
+      } finally {
+        await conversation.close();
+      }
+    }
+
+    // 5 = qwen3: LiteRT-LM drops the choice.
+    for (final family in [5, null]) {
+      final engine = await create(
+        write('f$family.litertlm', _bundle(family: family)),
+      );
+      expect(
+        await sendError(engine, ToolChoice.none),
+        isA<UnsupportedError>().having(
+          (e) => '${e.message}',
+          'message',
+          contains('tool choice other than auto is refused'),
+        ),
+        reason: 'family $family',
+      );
+      // Auto is what every family applies: it goes on to the send.
+      expect(
+        await sendError(engine, ToolChoice.auto),
+        isNot(isA<UnsupportedError>()),
+      );
+      await engine.close();
+    }
+    for (final family in [8, 4]) {
+      final engine = await create(
+        write('f$family.litertlm', _bundle(family: family)),
+      );
+      expect(
+        await sendError(engine, ToolChoice.required),
+        isNot(isA<UnsupportedError>()),
+        reason: 'family $family',
+      );
+      await engine.close();
+    }
   });
 
   test(
@@ -789,6 +1169,47 @@ void main() {
     await b.close();
     await withReader.close();
     await plain.close();
+  });
+
+  test(
+    'the LoRA ranks reach the engine settings as given; null sends none',
+    () async {
+      final path = write('g.litertlm', _bundle());
+      final engine = await Engine.create(
+        EngineConfig(
+          modelPath: path,
+          audioBackend: const Backend.cpu(),
+          loraRank: 32,
+          audioLoraRank: 8,
+        ),
+      );
+      expect(host.creates.last.loraRank, 32);
+      expect(host.creates.last.audioLoraRank, 8);
+      await engine.close();
+      final plain = await Engine.create(EngineConfig(modelPath: path));
+      expect(host.creates.last.loraRank, isNull);
+      expect(host.creates.last.audioLoraRank, isNull);
+      await plain.close();
+    },
+  );
+
+  test('an audio LoRA rank without an audio encoder is refused before any '
+      'engine; 0 is none and passes', () async {
+    final path = write('g.litertlm', _bundle());
+    await expectLater(
+      Engine.create(EngineConfig(modelPath: path, audioLoraRank: 8)),
+      throwsA(
+        isA<ArgumentError>()
+            .having((e) => e.name, 'name', 'audioLoraRank')
+            .having((e) => '${e.message}', 'message', contains('audioBackend')),
+      ),
+    );
+    expect(host.creates, isEmpty);
+    final none = await Engine.create(
+      EngineConfig(modelPath: path, audioLoraRank: 0),
+    );
+    expect(host.creates.single.audioLoraRank, 0);
+    await none.close();
   });
 
   test('a CPU thread count below 1 is refused before any engine', () async {

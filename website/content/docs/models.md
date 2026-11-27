@@ -96,17 +96,18 @@ for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 devices. The Simulator stays CPU-only because Metal sim has a 256 MB
 single-allocation cap.
 
-² Web `.litertlm` is an **early preview** via `@litert-lm/core` 0.19.0. A
+² Web `.litertlm` is an **early preview** via `@litert-lm/core` 0.20.0. A
 language model runs only from a build for the web — Gemma 4 E2B's GPU export
 (images and audio too) and Gemma 3n's web exports (documented on 0.18.0, not
-measured on 0.19.0); a native language-model
+measured since); a native language-model
 `.litertlm` installs on web and then fails at the first generation. EmbeddingGemma 2 is
 the exception: its generic `.litertlm` bundles embed text and images on web
 through WebGPU, and the 740m audio from litertlm 1.13.2 (see
 [Embedding models](#embedding-models)). See the feature matrix in
 [Troubleshooting](/docs/troubleshooting). For image input to a chat model on
-web use Gemma 4 E2B's GPU export or a MediaPipe `-web.task` build. LoRA works
-only on MediaPipe `.task`.
+web use Gemma 4 E2B's GPU export or a MediaPipe `-web.task` build. On the web
+LoRA works only on MediaPipe `.task`; natively also on a `.litertlm` exported
+with LoRA input signatures.
 
 ³ On desktop the OS model exists on **macOS** (Apple Foundation Models) and
 **Windows** (AI Foundry; Windows 11 25H2+ on Copilot+-class hardware, packaged

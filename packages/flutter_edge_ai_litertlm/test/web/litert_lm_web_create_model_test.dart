@@ -28,7 +28,7 @@ class _Resolver implements WebModelSourceResolver {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// A `window.Engine` that records its settings and resolves the encoders it
+/// A page module (`window.litertLm`) whose `Engine` records its settings and resolves the encoders it
 /// was asked for, with conversations that have every member called.
 List<Map<String, Object?>> _installEngine() {
   final settings = <Map<String, Object?>>[];
@@ -46,6 +46,7 @@ List<Map<String, Object?>> _installEngine() {
           '''(() => {
             function Engine() {}
             Engine.prototype.createConversation = function () {};
+            Engine.prototype.createSession = function () {};
             Engine.prototype.delete = function () {};
             return Engine;
           })()'''
@@ -69,7 +70,10 @@ List<Map<String, Object?>> _installEngine() {
           ).toJS;
         }).toJS;
   globalContext['litertLmReady'] = Future<void>.value().toJS;
-  globalContext['Engine'] = constructor;
+  // The module's Backend enum, as @litert-lm/core 0.20.0 numbers it.
+  globalContext['litertLm'] = JSObject()
+    ..['Engine'] = constructor
+    ..['Backend'] = {'GPU_ARTISAN': 1, 'CPU': 2, 'GPU': 3}.jsify();
   return settings;
 }
 
@@ -108,7 +112,7 @@ void main() {
       ),
     );
 
-    expect(settings['visionBackend'], 4);
+    expect(settings['visionBackend'], 3);
     expect(settings.containsKey('audioBackend'), isFalse);
     expect(_executor(settings)['maxNumImages'], 3);
     expect(_executor(settings)['maxNumTokens'], 2048);
@@ -125,7 +129,7 @@ void main() {
       ),
     );
 
-    expect(settings['audioBackend'], 3);
+    expect(settings['audioBackend'], 2);
     expect(settings.containsKey('visionBackend'), isFalse);
     expect(_executor(settings).containsKey('maxNumImages'), isFalse);
     expect(_executor(settings)['maxNumTokens'], 4096);

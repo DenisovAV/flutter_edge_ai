@@ -295,6 +295,50 @@ const _tinyGardenTools = [
   ),
 ];
 
+// tool_calling_test.dart's tools (an enum on the colour), with which Gemma 4
+// E2B called show_alert and, thinking, answered nothing after its success
+// until litertlm_dart rendered LiteRT-LM's canonical Gemma 4 template.
+const _actionTools = [
+  Tool(
+    name: 'change_app_title',
+    description: 'Changes the title of the app',
+    parameters: {
+      'type': 'object',
+      'properties': {
+        'title': {'type': 'string', 'description': 'The new title for the app'},
+      },
+      'required': ['title'],
+    },
+  ),
+  Tool(
+    name: 'change_background_color',
+    description: 'Changes the background color of the app',
+    parameters: {
+      'type': 'object',
+      'properties': {
+        'color': {
+          'type': 'string',
+          'description': 'The color to change to',
+          'enum': ['red', 'green', 'blue', 'yellow', 'purple', 'orange'],
+        },
+      },
+      'required': ['color'],
+    },
+  ),
+  Tool(
+    name: 'show_alert',
+    description: 'Shows an alert dialog to the user',
+    parameters: {
+      'type': 'object',
+      'properties': {
+        'title': {'type': 'string', 'description': 'The title of the alert'},
+        'message': {'type': 'string', 'description': 'The message to display'},
+      },
+      'required': ['title', 'message'],
+    },
+  ),
+];
+
 /// Where [file] is staged. The iOS Simulator can read the host filesystem, so
 /// `--dart-define=IOS_TEST_DOCS_DIR=<host dir>` reuses models already on the
 /// Mac instead of copying gigabytes into an app container that `flutter test`
@@ -543,6 +587,37 @@ void main() {
       expect(round.calls.single.name, 'multiply');
       expect(round.calls.single.args, {'a': 1234, 'b': 5678});
       expect(round.text.replaceAll(',', ''), contains('7006652'));
+    } finally {
+      await model.close();
+    }
+  }, timeout: const Timeout(Duration(minutes: 15)));
+
+  testWidgets('Gemma 4, thinking: an action tool\'s success gets a text '
+      'answer', (tester) async {
+    final model = await _load(
+      'gemma-4-E2B-it.litertlm',
+      ModelType.gemma4,
+      maxTokens: 2048,
+    );
+    try {
+      final chat = await model.openChat(
+        topK: 1,
+        tools: _actionTools,
+        supportsFunctionCalls: true,
+        enableThinking: true,
+        modelType: ModelType.gemma4,
+      );
+      final round = await _round(
+        chat,
+        'Show an alert with title "Test" and message "Hello"',
+        (_) => {'status': 'success'},
+      );
+
+      expect(round.capped, isFalse);
+      expect(round.calls, hasLength(1));
+      expect(round.calls.single.name, 'show_alert');
+      expect(round.calls.single.args, {'title': 'Test', 'message': 'Hello'});
+      expect(round.text.trim(), isNotEmpty);
     } finally {
       await model.close();
     }

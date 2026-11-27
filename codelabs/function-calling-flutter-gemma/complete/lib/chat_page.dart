@@ -128,31 +128,37 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  /// The session, with everything that is per-session on it.
-  Future<InferenceChat> _openChat(InferenceModel inference) =>
-      inference.openChat(
-        // Which family's call syntax the SDK writes and reads.
-        modelType: widget.model.modelType,
-        // Four declarations now instead of one. Nothing else in this file
-        // changed to add the other three: the loop dispatches by name.
-        tools: toolbox,
-        supportsFunctionCalls: true,
-        // Whether the model may, must, or must not call. On a `.litertlm` the
-        // runtime holds the declarations for both families — `openChat`
-        // passes `tools` into the underlying session regardless of this — so
-        // `none` cannot take them back out. What it switches off is the SDK's
-        // suppression of tool-call JSON, which is why a call made under `none`
-        // can arrive as raw markup in the bubble. On a `.task` FunctionGemma
-        // the SDK writes the declarations into the prompt itself, and there
-        // `none` really does leave them out.
-        toolChoice: _toolChoice,
-        // Reason first, then answer. On weights with no thinking training this
-        // buys nothing, which is why the switch is disabled for those.
-        enableThinking: _thinking,
-        // Thinking is generated text and comes out of the same budget as the
-        // answer, so a reasoning turn needs more room than a plain one.
-        maxOutputTokens: _thinking ? 512 : 256,
-      );
+  /// The session, with everything that is per-session on it: the page's
+  /// tool choice and thinking switch, or the ones given.
+  Future<InferenceChat> _openChat(
+    InferenceModel inference, {
+    ToolChoice? toolChoice,
+    bool? thinking,
+  }) {
+    final think = thinking ?? _thinking;
+    return inference.openChat(
+      // Which family's call syntax the SDK writes and reads.
+      modelType: widget.model.modelType,
+      // Four declarations now instead of one. Nothing else in this file
+      // changed to add the other three: the loop dispatches by name.
+      tools: toolbox,
+      supportsFunctionCalls: true,
+      // Whether the model may, must, or must not call. On a `.litertlm`
+      // the runtime renders the declarations for both families: from
+      // flutter_edge_ai_litertlm 1.22.0 `none` opens the session without
+      // them, and `required` reaches the runtime with each of your messages
+      // (natively; the web runtime takes no per-message tool choice). On a
+      // `.task` FunctionGemma the SDK writes the declarations into the
+      // prompt itself, and `none` leaves them out there too.
+      toolChoice: toolChoice ?? _toolChoice,
+      // Reason first, then answer. On weights with no thinking training this
+      // buys nothing, which is why the switch is disabled for those.
+      enableThinking: think,
+      // Thinking is generated text and comes out of the same budget as the
+      // answer, so a reasoning turn needs more room than a plain one.
+      maxOutputTokens: think ? 512 : 256,
+    );
+  }
 
   void _retryLoad() {
     setState(() => _loadError = null);
@@ -173,6 +179,8 @@ class _ChatPageState extends State<ChatPage> {
     final inference = _inference;
     final old = _chat;
     if (inference == null || _busy) return;
+    final previousChoice = _toolChoice;
+    final previousThinking = _thinking;
 
     setState(() {
       if (choice != null) _toolChoice = choice;
@@ -182,20 +190,30 @@ class _ChatPageState extends State<ChatPage> {
       _notice =
           _toolChoice == ToolChoice.required &&
               !widget.model.supportsRequiredToolChoice
-          ? '${widget.model.label} cannot be forced to call a tool — nothing '
-                'in the prompt it is given can say "you must", so `required` '
-                'behaves as "auto".'
+          ? '${widget.model.label} cannot be forced to call a tool in the '
+                'browser — its LiteRT-LM runtime takes no per-message tool '
+                'choice, so `required` behaves as "auto".'
           : null;
     });
 
     try {
       await old?.close();
-      final chat = await _openChat(inference);
+      final opened = await openKeepingPrevious(
+        (choice, thinking) =>
+            _openChat(inference, toolChoice: choice, thinking: thinking),
+        next: (_toolChoice, _thinking),
+        previous: (previousChoice, previousThinking),
+      );
       if (!mounted) {
-        await chat.close();
+        await opened.chat.close();
         return;
       }
-      setState(() => _chat = chat);
+      setState(() {
+        _chat = opened.chat;
+        _toolChoice = opened.settings.$1;
+        _thinking = opened.settings.$2;
+        if (opened.refusal != null) _notice = opened.refusal;
+      });
     } catch (error) {
       if (mounted) setState(() => _loadError = error);
     }
@@ -664,6 +682,28 @@ class _Bubble extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Opens a chat with the [next] tool choice and thinking setting. When the
+/// engine refuses them with an [UnsupportedError] — `ToolChoice.required` on a
+/// device whose runtime cannot apply a tool choice, for one — it opens one
+/// with the [previous] settings instead and returns the refusal, so the page
+/// can say why and the chat keeps working. Any other failure is thrown.
+Future<({T chat, (ToolChoice, bool) settings, String? refusal})>
+openKeepingPrevious<T>(
+  Future<T> Function(ToolChoice choice, bool thinking) open, {
+  required (ToolChoice, bool) next,
+  required (ToolChoice, bool) previous,
+}) async {
+  try {
+    return (chat: await open(next.$1, next.$2), settings: next, refusal: null);
+  } on UnsupportedError catch (error) {
+    return (
+      chat: await open(previous.$1, previous.$2),
+      settings: previous,
+      refusal: '${error.message ?? error}',
     );
   }
 }

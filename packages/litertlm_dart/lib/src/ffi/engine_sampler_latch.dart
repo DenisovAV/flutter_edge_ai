@@ -1,9 +1,13 @@
 import '../runtime/types.dart';
 
-/// LiteRT-LM builds an engine's sampler at its first generation and keeps it
-/// for every later conversation (google-ai-edge/LiteRT-LM#2080), so a later
-/// session that asks for another sampler does not get it. This records the
-/// first and says what a later generation should report.
+/// LiteRT-LM 0.19 (native C API 1.0) and the web runtime build an engine's
+/// sampler at its first generation and keep it for every later conversation
+/// (google-ai-edge/LiteRT-LM#2080), so a later session that asks for another
+/// sampler does not get it. This records the first and says what a later
+/// generation should report. A native LiteRT-LM 0.20 engine (C API 1.1)
+/// builds each conversation's sampler on the CPU and the GPU, and the native
+/// client does not consult this then (`liteRtLmSamplerFixedAtFirstGeneration`);
+/// the NPU decodes greedily whatever is sent and has its own warning.
 ///
 /// A larger `topK` later is covered too. LiteRT-LM 0.19 refuses a GPU
 /// sampler `k` above the one the sampler was created with (upstream

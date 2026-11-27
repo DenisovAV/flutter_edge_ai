@@ -1,0 +1,133 @@
+LiteRT 95d3d567b (2026-11-17) "[litert / ml_drift] Cap Flash-Decode keys per
+work item on Adreno OpenCL", verbatim (`git show --format= 95d3d567b`).
+patch_c_api.sh section 10b adds it to the litert archive.
+Gemma 4 at float32 on Adreno 830 failed at the first decode with OpenCL
+"Invalid work group size: {64, 4, 1}" (Galaxy S25 Ultra, 2026-11-18). The fix
+is ML Drift e420a73d9 (in the v0.20.0 ML Drift pin) + LiteRT b2008e798 (in the
+LiteRT pin bf49eb62) + this commit, which is not in bf49eb62. Drop this patch
+once the LiteRT pin contains 95d3d567b.
+
+diff --git a/ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.cc b/ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.cc
+index 189344e9b..0439413ed 100644
+--- a/ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.cc
++++ b/ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.cc
+@@ -1079,7 +1079,8 @@ std::string GenerateWorkGroupFlashDecodeCode(
+   // Keys scored by each work item per chunk: enough for the keys of a split,
+   // but at most `MaxFlashDecodeKeysPerThread`, which the local memory budget
+   // in `FlashDecodeLocalMemoryBytes` assumes.
+-  const int max_keys_per_thread = MaxFlashDecodeKeysPerThread(heads, threads);
++  const int max_keys_per_thread =
++      MaxFlashDecodeKeysPerThread(config.tuning, heads);
+   const int split_keys = (cache_size + splits - 1) / splits;
+   const int keys_per_thread =
+       std::clamp((split_keys + threads - 1) / threads, 1, max_keys_per_thread);
+diff --git a/ml_drift_delegate/delegate/composite/sdpa_transposed_support.cc b/ml_drift_delegate/delegate/composite/sdpa_transposed_support.cc
+index 0373dcc77..4232bc8d0 100644
+--- a/ml_drift_delegate/delegate/composite/sdpa_transposed_support.cc
++++ b/ml_drift_delegate/delegate/composite/sdpa_transposed_support.cc
+@@ -49,6 +49,13 @@ FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info) {
+     // dispatch fails with CL_INVALID_WORK_GROUP_SIZE. With 2 heads per work
+     // group the limit is 384 work items and decode is as fast (b/578633071).
+     tuning.max_heads_per_work_group = 2;
++    // The scores of every key a work item handles per chunk are in registers
++    // too: with 2 heads per work group and 4 keys per work item (a split of
++    // more than 768 keys, e.g. an 8K cache in 10 splits) Adreno 830 limits the
++    // kernel to 192 work items, so tuning finds no work-group size for the
++    // 256-work-item kernel. With at most 2 keys per work item a split takes
++    // more chunks instead.
++    tuning.max_keys_per_thread = 2;
+   }
+   if (gpu_info.IsApiWebGpu() &&
+       gpu_info.webgpu_info.max_compute_workgroup_storage_size > 0) {
+@@ -73,8 +80,9 @@ FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info) {
+   return tuning;
+ }
+ 
+-int MaxFlashDecodeKeysPerThread(int heads, int threads) {
+-  return std::clamp(2048 / (heads * threads), 1, 4);
++int MaxFlashDecodeKeysPerThread(const FlashDecodeTuning& tuning, int heads) {
++  return std::clamp(2048 / (heads * tuning.threads), 1,
++                    std::max(1, tuning.max_keys_per_thread));
+ }
+ 
+ int FlashDecodeLocalMemoryBytes(const FlashDecodeTuning& tuning, int heads,
+@@ -92,7 +100,7 @@ int FlashDecodeLocalMemoryBytes(const FlashDecodeTuning& tuning, int heads,
+                               : threads * 4 * kFloatBytes;
+     return q_local + p_local + red_local + acc_local;
+   }
+-  const int chunk = threads * MaxFlashDecodeKeysPerThread(heads, threads);
++  const int chunk = threads * MaxFlashDecodeKeysPerThread(tuning, heads);
+   const int q_local = heads * slices * 4 * kFloatBytes;
+   const int p_local = heads * chunk * kFloatBytes;
+   const int red_local = heads * threads * kFloatBytes;
+diff --git a/ml_drift_delegate/delegate/composite/sdpa_transposed_support.h b/ml_drift_delegate/delegate/composite/sdpa_transposed_support.h
+index 81eeb144c..b430d676f 100644
+--- a/ml_drift_delegate/delegate/composite/sdpa_transposed_support.h
++++ b/ml_drift_delegate/delegate/composite/sdpa_transposed_support.h
+@@ -39,6 +39,11 @@ struct FlashDecodeTuning {
+   // Work items that combine the per-work-item values in the first stage of a
+   // work-group reduction. Every work item then does the second stage itself.
+   int reduce_threads = 32;
++  // Maximum number of keys scored by each work item per chunk in the portable
++  // work-group reduction kernel. The kernel keeps one score per key and query
++  // head of the work group in registers, so more keys per work item raise its
++  // register use.
++  int max_keys_per_thread = 4;
+   // Maximum number of query heads sharing one K/V head to process per work
+   // group in the work-group reduction kernel so per-head accumulators stay in
+   // registers. Larger GQA groups are partitioned across multiple work groups.
+@@ -98,8 +103,8 @@ inline constexpr uint64_t kSimdWorkGroupFullGqaKvBytes = 32ull << 20;
+ 
+ // Keys scored by each work item per chunk of the portable work-group
+ // Flash-Decode kernel: at most as many as keep the probabilities of a chunk
+-// within 8 KB of local memory.
+-int MaxFlashDecodeKeysPerThread(int heads, int threads);
++// within 8 KB of local memory, and at most `tuning.max_keys_per_thread`.
++int MaxFlashDecodeKeysPerThread(const FlashDecodeTuning& tuning, int heads);
+ 
+ // Upper bound of the local memory in bytes used by the work-group Flash-Decode
+ // kernel for `heads` query heads per work group and `slices` channel slices
+diff --git a/ml_drift_delegate/delegate/composite/sdpa_transposed_support_test.cc b/ml_drift_delegate/delegate/composite/sdpa_transposed_support_test.cc
+index d596b571f..1daf687cd 100644
+--- a/ml_drift_delegate/delegate/composite/sdpa_transposed_support_test.cc
++++ b/ml_drift_delegate/delegate/composite/sdpa_transposed_support_test.cc
+@@ -68,6 +68,39 @@ TEST(SdpaTransposedSupportTest, AdrenoOpenClProcessesAtMostTwoHeadsPerGroup) {
+   }
+ }
+ 
++TEST(SdpaTransposedSupportTest, AdrenoOpenClScoresAtMostTwoKeysPerWorkItem) {
++  // With 2 heads per work group and 4 keys per work item the Adreno 830
++  // compiler limits the kernel to 192 work items, fewer than the 256 it is
++  // launched with, so tuning finds no dispatch for 8K+ caches.
++  const ::ml_drift::GpuInfo gpu_info =
++      OpenClGpuInfo(::ml_drift::GpuVendor::kQualcomm);
++  const FlashDecodeTuning tuning = GetFlashDecodeTuning(gpu_info);
++  EXPECT_EQ(tuning.max_keys_per_thread, 2);
++  EXPECT_EQ(MaxFlashDecodeKeysPerThread(tuning, /*heads=*/1), 2);
++  EXPECT_EQ(MaxFlashDecodeKeysPerThread(tuning, /*heads=*/2), 2);
++
++  for (const int cache_size : {8192, 16896, 32768}) {
++    const ::ml_drift::BHWC q_shape = QueryShape(/*head_dim=*/256);
++    const ::ml_drift::BHWC k_shape = CacheShape(cache_size, 256);
++    const FlashDecodeConfig config =
++        GetFlashDecodeConfig(gpu_info, q_shape, k_shape);
++    EXPECT_EQ(MaxFlashDecodeKeysPerThread(config.tuning, config.heads), 2)
++        << "cache_size=" << cache_size;
++    EXPECT_TRUE(IsSupportedFlashSdpaShape(gpu_info, q_shape, k_shape))
++        << "cache_size=" << cache_size;
++  }
++}
++
++TEST(SdpaTransposedSupportTest, OtherOpenClGpusScoreUpToFourKeysPerWorkItem) {
++  const ::ml_drift::GpuInfo gpu_info =
++      OpenClGpuInfo(::ml_drift::GpuVendor::kMali);
++  const FlashDecodeTuning tuning = GetFlashDecodeTuning(gpu_info);
++  EXPECT_EQ(tuning.max_keys_per_thread, 4);
++  EXPECT_EQ(MaxFlashDecodeKeysPerThread(tuning, /*heads=*/2), 4);
++  // The probabilities of a chunk stay within 8 KB of local memory.
++  EXPECT_EQ(MaxFlashDecodeKeysPerThread(tuning, /*heads=*/4), 2);
++}
++
+ TEST(SdpaTransposedSupportTest, OtherOpenClGpusProcessTheWholeGqaGroup) {
+   const ::ml_drift::GpuInfo gpu_info =
+       OpenClGpuInfo(::ml_drift::GpuVendor::kMali);

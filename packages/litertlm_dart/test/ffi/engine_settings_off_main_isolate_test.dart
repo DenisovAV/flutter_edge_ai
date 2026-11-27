@@ -148,6 +148,7 @@ void main() {
         enableVision: true,
         visionBackend: 'gpu',
         maxNumImages: 2,
+        maxVisionTokensPerImage: 280,
         audioBackend: 'gpu',
         enableSpeculativeDecoding: false,
         activationDataType: 0,
@@ -167,6 +168,7 @@ void main() {
       reason: 'audio was not enabled, so no audio encoder is asked for',
     );
     expect(request.maxNumImages, 2);
+    expect(request.maxVisionTokensPerImage, 280);
     expect(request.enableSpeculativeDecoding, isFalse);
     expect(
       request.activationDataType,

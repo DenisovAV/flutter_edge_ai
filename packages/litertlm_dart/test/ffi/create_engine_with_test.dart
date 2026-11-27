@@ -112,6 +112,7 @@ class _FakeLiteRtLm {
         });
       case 'engine_settings_set_max_num_tokens' ||
           'engine_settings_set_max_num_images' ||
+          'engine_settings_set_max_vision_tokens_per_image' ||
           'engine_settings_set_kernel_batch_size':
         callable = NativeCallable<_SettingsIntN>.isolateLocal((
           Pointer<Void> s,
@@ -213,6 +214,7 @@ const _full = EngineCreateRequest(
   audioBackend: 'gpu',
   cacheDir: '/cache',
   maxNumImages: 2,
+  maxVisionTokensPerImage: 140,
   enableSpeculativeDecoding: false,
   activationDataType: 0,
   nativeLogLevel: LiteRtLmLogLevel.warning,
@@ -248,6 +250,7 @@ void main() {
       'enable_benchmark',
       'cache_dir /cache',
       'max_num_images 2',
+      'max_vision_tokens_per_image 140',
       'enable_speculative_decoding false',
       'activation_data_type 0',
       'use_hw_masking_for_npu false',

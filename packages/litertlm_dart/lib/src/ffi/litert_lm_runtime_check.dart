@@ -63,9 +63,16 @@ void checkOwnLiteRtLmBuild(
 /// (`LITERT_LM_C_API_VERSION_MAJOR` in the vendored `c/engine.h`).
 const liteRtLmCApiMajor = 1;
 
+/// The oldest C API minor version of [liteRtLmCApiMajor] this release binds:
+/// 1.1 is LiteRT-LM 0.20.0's (native-v0.20.0), which adds the calls a 1.0
+/// library (LiteRT-LM 0.19, native-v0.19.x) lacks, such as the tool choice
+/// and the LoRA settings.
+const liteRtLmCApiMinMinor = 1;
+
 /// Throws [StateError] unless the library opened as [path] reports a C API
-/// version [liteRtLmCApiMajor].x through `litert_lm_get_api_version`
-/// ([readVersion], called only when [provides] has it).
+/// version [liteRtLmCApiMajor].x, x at least [liteRtLmCApiMinMinor], through
+/// `litert_lm_get_api_version` ([readVersion], called only when [provides]
+/// has it).
 ///
 /// From 1.0.0 upstream promises semver for the C API, and a library before
 /// 1.0.0 does not export the call: its constructors return the object
@@ -96,6 +103,15 @@ void checkLiteRtLmCApiVersion(
       '$liteRtLmCApiMajor.x.',
     );
   }
+  if (minor < liteRtLmCApiMinMinor) {
+    throw StateError(
+      'The LiteRT-LM library at $path reports C API $major.$minor.$patch; '
+      'this litertlm_dart release is built against '
+      '$liteRtLmCApiMajor.$liteRtLmCApiMinMinor or later (LiteRT-LM 0.20.0). '
+      'A stale local prebuilt under native/litert_lm/prebuilt/ or in the '
+      'native cache is the usual cause; run `flutter clean` once.',
+    );
+  }
 }
 
 /// `litert_lm_get_api_version` on [library].
@@ -115,6 +131,25 @@ void checkLiteRtLmCApiVersion(
     calloc.free(out);
   }
 }
+
+/// The C API version [library] reports (`litert_lm_get_api_version`); call
+/// only on a library [requireOwnLiteRtLmBuild] passed.
+({int code, int major, int minor, int patch}) readLiteRtLmCApiVersion(
+  DynamicLibrary library,
+) => _readApiVersion(library);
+
+/// Whether a native engine of a library on C API [version] keeps the sampler
+/// of its first generation for every later conversation on the CPU and the
+/// GPU (google-ai-edge/LiteRT-LM#2080): C API 1.0 (LiteRT-LM 0.19) does, 1.1
+/// (LiteRT-LM 0.20.0) builds each conversation's sampler from its own config,
+/// measured on macOS arm64 CPU and Metal, Linux x64 CPU and Tesla T4 (Vulkan),
+/// Windows x64 CPU and Arc B390 (D3D12), and Android Adreno 830 (Galaxy S25
+/// Ultra) and Mali-G715 (Pixel 8a), GPU and CPU. Not measured: iOS (simulator
+/// and device Metal), Linux arm64 and Android PowerVR. A version that cannot
+/// be read is taken to keep it.
+bool liteRtLmSamplerFixedAtFirstGeneration(
+  ({int code, int major, int minor, int patch}) version,
+) => version.code != 0 || (version.major == 1 && version.minor < 1);
 
 /// Both checks every open of libLiteRtLm makes, in order:
 /// [checkOwnLiteRtLmBuild], then [checkLiteRtLmCApiVersion].

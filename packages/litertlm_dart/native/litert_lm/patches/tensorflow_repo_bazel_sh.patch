@@ -1,0 +1,36 @@
+TensorFlow's repository rules (third_party/repo.bzl and XLA's copy) run
+patch_cmds as ctx.execute(["bash", "-c", cmd]). On Windows CreateProcess
+looks in System32 before PATH, so on a GitHub runner `bash` is the WSL
+launcher, which has no distribution: the fetch of build_bazel_rules_android
+fails with an empty stderr (its output is UTF-16 "Windows Subsystem for Linux
+has no installed distributions"). From LiteRT-LM v0.20.0 libLiteRt and the
+WebGPU accelerator build from LiteRT's source and fetch it. This runs the
+shell BAZEL_SH names when it is set (the Windows workflows set Git's bash)
+and plain `bash` otherwise, as before. Strip 0, like
+third_party/tensorflow/tensorflow.patch. Against TensorFlow
+faa06da43657488c1f7479289d11d15e03a15ba1 (LiteRT-LM v0.20.0 TENSORFLOW_REF).
+
+diff --git a/third_party/repo.bzl b/third_party/repo.bzl
+--- third_party/repo.bzl
++++ third_party/repo.bzl
+@@ -83,7 +83,7 @@
+                     ctx.patch(patch_file, strip = 1)
+ 
+         for cmd in ctx.attr.patch_cmds:
+-            res = ctx.execute(["bash", "-c", cmd])
++            res = ctx.execute([ctx.os.environ.get("BAZEL_SH", "bash"), "-c", cmd])
+             if res.return_code != 0:
+                 fail("patch_cmds failed: %s\n%s" % (cmd, res.stderr))
+ 
+diff --git a/third_party/xla/third_party/repo.bzl b/third_party/xla/third_party/repo.bzl
+--- third_party/xla/third_party/repo.bzl
++++ third_party/xla/third_party/repo.bzl
+@@ -78,7 +78,7 @@
+         )
+         if hasattr(ctx.attr, "patch_cmds") and ctx.attr.patch_cmds:
+             for cmd in ctx.attr.patch_cmds:
+-                res = ctx.execute(["bash", "-c", cmd])
++                res = ctx.execute([ctx.os.environ.get("BAZEL_SH", "bash"), "-c", cmd])
+                 if res.return_code != 0:
+                     fail("patch_cmd failed: %s\n%s" % (cmd, res.stderr))
+         if patch_files:

@@ -1,0 +1,597 @@
+LiteRT aa9e40cd5 (2026-11-09) "Stage spatial tensor bindings while background
+command buffer preparation runs", verbatim (`git show --format= aa9e40cd5`).
+patch_c_api.sh section 10b adds it to the litert archive.
+LiteRT-LM #4460: on WebGPU (Windows D3D12, Linux Vulkan) BindSpatialTensor for
+the next prefill_8 step mutated context tensor bindings while the background
+thread was still recording the previous ping-pong slot, so prompts prefilled in
+8-token chunks gave empty or wrong replies. Google's 0.20.0 binaries carry the
+fix; the v0.20.0 tag pins LiteRT bf49eb62 (2026-11-06), which does not. Drop
+this patch once the LiteRT pin contains aa9e40cd5.
+
+diff --git a/ml_drift_delegate/delegate/BUILD b/ml_drift_delegate/delegate/BUILD
+index 21c5de94d..9b4f89b10 100644
+--- a/ml_drift_delegate/delegate/BUILD
++++ b/ml_drift_delegate/delegate/BUILD
+@@ -189,7 +189,6 @@ cc_library(
+         "//litert/c:litert_common",
+         "//ml_drift_delegate/delegate/serialization_weight_cache",
+         "//ml_drift_delegate/delegate/shared_memory_manager",
+-        "//ml_drift_delegate/delegate/shared_memory_manager:gf32_graph_adapter",
+         "//ml_drift_delegate/delegate/shared_memory_manager:graph_adapter",
+         "//ml_drift_delegate/delegate/shared_memory_manager:shared_memory_manager_webgpu",
+         "//weight_loader:external_weight_loader",
+@@ -212,6 +211,7 @@ cc_test(
+         ":shared_webgpu_env",
+         "@com_google_googletest//:gtest_main",
+         "@com_google_absl//absl/log:absl_check",
++        "@com_google_absl//absl/status",
+         "@com_google_absl//absl/status:status_matchers",
+         "@ml_drift//ml_drift/common:data_type",
+         "@ml_drift//ml_drift/common:gpu_model",
+@@ -220,6 +220,7 @@ cc_test(
+         "@ml_drift//ml_drift/common:model_hints",
+         "@ml_drift//ml_drift/common:precision",
+         "@ml_drift//ml_drift/common:shape",
++        "@ml_drift//ml_drift/common:tensor",
+         "@ml_drift//ml_drift/common/task:tensor_desc",
+         "@ml_drift//ml_drift/webgpu:execution_environment",
+         "@ml_drift//ml_drift/webgpu:spatial_tensor",
+@@ -468,6 +469,7 @@ cc_test(
+         ":shared_vulkan_env",
+         "@com_google_googletest//:gtest_main_no_heapcheck",
+         "@com_google_absl//absl/log:absl_check",
++        "@com_google_absl//absl/status",
+         "@com_google_absl//absl/status:status_matchers",
+         "@ml_drift//ml_drift/common:data_type",
+         "@ml_drift//ml_drift/common:gpu_model",
+@@ -476,6 +478,7 @@ cc_test(
+         "@ml_drift//ml_drift/common:model_hints",
+         "@ml_drift//ml_drift/common:precision",
+         "@ml_drift//ml_drift/common:shape",
++        "@ml_drift//ml_drift/common:tensor",
+         "@ml_drift//ml_drift/common/task:tensor_desc",
+         "@ml_drift//ml_drift/syrtis:vulkan_spatial_tensor",
+         "@ml_drift//ml_drift/syrtis/testing:vulkan_test",
+diff --git a/ml_drift_delegate/delegate/gpu_backend_vulkan.cc b/ml_drift_delegate/delegate/gpu_backend_vulkan.cc
+index 9cd89f198..d0062fe55 100644
+--- a/ml_drift_delegate/delegate/gpu_backend_vulkan.cc
++++ b/ml_drift_delegate/delegate/gpu_backend_vulkan.cc
+@@ -380,16 +380,42 @@ GpuInferenceContextVulkan::GpuInferenceContextVulkan(
+       num_nodes_per_command_buffer_(kDefaultMaxNumNodesPerCommandBuffer) {}
+ 
+ GpuInferenceContextVulkan::~GpuInferenceContextVulkan() {
++  JoinNextCommandBuffersThread();
++  if (post_dispatch_event_ != nullptr) {
++    post_dispatch_event_->Release(post_dispatch_event_);
++  }
++}
++
++void GpuInferenceContextVulkan::JoinNextCommandBuffersThread() {
+   if (next_command_buffers_thread_) {
+     next_command_buffers_thread_->join();
++    next_command_buffers_thread_.reset();
+   }
+-  if (post_dispatch_event_ != nullptr) {
+-    post_dispatch_event_->Release(post_dispatch_event_);
++}
++
++absl::Status GpuInferenceContextVulkan::FlushPendingSpatialTensors() {
++  if (pending_spatial_tensors_.empty()) {
++    return absl::OkStatus();
+   }
++  auto pending = std::move(pending_spatial_tensors_);
++  pending_spatial_tensors_.clear();
++  absl::MutexLock lock(ctx_mutex_);
++  for (const auto& [id, tensor] : pending) {
++    ABSL_RETURN_IF_ERROR(ctx_.SetTensor(id, tensor));
++  }
++  return absl::OkStatus();
+ }
+ 
+ absl::StatusOr<::ml_drift::GpuSpatialTensor*>
+ GpuInferenceContextVulkan::GetSpatialTensor(::ml_drift::ValueId id) {
++  if (auto it = pending_spatial_tensors_.find(id);
++      it != pending_spatial_tensors_.end()) {
++    if (it->second == nullptr) {
++      return absl::NotFoundError(
++          absl::StrCat("No GPU tensor allocated for tensor id ", id, "."));
++    }
++    return it->second;
++  }
+   absl::MutexLock lock(ctx_mutex_);
+   auto* tensor = ctx_.GetTensor(id);
+   if (tensor == nullptr) {
+@@ -403,8 +429,13 @@ GpuInferenceContextVulkan::GetSpatialTensor(::ml_drift::ValueId id) {
+ 
+ absl::Status GpuInferenceContextVulkan::BindSpatialTensor(
+     ::ml_drift::ValueId id, ::ml_drift::GpuSpatialTensor* tensor) {
++  auto* vk_tensor = static_cast<VulkanSpatialTensor*>(tensor);
++  if (!next_command_buffers_.empty()) {
++    pending_spatial_tensors_[id] = vk_tensor;
++    return absl::OkStatus();
++  }
+   absl::MutexLock lock(ctx_mutex_);
+-  return ctx_.SetTensor(id, static_cast<VulkanSpatialTensor*>(tensor));
++  return ctx_.SetTensor(id, vk_tensor);
+ }
+ 
+ absl::Status GpuInferenceContextVulkan::WriteDataToWeightTensor(
+@@ -436,9 +467,8 @@ absl::Status GpuInferenceContextVulkan::Dispatch() {
+     return shared_env.AddToPendingCommandBuffers(std::move(command_buffers));
+   }
+ 
+-  if (next_command_buffers_thread_) {
+-    next_command_buffers_thread_->join();
+-  }
++  JoinNextCommandBuffersThread();
++  ABSL_RETURN_IF_ERROR(FlushPendingSpatialTensors());
+ 
+   if (last_ctx_ != this) {
+     last_ctx_ = this;
+@@ -557,6 +587,11 @@ absl::Status GpuInferenceContextVulkan::ReportMemoryBenchmarkIfEnabled(
+ 
+ absl::Status GpuInferenceContextVulkan::SetCommandBufferHint(
+     int num_nodes_per_command_buffer) {
++  // Must be called before any Dispatch() call.
++  if (next_command_buffers_thread_ != nullptr) {
++    return absl::FailedPreconditionError(
++        "SetCommandBufferHint must be called before any Dispatch() call.");
++  }
+   num_nodes_per_command_buffer_ = num_nodes_per_command_buffer;
+   return absl::OkStatus();
+ }
+diff --git a/ml_drift_delegate/delegate/gpu_backend_vulkan.h b/ml_drift_delegate/delegate/gpu_backend_vulkan.h
+index cf30a4f34..c98784513 100644
+--- a/ml_drift_delegate/delegate/gpu_backend_vulkan.h
++++ b/ml_drift_delegate/delegate/gpu_backend_vulkan.h
+@@ -228,6 +228,7 @@ class GpuInferenceContextVulkan : public GpuInferenceContext {
+       const override;
+   absl::Status ReportMemoryBenchmarkIfEnabled(
+       const ::ml_drift::CreateGpuModelInfo& create_info) override;
++  // Must be called before any Dispatch() call.
+   absl::Status SetCommandBufferHint(int num_nodes_per_command_buffer) override;
+ 
+   // Underlying Vulkan inference context.
+@@ -237,9 +238,17 @@ class GpuInferenceContextVulkan : public GpuInferenceContext {
+   }
+ 
+  private:
++  void JoinNextCommandBuffersThread();
++  absl::Status FlushPendingSpatialTensors();
++
+   GpuBackendVulkan* const backend_;
+   absl::Mutex ctx_mutex_;
+   ::ml_drift::syrtis::VulkanInferenceContext ctx_;
++  // Spatial tensor bindings staged while background command buffer preparation
++  // is enabled, applied to ctx_ once next_command_buffers_thread_ finishes.
++  absl::flat_hash_map<::ml_drift::ValueId,
++                      ::ml_drift::syrtis::VulkanSpatialTensor*>
++      pending_spatial_tensors_;
+ 
+   // Command buffers prepared ahead to reduce the overhead of command buffer
+   // preparation.
+@@ -251,6 +260,9 @@ class GpuInferenceContextVulkan : public GpuInferenceContext {
+   // Whether next_command_buffers_ is ready to use. It's set to true when
+   // all next_command_buffers_ are prepared.
+   bool next_command_buffers_ready_ = false;
++  // Prepares next_command_buffers_ in parallel with the current Dispatch()
++  // call. JoinNextCommandBuffersThread() joins and resets it before flushing
++  // staged bindings to ctx_ or touching next_command_buffers_ again.
+   std::unique_ptr<std::thread> next_command_buffers_thread_;
+ 
+   // Static member var indicating the last context which built the command
+diff --git a/ml_drift_delegate/delegate/gpu_backend_vulkan_test.cc b/ml_drift_delegate/delegate/gpu_backend_vulkan_test.cc
+index 063840442..e9ecf946b 100644
+--- a/ml_drift_delegate/delegate/gpu_backend_vulkan_test.cc
++++ b/ml_drift_delegate/delegate/gpu_backend_vulkan_test.cc
+@@ -22,6 +22,7 @@
+ #include "testing/base/public/gmock.h"
+ #include "testing/base/public/gunit.h"
+ #include "absl/log/absl_check.h"  // from @com_google_absl
++#include "absl/status/status.h"  // from @com_google_absl
+ #include "absl/status/status_matchers.h"  // from @com_google_absl
+ #include "ml_drift/common/data_type.h"  // from @ml_drift
+ #include "ml_drift/common/gpu_model.h"  // from @ml_drift
+@@ -31,6 +32,7 @@
+ #include "ml_drift/common/precision.h"  // from @ml_drift
+ #include "ml_drift/common/shape.h"  // from @ml_drift
+ #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
++#include "ml_drift/common/tensor.h"  // from @ml_drift
+ #include "ml_drift/syrtis/testing/vulkan_test.h"  // from @ml_drift
+ #include "ml_drift/syrtis/vulkan_spatial_tensor.h"  // from @ml_drift
+ #include "litert/c/internal/litert_runtime_context.h"
+@@ -42,6 +44,8 @@ namespace {
+ 
+ using ::absl_testing::IsOk;
+ using ::absl_testing::IsOkAndHolds;
++using ::absl_testing::StatusIs;
++using ::testing::ElementsAre;
+ 
+ class GpuBackendVulkanTest : public ::ml_drift::syrtis::VulkanOperationTest {
+  protected:
+@@ -93,36 +97,62 @@ TEST_F(GpuBackendVulkanTest,
+   const ::ml_drift::TensorDescriptor in_desc = gpu_model.tensors.at(in_id);
+   const ::ml_drift::TensorDescriptor out_desc = gpu_model.tensors.at(out_id);
+ 
++  // Initialize input tensors with distinct values so each ping-pong slot
++  // produces a different output (8 steps of x * 2 + 1 => x * 256 + 255):
++  //   in_tensor_a = 0.0 -> 255.0 (step 0, uncached), updated to 2.0 -> 767.0
++  //                        before cached command buffers are used in step >= 2
++  //   in_tensor_b = 1.0 -> 511.0
++  ::ml_drift::TensorFloat32 in_cpu_a;
++  in_cpu_a.shape = ::ml_drift::BHWC(1, 1, 1, 4);
++  in_cpu_a.data = {0.0f, 0.0f, 0.0f, 0.0f};
++  ::ml_drift::TensorDescriptor in_desc_a = in_desc;
++  in_desc_a.UploadData(in_cpu_a);
++
++  ::ml_drift::TensorFloat32 in_cpu_b;
++  in_cpu_b.shape = ::ml_drift::BHWC(1, 1, 1, 4);
++  in_cpu_b.data = {1.0f, 1.0f, 1.0f, 1.0f};
++  ::ml_drift::TensorDescriptor in_desc_b = in_desc;
++  in_desc_b.UploadData(in_cpu_b);
++
++  auto& vk_env = shared_vulkan_env_.vulkan_env();
+   ::ml_drift::syrtis::VulkanSpatialTensor in_tensor_a;
+   ::ml_drift::syrtis::VulkanSpatialTensor out_tensor_a;
+   ::ml_drift::syrtis::VulkanSpatialTensor in_tensor_b;
+   ::ml_drift::syrtis::VulkanSpatialTensor out_tensor_b;
+-  ASSERT_THAT(::ml_drift::syrtis::CreateTensor(
+-                  in_desc, &shared_vulkan_env_.vulkan_env(), &in_tensor_a),
+-              IsOk());
+-  ASSERT_THAT(::ml_drift::syrtis::CreateTensor(
+-                  out_desc, &shared_vulkan_env_.vulkan_env(), &out_tensor_a),
+-              IsOk());
+-  ASSERT_THAT(::ml_drift::syrtis::CreateTensor(
+-                  in_desc, &shared_vulkan_env_.vulkan_env(), &in_tensor_b),
+-              IsOk());
+-  ASSERT_THAT(::ml_drift::syrtis::CreateTensor(
+-                  out_desc, &shared_vulkan_env_.vulkan_env(), &out_tensor_b),
+-              IsOk());
++  ASSERT_THAT(in_tensor_a.CreateFromDescriptor(in_desc_a, &vk_env), IsOk());
++  ASSERT_THAT(
++      ::ml_drift::syrtis::CreateTensor(out_desc, &vk_env, &out_tensor_a),
++      IsOk());
++  ASSERT_THAT(in_tensor_b.CreateFromDescriptor(in_desc_b, &vk_env), IsOk());
++  ASSERT_THAT(
++      ::ml_drift::syrtis::CreateTensor(out_desc, &vk_env, &out_tensor_b),
++      IsOk());
+ 
+   ASSERT_OK_AND_ASSIGN(
+       std::unique_ptr<GpuInferenceContext> ctx,
+       backend.CreateInferenceContext(create_info, gpu_model,
+                                      /*serialized_model=*/nullptr,
+                                      /*may_share_memory_manager=*/true));
++  ASSERT_THAT(ctx->SetCommandBufferHint(4), IsOk());
+ 
+   // Repeatedly bind external tensors, query them, and dispatch. Because
+   // num_steps_of_command_buffer_preparations > 1, Dispatch() spawns a
+   // background thread that calls AddToCommandBuffer() while the next
+   // iteration's BindSpatialTensor() and GetSpatialTensor() run on the calling
+-  // thread. Note that this test only verifies that there is no crash, not
+-  // output correctness.
++  // thread.
+   for (int step = 0; step < 20; ++step) {
++    if (step == 2) {
++      // Update in_tensor_a before cached command buffer slot 0 is replayed so
++      // we can distinguish slot 0 re-executing on in_tensor_a -> out_tensor_a
++      // (output 767.0) from a stale output of step 0 (255.0) if slot 0 had
++      // erroneously recorded step 1's bindings (in_tensor_b -> out_tensor_b).
++      ASSERT_THAT(backend.WaitForCompletion(), IsOk());
++      in_cpu_a.data = {2.0f, 2.0f, 2.0f, 2.0f};
++      in_desc_a.UploadData(in_cpu_a);
++      ASSERT_THAT(in_tensor_a.UploadDescriptorData(
++                      in_desc_a, vk_env.GetVulkanDevice(), vk_env.GetQueue()),
++                  IsOk());
++    }
+     auto* in_ptr = (step % 2 == 0) ? &in_tensor_a : &in_tensor_b;
+     auto* out_ptr = (step % 2 == 0) ? &out_tensor_a : &out_tensor_b;
+ 
+@@ -131,8 +161,44 @@ TEST_F(GpuBackendVulkanTest,
+     EXPECT_THAT(ctx->GetSpatialTensor(in_id), IsOkAndHolds(in_ptr));
+     EXPECT_THAT(ctx->GetSpatialTensor(out_id), IsOkAndHolds(out_ptr));
+     ASSERT_THAT(ctx->Dispatch(), IsOk());
++
++    if (step == 0) {
++      EXPECT_THAT(ctx->SetCommandBufferHint(8),
++                  StatusIs(absl::StatusCode::kFailedPrecondition));
++    }
++    if (step == 2) {
++      // Verify immediately after step 2 (before any subsequent odd step) that
++      // cached slot 0 recorded step 0's tensor_a bindings rather than step 1's
++      // tensor_b bindings.
++      ASSERT_THAT(backend.WaitForCompletion(), IsOk());
++      ::ml_drift::TensorDescriptor step2_out_desc_a = out_desc;
++      ASSERT_THAT(out_tensor_a.ToDescriptor(vk_env.GetVulkanDevice(),
++                                            vk_env.GetQueue(),
++                                            &step2_out_desc_a),
++                  IsOk());
++      ::ml_drift::TensorFloat32 step2_out_cpu_a;
++      step2_out_desc_a.DownloadData(&step2_out_cpu_a);
++      EXPECT_THAT(step2_out_cpu_a.data,
++                  ElementsAre(767.0f, 767.0f, 767.0f, 767.0f));
++    }
+   }
+   ASSERT_THAT(backend.WaitForCompletion(), IsOk());
++
++  ::ml_drift::TensorDescriptor out_desc_a = out_desc;
++  ASSERT_THAT(out_tensor_a.ToDescriptor(vk_env.GetVulkanDevice(),
++                                        vk_env.GetQueue(), &out_desc_a),
++              IsOk());
++  ::ml_drift::TensorFloat32 out_cpu_a;
++  out_desc_a.DownloadData(&out_cpu_a);
++  EXPECT_THAT(out_cpu_a.data, ElementsAre(767.0f, 767.0f, 767.0f, 767.0f));
++
++  ::ml_drift::TensorDescriptor out_desc_b = out_desc;
++  ASSERT_THAT(out_tensor_b.ToDescriptor(vk_env.GetVulkanDevice(),
++                                        vk_env.GetQueue(), &out_desc_b),
++              IsOk());
++  ::ml_drift::TensorFloat32 out_cpu_b;
++  out_desc_b.DownloadData(&out_cpu_b);
++  EXPECT_THAT(out_cpu_b.data, ElementsAre(511.0f, 511.0f, 511.0f, 511.0f));
+ }
+ 
+ }  // namespace
+diff --git a/ml_drift_delegate/delegate/gpu_backend_webgpu.cc b/ml_drift_delegate/delegate/gpu_backend_webgpu.cc
+index 52af164ef..f139dc1be 100644
+--- a/ml_drift_delegate/delegate/gpu_backend_webgpu.cc
++++ b/ml_drift_delegate/delegate/gpu_backend_webgpu.cc
+@@ -422,14 +422,40 @@ GpuInferenceContextWebGpu::GpuInferenceContextWebGpu(
+       num_nodes_per_command_encoder_(kNumNodesPerCommandEncoder) {}
+ 
+ GpuInferenceContextWebGpu::~GpuInferenceContextWebGpu() {
++  JoinNextCommandBuffersThread();
++  SharedWebGpuEnv::Get().ClearLastContextIfMatched(&backend_->wgpu_env(), this);
++}
++
++void GpuInferenceContextWebGpu::JoinNextCommandBuffersThread() {
+   if (next_command_buffers_thread_) {
+     next_command_buffers_thread_->join();
++    next_command_buffers_thread_.reset();
+   }
+-  SharedWebGpuEnv::Get().ClearLastContextIfMatched(&backend_->wgpu_env(), this);
++}
++
++absl::Status GpuInferenceContextWebGpu::FlushPendingSpatialTensors() {
++  if (pending_spatial_tensors_.empty()) {
++    return absl::OkStatus();
++  }
++  auto pending = std::move(pending_spatial_tensors_);
++  pending_spatial_tensors_.clear();
++  absl::MutexLock lock(backend_->memory_manager_mutex());
++  for (const auto& [id, tensor] : pending) {
++    ABSL_RETURN_IF_ERROR(ctx_->SetTensor(id, tensor));
++  }
++  return absl::OkStatus();
+ }
+ 
+ absl::StatusOr<::ml_drift::webgpu::SpatialTensor*>
+ GpuInferenceContextWebGpu::GetSpatialTensorInternal(::ml_drift::ValueId id) {
++  if (auto it = pending_spatial_tensors_.find(id);
++      it != pending_spatial_tensors_.end()) {
++    if (it->second == nullptr) {
++      return absl::NotFoundError(
++          absl::StrCat("No GPU tensor allocated for tensor id ", id, "."));
++    }
++    return it->second;
++  }
+   absl::MutexLock lock(backend_->memory_manager_mutex());
+   auto* tensor = ctx_->GetTensor(id);
+   if (tensor == nullptr) {
+@@ -448,9 +474,13 @@ GpuInferenceContextWebGpu::GetSpatialTensor(::ml_drift::ValueId id) {
+ 
+ absl::Status GpuInferenceContextWebGpu::BindSpatialTensor(
+     ::ml_drift::ValueId id, ::ml_drift::GpuSpatialTensor* tensor) {
++  auto* wgpu_tensor = static_cast<::ml_drift::webgpu::SpatialTensor*>(tensor);
++  if (!next_command_buffers_.empty()) {
++    pending_spatial_tensors_[id] = wgpu_tensor;
++    return absl::OkStatus();
++  }
+   absl::MutexLock lock(backend_->memory_manager_mutex());
+-  return ctx_->SetTensor(
+-      id, static_cast<::ml_drift::webgpu::SpatialTensor*>(tensor));
++  return ctx_->SetTensor(id, wgpu_tensor);
+ }
+ 
+ absl::Status GpuInferenceContextWebGpu::WriteDataToWeightTensor(
+@@ -529,9 +559,8 @@ absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffersFromCached(
+                                  /*submit_command_buffers=*/true);
+   }
+ 
+-  if (next_command_buffers_thread_) {
+-    next_command_buffers_thread_->join();
+-  }
++  JoinNextCommandBuffersThread();
++  ABSL_RETURN_IF_ERROR(FlushPendingSpatialTensors());
+ 
+   SharedWebGpuEnv& shared_env = SharedWebGpuEnv::Get();
+   const ::ml_drift::webgpu::ExecutionEnvironment* env = &backend_->wgpu_env();
+@@ -674,6 +703,11 @@ absl::Status GpuInferenceContextWebGpu::ReportMemoryBenchmarkIfEnabled(
+ 
+ absl::Status GpuInferenceContextWebGpu::SetCommandBufferHint(
+     int num_nodes_per_command_encoder) {
++  // Must be called before any Dispatch() call.
++  if (next_command_buffers_thread_ != nullptr) {
++    return absl::FailedPreconditionError(
++        "SetCommandBufferHint must be called before any Dispatch() call.");
++  }
+   num_nodes_per_command_encoder_ = num_nodes_per_command_encoder;
+   return absl::OkStatus();
+ }
+diff --git a/ml_drift_delegate/delegate/gpu_backend_webgpu.h b/ml_drift_delegate/delegate/gpu_backend_webgpu.h
+index 464030e36..ef46cf647 100644
+--- a/ml_drift_delegate/delegate/gpu_backend_webgpu.h
++++ b/ml_drift_delegate/delegate/gpu_backend_webgpu.h
+@@ -256,6 +256,7 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
+       const override;
+   absl::Status ReportMemoryBenchmarkIfEnabled(
+       const ::ml_drift::CreateGpuModelInfo& create_info) override;
++  // Must be called before any Dispatch() call.
+   absl::Status SetCommandBufferHint(int num_nodes_per_command_encoder) override;
+ 
+   // Underlying WebGPU inference context.
+@@ -267,6 +268,8 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
+  private:
+   absl::StatusOr<::ml_drift::webgpu::SpatialTensor*> GetSpatialTensorInternal(
+       ::ml_drift::ValueId id);
++  void JoinNextCommandBuffersThread();
++  absl::Status FlushPendingSpatialTensors();
+   // Prepares command buffers for Dispatch() call.
+   absl::Status PrepareCommandBuffers(
+       std::vector<wgpu::CommandBuffer>& command_buffers,
+@@ -281,6 +284,10 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
+   GpuBackendWebGpu* const backend_;
+   std::unique_ptr<::ml_drift::webgpu::InferenceContext> ctx_;
+   std::vector<std::shared_ptr<absl::Notification>> async_upload_notifications_;
++  // Spatial tensor bindings staged while background command buffer preparation
++  // is enabled, applied to ctx_ once next_command_buffers_thread_ finishes.
++  absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::webgpu::SpatialTensor*>
++      pending_spatial_tensors_;
+ 
+   // Command buffers prepared in advance for the next Dispatch() call.
+   std::vector<std::vector<wgpu::CommandBuffer>> next_command_buffers_;
+@@ -292,10 +299,10 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
+   // all next_command_buffers_ are prepared.
+   bool next_command_buffers_ready_ = false;
+   // Prepares next_command_buffers_ in parallel with the current Dispatch()
+-  // call. It is only accessed by the thread calling Dispatch(), which joins it
+-  // before touching next_command_buffers_ again, so no synchronization is
+-  // needed; see SharedWebGpuEnv for how a Dispatch() by a different context on
+-  // the same environment is handled.
++  // call. JoinNextCommandBuffersThread() joins and resets it before flushing
++  // staged bindings to ctx_ or touching next_command_buffers_ again; see
++  // SharedWebGpuEnv for how a Dispatch() by a different context on the same
++  // environment is handled.
+   std::unique_ptr<std::thread> next_command_buffers_thread_;
+ };
+ 
+diff --git a/ml_drift_delegate/delegate/gpu_backend_webgpu_test.cc b/ml_drift_delegate/delegate/gpu_backend_webgpu_test.cc
+index 61a84950a..b22057685 100644
+--- a/ml_drift_delegate/delegate/gpu_backend_webgpu_test.cc
++++ b/ml_drift_delegate/delegate/gpu_backend_webgpu_test.cc
+@@ -22,6 +22,7 @@
+ #include "testing/base/public/gmock.h"
+ #include "testing/base/public/gunit.h"
+ #include "absl/log/absl_check.h"  // from @com_google_absl
++#include "absl/status/status.h"  // from @com_google_absl
+ #include "absl/status/status_matchers.h"  // from @com_google_absl
+ #include "ml_drift/common/data_type.h"  // from @ml_drift
+ #include "ml_drift/common/gpu_model.h"  // from @ml_drift
+@@ -31,6 +32,7 @@
+ #include "ml_drift/common/precision.h"  // from @ml_drift
+ #include "ml_drift/common/shape.h"  // from @ml_drift
+ #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
++#include "ml_drift/common/tensor.h"  // from @ml_drift
+ #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
+ #include "ml_drift/webgpu/spatial_tensor.h"  // from @ml_drift
+ #include "ml_drift_delegate/delegate/gpu_backend.h"
+@@ -41,6 +43,8 @@ namespace {
+ 
+ using ::absl_testing::IsOk;
+ using ::absl_testing::IsOkAndHolds;
++using ::absl_testing::StatusIs;
++using ::testing::ElementsAre;
+ 
+ class GpuBackendWebGpuTest : public ::testing::Test {
+  protected:
+@@ -90,13 +94,32 @@ TEST_F(GpuBackendWebGpuTest,
+   const ::ml_drift::TensorDescriptor in_desc = gpu_model.tensors.at(in_id);
+   const ::ml_drift::TensorDescriptor out_desc = gpu_model.tensors.at(out_id);
+ 
++  // Initialize input tensors with distinct values so each ping-pong slot
++  // produces a different output (8 steps of x * 2 + 1 => x * 256 + 255):
++  //   in_tensor_a = 0.0 -> 255.0 (step 0, uncached), updated to 2.0 -> 767.0
++  //                        before cached command buffers are used in step >= 2
++  //   in_tensor_b = 1.0 -> 511.0
++  ::ml_drift::TensorFloat32 in_cpu_a;
++  in_cpu_a.shape = ::ml_drift::BHWC(1, 1, 1, 4);
++  in_cpu_a.data = {0.0f, 0.0f, 0.0f, 0.0f};
++  ::ml_drift::TensorDescriptor in_desc_a = in_desc;
++  in_desc_a.UploadData(in_cpu_a);
++
++  ::ml_drift::TensorFloat32 in_cpu_b;
++  in_cpu_b.shape = ::ml_drift::BHWC(1, 1, 1, 4);
++  in_cpu_b.data = {1.0f, 1.0f, 1.0f, 1.0f};
++  ::ml_drift::TensorDescriptor in_desc_b = in_desc;
++  in_desc_b.UploadData(in_cpu_b);
++
+   ::ml_drift::webgpu::SpatialTensor in_tensor_a;
+   ::ml_drift::webgpu::SpatialTensor out_tensor_a;
+   ::ml_drift::webgpu::SpatialTensor in_tensor_b;
+   ::ml_drift::webgpu::SpatialTensor out_tensor_b;
+-  ASSERT_THAT(CreateTensor(env.device(), in_desc, &in_tensor_a), IsOk());
++  ASSERT_THAT(in_tensor_a.CreateFromDescriptor(env.device(), in_desc_a),
++              IsOk());
+   ASSERT_THAT(CreateTensor(env.device(), out_desc, &out_tensor_a), IsOk());
+-  ASSERT_THAT(CreateTensor(env.device(), in_desc, &in_tensor_b), IsOk());
++  ASSERT_THAT(in_tensor_b.CreateFromDescriptor(env.device(), in_desc_b),
++              IsOk());
+   ASSERT_THAT(CreateTensor(env.device(), out_desc, &out_tensor_b), IsOk());
+ 
+   ASSERT_OK_AND_ASSIGN(
+@@ -104,14 +127,25 @@ TEST_F(GpuBackendWebGpuTest,
+       backend_.CreateInferenceContext(create_info, gpu_model,
+                                       /*serialized_model=*/nullptr,
+                                       /*may_share_memory_manager=*/true));
++  ASSERT_THAT(ctx->SetCommandBufferHint(4), IsOk());
+ 
+   // Repeatedly bind external tensors, query them, and dispatch. Because
+   // num_steps_of_command_buffer_preparations > 1, Dispatch() spawns a
+   // background thread that calls CreateCommandBuffers() while the next
+   // iteration's BindSpatialTensor() and GetSpatialTensor() run on the calling
+-  // thread. Note that this test only verifies that there is no crash, not
+-  // output correctness.
++  // thread.
+   for (int step = 0; step < 20; ++step) {
++    if (step == 2) {
++      // Update in_tensor_a before cached command buffer slot 0 is replayed so
++      // we can distinguish slot 0 re-executing on in_tensor_a -> out_tensor_a
++      // (output 767.0) from a stale output of step 0 (255.0) if slot 0 had
++      // erroneously recorded step 1's bindings (in_tensor_b -> out_tensor_b).
++      ASSERT_THAT(backend_.WaitForCompletion(), IsOk());
++      in_cpu_a.data = {2.0f, 2.0f, 2.0f, 2.0f};
++      in_desc_a.UploadData(in_cpu_a);
++      ASSERT_THAT(in_tensor_a.UploadDescriptorData(env.queue(), in_desc_a),
++                  IsOk());
++    }
+     auto* in_ptr = (step % 2 == 0) ? &in_tensor_a : &in_tensor_b;
+     auto* out_ptr = (step % 2 == 0) ? &out_tensor_a : &out_tensor_b;
+ 
+@@ -120,8 +154,38 @@ TEST_F(GpuBackendWebGpuTest,
+     EXPECT_THAT(ctx->GetSpatialTensor(in_id), IsOkAndHolds(in_ptr));
+     EXPECT_THAT(ctx->GetSpatialTensor(out_id), IsOkAndHolds(out_ptr));
+     ASSERT_THAT(ctx->Dispatch(), IsOk());
++
++    if (step == 0) {
++      EXPECT_THAT(ctx->SetCommandBufferHint(8),
++                  StatusIs(absl::StatusCode::kFailedPrecondition));
++    }
++    if (step == 2) {
++      // Verify immediately after step 2 (before any subsequent odd step) that
++      // cached slot 0 recorded step 0's tensor_a bindings rather than step 1's
++      // tensor_b bindings.
++      ASSERT_THAT(backend_.WaitForCompletion(), IsOk());
++      ::ml_drift::TensorDescriptor step2_out_desc_a = out_desc;
++      ASSERT_THAT(out_tensor_a.ToDescriptor(env.device(), &step2_out_desc_a),
++                  IsOk());
++      ::ml_drift::TensorFloat32 step2_out_cpu_a;
++      step2_out_desc_a.DownloadData(&step2_out_cpu_a);
++      EXPECT_THAT(step2_out_cpu_a.data,
++                  ElementsAre(767.0f, 767.0f, 767.0f, 767.0f));
++    }
+   }
+   ASSERT_THAT(backend_.WaitForCompletion(), IsOk());
++
++  ::ml_drift::TensorDescriptor out_desc_a = out_desc;
++  ASSERT_THAT(out_tensor_a.ToDescriptor(env.device(), &out_desc_a), IsOk());
++  ::ml_drift::TensorFloat32 out_cpu_a;
++  out_desc_a.DownloadData(&out_cpu_a);
++  EXPECT_THAT(out_cpu_a.data, ElementsAre(767.0f, 767.0f, 767.0f, 767.0f));
++
++  ::ml_drift::TensorDescriptor out_desc_b = out_desc;
++  ASSERT_THAT(out_tensor_b.ToDescriptor(env.device(), &out_desc_b), IsOk());
++  ::ml_drift::TensorFloat32 out_cpu_b;
++  out_desc_b.DownloadData(&out_cpu_b);
++  EXPECT_THAT(out_cpu_b.data, ElementsAre(511.0f, 511.0f, 511.0f, 511.0f));
+ }
+ 
+ TEST_F(GpuBackendWebGpuTest,

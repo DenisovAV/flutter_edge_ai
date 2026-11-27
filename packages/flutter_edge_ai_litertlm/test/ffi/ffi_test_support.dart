@@ -36,6 +36,7 @@ FfiInferenceModel ffiModelForClient({
   StructuredOutputSupport structuredOutput = const StructuredOutputSupport.none(
     'This LiteRT-LM model was not loaded through LiteRtLmEngine.',
   ),
+  String? toolChoiceRefusal,
   required VoidCallback onClose,
 }) => FfiInferenceModel(
   engine: engineForTest(
@@ -61,6 +62,7 @@ FfiInferenceModel ffiModelForClient({
   maxConcurrentSessions: maxConcurrentSessions,
   thinkingTokenBudget: thinkingTokenBudget,
   structuredOutput: structuredOutput,
+  toolChoiceRefusal: toolChoiceRefusal,
   onClose: onClose,
 );
 
@@ -75,9 +77,15 @@ FfiInferenceModelSession ffiSessionForHandle({
   bool enableThinking = false,
   int? thinkingTokenBudget,
   int? maxOutputTokens,
+  List<lm.Tool> tools = const [],
+  lm.ToolChoice? userTurnToolChoice,
   required VoidCallback onClose,
 }) => FfiInferenceModelSession(
-  conversation: conversationForTest(handle),
+  declaresTools: tools.isNotEmpty,
+  conversation: conversationForTest(
+    handle,
+    config: lm.ConversationConfig(tools: tools),
+  ),
   modelType: modelType,
   fileType: fileType,
   supportImage: supportImage,
@@ -86,6 +94,7 @@ FfiInferenceModelSession ffiSessionForHandle({
   enableThinking: enableThinking,
   thinkingTokenBudget: thinkingTokenBudget,
   maxOutputTokens: maxOutputTokens,
+  userTurnToolChoice: userTurnToolChoice,
   onClose: onClose,
 );
 

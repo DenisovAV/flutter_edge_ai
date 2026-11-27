@@ -83,8 +83,8 @@ final _compiledModelFailure = RegExp(r'^\s*INTERNAL\b');
 ///
 /// On a GPU engine loaded at float32 ([activationDataType] 0), a failure
 /// inside the compiled model is named as possibly the float32 activations'
-/// (Adreno 8xx with this native build fails at the first token with
-/// "Invalid work group size"), with how to load at float16 or on the CPU.
+/// (Adreno 8xx fails at the first token with "Invalid work group size",
+/// LiteRT-LM #4825), with how to load at float16 or on the CPU.
 /// [gpuActivationReason] is why the engine chose float32, null when the caller
 /// asked for it. On [android], such a failure at any other activation type is
 /// named as LiteRT's GPU kernels exceeding the work-group limits of some
@@ -127,7 +127,7 @@ String streamFailureMessage({
           '$gemma4Fp16MaxContextTokens tokens degrades, or $cpu',
   };
   return '$message (this engine runs float32 activations on the GPU, which '
-      'fail inside the compiled model on some GPUs: Adreno 8xx with this '
-      'native build fails at the first token with "Invalid work group size"; '
+      'fail inside the compiled model on some GPUs: Adreno 8xx fails at the '
+      'first token with "Invalid work group size" (LiteRT-LM #4825); '
       '$why)';
 }

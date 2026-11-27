@@ -54,7 +54,7 @@ larger chunk just because the model file declares a larger context.
 ```
 dependencies:
   flutter_edge_ai: ^2.7.2
-  flutter_edge_ai_litertlm: ^1.21.2
+  flutter_edge_ai_litertlm: ^1.22.0
   flutter_edge_ai_embeddings: ^2.3.3 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.3.0
   flutter_edge_ai_sqlite: ^2.3.0 # all six platforms, including Web
@@ -73,7 +73,7 @@ qdrant 2.3.0. The full list is in [Migration](/docs/migration).
 **flutter_edge_ai_sqlite** needs Flutter 3.47 or later. On Web, `.tflite`
 embeddings and SQLite RAG need files copied into your app's **web/** — the
 LiteRT.js loader and **rag/sqlite3.wasm**; EmbeddingGemma 2 needs only the
-`@litert-lm/core` module script, with its **window.EmbeddingEngine** line, in
+`@litert-lm/core` module script, with its **window.litertLm = m;** line, in
 `web/index.html`; see
 [Installation → Web](/docs/installation#web).
 
@@ -132,7 +132,7 @@ final vector = await embedder.embed(
   (flutter_edge_ai_litertlm 1.13.0 for text, 1.13.1 for images and audio),
   and the Web (1.13.1 for text and images, 1.13.2 for audio and combined
   inputs), where it runs through `@litert-lm/core`'s EmbeddingEngine on
-  WebGPU and needs **window.EmbeddingEngine = m.EmbeddingEngine;** in
+  WebGPU and needs the module script with **window.litertLm = m;** in
   `web/index.html` ([Installation](/docs/installation#web)).
 - **Text on every bundle, images on the 440m and the 740m, audio on the
   740m.** On the 270m, **getActiveEmbedder(supportImage: true)** throws
@@ -171,6 +171,12 @@ final vector = await embedder.embed(
   - The macOS rows were measured on an M5 Pro, 2026-11-04; the 270m and 740m
     text towers ran on Metal in 24 ms
     ([0.19 phase-1 report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-phase1.md)).
+  - On LiteRT-LM 0.20 (litertlm_dart 0.20.0, `native-v0.20.0`) the 270m's
+    GPU vectors measured min cosine 0.9969–0.9991 to the CPU ones on a Tesla T4
+    (Vulkan, 2026-11-26), 0.9959–0.9988 on a Panther Lake Arc B390 (D3D12,
+    from the released archive, 2026-11-26) and at least 0.9970 on Metal
+    (M5 Pro, 2026-11-25). On the T4 a text takes 14–25 ms on the GPU versus
+    188–204 ms on its CPU.
   - Only the text tower runs on the GPU. The 440m and 740m vision and audio
     towers remain on CPU.
   - A GPU that cannot create the engine fails the load, and every GPU load
@@ -193,11 +199,14 @@ final vector = await embedder.embed(
 - The NPU runs the per-SoC bundles
   ([below](#embeddinggemma-2-on-a-qualcomm-npu)); this bundle refuses
   **PreferredBackend.npu**. The Web has no CPU path for these bundles — the
-  CPU (WebAssembly) backend of `@litert-lm/core` cannot read their
-  external weights — so a browser without WebGPU (no **navigator.gpu**, or no
-  GPU adapter) throws **EmbeddingLoadException** saying so before anything
-  loads. Web vectors come from WebGPU and differ slightly from the native CPU
-  ones (measured min cos about 0.995 for text, 0.998 for images); retrieval
+  CPU (WebAssembly) backend of `@litert-lm/core` 0.20.0 loads them but takes
+  110–225 s to load and 9–12 s per short text — so a browser without WebGPU
+  (no **navigator.gpu**, or no GPU adapter) throws **EmbeddingLoadException**
+  saying so before anything loads. Web vectors come from WebGPU and differ
+  slightly from the native CPU ones (on `@litert-lm/core` 0.20.0, Chrome 158 on
+  an Apple GPU, 2026-11-25: min cos 0.99713 for text, 0.99642 for images,
+  0.973–0.990 per audio clip; on 0.19, Chrome 155 on a Tesla T4: about 0.995
+  for text, 0.998 for images); retrieval
   across platforms holds — web text queries find natively embedded images and
   native queries find web-embedded images, top-1 10/10 on the example's ten
   scenes.

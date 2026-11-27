@@ -238,8 +238,8 @@ DynamicLibrary _openLiteRt() {
     // which would load on a developer's Mac and hide the problem until the
     // app reached a user. A dev prebuilt that is not ours is skipped and
     // named, so whatever comes back from the dev copies passes the check.
-    // A plain Dart program built with `macos_companions: code_assets` opens
-    // its code asset and nothing else (macos_load_error.dart).
+    // A plain Dart program opens its code asset and nothing else
+    // (macos_load_error.dart).
     return requireOwnLiteRtLmBuild(
       openMacOSLiteRtLmForTflite(
         devCandidates: _devLiteRtLmCandidates,

@@ -5,7 +5,7 @@
 // pages, the READMEs and the web goldens to it.
 
 /// The `@litert-lm/core` version the web arm drives.
-const liteRtLmWebRuntimeVersion = '0.19.0';
+const liteRtLmWebRuntimeVersion = '0.20.0';
 
 /// The ES module the page imports, pinned to [liteRtLmWebRuntimeVersion].
 const liteRtLmWebModuleUrl =

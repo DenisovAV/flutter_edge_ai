@@ -2,8 +2,9 @@ name: plain_dart_check
 description: CI check that litertlm_dart loads in a plain Dart program, built or run.
 publish_to: none
 
-# Not a member of the repository's pub workspace, for the same reason as
-# example/cli: the define below must not reach the Flutter example.
+# Not a member of the repository's pub workspace: a plain Dart program,
+# resolved on its own as a user's would be. It sets no hooks define: from
+# litertlm_dart 0.20.0 none is needed on any platform.
 environment:
   sdk: '>=3.12.0 <4.0.0'
 
@@ -14,8 +15,3 @@ dependencies:
 
 dev_dependencies:
   lints: ^6.0.0
-
-hooks:
-  user_defines:
-    litertlm_dart:
-      macos_companions: code_assets

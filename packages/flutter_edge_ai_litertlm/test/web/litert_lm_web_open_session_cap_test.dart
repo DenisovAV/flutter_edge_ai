@@ -28,7 +28,7 @@ class _Resolver implements WebModelSourceResolver {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// A stand-in for `window.Engine`: a function (as the page's is) with the
+/// A stand-in for the module's `Engine`: a function (as the page's is) with the
 /// prototype members the runtime check looks for, whose `create` returns
 /// [engine].
 JSObject _engineConstructor(JSObject engine) =>
@@ -37,6 +37,7 @@ JSObject _engineConstructor(JSObject engine) =>
         '''(() => {
           function Engine() {}
           Engine.prototype.createConversation = function () {};
+          Engine.prototype.createSession = function () {};
           Engine.prototype.delete = function () {};
           return Engine;
         })()'''
@@ -46,13 +47,14 @@ JSObject _engineConstructor(JSObject engine) =>
         engine,
       ).toJS).toJS;
 
-/// A runtime conversation with the members litertlm_dart calls on 0.19.0;
+/// A runtime conversation with the members litertlm_dart calls on 0.20.0;
 /// [onDelete] counts its deletes.
 JSObject _conversation({void Function()? onDelete}) => JSObject()
   ..['sendMessageStreaming'] = ((JSAny? message) => JSObject()).toJS
   ..['cancel'] = (() {}).toJS
   ..['getHistory'] = (() => Future.value(JSArray<JSObject>()).toJS).toJS
   ..['getTokenCount'] = (() => Future.value(0.toJS).toJS).toJS
+  ..['clone'] = (() => Future.value(JSObject()).toJS).toJS
   ..['delete'] = (() {
     onDelete?.call();
     return Future<void>.value().toJS;
@@ -85,7 +87,10 @@ void main() {
       }).toJS;
     });
     globalContext['litertLmReady'] = Future<void>.value().toJS;
-    globalContext['Engine'] = _engineConstructor(engine);
+    // The module's Backend enum, as @litert-lm/core 0.20.0 numbers it.
+    globalContext['litertLm'] = JSObject()
+      ..['Engine'] = _engineConstructor(engine)
+      ..['Backend'] = {'GPU_ARTISAN': 1, 'CPU': 2, 'GPU': 3}.jsify();
 
     final model = LiteRtLmWebInferenceModel(
       createEngine: () => createLiteRtLmWebEngine(_Resolver(), maxTokens: 1024),
@@ -137,7 +142,10 @@ void main() {
           .toJS,
     );
     globalContext['litertLmReady'] = Future<void>.value().toJS;
-    globalContext['Engine'] = _engineConstructor(engine);
+    // The module's Backend enum, as @litert-lm/core 0.20.0 numbers it.
+    globalContext['litertLm'] = JSObject()
+      ..['Engine'] = _engineConstructor(engine)
+      ..['Backend'] = {'GPU_ARTISAN': 1, 'CPU': 2, 'GPU': 3}.jsify();
 
     final model = LiteRtLmWebInferenceModel(
       createEngine: () => createLiteRtLmWebEngine(_Resolver(), maxTokens: 1024),

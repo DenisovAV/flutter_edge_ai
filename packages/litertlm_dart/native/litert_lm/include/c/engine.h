@@ -47,7 +47,7 @@
 //
 // Added in version 1.0.0.
 #define LITERT_LM_C_API_VERSION_MAJOR 1
-#define LITERT_LM_C_API_VERSION_MINOR 0
+#define LITERT_LM_C_API_VERSION_MINOR 1
 #define LITERT_LM_C_API_VERSION_PATCH 0
 
 #ifdef __cplusplus
@@ -217,14 +217,18 @@ typedef struct LiteRtLmSessionConfig LiteRtLmSessionConfig;
 //
 // Added in version 0.1.0.
 typedef enum {
-  // Default fallback/unspecified.
+  // Default fallback/unspecified: uses the model metadata's default sampler
+  // parameters when present, or greedy decoding otherwise.
   kLiteRtLmSamplerTypeUnspecified = 0,
-  // Probabilistically pick among the top k tokens.
+  // Probabilistically pick among the top `top_k` tokens (`top_k >= 1`) scaled
+  // by `temperature` (`>= 0`, where `0` selects argmax). `top_p` is ignored.
   kLiteRtLmSamplerTypeTopK = 1,
-  // Probabilistically pick among the tokens such that the sum is greater
-  // than or equal to p tokens after first performing top-k sampling.
+  // Probabilistically pick from the smallest prefix of the top `top_k` tokens
+  // (`top_k >= 1`) whose cumulative probability mass is `>= top_p` (`[0, 1]`),
+  // scaled by `temperature` (`>= 0`, where `0` selects argmax).
   kLiteRtLmSamplerTypeTopP = 2,
-  // Pick the token with maximum logit (i.e., argmax).
+  // Pick the token with maximum logit (i.e., argmax). `top_k`, `top_p`,
+  // `temperature`, and `seed` are ignored.
   kLiteRtLmSamplerTypeGreedy = 3,
 } LiteRtLmSamplerType;
 
@@ -252,6 +256,16 @@ typedef enum {
 typedef struct LiteRtLmSamplerParams LiteRtLmSamplerParams;
 
 // Creates LiteRT LM Sampler Parameters with a specific sampler type.
+//
+// Numeric fields are zero-initialized (`top_k = 0`, `top_p = 0.0f`,
+// `temperature = 0.0f`, `seed = 0`). Before creating a session or conversation:
+// - `kLiteRtLmSamplerTypeGreedy` and `kLiteRtLmSamplerTypeUnspecified` are
+//   valid as-is.
+// - `kLiteRtLmSamplerTypeTopK` requires `top_k >= 1` via
+//   `litert_lm_sampler_params_set_top_k` (and optional `temperature >= 0`,
+//   `seed`).
+// - `kLiteRtLmSamplerTypeTopP` requires `top_k >= 1`, `top_p` in `[0, 1]`, and
+//   finite `temperature >= 0`.
 //
 // @param type The sampler type to use.
 // @param out_params On success, receives the created parameters, owned by the
@@ -453,6 +467,33 @@ LITERT_LM_C_API_EXPORT
 LiteRtLmStatusCode litert_lm_speculative_decoding_config_set_mode(
     LiteRtLmSpeculativeDecodingConfig* config,
     LiteRtLmSpeculativeDecodingMode mode);
+
+// Sets the lenience factor c in [0, 1] of the speculative decoding acceptance
+// test.
+//
+// WARNING: Any c > 0 gives up the quality guarantee of speculative decoding.
+// With c = 0 (the default), speculative decoding is lossless: emitted tokens
+// follow the session's sampling distribution p, the same as without
+// speculative decoding. With c > 0, a drafted token that differs from the
+// verifier's sample is still accepted with probability c, so emitted tokens
+// follow (1 - c) * p + c * delta(draft) and can differ from what the model
+// itself would produce. Only set c > 0 if lower output quality is an
+// acceptable price for speed; c = 1 accepts every drafted token.
+//
+// If unset, the session inherits the engine's lenience, and the engine's
+// lenience defaults to 0. The NPU backend does not support lenience: it logs a
+// warning and stays exact.
+//
+// @param config The config to modify.
+// @param lenience The lenience factor, in [0, 1].
+// @return kLiteRtLmStatusOk on success, or kLiteRtLmStatusInvalidArgument if
+//   `config` is NULL or `lenience` is outside [0, 1] or NaN. An invalid
+//   `lenience` leaves the config unchanged.
+//
+// Added in version 1.0.0.
+LITERT_LM_C_API_EXPORT
+LiteRtLmStatusCode litert_lm_speculative_decoding_config_set_lenience(
+    LiteRtLmSpeculativeDecodingConfig* config, float lenience);
 
 // Sets the speculative decoding config of this session, which overrides the
 // engine's config (see
@@ -982,6 +1023,26 @@ LITERT_LM_C_API_EXPORT
 LiteRtLmStatusCode litert_lm_engine_settings_set_litert_dispatch_lib_dir(
     LiteRtLmEngineSettings* settings, const char* lib_dir);
 
+// Restricts the main executor to the given model signatures, for example
+// {"prefill_1024", "decode"}. Only the selected signatures are compiled for
+// the backend and used for inference. To run complete token generation, keep
+// at least one prefill signature and "decode" in the selection. When MTP is
+// enabled, make sure "verify" is also included. By default every signature of
+// the model is used.
+//
+// @param settings The engine settings.
+// @param signatures The signature keys to select.
+// @param num_signatures The number of entries in `signatures`.
+// @return kLiteRtLmStatusOk on success, or kLiteRtLmStatusInvalidArgument if
+//   `settings`, `signatures` or one of its entries is NULL, or
+//   `num_signatures` is 0.
+//
+// Added in version 1.1.0.
+LITERT_LM_C_API_EXPORT
+LiteRtLmStatusCode litert_lm_engine_settings_set_selected_signatures(
+    LiteRtLmEngineSettings* settings, const char* const* signatures,
+    size_t num_signatures);
+
 // Represents the activation data type.
 //
 // Added in version 0.1.0.
@@ -1441,6 +1502,17 @@ LiteRtLmStatusCode litert_lm_session_run_decode(
 
 // Scores the target text after the prefill process is done.
 //
+// Pass one target text, or several target texts that are each a single token.
+// Several targets are all scored from the logits of one decode step. Scores are
+// returned in the order of `target_text`; each one is the log likelihood of the
+// target text given the prefilled context.
+//
+// Every call changes the model memory: it consumes the session's pending input
+// token, and for a multi-token target it also writes every target token except
+// the last one. Rewind the session (for example with
+// `litert_lm_session_rewind_to_checkpoint`) before running further prefill or
+// decode on it.
+//
 // @param session The session to use.
 // @param target_text An array of target text strings to score.
 // @param num_targets The number of strings in the target_text array.
@@ -1450,12 +1522,15 @@ LiteRtLmStatusCode litert_lm_session_run_decode(
 //   caller; release with `litert_lm_responses_delete`. Set to NULL on failure.
 // @return kLiteRtLmStatusOk on success, or another LiteRtLmStatusCode on
 //   failure (see error_reporter.h). kLiteRtLmStatusInvalidArgument if
-//   `session`, `target_text` or `out_responses` is NULL or `num_targets` is 0;
-//   otherwise the runtime error.
+//   `session`, `target_text` or `out_responses` is NULL, `num_targets` is 0,
+//   or `num_targets` is greater than 1 and a target text is not a single
+//   token; otherwise the runtime error.
 //
 // Added in version 0.1.0.
 // Changed in version 1.0.0: returns a status code; the result is returned
 // through out_responses.
+// Changed in version 1.1.0: accepts several target texts when each one is a
+// single token; previously only one target text was accepted.
 LITERT_LM_C_API_EXPORT
 LiteRtLmStatusCode litert_lm_session_run_text_scoring(
     LiteRtLmSession* session, const char** target_text, size_t num_targets,
@@ -1727,11 +1802,12 @@ LITERT_LM_C_API_EXPORT
 LiteRtLmStatusCode litert_lm_benchmark_info_get_time_to_first_token(
     const LiteRtLmBenchmarkInfo* benchmark_info, double* out_seconds);
 
-// Returns the total initialization time in seconds.
+// Returns the total initialization time in seconds: the time to create the
+// engine. Session and conversation creation are not included.
 //
 // @param benchmark_info The benchmark info object.
 // @param out_seconds On success, receives the total initialization time in
-//   seconds; not written on failure.
+//   seconds, or 0 if the engine didn't report it; not written on failure.
 // @return kLiteRtLmStatusOk on success, or another LiteRtLmStatusCode on
 //   failure (see error_reporter.h). kLiteRtLmStatusInvalidArgument if
 //   `benchmark_info` or `out_seconds` is NULL.
@@ -1739,6 +1815,8 @@ LiteRtLmStatusCode litert_lm_benchmark_info_get_time_to_first_token(
 // Added in version 0.1.0.
 // Changed in version 1.0.0: returns a status code; the value is returned
 // through out_seconds.
+// Changed in version 1.1.0: the value is the engine creation time only; it
+// was the sum of every recorded init phase before.
 LITERT_LM_C_API_EXPORT
 LiteRtLmStatusCode litert_lm_benchmark_info_get_total_init_time_in_second(
     const LiteRtLmBenchmarkInfo* benchmark_info, double* out_seconds);

@@ -25,6 +25,20 @@ export 'src/interface.dart'
 export 'src/model_file_manager_interface.dart'
     show ModelFileManager, ModelReplacePolicy;
 
+// Streaming speech: the value types of SpeechRecognizer.transcribeStream and
+// SpeechSynthesizer.synthesizeStream / openTextStream.
+export 'src/streaming_speech.dart'
+    show
+        SpeechChunk,
+        SpeechStreamOverrunException,
+        SpeechTextStream,
+        StreamingKind,
+        StreamingLatency,
+        StreamingSttInfo,
+        TranscribeStreamOptions,
+        TranscriptUpdate,
+        WordTiming;
+
 // Typed responses: openSession/openChat(responseFormat:) and what they throw.
 export 'src/structured/response_format.dart'
     show JsonSchemaResponseFormat, ResponseFormat;

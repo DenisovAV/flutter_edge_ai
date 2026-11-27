@@ -1782,8 +1782,9 @@ static int CmdDeterminism(P engine) {
   return same ? 0 : 1;
 }
 
-// A tool call through the model's own constraint provider (Gemma) — the §12
-// bridge on Linux, the prebuilt provider elsewhere.
+// A tool call through the model's own tool-call constraint (Gemma): Google's
+// prebuilt provider up to native-v0.19.1, LLGuidance from native-v0.20.0
+// (patch_c_api.sh section 29).
 static int CmdTools(P engine) {
   const char* tools =
       "[{\"type\":\"function\",\"function\":{\"name\":\"get_weather\","

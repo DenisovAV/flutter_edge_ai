@@ -36,15 +36,20 @@ final class FakeWebEngine implements LiteRtLmWebEngine {
     LiteRtLmWebEmbeddingOptions options,
   ) async {
     computes++;
+    runtime.options.add(options);
     if (runtime.probeError case final error? when computes == 1) throw error;
     final tokens = fakeTokens(input) + 2;
     final vector = runtime.vector;
-    // WebGPU: windows of 1024, averaged, whatever the strategy.
+    final window = runtime.window;
+    // WebGPU: windows of the prepared signature, averaged, whatever the
+    // strategy; an outputSize keeps the first values, as the runtime does.
     return (
-      embedding: vector,
+      embedding: options.outputSize == null
+          ? vector
+          : vector.sublist(0, options.outputSize),
       inputLength: tokens,
       truncatedLength: null,
-      numChunks: (tokens + 1023) ~/ 1024,
+      numChunks: (tokens + window - 1) ~/ window,
     );
   }
 
@@ -57,6 +62,12 @@ final class FakeWebRuntime implements LiteRtLmWebRuntime {
   List<double> vector = const [0.5, 0.5, 0.5, 0.5];
   Object? probeError;
   Completer<void>? createGate;
+
+  /// The text signature the engine prepared: the window it splits by.
+  int window = 1024;
+
+  /// The options of every computeEmbedding, the load's probes included.
+  final options = <LiteRtLmWebEmbeddingOptions>[];
   final created = <FakeWebEngine>[];
   final settings = <LiteRtLmWebEngineSettings>[];
 
@@ -89,6 +100,7 @@ LiteRtLmWebEmbedder fakeEmbedder(
   FakeWebRuntime runtime, {
   Set<EmbedderModality> media = const {},
   String file = 'embeddinggemma-2-740m.litertlm',
+  int maxInputLength = 1024,
 }) => LiteRtLmWebEmbedder(
   LiteRtLmWebEmbedderConfig(
     modelPath: 'blob:eg2',
@@ -97,5 +109,6 @@ LiteRtLmWebEmbedder fakeEmbedder(
     resolveUrl: (path) async => path,
     revokeUrl: (_) {},
     declaredMedia: media,
+    maxInputLength: maxInputLength,
   ),
 );

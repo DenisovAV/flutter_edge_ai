@@ -318,16 +318,20 @@ void main() {
     test('matches the C API numbering', () {
       expect(activationDataTypeWireValue(ActivationDataType.float32), 0);
       expect(activationDataTypeWireValue(ActivationDataType.float16), 1);
+      expect(activationDataTypeWireValue(ActivationDataType.int16), 2);
+      expect(activationDataTypeWireValue(ActivationDataType.int8), 3);
     });
 
-    test('offers only the two float types', () {
-      // I16 (2) and I8 (3) are in LiteRT-LM's enum and deliberately not in
-      // ours: at the pinned version they are not half precision the way F16 is,
-      // and an unsupported type fails engine init, which reads as a quiet fall
-      // back to CPU. Adding one back means adding a number here too.
+    test("offers Kotlin's and Swift's four types", () {
+      // LiteRtLmActivationDataType in c/engine.h; Kotlin's and Swift's
+      // ActivationDataType. A type the model or backend does not support
+      // fails Engine.create with LiteRT-LM's error (litertlm_dart has no
+      // fallback); flutter_edge_ai never asks for the integer ones.
       expect(ActivationDataType.values, [
         ActivationDataType.float32,
         ActivationDataType.float16,
+        ActivationDataType.int16,
+        ActivationDataType.int8,
       ]);
     });
   });

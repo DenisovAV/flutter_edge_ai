@@ -1,8 +1,21 @@
 import 'dart:typed_data';
 import 'package:flutter_edge_ai/src/interface.dart';
+import 'package:flutter_edge_ai/src/streaming_speech.dart'
+    show SpeechChunk, SpeechTextStream;
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeSynth implements SpeechSynthesizer {
+  @override
+  bool get supportsStreaming => false;
+
+  @override
+  Stream<SpeechChunk> synthesizeStream(String text) =>
+      Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  SpeechTextStream openTextStream() =>
+      throw UnsupportedError('this model does not stream');
+
   @override
   int get sampleRate => 22050;
   @override

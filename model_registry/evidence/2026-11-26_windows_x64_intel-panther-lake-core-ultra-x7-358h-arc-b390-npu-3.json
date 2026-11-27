@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-26",
+  "host": "windows_x64",
+  "device": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU)",
+  "commit": "cc652e8d8b7d9d5c51cdf97753d10d49b134fe09",
+  "packages": {
+    "flutter_edge_ai": "2.7.2",
+    "flutter_edge_ai_litertlm": "1.22.0",
+    "flutter_edge_ai_speech": "0.6.3"
+  },
+  "native": "ff8da8c4c7757b4d0bbcd40206e6866bcd8fb6fb92dd4a44b0199ebea5b9b95e",
+  "log_sha256": "4050dbdb9c297a5551c3752fca8fc1c9017dfc92347f66051be4a57c8357a4bb",
+  "log_url": null,
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "embeddinggemma-2-text-vision-440m/generic": {
+      "cpu": [
+        "text to image retrieval"
+      ]
+    },
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "audio",
+        "text",
+        "vision"
+      ],
+      "gpu": [
+        "text"
+      ]
+    },
+    "matcha-tts/bundle": {
+      "cpu": [
+        "synthesizes within the golden tolerance"
+      ]
+    },
+    "moonshine-tiny/f32": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    }
+  }
+}

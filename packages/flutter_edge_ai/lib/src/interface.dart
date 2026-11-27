@@ -32,6 +32,14 @@ import 'embedding/embedding_model.dart';
 import 'structured/response_format.dart';
 import 'structured/structured_output.dart';
 import 'structured/structured_session.dart';
+import 'streaming_speech.dart'
+    show
+        SpeechChunk,
+        SpeechStreamOverrunException,
+        SpeechTextStream,
+        StreamingSttInfo,
+        TranscribeStreamOptions,
+        TranscriptUpdate;
 
 // Embedding types that used to be declared here; re-exported so the rest of
 // core keeps importing them from the platform interface.
@@ -1375,9 +1383,15 @@ mixin RawSdkResponseSession on InferenceModelSession {
 }
 
 /// Represents a speech-to-text model instance.
+///
+/// Core may add members in a minor release, each with a default body: a
+/// class that extends this keeps compiling and inherits the default; one
+/// that implements it (a test fake, say) adds the member when it moves to
+/// that release.
 abstract class SpeechRecognizer {
-  /// Transcribe 16 kHz mono 16-bit little-endian PCM. Batch (fixed-window)
-  /// for now; streaming is a follow-on.
+  /// Transcribe 16 kHz mono 16-bit little-endian PCM in one fixed window.
+  /// [transcribeStream] transcribes audio as it arrives, when [streaming]
+  /// is not null.
   ///
   /// [language] selects the OUTPUT language for this call (Whisper only): a
   /// bare lowercase code such as `'en'`, `'de'`, `'uk'`, any of Whisper's 99.
@@ -1418,6 +1432,96 @@ abstract class SpeechRecognizer {
   /// `null` CLEARS a previously set language rather than leaving it in place.
   abstract String? language;
 
+  /// How this model streams, or null when it cannot: [transcribeStream] then
+  /// fails.
+  StreamingSttInfo? get streaming => null;
+
+  /// Transcribes [pcm16kMono], 16 kHz mono 16-bit little-endian PCM in chunks
+  /// of any size, as it arrives. The returned stream is single-subscription.
+  ///
+  /// - The audio must already be 16 kHz mono: raw bytes carry no rate, so a
+  ///   48 kHz microphone tap passed as is comes out as wrong text with every
+  ///   time and buffer limit three times off. Resample before (record at
+  ///   16 kHz, or convert).
+  /// - The recognizer copies what it keeps of a chunk before the chunk's
+  ///   event returns, so a producer may reuse its buffer afterwards. It only
+  ///   listens to [pcm16kMono]: the recorder behind it stays the caller's to
+  ///   stop, also when the stream ends or is refused (cancelling the
+  ///   subscription of a recorder's stream does not always release the
+  ///   microphone).
+  /// - When [streaming] is null (the model cannot stream), the stream ends
+  ///   with an [UnsupportedError] when it is listened to, before any other
+  ///   check: no [ArgumentError] for [options], no [StateError], and
+  ///   [pcm16kMono] is never listened to.
+  /// - One stream runs at a time per recognizer. The stream claims the
+  ///   recognizer when it is listened to, not when this is called, so a
+  ///   stream nobody listens to holds nothing. If another stream holds it
+  ///   then, or the recognizer is closed, the stream ends at once with a
+  ///   [StateError]. The claim is released when the stream is done, ends
+  ///   with an error, or when the future of its subscription's `cancel`
+  ///   completes.
+  /// - [language] (Whisper only, as in `transcribe`) is checked and read when
+  ///   the stream is listened to; later changes to the recognizer's language
+  ///   do not affect it. One the model cannot take ends the stream with an
+  ///   [ArgumentError].
+  /// - `transcribe` calls made while a stream runs are not refused: they
+  ///   wait their turn on the same model, between two windows of the stream.
+  ///   The stream's audio waits while they run, and counts towards
+  ///   [TranscribeStreamOptions.maxBufferedAudio]: a batch call longer than
+  ///   that limit, on a live input, ends the stream with a
+  ///   [SpeechStreamOverrunException].
+  /// - Audio received but not analysed yet is held up to
+  ///   [TranscribeStreamOptions.maxBufferedAudio]; past it the stream ends
+  ///   with a [SpeechStreamOverrunException]. Audio is never dropped
+  ///   silently: a sample split across two chunks is joined, and only an odd
+  ///   byte left when the input ends (half a sample) is dropped.
+  /// - Pausing this stream pauses neither reading [pcm16kMono] nor the
+  ///   model: windows keep running and their updates wait in the stream
+  ///   until it resumes (all of them, without a cap: updates are small, but
+  ///   a stream paused for long holds every one), so a pause never causes
+  ///   an overrun.
+  /// - The stream ends after the input ends and the last update is out, with
+  ///   [TranscriptUpdate.endpoint] true. An input error ends it with that
+  ///   error. Closing the recognizer, or its worker ending, stops reading the
+  ///   input and ends the stream with a [StateError], never a silent done.
+  /// - Cancelling the subscription cancels the input and stops emitting at
+  ///   once; a model run already in native code finishes, its result is
+  ///   dropped, and the cancel future completes after it.
+  ///
+  /// Throws [ArgumentError] for [options] that cannot work (see
+  /// [TranscribeStreamOptions]).
+  Stream<TranscriptUpdate> transcribeStream(
+    Stream<Uint8List> pcm16kMono, {
+    String? language,
+    TranscribeStreamOptions options = const TranscribeStreamOptions(),
+  }) => Stream.error(
+    UnsupportedError('This speech-to-text model does not stream.'),
+  );
+
+  /// Finalises what the running stream has received so far, without ending
+  /// its input; for a voice activity detector's end of utterance.
+  ///
+  /// The first endpoint update ([TranscriptUpdate.endpoint] true) that
+  /// covers all audio received before this call confirms all of it; with no
+  /// new audio since the last update, that is an update with empty texts.
+  /// Completes after that update has been added to the stream, also while
+  /// its listener is paused (the update then waits in the stream). Calls
+  /// made before it completes share it.
+  ///
+  /// It acts on whichever stream holds the recognizer, so call it only from
+  /// the code that runs that stream: on the recognizer
+  /// `FlutterEdgeAi.getActiveStt` shares, another part of the app may own
+  /// the stream. Errors arrive in the returned future, never thrown at the
+  /// call: a [StateError] when no stream holds the recognizer (before the
+  /// stream is listened to), when the running stream's input has ended (it
+  /// keeps the recognizer until its last update is out, but has nothing
+  /// left to flush), and when the stream ends or fails before the flush is
+  /// done. Await it or handle its error: an error nobody handles is
+  /// reported as uncaught.
+  Future<void> flush() => Future.error(
+    StateError('flush: no transcribeStream is running on this recognizer'),
+  );
+
   /// See [InferenceModel.addCloseListener].
   void addCloseListener(void Function() listener);
 
@@ -1430,13 +1534,63 @@ abstract class SpeechRecognizer {
 /// Sibling of [SpeechRecognizer]. Note [sampleRate] is an intentional
 /// divergence: STT consumes caller-supplied audio, TTS produces it, so the
 /// caller must be told the rate to play it or wrap it in WAV.
+///
+/// Core may add members in a minor release, each with a default body: a
+/// class that extends this keeps compiling and inherits the default; one
+/// that implements it (a test fake, say) adds the member when it moves to
+/// that release.
 abstract class SpeechSynthesizer {
-  /// Synthesize [text] to 16-bit little-endian mono PCM at [sampleRate].
-  /// Batch (full text → full audio) for now; streaming is a follow-on.
+  /// Synthesize [text] to 16-bit little-endian mono PCM at [sampleRate], all
+  /// of it at once. [synthesizeStream] and [openTextStream] produce it chunk
+  /// by chunk, when [supportsStreaming].
   Future<Uint8List> synthesize(String text);
 
   /// Output sample rate, Hz.
   int get sampleRate;
+
+  /// Whether this model can stream: [synthesizeStream] and [openTextStream]
+  /// fail when it cannot.
+  bool get supportsStreaming => false;
+
+  /// The audio for [text], one [SpeechChunk] at a time as each is
+  /// synthesized.
+  ///
+  /// When ![supportsStreaming], the stream ends with an [UnsupportedError]
+  /// when it is listened to, before any other check.
+  ///
+  /// One stream ([synthesizeStream] or [openTextStream]) holds the
+  /// synthesizer at a time. This stream claims it when it is listened to; if
+  /// another holds it then, or the synthesizer is closed, it ends at once
+  /// with a [StateError]. The claim is released when the stream is done,
+  /// ends with an error, or when its cancel future completes. `synthesize`
+  /// calls made meanwhile wait their turn on the same model: for the step in
+  /// flight, never for the stream to end.
+  ///
+  /// The stream is single-subscription and synthesis runs only a few chunks
+  /// ahead of its listener. Cancelling the subscription stops synthesis at
+  /// the next step boundary (what a step is depends on the model: a clause,
+  /// or a whole phrase for a model that synthesizes one in a single run, so
+  /// this is no latency promise); the cancel future completes when it has
+  /// stopped. A synthesis failure ends the stream with its error; closing the
+  /// synthesizer ends it with a [StateError].
+  Stream<SpeechChunk> synthesizeStream(String text) => Stream.error(
+    UnsupportedError('This text-to-speech model does not stream.'),
+  );
+
+  /// A stream that takes its text in pieces, such as a language model's
+  /// tokens, and speaks each phrase as soon as it is complete.
+  ///
+  /// The returned stream claims the synthesizer at once: this throws
+  /// [UnsupportedError] when ![supportsStreaming], and [StateError] if
+  /// another stream holds it or the synthesizer is closed.
+  /// The claim is released when [SpeechTextStream.audio] is done or ends
+  /// with an error, or when [SpeechTextStream.cancel] (or the cancel of
+  /// [SpeechTextStream.audio]'s subscription) completes. **A text stream
+  /// dropped without [SpeechTextStream.close] or [SpeechTextStream.cancel]
+  /// holds the synthesizer until it is closed.** `synthesize` calls wait
+  /// only for the step in flight, as with [synthesizeStream].
+  SpeechTextStream openTextStream() =>
+      throw UnsupportedError('This text-to-speech model does not stream.');
 
   /// See [InferenceModel.addCloseListener].
   void addCloseListener(void Function() listener);

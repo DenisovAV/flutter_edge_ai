@@ -5,13 +5,14 @@
 > changes. See the [migration guide](https://flutteredge.ai/docs/migration).
 
 On-device speech for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai) — STT,
-TTS, and a `VoiceSession` voice loop — via the LiteRT C API + `dart:ffi`. Opt-in
-package: add it only if your app needs speech-to-text, text-to-speech, or a
-push-to-talk voice loop.
+TTS, voice activity detection and a `VoiceSession` voice loop — via the LiteRT C
+API + `dart:ffi`. Opt-in package: add it only if your app needs speech-to-text,
+text-to-speech, detecting speech in a microphone stream, or a push-to-talk voice
+loop.
 
 This package depends on `litertlm_dart`, which owns the shared `libLiteRtLm`
 native bundle and exposes the LiteRT C API bindings (`LiteRtBindings`) used here,
-and on `flutter_edge_ai_litertlm` (1.21.0 or later) for the catalog's NPU targets.
+and on `flutter_edge_ai_litertlm` (1.22.0 or later) for the catalog's NPU targets.
 
 ## Status
 
@@ -124,6 +125,50 @@ window, steady state over repeated transcriptions
   text. Run Matcha on the CPU: 6.9–8.0 s for a sentence of 3.4 s over three
   runs.
 
+### Streaming speech-to-text (Parakeet)
+
+Parakeet CTC also transcribes audio as it arrives: its recognizer's
+`streaming` is not null (it is null for moonshine and Whisper, whose
+`transcribeStream` fails with `UnsupportedError`).
+
+```dart
+final recognizer = await FlutterEdgeAi.getActiveStt();
+
+await for (final update in recognizer.transcribeStream(microphonePcm16kMono)) {
+  transcript.write(update.confirmedDelta); // final from here on
+  showTail(update.unconfirmed);            // may still change
+  if (update.endpoint) { /* the utterance is complete */ }
+}
+// At a voice activity detector's end of utterance: await recognizer.flush();
+```
+
+It runs the batch model over 5 s windows that overlap
+(`StreamingLatency.lowLatency`: a window every 1.25 s; `balanced`: every
+2.5 s) and merges their words by time, with the windowing and merging of
+LiteRT-LM Omni (`third_party/litert_lm_omni/`), with three changes to the
+merge measured on LibriSpeech. On 87 test-clean streams of about 60 s
+(93 min), fed in 100 ms chunks on a Mac CPU with
+`parakeet_ctc_0.6b_5s_i8.tflite`: 2.65% WER at `lowLatency` (0.13 s of
+compute per second of audio), 2.63% at `balanced` (0.08 s), against 5.33%
+for plain 5 s chunks. Those streams were used to tune the merge; on the
+next minute of each chapter (80 streams, 85 min), held out from it: 2.52%
+and 2.31%. Those numbers are the Mac CPU with the int8 build. On the Mac's
+Metal GPU the f32 build streams the example's 8.8 s clip in 0.66 s (int8
+does not load on the GPU, as on phones). `lowLatency` does four times the
+work of a batch transcription and `balanced` twice. On phone CPUs (int8,
+`example/integration_test/stt_streaming_realtime_test.dart`: 45 s fed at
+microphone pace) one 5 s window took 235 ms on a Galaxy S24 (SM8650) and
+661 ms on a Galaxy A34 (Dimensity 1080), and both presets kept up to the
+end, every sentence transcribed; a slower phone, or one throttled by heat,
+can fall behind at `lowLatency`, and the stream then ends with
+`SpeechStreamOverrunException`: `balanced` halves the work.
+Builds compiled for an NPU do not stream. One stream runs at a time;
+`transcribe` calls made meanwhile wait their turn. Audio that arrives faster
+than the model keeps up with is held up to
+`TranscribeStreamOptions.maxBufferedAudio` (10 s), then the stream fails with
+`SpeechStreamOverrunException`; raise it to stream a file faster than real
+time. Audio must already be 16 kHz mono (record at 16 kHz, or resample).
+
 ### Speech-to-text output language (Whisper)
 
 Whisper's shipped checkpoints are multilingual. The output language is one token
@@ -143,6 +188,60 @@ default `'en'`. The setting changes what the model WRITES, not what it hears —
 `'en'` on German audio returns an English translation, not an error. moonshine
 and Parakeet have no language token and throw `ArgumentError` rather than
 ignoring the value.
+
+## Voice activity detection
+
+`VoiceActivityDetector` finds speech in 16 kHz mono 16-bit PCM with
+[Silero VAD](https://github.com/snakers4/silero-vad) (v6.3, MIT), which ships
+with this package as a 1.25 MB asset: nothing to install or download. It runs
+on the CPU in a worker isolate of its own, so it never waits behind
+speech-to-text or blocks the UI isolate. Native platforms only.
+
+```dart
+final vad = await VoiceActivityDetector.create();
+await for (final event in vad.detect(microphonePcm16kMono)) {
+  switch (event) {
+    case VadSpeechStart(:final startSample): /* speech began */
+    case VadSpeechEnd(:final startSample, :final endSample, :final reason):
+      /* the utterance is pcm[2 * startSample, 2 * endSample) */
+  }
+}
+await vad.close();
+```
+
+Positions are sample indices from the first sample of the stream (16 kHz),
+with `start`/`end` getters as `Duration`s. A start is reported once the
+speech has lasted `VadOptions.minSpeech` (250 ms), timed back to where it
+began. A pause shorter than `minSilence` before that counts towards it, so
+the start can come up to (less than) `minSpeech + minSilence` plus two
+32 ms frames (914 ms by default) after the voice began: to hand the whole utterance to
+speech-to-text, keep that much audio, plus `speechPad` and one input chunk.
+An utterance ends after `minSilence` (600 ms) of silence, at `maxUtterance`
+(30 s), or when the input ends. The thresholds, the hysteresis
+and the padding follow Silero's reference iterator; all of them are
+`VadOptions` fields. `probabilities(pcm)` returns the raw speech probability
+of every 32 ms frame for a policy of your own. One `detect` stream or
+`probabilities` call holds the model at a time (a stream from when it is
+listened to); `close()` ends a running stream with a `StateError`.
+
+The model is copied once into the app's cache directory (kept out of
+iCloud and Android Auto Backup; a purge by the OS costs one copy at the next
+`create`), because LiteRT opens models by path, and checked against its
+SHA-256 there. That needs the Flutter binding (`rootBundle`,
+`path_provider`): in a plain Dart program or a background isolate without
+it, pass `create(modelPath:)` a copy of the `.tflite`. The asset is part of
+every app that depends on this package, web builds included (where it is
+never downloaded), whether or not the app uses the detector.
+
+Silero detects any voice, not only the user's. On LibriSpeech speech with
+known pauses (40 streams per condition, macOS CPU) it missed no utterance and
+started on no noise, in quiet and in white noise down to 10 dB SNR, and ended
+an utterance a median 0.62-0.68 s after the speech stopped (`minSilence`,
+0.6 s, counts from the end of the first silent 32 ms frame, as in Silero's
+iterator). With other talkers in the background, three
+at -15 dB or one at -10 dB, as a reply playing without echo cancellation
+would be, it stayed in speech for seconds at a time. Barge-in needs the microphone's echo
+cancellation, or the microphone off while the reply plays.
 
 ## Voice loop
 

@@ -123,3 +123,32 @@ bool liteRtLmFreshConversationEachTurn({
 }) =>
     backend == BackendKind.npu &&
     liteRtLmFreshConversationNpus.contains(npuVendor);
+
+/// Why `Engine.createSession` (and a session's clone) is refused on an engine
+/// loaded on [backend] ([npuVendor], [androidGpu] as for
+/// [liteRtLmOpenSessionBacking]); null where it is not. A session is a native
+/// context beside the engine's others, and two places were measured where
+/// several of them break: the PowerVR GPU (Pixel 11: two greedy
+/// conversations diverged) and the MediaTek NPU (MT6989: a context answers
+/// its second message empty, LiteRT-LM #4256), where a session cannot replay
+/// its history as a conversation does.
+String? liteRtLmSessionRefusal({
+  required BackendKind? backend,
+  NpuStack? npuVendor,
+  AndroidGpuFamily? androidGpu,
+}) {
+  if (backend == BackendKind.gpu && androidGpu == AndroidGpuFamily.powerVr) {
+    return 'Sessions are refused on the PowerVR GPU: several native contexts '
+        'on one engine were measured to diverge there (two greedy '
+        'conversations on a Pixel 11). Use a Conversation, which shares one '
+        'native context by replay on this GPU.';
+  }
+  if (backend == BackendKind.npu &&
+      liteRtLmFreshConversationNpus.contains(npuVendor)) {
+    return 'Sessions are refused on the MediaTek NPU: a native context there '
+        'answers its second message empty (LiteRT-LM #4256, measured on '
+        'MT6989). Use a Conversation, which replays its history in a fresh '
+        'context each turn on this NPU.';
+  }
+  return null;
+}

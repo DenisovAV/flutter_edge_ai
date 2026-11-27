@@ -49,8 +49,8 @@ Message _withImage(String text) => Message(
 void main() {
   setUp(() {
     installRuntime();
-    setOnPage('resolvedVisionBackend', 4);
-    setOnPage('resolvedAudioBackend', 3);
+    setOnPage('resolvedVisionBackend', backendId('GPU'));
+    setOnPage('resolvedAudioBackend', backendId('CPU'));
   });
   tearDown(removeRuntime);
 

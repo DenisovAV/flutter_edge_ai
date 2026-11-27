@@ -12,8 +12,10 @@
 #   - Internet access (Bazel auto-downloads QAIRT SDK ~500MB on first run)
 #     OR set LITERT_QAIRT_SDK=/path/to/qairt/<version> to use local copy.
 #     The version is whatever LiteRT's third_party/qairt/workspace.bzl pins at
-#     the derived LITERT_REF (2.50.0.260828 at the v0.18.0 pin) — a local SDK
-#     must be that same version.
+#     the derived LITERT_REF (2.51.1.261002 at the v0.20.0 pin). Android builds
+#     against a local 2.52.0 SDK instead, the runtime the hook fetches from
+#     Maven (see the per-target check below) — a local SDK must be the
+#     version that check names.
 #
 # Linux arm64 (TARGET=linux_arm64) builds natively on an arm64 Linux host — CI
 # runs it on ubuntu-22.04-arm, whose glibc sets the floor — with clang >= 15
@@ -75,7 +77,7 @@ fi
 #
 # Do NOT go back to a literal, and do NOT use LiteRT v2.1.1 or earlier — the
 # LiteRtDispatchApi struct has breaking ABI changes after it.
-LITERTLM_REF="${LITERTLM_REF:-7a03724cece417f1724c923b3d527b4319730841}"   # v0.19.1
+LITERTLM_REF="${LITERTLM_REF:-95df4c2a932b4917ace66fcfef6c154e8d2a6699}"   # v0.20.0
 LITERT_REF="${LITERT_REF:-}"
 if [ -z "$LITERT_REF" ]; then
   echo "Resolving LITERT_REF from LiteRT-LM $LITERTLM_REF WORKSPACE..."
@@ -130,7 +132,8 @@ else
 fi
 
 # 1. Clone or update LiteRT
-if [ -d "$LITERT_DIR/.git" ]; then
+# -e, not -d: in a git worktree of a LiteRT clone .git is a file.
+if [ -e "$LITERT_DIR/.git" ]; then
   echo ""
   echo "Updating $LITERT_DIR..."
   git -C "$LITERT_DIR" fetch origin
@@ -267,21 +270,31 @@ echo "QAIRT version: $QAIRT_VERSION"
 # script's job is keeping the two halves matched: the dispatch built here must
 # negotiate with that pinned runtime, so refuse to build against any other
 # QAIRT release.
-HOOK_QNN="$(sed -n "s/^const qnnRuntimeVersion = '\\(.*\\)';/\\1/p" \
-  "$SCRIPT_DIR/../../lib/src/hook/qnn_runtime.dart")"
+# Per target (decision D3): Android pairs the dispatch with the Maven runtime
+# (qnnRuntimeVersion), Linux arm64 with the QAIRT zip the hook reads its
+# libraries from (qairtBuild in lib/src/hook/qairt_linux.dart, compared on its
+# x.y.z, which is what sdk.yaml carries).
+if [ "$TARGET" = linux_arm64 ]; then
+  HOOK_SRC=qairt_linux.dart
+  HOOK_QNN="$(sed -n "s/^const qairtBuild = '\\([0-9]*\\.[0-9]*\\.[0-9]*\\)\\..*';/\\1/p" \
+    "$SCRIPT_DIR/../../lib/src/hook/qairt_linux.dart")"
+else
+  HOOK_SRC=qnn_runtime.dart
+  HOOK_QNN="$(sed -n "s/^const qnnRuntimeVersion = '\\(.*\\)';/\\1/p" \
+    "$SCRIPT_DIR/../../lib/src/hook/qnn_runtime.dart")"
+fi
 if [ -z "$QAIRT_VERSION" ] || [ -z "$HOOK_QNN" ]; then
   echo "ERROR: could not read the QAIRT version ('$QAIRT_VERSION') or the hook's" >&2
-  echo "       qnnRuntimeVersion ('$HOOK_QNN') — cannot prove the pair matches" >&2
+  echo "       $TARGET runtime release in $HOOK_SRC ('$HOOK_QNN') — cannot prove the pair matches" >&2
   exit 1
 fi
 if [ "$QAIRT_VERSION" != "$HOOK_QNN" ]; then
   echo "ERROR: LiteRT builds the dispatch against QAIRT $QAIRT_VERSION, but the hook" >&2
-  echo "       fetches qnn-runtime $HOOK_QNN. Bump qnnRuntimeVersion and" >&2
-  echo "       qnnRuntimeSha256 in lib/src/hook/qnn_runtime.dart to the matching" >&2
-  echo "       com.qualcomm.qti:qnn-runtime release first." >&2
+  echo "       fetches the $TARGET QNN runtime $HOOK_QNN (lib/src/hook/$HOOK_SRC)." >&2
+  echo "       Move that pin (version and sha256s) to the matching release first." >&2
   exit 1
 fi
-echo "  matches the hook's qnn-runtime $HOOK_QNN"
+echo "  matches the hook's $TARGET QNN runtime $HOOK_QNN ($HOOK_SRC)"
 
 # 5. Check 16 KB page alignment. Google Play rejects an APK in which any .so
 # has a PT_LOAD p_align below 16 KB. The dispatch is linked with

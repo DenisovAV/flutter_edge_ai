@@ -48,7 +48,7 @@ Future<void> registerTestEngines({int maxDownloadRetries = 3}) {
 }
 
 /// Gemma 4 E2B's GPU export (2026-11-11), the web build the registry pins
-/// (`gemma-4-e2b-it/web-gpu`): what @litert-lm/core 0.19.0 runs on the web.
+/// (`gemma-4-e2b-it/web-gpu`): what @litert-lm/core 0.20.0 runs on the web.
 const kWebGemma4E2bUrl =
     'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/cccc664ea93091c52eeb7867ad4e5466357e14f3/gemma-4-E2B-it-gpu.litertlm';
 

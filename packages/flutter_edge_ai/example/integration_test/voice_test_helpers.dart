@@ -4,7 +4,12 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart' show SpeechRecognizer;
+import 'package:flutter_edge_ai/flutter_edge_ai.dart'
+    show
+        SpeechRecognizer,
+        StreamingSttInfo,
+        TranscribeStreamOptions,
+        TranscriptUpdate;
 import 'package:path_provider/path_provider.dart';
 
 import 'local_model_file_io.dart' show macosStagedFilePath;
@@ -33,6 +38,20 @@ Future<String?> stagedModelPath(String filename) async {
 /// voice ITs exercise the LLM/tools/TTS path deterministically (real STT is
 /// covered by voice_loop_test.dart / stt_moonshine_test.dart).
 class FixedTranscriptRecognizer implements SpeechRecognizer {
+  @override
+  StreamingSttInfo? get streaming => null;
+
+  @override
+  Stream<TranscriptUpdate> transcribeStream(
+    Stream<Uint8List> pcm16kMono, {
+    String? language,
+    TranscribeStreamOptions options = const TranscribeStreamOptions(),
+  }) => Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  Future<void> flush() =>
+      Future.error(StateError('flush: no transcribeStream is running'));
+
   FixedTranscriptRecognizer(this.transcript);
 
   final String transcript;

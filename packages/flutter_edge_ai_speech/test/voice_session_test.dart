@@ -3,7 +3,14 @@ import 'dart:typed_data';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'
-    show SpeechRecognizer, SpeechSynthesizer;
+    show
+        SpeechChunk,
+        SpeechRecognizer,
+        SpeechSynthesizer,
+        SpeechTextStream,
+        StreamingSttInfo,
+        TranscribeStreamOptions,
+        TranscriptUpdate;
 import 'package:flutter_edge_ai_speech/src/voice/voice_event.dart';
 import 'package:flutter_edge_ai_speech/src/voice/voice_responder.dart';
 import 'package:flutter_edge_ai_speech/src/voice/voice_session.dart';
@@ -11,6 +18,20 @@ import 'package:flutter_test/flutter_test.dart';
 
 // ---- Fakes ----
 class _FakeRecognizer implements SpeechRecognizer {
+  @override
+  StreamingSttInfo? get streaming => null;
+
+  @override
+  Stream<TranscriptUpdate> transcribeStream(
+    Stream<Uint8List> pcm16kMono, {
+    String? language,
+    TranscribeStreamOptions options = const TranscribeStreamOptions(),
+  }) => Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  Future<void> flush() =>
+      Future.error(StateError('flush: no transcribeStream is running'));
+
   _FakeRecognizer(this.text);
   final String text;
   int calls = 0;
@@ -30,6 +51,17 @@ class _FakeRecognizer implements SpeechRecognizer {
 }
 
 class _FakeSynth implements SpeechSynthesizer {
+  @override
+  bool get supportsStreaming => false;
+
+  @override
+  Stream<SpeechChunk> synthesizeStream(String text) =>
+      Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  SpeechTextStream openTextStream() =>
+      throw UnsupportedError('this model does not stream');
+
   _FakeSynth({this.gate});
   final Completer<void>? gate; // if set, synthesize blocks until completed
   int calls = 0;
@@ -52,6 +84,17 @@ class _FakeSynth implements SpeechSynthesizer {
 /// boundaries) and returns a distinct non-empty PCM per call. Optionally gates
 /// (blocks) and/or throws when a clause contains [throwOn].
 class _RecordingSynth implements SpeechSynthesizer {
+  @override
+  bool get supportsStreaming => false;
+
+  @override
+  Stream<SpeechChunk> synthesizeStream(String text) =>
+      Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  SpeechTextStream openTextStream() =>
+      throw UnsupportedError('this model does not stream');
+
   _RecordingSynth({this.gate, this.throwOn, this.delay, this.gateFrom});
   final Completer<void>? gate;
   final String? throwOn;
@@ -1030,6 +1073,20 @@ void main() {
 }
 
 class _ThrowingRecognizer implements SpeechRecognizer {
+  @override
+  StreamingSttInfo? get streaming => null;
+
+  @override
+  Stream<TranscriptUpdate> transcribeStream(
+    Stream<Uint8List> pcm16kMono, {
+    String? language,
+    TranscribeStreamOptions options = const TranscribeStreamOptions(),
+  }) => Stream.error(UnsupportedError('this model does not stream'));
+
+  @override
+  Future<void> flush() =>
+      Future.error(StateError('flush: no transcribeStream is running'));
+
   @override
   String? language;
 

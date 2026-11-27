@@ -114,7 +114,7 @@ dependency_overrides:
 dev_dependencies:
   # The web drive suites reach litertlm_dart's web runtime directly (the
   # runtime version, the raw EmbeddingEngine and the CPU record).
-  litertlm_dart: ^0.19.1
+  litertlm_dart: ^0.20.0
   # The web store integration test opens the same IndexedDB VFS the store
   # uses, to plant a corpus the store cannot read.
   sqlite3: ^3.6.0

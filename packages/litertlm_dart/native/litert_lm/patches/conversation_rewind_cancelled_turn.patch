@@ -1,10 +1,20 @@
 diff --git a/c/conversation.cc b/c/conversation.cc
-index 95f9a6d..daea9e4 100644
+index 1e1f23a4..42c2f74d 100644
 --- a/c/conversation.cc
 +++ b/c/conversation.cc
-@@ -44,9 +44,36 @@
+@@ -15,7 +15,9 @@
+ #include "c/conversation.h"
  
- namespace {
+ #include <cstddef>
++#include <cstdint>
+ #include <memory>
++#include <mutex>  // NOLINT
+ #include <optional>
+ #include <string>
+ #include <utility>
+@@ -54,9 +56,36 @@ using ::litert::lm::c::IsValidEngine;
+ using ::litert::lm::c::IsValidSessionConfig;
+ using ::litert::lm::c::RawEnumValue;
  
 +// flutter_edge_ai (patch_c_api.sh section 16): numbers a send and marks it
 +// running; EndTurn records how it ended unless a later send has begun.
@@ -40,33 +50,44 @@ index 95f9a6d..daea9e4 100644
 +    }
      if (!message.ok()) {
        std::string error_str = message.status().ToString();
-       LiteRtLmStreamChunk chunk;
-@@ -618,8 +645,10 @@ LiteRtLmStatusCode litert_lm_conversation_send_message(
+       EmitStreamChunk(callback, user_data, /*text=*/nullptr, /*is_final=*/true,
+@@ -703,12 +732,14 @@ LiteRtLmStatusCode litert_lm_conversation_send_message(
    OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
        conversation->conversation.get(), extra_context, optional_args);
  
+-  LITERT_LM_C_ASSIGN_OR_RETURN(
+-      litert::lm::Message response,
 +  const uint64_t turn = BeginTurn(conversation);
-   auto response = conversation->conversation->SendMessage(
-       json_message, std::move(litert_lm_optional_args));
++  absl::StatusOr<litert::lm::Message> response =
+       conversation->conversation->SendMessage(
+-          json_message, std::move(litert_lm_optional_args)));
++          json_message, std::move(litert_lm_optional_args));
 +  EndTurn(conversation, turn, response.status());
-   if (!response.ok()) {
-     ABSL_LOG(ERROR) << "Failed to send message: " << response.status();
-     return litert::lm::c::ToCStatus(response.status());
-@@ -666,9 +695,12 @@ LiteRtLmStatusCode litert_lm_conversation_send_message_stream(
++  LITERT_LM_C_RETURN_IF_ERROR(response.status());
+   auto c_response = std::make_unique<LiteRtLmJsonResponse>();
+-  c_response->json_string = response.dump();
++  c_response->json_string = response->dump();
+   *out_response = c_response.release();
+   return kLiteRtLmStatusOk;
+ }
+@@ -742,9 +773,13 @@ LiteRtLmStatusCode litert_lm_conversation_send_message_stream(
    litert::lm::OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
        conversation->conversation.get(), extra_context, optional_args);
  
-+  const uint64_t turn = BeginTurn(conversation);
-   absl::Status status = conversation->conversation->SendMessageAsync(
+-  LITERT_LM_C_RETURN_IF_ERROR(conversation->conversation->SendMessageAsync(
 -      json_message, CreateConversationCallback(callback, callback_data),
+-      std::move(litert_lm_optional_args)));
++  const uint64_t turn = BeginTurn(conversation);
++  absl::Status status = conversation->conversation->SendMessageAsync(
 +      json_message,
 +      CreateConversationCallback(callback, callback_data, conversation, turn),
-       std::move(litert_lm_optional_args));
++      std::move(litert_lm_optional_args));
 +  if (!status.ok()) EndTurn(conversation, turn, status);
++  LITERT_LM_C_RETURN_IF_ERROR(status);
+   return kLiteRtLmStatusOk;
+ }
  
-   if (!status.ok()) {
-     ABSL_LOG(ERROR) << "Failed to start message stream: " << status;
-@@ -736,6 +768,66 @@ LiteRtLmStatusCode litert_lm_conversation_cancel_process(
+@@ -792,6 +827,73 @@ LiteRtLmStatusCode litert_lm_conversation_cancel_process(
    return kLiteRtLmStatusOk;
  }
  
@@ -76,9 +97,8 @@ index 95f9a6d..daea9e4 100644
 +    const LiteRtLmConversationOptionalArgs* optional_args,
 +    int* out_last_turn_end) {
 +  if (out_last_turn_end) *out_last_turn_end = kLiteRtLmTurnEndNone;
-+  if (!conversation || !conversation->conversation) {
-+    return litert::lm::c::ReturnError(absl::StatusCode::kInvalidArgument,
-+                                      "Invalid conversation.");
++  if (!IsValidConversation(conversation)) {
++    return kLiteRtLmStatusInvalidArgument;
 +  }
 +  std::optional<litert::lm::Message> stopped_exchange;
 +  if (messages_json) {
@@ -95,7 +115,17 @@ index 95f9a6d..daea9e4 100644
 +  // listening without waiting), and its callbacks may still be queued: cancel
 +  // again, then wait until every task has ended. Only then is the recorded end
 +  // final, and only then has the cancel callback removed the stopped message.
-+  conversation->conversation->CancelProcess();
++  // A send that already ended by itself is not cancelled: since v0.20.0 its
++  // channel-content refill may still run in the background after the end was
++  // reported (upstream c3724b0d), and cancelling that refill would poison the
++  // session this call is meant to leave as it is.
++  bool ended_by_itself;
++  {
++    std::lock_guard<std::mutex> lock(conversation->turn_mutex);
++    ended_by_itself = conversation->last_turn_end == kLiteRtLmTurnEndNone ||
++                      conversation->last_turn_end == kLiteRtLmTurnEndCompleted;
++  }
++  if (!ended_by_itself) conversation->conversation->CancelProcess();
 +  absl::Status waited = conversation->conversation->WaitUntilDone();
 +  int end;
 +  {
@@ -103,9 +133,7 @@ index 95f9a6d..daea9e4 100644
 +    end = waited.ok() ? conversation->last_turn_end : kLiteRtLmTurnEndRunning;
 +  }
 +  if (out_last_turn_end) *out_last_turn_end = end;
-+  if (!waited.ok()) {
-+    return litert::lm::c::ToCStatus(waited);
-+  }
++  LITERT_LM_C_RETURN_IF_ERROR(waited);
 +  if (end == kLiteRtLmTurnEndNone || end == kLiteRtLmTurnEndCompleted) {
 +    return kLiteRtLmStatusOk;
 +  }
@@ -132,12 +160,12 @@ index 95f9a6d..daea9e4 100644
 +
  LiteRtLmStatusCode litert_lm_conversation_wait_until_done(
      LiteRtLmConversation* conversation) {
-   if (!conversation || !conversation->conversation) {
+   if (!IsValidConversation(conversation)) {
 diff --git a/c/conversation.h b/c/conversation.h
-index 887e90f..6e61512 100644
+index 66f13601..71ca8cfa 100644
 --- a/c/conversation.h
 +++ b/c/conversation.h
-@@ -651,6 +651,42 @@ LITERT_LM_C_API_EXPORT
+@@ -674,6 +674,42 @@ LITERT_LM_C_API_EXPORT
  LiteRtLmStatusCode litert_lm_conversation_cancel_process(
      LiteRtLmConversation* conversation);
  
@@ -181,7 +209,7 @@ index 887e90f..6e61512 100644
  // session to complete.
  //
 diff --git a/c/conversation_internal.h b/c/conversation_internal.h
-index 6bb3ce5..de1a879 100644
+index 497b81a8..02f37142 100644
 --- a/c/conversation_internal.h
 +++ b/c/conversation_internal.h
 @@ -15,7 +15,9 @@
@@ -194,7 +222,7 @@ index 6bb3ce5..de1a879 100644
  #include <optional>
  #include <string>
  
-@@ -43,6 +45,14 @@ struct LiteRtLmConversationOptionalArgs {
+@@ -47,6 +49,14 @@ struct LiteRtLmConversationOptionalArgs {
  };
  
  struct LiteRtLmConversation {
@@ -210,10 +238,10 @@ index 6bb3ce5..de1a879 100644
    // This field stores the result of the last call to
    // `litert_lm_conversation_render_message_to_string`. This ties the lifetime
 diff --git a/runtime/conversation/conversation.cc b/runtime/conversation/conversation.cc
-index df64d37..1b04ee7 100644
+index 4dcd8e15..f1f1b227 100644
 --- a/runtime/conversation/conversation.cc
 +++ b/runtime/conversation/conversation.cc
-@@ -66,6 +66,9 @@ namespace litert::lm {
+@@ -71,6 +71,9 @@ namespace litert::lm {
  namespace {
  
  constexpr absl::string_view kChannelsKey = "channels";
@@ -223,7 +251,7 @@ index df64d37..1b04ee7 100644
  constexpr absl::string_view kChannelContentCheckpoint =
      "channel_content_checkpoint";
  
-@@ -599,6 +602,11 @@ absl::Status Conversation::SendMessageAsync(
+@@ -765,6 +768,11 @@ absl::Status Conversation::SendMessageAsync(
    {
      absl::MutexLock lock(history_mutex_);  // NOLINT
      prev_is_appending_message = is_appending_message_;
@@ -235,7 +263,7 @@ index df64d37..1b04ee7 100644
    }
    ABSL_ASSIGN_OR_RETURN(std::string single_turn_text,
                          GetSingleTurnText(message, optional_args));
-@@ -815,7 +823,13 @@ absl::Status Conversation::SendMessageAsync(
+@@ -971,7 +979,13 @@ absl::Status Conversation::SendMessageAsync(
            CreateInternalCallback(
                *model_data_processor_, std::move(data_processor_args),
                config_.GetChannels(), std::move(wrapped_user_callback),
@@ -250,16 +278,21 @@ index df64d37..1b04ee7 100644
                open_channel_name, config_.return_error_on_max_tokens_reached(),
                config_.stream_tool_calls(),
                config_.stream_tool_calls_channel_name()));
-@@ -834,6 +848,20 @@ absl::Status Conversation::SendMessageAsync(
+@@ -990,6 +1004,25 @@ absl::Status Conversation::SendMessageAsync(
      return absl::OkStatus();
    }
  
 +  // flutter_edge_ai section 16: the step RewindCancelledTurn() returns to.
-+  // The previous turn's refill has ended by now: its completion is reported
-+  // only after it. Not fatal: a turn without it runs as before and cannot be
-+  // rewound.
-+  if (absl::Status saved = session_->SaveCheckpoint(kTurnStartCheckpoint);
-+      saved.ok()) {
++  // SaveCheckpoint reads the step on this thread, and since v0.20.0 the
++  // previous turn's channel-content refill runs in the background after its
++  // completion was reported, so wait for it first, as upstream does before its
++  // own pre-prefill checkpoint above. Not fatal: a turn without the checkpoint
++  // runs as before and cannot be rewound.
++  absl::Status saved = config_.filter_channel_content_from_kv_cache()
++                           ? session_->WaitUntilDone()
++                           : absl::OkStatus();
++  if (saved.ok()) saved = session_->SaveCheckpoint(kTurnStartCheckpoint);
++  if (saved.ok()) {
 +    absl::MutexLock lock(history_mutex_);
 +    turn_checkpoint_saved_ = true;
 +    turn_checkpoint_message_index_ = checkpoint_message_index_;
@@ -271,7 +304,7 @@ index df64d37..1b04ee7 100644
    ABSL_ASSIGN_OR_RETURN(
        auto prefill_task_controller,
        session_->RunPrefillAsync(
-@@ -930,6 +958,108 @@ absl::Status Conversation::RunTextScoringAsync(
+@@ -1086,6 +1119,108 @@ absl::Status Conversation::RunTextScoringAsync(
    return absl::OkStatus();
  }
  
@@ -378,13 +411,13 @@ index df64d37..1b04ee7 100644
 +}
 +
  absl::StatusOr<int> Conversation::GetTokenCount() const {
-   return session_->GetCurrentStep();
- }
+   // Do NOT wait for in-flight session tasks here. Clients call this from
+   // inside `SendMessageAsync` callbacks (e.g. on the final message), which run
 diff --git a/runtime/conversation/conversation.h b/runtime/conversation/conversation.h
-index ebec4e7..8610fa9 100644
+index 986fa1a6..a202c381 100644
 --- a/runtime/conversation/conversation.h
 +++ b/runtime/conversation/conversation.h
-@@ -665,6 +665,28 @@ class Conversation {
+@@ -688,6 +688,28 @@ class Conversation {
    // on the same Conversation will fail.
    void CancelProcess();
  
@@ -413,7 +446,7 @@ index ebec4e7..8610fa9 100644
    // Clones the conversation. The cloned conversation will be independent of the
    // original conversation, including the history, state, etc.
    //
-@@ -837,6 +859,22 @@ class Conversation {
+@@ -865,6 +887,22 @@ class Conversation {
        std::vector<std::unique_ptr<Engine::Session::TaskController>>>
        task_controllers_ ABSL_GUARDED_BY(task_controllers_mutex_);
  

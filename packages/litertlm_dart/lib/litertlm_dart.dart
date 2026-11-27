@@ -14,7 +14,13 @@
 library;
 
 export 'src/api/backend.dart'
-    show Backend, CpuBackend, GpuBackend, NpuBackend, SpeculativeDecodingMode;
+    show
+        Backend,
+        CpuBackend,
+        GpuBackend,
+        NpuBackend,
+        SpeculativeDecodingConfig,
+        SpeculativeDecodingMode;
 export 'src/api/benchmark.dart'
     if (dart.library.js_interop) 'src/web/native_only_web.dart'
     show benchmark;
@@ -25,12 +31,19 @@ export 'src/api/config.dart'
         ConversationConfig,
         EngineConfig,
         JsonResponseFormat,
+        LoraConfig,
         NoRepeatNgramConfig,
         RegexResponseFormat,
         RepetitionPenaltyConfig,
         ResponseFormat,
         SamplerConfig,
         ThinkingConfig,
+        ToolChoice,
+        ToolChoiceAllowedTools,
+        ToolChoiceAuto,
+        ToolChoiceForcedFunction,
+        ToolChoiceNone,
+        ToolChoiceRequired,
         maxThinkingTokenBudget;
 export 'src/api/conversation.dart'
     show
@@ -46,6 +59,14 @@ export 'src/api/engine.dart'
     if (dart.library.js_interop) 'src/web/engine_web.dart'
     show Engine;
 export 'src/api/log.dart' show LiteRtLmLog;
+export 'src/api/session.dart'
+    show
+        AudioInputData,
+        ImageInputData,
+        InputData,
+        Session,
+        SessionConfig,
+        TextInputData;
 export 'src/api/message.dart'
     show
         AudioBytesContent,
@@ -78,7 +99,8 @@ export 'src/embedder/embedder_types.dart'
         EmbedderInfo,
         EmbedderInputTooLongException,
         EmbedderLoadException,
-        EmbedderModality;
+        EmbedderModality,
+        EmbeddingOptions;
 export 'src/runtime/errors.dart'
     show
         ConstraintUnsupportedException,

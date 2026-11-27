@@ -1,0 +1,200 @@
+flutter_edge_ai (patch_c_api.sh section 31): FunctionGemma's tool-call
+arguments in the order the tool declares them, under LLGuidance.
+Upstream 9235f915 makes the LLGuidance FC grammar put a tool call's arguments
+in alphabetical order (Jinja dictsort), which is what Gemma 4's template
+renders. FunctionGemma's templates render them with `.items()`, the declared
+order, and FunctionGemma 270M writes them in that order: forced into
+alphabetical order it picked worse values (CPU greedy 18/26 vs 22/26 under
+the FST provider, family defaults 43/65 vs 54/65; dropped phone_number,
+swapped message/title, extra calls; macOS M5 Pro, 2026-11-25). This adds a
+declared-order mode to the FC grammar and turns it on for FunctionGemma only;
+Gemma 4 keeps alphabetical order.
+
+diff --git a/runtime/components/constrained_decoding/llg_fc_tool_calls.cc b/runtime/components/constrained_decoding/llg_fc_tool_calls.cc
+index 9cf2468d..103a62c6 100644
+--- a/runtime/components/constrained_decoding/llg_fc_tool_calls.cc
++++ b/runtime/components/constrained_decoding/llg_fc_tool_calls.cc
+@@ -36,6 +36,23 @@ namespace {
+ std::string GenerateFcValueRule(const nlohmann::ordered_json& prop_schema,
+                                 bool is_req, absl::string_view rule_prefix,
+                                 std::vector<std::string>& tool_blocks);
++std::string GenerateFcValueRuleDeclaredOrder(
++    const nlohmann::ordered_json& prop_schema, bool is_req,
++    absl::string_view rule_prefix, std::vector<std::string>& tool_blocks);
++
++// flutter_edge_ai (patch_c_api.sh section 31): FunctionGemma writes a tool
++// call's arguments in the order the schema declares them, not sorted.
++ToolFormatConfig GetFcConfigDeclaredOrder() {
++  return ToolFormatConfig{
++      .pair_separator = ":",
++      .rule_suffix = "-object",
++      .start_wrap = "{",
++      .end_wrap = "}",
++      .generate_value_rule = GenerateFcValueRuleDeclaredOrder,
++      .alphabetical_properties = false,
++      .declared_order_properties = true,
++  };
++}
+ 
+ ToolFormatConfig GetFcConfig() {
+   // See `SanitizeLarkRuleName` for why `-object` uses a hyphen separator.
+@@ -51,9 +68,10 @@ ToolFormatConfig GetFcConfig() {
+   };
+ }
+ 
+-std::string GenerateFcValueRule(const nlohmann::ordered_json& prop_schema,
+-                                bool /*is_req*/, absl::string_view rule_prefix,
+-                                std::vector<std::string>& tool_blocks) {
++std::string GenerateFcValueRuleWith(const ToolFormatConfig& config,
++                                    const nlohmann::ordered_json& prop_schema,
++                                    absl::string_view rule_prefix,
++                                    std::vector<std::string>& tool_blocks) {
+   std::string rule;
+   if (prop_schema.contains("enum") && prop_schema["enum"].is_array()) {
+     std::vector<std::string> enum_vals;
+@@ -71,7 +89,7 @@ std::string GenerateFcValueRule(const nlohmann::ordered_json& prop_schema,
+   }
+ 
+   if (rule.empty()) {
+-    rule = AppendTypeOrUnionRules(prop_schema, rule_prefix, GetFcConfig(),
++    rule = AppendTypeOrUnionRules(prop_schema, rule_prefix, config,
+                                   /*map_key=*/"IDENTIFIER",
+                                   /*fallback_rule=*/"json_value", tool_blocks);
+   }
+@@ -90,6 +108,20 @@ std::string GenerateFcValueRule(const nlohmann::ordered_json& prop_schema,
+   return rule;
+ }
+ 
++std::string GenerateFcValueRule(const nlohmann::ordered_json& prop_schema,
++                                bool /*is_req*/, absl::string_view rule_prefix,
++                                std::vector<std::string>& tool_blocks) {
++  return GenerateFcValueRuleWith(GetFcConfig(), prop_schema, rule_prefix,
++                                 tool_blocks);
++}
++
++std::string GenerateFcValueRuleDeclaredOrder(
++    const nlohmann::ordered_json& prop_schema, bool /*is_req*/,
++    absl::string_view rule_prefix, std::vector<std::string>& tool_blocks) {
++  return GenerateFcValueRuleWith(GetFcConfigDeclaredOrder(), prop_schema,
++                                 rule_prefix, tool_blocks);
++}
++
+ std::string GetFcGrammar(const LlgConstraintsOptions& options) {
+   return absl::StrFormat(R"(
+ fc_esc_open: %s
+@@ -143,7 +175,11 @@ absl::StatusOr<std::string> CreateLarkGrammarForFcToolCalls(
+     }
+     std::string tool_name = tool["name"].get<std::string>();
+     tool_names.push_back(tool_name);
+-    AppendToolRules(tool, tool_name, GetFcConfig(), tool_blocks);
++    AppendToolRules(tool, tool_name,
++                    options.fc_declared_argument_order
++                        ? GetFcConfigDeclaredOrder()
++                        : GetFcConfig(),
++                    tool_blocks);
+   }
+ 
+   const std::vector<std::string>& allowed_names =
+diff --git a/runtime/components/constrained_decoding/llg_tool_call_utils.cc b/runtime/components/constrained_decoding/llg_tool_call_utils.cc
+index 8921eb7c..efe2aa21 100644
+--- a/runtime/components/constrained_decoding/llg_tool_call_utils.cc
++++ b/runtime/components/constrained_decoding/llg_tool_call_utils.cc
+@@ -177,7 +177,8 @@ namespace {
+ std::string GetAlphabeticalPropertiesBody(
+     const std::vector<std::string>& required_props,
+     const std::vector<std::string>& optional_props,
+-    absl::string_view sanitized_prefix) {
++    absl::string_view sanitized_prefix,
++    const std::vector<std::string>* declared_order = nullptr) {
+   struct Property {
+     std::string sort_key;
+     std::string name;
+@@ -207,9 +208,20 @@ std::string GetAlphabeticalPropertiesBody(
+   }
+   // Jinja's dictsort compares the names in lowercase. Names that are the same
+   // in lowercase are compared as they are, so the order is always the same.
+-  absl::c_sort(properties, [](const Property& a, const Property& b) {
+-    return std::tie(a.sort_key, a.name) < std::tie(b.sort_key, b.name);
+-  });
++  if (declared_order != nullptr) {
++    // flutter_edge_ai (section 31): the schema's own order of the properties.
++    const auto position = [&](const std::string& name) {
++      return static_cast<size_t>(
++          absl::c_find(*declared_order, name) - declared_order->begin());
++    };
++    absl::c_stable_sort(properties, [&](const Property& a, const Property& b) {
++      return position(a.name) < position(b.name);
++    });
++  } else {
++    absl::c_sort(properties, [](const Property& a, const Property& b) {
++      return std::tie(a.sort_key, a.name) < std::tie(b.sort_key, b.name);
++    });
++  }
+ 
+   if (properties.empty()) {
+     return R"("")";
+@@ -267,6 +279,16 @@ std::string AppendSchemaObjectRules(const nlohmann::ordered_json& schema,
+   if (config.alphabetical_properties) {
+     body = GetAlphabeticalPropertiesBody(required_props, optional_props,
+                                          sanitized_prefix);
++  } else if (config.declared_order_properties) {
++    std::vector<std::string> declared_order;
++    if (schema.contains("properties") && schema["properties"].is_object()) {
++      for (const auto& [prop_name, prop_schema] :
++           schema["properties"].items()) {
++        declared_order.push_back(prop_name);
++      }
++    }
++    body = GetAlphabeticalPropertiesBody(required_props, optional_props,
++                                         sanitized_prefix, &declared_order);
+   } else {
+     std::vector<std::string> sequence;
+     AppendRequiredProperties(required_props, sanitized_prefix, sequence);
+diff --git a/runtime/components/constrained_decoding/llg_tool_call_utils.h b/runtime/components/constrained_decoding/llg_tool_call_utils.h
+index 26aa13e9..5774135c 100644
+--- a/runtime/components/constrained_decoding/llg_tool_call_utils.h
++++ b/runtime/components/constrained_decoding/llg_tool_call_utils.h
+@@ -64,6 +64,13 @@ struct ToolFormatConfig {
+   // first, in the order of "required", followed by the optional ones in any
+   // order.
+   bool alphabetical_properties = false;
++  // flutter_edge_ai (patch_c_api.sh section 31): if true (and
++  // alphabetical_properties is false), the properties must be in the order
++  // the schema declares them, whether they're required or optional; each
++  // optional property can be left out. FunctionGemma's chat templates render
++  // a tool call's arguments with `.items()` (insertion order), and the model
++  // writes them in the declared order.
++  bool declared_order_properties = false;
+   bool quote_keys = false;
+ };
+ 
+diff --git a/runtime/components/constrained_decoding/llguidance_schema_utils.h b/runtime/components/constrained_decoding/llguidance_schema_utils.h
+index a8698144..2a0d5ce3 100644
+--- a/runtime/components/constrained_decoding/llguidance_schema_utils.h
++++ b/runtime/components/constrained_decoding/llguidance_schema_utils.h
+@@ -66,6 +66,11 @@ struct LlgConstraintsOptions {
+   // the provided tools. If empty, all provided tools are available. Applies to
+   // every mode that allows tool calls; kTextOnly ignores it.
+   std::vector<std::string> allowed_function_names;
++
++  // flutter_edge_ai (patch_c_api.sh section 31): in the FC format, a tool
++  // call's arguments in the order the tool's schema declares them instead of
++  // alphabetical order (FunctionGemma).
++  bool fc_declared_argument_order = false;
+ };
+ 
+ // Converts tools to a Lark grammar string.
+diff --git a/runtime/conversation/model_data_processor/function_gemma_data_processor.cc b/runtime/conversation/model_data_processor/function_gemma_data_processor.cc
+index cb112988..eb703c16 100644
+--- a/runtime/conversation/model_data_processor/function_gemma_data_processor.cc
++++ b/runtime/conversation/model_data_processor/function_gemma_data_processor.cc
+@@ -369,6 +369,9 @@ FunctionGemmaDataProcessor::CreateConstraint(
+ #else
+   LlgConstraintsOptions options;
+   options.funcall_format = FuncallFormat::kFc;
++  // flutter_edge_ai (patch_c_api.sh section 31): FunctionGemma writes the
++  // arguments in the order the tool declares them.
++  options.fc_declared_argument_order = true;
+   options.code_fence_start = config_.code_fence_start;
+   options.code_fence_end = config_.code_fence_end;
+   options.open_quote = config_.open_quote;

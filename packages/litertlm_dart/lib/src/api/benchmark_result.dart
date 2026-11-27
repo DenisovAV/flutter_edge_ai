@@ -26,10 +26,11 @@ final class LlmBenchmarkResult {
   });
 
   /// The engine's load as LiteRT-LM timed it (its `total_init_time`), the
-  /// number Gallery reports; [Duration.zero] when it reported none. It can
-  /// exceed [createTime]: LiteRT-LM counts init phases that end after the
-  /// engine is returned (Gemma 4 E2B on a Mac CPU, empty cache directory:
-  /// 1.6 s, with [createTime] 1.0 s).
+  /// number Gallery reports; [Duration.zero] when it reported none. From
+  /// LiteRT-LM 0.20 it covers the engine creation only; 0.19 also counted
+  /// init phases that ended after the engine was returned, so it could exceed
+  /// [createTime] (Gemma 4 E2B on a Mac CPU, empty cache directory: 1.6 s,
+  /// with [createTime] 1.0 s).
   final Duration initTime;
 
   /// `Engine.create` measured in Dart from its turn among the process's

@@ -64,13 +64,13 @@ void main() {
     addTearDown(removeRuntime);
     final engine = await webEngine();
     _eval('''window.__deleted = false; window.__finishDelete = null;
-      window.Engine.create = ((create) => async (s) => {
+      window.litertLm.Engine.create = ((create) => async (s) => {
         const e = await create(s);
         e.delete = () => new Promise((resolve) => {
           window.__finishDelete = () => { window.__deleted = true; resolve(); };
         });
         return e;
-      })(window.Engine.create);''');
+      })(window.litertLm.Engine.create);''');
     final waiting = await webEngine();
     var closed = false;
     final closing = waiting.close().then((_) => closed = true);
@@ -104,7 +104,7 @@ void main() {
         Object.defineProperty(performance, 'getEntriesByType', {
           configurable: true,
           value: (type) => type !== 'resource' ? [] : [
-            {name: 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm'},
+            {name: 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm'},
             {name: 'https://example.com/app.js'},
           ],
         });''');
@@ -115,7 +115,16 @@ void main() {
     });
 
     test('are read from the resource URLs', () {
-      expect(web.liteRtLmWebFetchedVersions(), {'0.20.0'});
+      expect(web.liteRtLmWebFetchedVersions(), {'0.19.0'});
+    });
+
+    test('keep a prerelease whole', () {
+      _eval('''Object.defineProperty(performance, 'getEntriesByType', {
+          configurable: true,
+          value: (type) => type !== 'resource' ? [] : [{name:
+            'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.21.0-nightly.20261125/+esm'}],
+        });''');
+      expect(web.liteRtLmWebFetchedVersions(), {'0.21.0-nightly.20261125'});
     });
 
     test('another than the pinned one is printed once per page', () async {
@@ -127,7 +136,7 @@ void main() {
       expect(printed, hasLength(1));
       expect(
         printed.single,
-        allOf(contains('0.20.0'), contains(web.liteRtLmWebRuntimeVersion)),
+        allOf(contains('0.19.0'), contains(web.liteRtLmWebRuntimeVersion)),
       );
     });
   });

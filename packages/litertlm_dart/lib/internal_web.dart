@@ -18,7 +18,8 @@ export 'src/web/engine_web.dart'
         Engine,
         createConversationWithDefault,
         createWebEngine,
-        webConversationMembers;
+        webConversationMembers,
+        webEngineMembers;
 export 'src/web/litert_lm_js.dart'
     show
         JsLiteRtLmConversation,
@@ -28,3 +29,4 @@ export 'src/web/litert_lm_js.dart'
         noteOtherWebRuntimeVersion,
         noteWebDeleteFailure;
 export 'src/web/web_conversation_handle.dart' show WebConversationHandle;
+export 'src/web/web_session.dart' show webResponsesMembers, webSessionMembers;

@@ -61,7 +61,7 @@ enum Model implements InferenceModelInterface {
   // web-only MediaPipe (.task) twins live further down as *_web.
 
   // Gemma 4 E2B LiteRT-LM. On web, the GPU export (`-gpu.litertlm` of
-  // 2026-11-11) via @litert-lm/core 0.19.0, with images and audio; 2.34 GB,
+  // 2026-11-11) via @litert-lm/core 0.20.0, with images and audio; 2.34 GB,
   // which the app's WebStorageMode.streaming installs.
   gemma4_E2B_litertlm(
     catalog: _gemma4E2bItGeneric,
@@ -893,7 +893,7 @@ enum Model implements InferenceModelInterface {
   final double topP;
   // Raw capability flags from the enum literal. On the web a .litertlm model
   // takes images or audio only when its web build does (the registry's
-  // capabilities: Gemma 4 E2B's GPU export does on @litert-lm/core 0.19.0;
+  // capabilities: Gemma 4 E2B's GPU export does on @litert-lm/core 0.20.0;
   // a text-only web build does not), so the public [supportImage] /
   // [supportAudio] getters below follow the web variant there. Native and
   // web MediaPipe (.task) keep the declared value.

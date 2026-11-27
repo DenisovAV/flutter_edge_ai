@@ -1,5 +1,5 @@
 /// Upstream LiteRT-LM #2080 retest — are per-session sampler params still
-/// baked at the engine's FIRST generation on v0.16.0?
+/// baked at the engine's FIRST generation?
 ///
 /// Reproduces the signature posted upstream on 2026-07-28 (v0.14.0, macOS
 /// arm64, Gemma 4 E2B):
@@ -21,19 +21,38 @@
 /// sampler params *entirely* makes G stochastic, X/Y/Z differ from it by
 /// chance, and the harness reports "fixed" on a build that honours nothing.
 ///
-/// Run: cd example && flutter test integration_test/sampler_baking_2080_test.dart -d macos
+/// The run prints one `[#2080] VERDICT:` line before asserting — FIXED,
+/// PRESENT, MIXED (one of X/Y equals G) or INCONCLUSIVE — and passes only on
+/// FIXED.
+///
+/// Backend: CPU by default; `--dart-define=LATCH_BACKEND=gpu` for the GPU.
+/// Every engine must report the backend asked for: a GPU load that fell back
+/// to the CPU would test the CPU sampler under a GPU label.
+///
+/// Model: gemma-4-E2B-it.litertlm. macOS: ~/models (container Documents
+/// fallback); Android: /data/local/tmp/flutter_gemma_test/; other desktop and
+/// iOS: app Documents.
+///
+/// Run: cd example && flutter test integration_test/sampler_baking_2080_test.dart -d <device>
+///   [--dart-define=LATCH_BACKEND=gpu]
+/// Android on DDP: the app + androidTest APKs under `am instrument`
+/// (.claude/skills/ddp-device-test).
 library;
-
-import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
-import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'voice_test_helpers.dart' show stagedModelPath;
 
-String get _model => macosStagedFilePath('gemma-4-E2B-it.litertlm')!;
+const _modelFile = 'gemma-4-E2B-it.litertlm';
+
+const _backendName = String.fromEnvironment(
+  'LATCH_BACKEND',
+  defaultValue: 'cpu',
+);
+final _backend = PreferredBackend.values.byName(_backendName);
 
 const _prompt =
     'Invent a name for a cosy coffee shop. Answer with the name only.';
@@ -58,30 +77,48 @@ Future<String> _gen(
   }
 }
 
-Future<InferenceModel> _engine() => FlutterEdgeAi.getActiveModel(
-  maxTokens: 1024,
-  preferredBackend: PreferredBackend.cpu,
-);
+Future<InferenceModel> _engine() async {
+  final model = await FlutterEdgeAi.getActiveModel(
+    maxTokens: 1024,
+    preferredBackend: _backend,
+  );
+  expect(
+    model.activeBackend,
+    _backend,
+    reason:
+        'asked for $_backendName, the engine runs on ${model.activeBackend}',
+  );
+  return model;
+}
+
+Future<void>? _installed;
+
+/// Installs the model once. Called first thing in the test body, not from a
+/// setUpAll: a setUpAll that throws is reported as a pass under `flutter
+/// drive` and `am instrument` (AGENTS.md Rule 6b).
+Future<void> _install() => _installed ??= () async {
+  await registerTestEngines();
+  final path = await stagedModelPath(_modelFile);
+  expect(
+    path,
+    isNotNull,
+    reason:
+        'stage $_modelFile; macOS: ~/models (container Documents fallback); '
+        'Android: /data/local/tmp/flutter_gemma_test/; other desktop and iOS: '
+        'app Documents',
+  );
+  await FlutterEdgeAi.installModel(
+    modelType: ModelType.gemmaIt,
+    fileType: ModelFileType.litertlm,
+  ).fromFile(path!).install();
+}();
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(() async {
-    await registerTestEngines();
-    expect(
-      File(_model).existsSync(),
-      isTrue,
-      reason: 'model missing at $_model',
-    );
-    await FlutterEdgeAi.installModel(
-      modelType: ModelType.gemmaIt,
-      fileType: ModelFileType.litertlm,
-    ).fromFile(_model).install();
-  });
-
-  testWidgets('#2080 — later sessions must honour their own sampler params', (
-    _,
-  ) async {
+  testWidgets('#2080 — later sessions must honour their own sampler params '
+      '($_backendName)', (_) async {
+    await _install();
     // close() must run on every path. The desktop shell dedupes engines on
     // name + (supportImage, supportAudio, maxTokens) and NOT on backend, and
     // all three _engine() calls here are identical — so a leaked engineA is
@@ -120,13 +157,24 @@ void main() {
       await engineC.close();
     }
 
+    final verdict = g2 != g
+        ? 'INCONCLUSIVE (greedy is not reproducible: G2 != G)'
+        : z == g
+        ? 'INCONCLUSIVE (the fresh stochastic engine also gave G)'
+        : x == g && y == g
+        ? 'PRESENT (X == Y == G: the first generation baked the sampler)'
+        : x == g || y == g
+        ? 'MIXED (one later session equals G)'
+        : 'FIXED (later sessions honour their own sampler)';
     // ignore: avoid_print
     print(
+      '[#2080] backend=$_backendName\n'
       '[#2080] G (greedy, engine A first)="$g"\n'
       '[#2080] X (stoch, same engine)="$x"\n'
       '[#2080] Y (stoch, same engine)="$y"\n'
       '[#2080] Z (stoch, fresh engine B)="$z"\n'
-      '[#2080] G2(greedy, fresh engine C)="$g2"',
+      '[#2080] G2(greedy, fresh engine C)="$g2"\n'
+      '[#2080] VERDICT: $verdict',
     );
 
     // Anchor first: greedy must be reproducible, or nothing below means
@@ -154,7 +202,7 @@ void main() {
       x,
       isNot(equals(g)),
       reason:
-          'FAIL = #2080 still reproduces on v0.16.0: the engine stayed '
+          'FAIL = #2080 still reproduces on $_backendName: the engine stayed '
           'locked to what the first (greedy) generation baked',
     );
     expect(y, isNot(equals(g)), reason: 'same, second stochastic session');

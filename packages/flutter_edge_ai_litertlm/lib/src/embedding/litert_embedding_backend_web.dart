@@ -3,7 +3,7 @@
 // path core resolves is a URL, not a file name):
 // - a `.litertlm` bundle (EmbeddingGemma 2: text, images and audio, alone or
 //   combined) → the `@litert-lm/core` EmbeddingEngine pass, which needs
-//   `window.EmbeddingEngine = m.EmbeddingEngine;` in the page's module script;
+//   the page's module script to hand over the module (`window.litertLm = m;`);
 // - a two-file spec (EmbeddingGemma 1 `.tflite` + tokenizer) → the LiteRT.js
 //   pass over the bundle in this package's `web/`.
 // Unlike the native arm it never asks core's tokenizer registry: tokenization

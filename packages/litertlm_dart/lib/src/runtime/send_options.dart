@@ -8,7 +8,7 @@ import 'dart:convert' show jsonEncode;
 
 import 'package:meta/meta.dart' show immutable;
 
-import '../api/backend.dart' show SpeculativeDecodingMode;
+import '../api/backend.dart' show SpeculativeDecodingConfig;
 import '../api/config.dart' show NoRepeatNgramConfig, RepetitionPenaltyConfig;
 import '../ffi/thinking_context.dart';
 
@@ -42,6 +42,9 @@ final class SendOptions {
     this.suppressTokens,
     this.thinkingTokenBudget,
     this.unconstrained = false,
+    this.toolChoiceJson,
+    this.maxOutputTokens,
+    this.visualTokenBudget,
   });
 
   /// Template variables for this message, merged under the thinking switch.
@@ -58,8 +61,28 @@ final class SendOptions {
   /// Kotlin's and Swift's `resolveResponseFormat`.
   final bool unconstrained;
 
+  /// This send's tool choice as the C API's JSON (tool_choice_json.dart);
+  /// null leaves the model's default.
+  final String? toolChoiceJson;
+
+  /// This send's cap on generated tokens
+  /// (`litert_lm_conversation_optional_args_set_max_output_tokens`); null
+  /// leaves the conversation's.
+  final int? maxOutputTokens;
+
+  /// The most vision tokens one image of this send may take
+  /// (`litert_lm_conversation_optional_args_set_visual_token_budget`); null
+  /// leaves the engine's.
+  final int? visualTokenBudget;
+
   static const none = SendOptions();
 }
+
+/// The channel streamed tool-call tokens arrive in
+/// (`ConversationConfig.enableToolCallStreaming`): Swift's default
+/// `ExperimentalFlags.conversationToolCallStreamingChannelName`, and native's
+/// (`SetStreamToolCalls`, runtime/conversation/conversation.h).
+const toolCallStreamingChannel = 'tool_call';
 
 /// A conversation's extras beyond what every conversation is created with.
 @immutable
@@ -67,13 +90,32 @@ final class ConversationExtras {
   const ConversationExtras({
     this.extraContext = const {},
     this.speculativeDecoding,
+    this.loraPath,
+    this.audioLoraPath,
+    this.chatTemplate,
+    this.streamToolCalls = false,
   });
 
   /// `conversation_config_set_extra_context`; empty sets nothing.
   final Map<String, Object?> extraContext;
 
   /// The session's speculative decoding; null leaves the engine's.
-  final SpeculativeDecodingMode? speculativeDecoding;
+  final SpeculativeDecodingConfig? speculativeDecoding;
+
+  /// `session_config_set_lora_path`: the text LoRA weights; null sets none.
+  final String? loraPath;
+
+  /// `session_config_set_audio_lora_path`: the audio encoder's LoRA weights;
+  /// null sets none.
+  final String? audioLoraPath;
+
+  /// `conversation_config_set_prompt_template`: the Jinja template that
+  /// replaces the model's own; null keeps the model's.
+  final String? chatTemplate;
+
+  /// `conversation_config_set_stream_tool_calls`: stream the tokens of a
+  /// tool call as text of the `tool_call` channel while it is generated.
+  final bool streamToolCalls;
 
   static const none = ConversationExtras();
 }

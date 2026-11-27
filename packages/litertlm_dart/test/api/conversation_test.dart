@@ -74,6 +74,50 @@ String _text(String t) => jsonEncode({
 });
 
 void main() {
+  test('a tool response on a conversation that declares no tools is refused '
+      'before anything is sent; with tools it goes', () async {
+    final handle = _Handle();
+    final bare = conversationForTest(handle);
+    for (final message in [
+      Message.tool([
+        Content.toolResponse('f', {'ok': true}),
+      ]),
+      Message(
+        role: Role.user,
+        contents: [
+          Content.toolResponse('f', {'ok': true}),
+        ],
+      ),
+    ]) {
+      await expectLater(
+        bare.sendMessageStream(message).drain<void>(),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => '${e.message}',
+            'message',
+            contains('declares no tools'),
+          ),
+        ),
+      );
+    }
+    expect(handle.messages, isEmpty);
+    final withTools = conversationForTest(
+      handle,
+      config: ConversationConfig(tools: [Tool(name: 'f')]),
+    );
+    final reply = withTools
+        .sendMessageStream(
+          Message.tool([
+            Content.toolResponse('f', {'ok': true}),
+          ]),
+        )
+        .drain<void>();
+    await Future<void>.delayed(Duration.zero);
+    expect(handle.messages, hasLength(1));
+    handle.sends.single.finished();
+    await reply;
+  });
+
   test('a reply streams as messages and ends when native ends it', () async {
     final handle = _Handle();
     final conversation = conversationForTest(handle);

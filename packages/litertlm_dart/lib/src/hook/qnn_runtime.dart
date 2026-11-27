@@ -20,17 +20,26 @@ import 'package:litertlm_dart/src/runtime/npu_stacks.dart';
 
 /// The QNN runtime release fetched for `qualcomm_npu: true`.
 ///
-/// Must be the QAIRT release the Qualcomm dispatch is built against — LiteRT
-/// pins it in `third_party/qairt/workspace.bzl` (2.50.0.260828 at the v0.18.0
-/// pin), and `build_qualcomm_dispatch.sh` refuses to build when the two
-/// disagree. A runtime older than the dispatch fails only on real hardware
-/// (`Qnn System library version … is mismatched`).
-const qnnRuntimeVersion = '2.50.0';
+/// Must be the QAIRT release the Qualcomm dispatch is built against, and
+/// `build_qualcomm_dispatch.sh` refuses to build when the two disagree. A
+/// runtime older than the dispatch fails only on real hardware (`Qnn System
+/// library version … is mismatched`).
+///
+/// LiteRT `bf49eb62` (the LiteRT-LM v0.20.0 pin) pins QAIRT 2.51.1.261002 in
+/// `third_party/qairt/workspace.bzl`, which Maven Central does not carry (it
+/// has 2.51.0 and 2.52.0). 2.52.0 is the pair Google publishes in LiteRT
+/// v2.4.0 (`qairt/2.52.0.261104`), so the dispatch is built against a local
+/// 2.52.0 SDK (`LITERT_QAIRT_SDK`) and the hook fetches this runtime. Run
+/// on the NPU on DDP phones, 2026-11-25: Gemma 4 E2B on a Galaxy S25 Ultra
+/// (SM8750) and EmbeddingGemma 2 on a Galaxy S24 (SM8650), S25 Ultra and S26+
+/// (SM8850), each with the same outputs as native-v0.19.1-c on QNN 2.50.0.
+const qnnRuntimeVersion = '2.52.0';
 
-/// SHA256 of `qnn-runtime-2.50.0.aar` as published on Maven Central (its SHA1
-/// matches Maven's own `.sha1`).
+/// SHA256 of `qnn-runtime-2.52.0.aar` as published on Maven Central (its SHA1
+/// fb08db09c9adeca9a5ad6fdbaf18547928b9a942 matches Maven's own `.sha1`;
+/// 82,248,067 bytes, downloaded 2026-11-25).
 const qnnRuntimeSha256 =
-    'b507656e4031d8aa6a7ab0fecf725b941096737ad7440ad7ea288f7c9cc9d743';
+    '02fb79bc70368e86a27c4d26f54cb030f51575f18ee1cc9bd5f2fdf195b30f6c';
 
 /// Maven repository the AAR comes from unless the app names a mirror.
 const qnnDefaultMavenBase = 'https://repo1.maven.org/maven2';
@@ -463,7 +472,7 @@ bool hasLoadAlignment16K(
 /// Makes one QNN library from the AAR ready to bundle.
 ///
 /// Only the four Hexagon Skels are patched; every other library is arm64 and
-/// must already be 16 KB-aligned (all are at 2.50.0) — if a future AAR is
+/// must already be 16 KB-aligned (all are at 2.50.0 and 2.52.0) — if a future AAR is
 /// not, the build fails instead of shipping an APK Play rejects (#529).
 Uint8List prepareQnnLibrary(String fileName, Uint8List bytes) {
   final out = Uint8List.fromList(bytes);

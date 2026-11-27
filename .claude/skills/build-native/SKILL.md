@@ -180,11 +180,11 @@ grep -q WARN "$LOG" && { echo "PATCH INCOMPLETE — a target moved, do not build
 
 # Assert the artifact, not the log line. gpu_registry.cc lives in LiteRT, not
 # in this tree — §10b patches WORKSPACE so Bazel rewrites it at fetch time.
-grep -q FLUTTER_GEMMA_GPU_REGISTRY_PATCH /tmp/LiteRT-LM/WORKSPACE \
+grep -q 'flutter_gemma_litert_gpu_registry_apple.patch' /tmp/LiteRT-LM/WORKSPACE \
   || { echo "§10b did not apply — iOS GPU would ship broken"; exit 1; }
 ```
 
-That proves the patch is queued, not that it compiled in — post-build check #5 (the `@executable_path` string inside the dylib) is what proves that. At v0.18.0 the WARN fired for real: upstream rewrote the `litert` `patch_cmds` entry our anchor matched, and the script exited 0. §10b now anchors on the `patch_cmds = [` list of the `litert` archive itself.
+That proves the patch is queued, not that it compiled in — post-build check #5 (the statically linked accelerator and no accelerator name inside the dylib) is what proves that. At v0.18.0 the WARN fired for real: upstream rewrote the `litert` `patch_cmds` entry our anchor matched, and the script exited 0. §10b now anchors on the `patch_cmds = [` list of the `litert` archive itself.
 
 **Coexisting LiteRT runtimes (litertlm 1.10.0 → native-v0.18.0-b).** An app can
 hold a second LiteRT: `flutter_litert` ≥ 3.4 embeds its own `LiteRt.framework`
@@ -207,7 +207,17 @@ bare `LiteRtMetalAccelerator`. The one test that proves it is the app with
 flutter_litert on a real iPhone (litert_hackathon `--selftest`: detector GPU,
 Gemma GPU, detector again) — the console must show
 `Dynamically loaded GPU accelerator(@executable_path/Frameworks/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator) registered`
-as the FIRST attempt.
+as the FIRST attempt (up to native-v0.19.1).
+
+**From native-v0.20.0 (decision D1) there is no Metal accelerator framework.**
+libLiteRtLm links the Metal accelerator in, and the gpu_registry patch compiles
+the accelerator `dlopen` and the `RTLD_DEFAULT` lookup out on Apple, so only the
+statically linked accelerator registers. `build_macos.sh` proves it with a real
+`dlopen` probe (`LiteRtStaticLinkedAcceleratorGpuDef` set after load),
+`build_ios.sh` by the export on both slices, and both refuse a library that names
+any accelerator library or framework. The flutter_litert coexistence run passed
+on the iOS simulator with CPU on both runtimes (2026-11-25); GPU on both in one
+process still needs the iPhone.
 
 On Windows/git-bash, `python3` resolves to the Microsoft Store stub, which prints "Python was not found" **and still exits 0** — so sections 10b and 11 silently no-op. Shim it first:
 `printf '#!/bin/sh\nexec "<path>/python.exe" "$@"\n' > /somewhere/python3 && chmod +x` and prepend that dir to `PATH`.
@@ -438,15 +448,28 @@ install_name_tool -id @rpath/this_is_a_long_test_path_pad_to_native_assets_targe
 
 Run this for **every** dylib in `prebuilt/<dir>/`, not just the one you rebuilt. Native Assets rewrites all of them.
 
-**One known, accepted failure: `ios_sim_arm64/libLiteRtLmMetalAccelerator.dylib`.** It is upstream's prebuilt `libLiteRtMetalAccelerator.dylib`, shipped renamed since native-v0.18.0 (flutter_litert embeds a `LiteRtMetalAccelerator.framework` of its own, and an app bundle holds one framework per name — see `patch_c_api.sh` §10). It has only **48 bytes** of header slack, so the 91-character test path above does not fit. The name the iOS build actually writes, `@rpath/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator` (66 characters, +32 bytes of load commands), does fit — test that one for this file. The published native-v0.17.1-a carried a file with the same slack, so this is not a regression; it surfaced at the v0.18.0 bump. The device slice (`ios_arm64`) passes the long path. If a future upstream refresh shrinks the slack further, the framework name stops fitting too, and then it is a blocker: relink or report upstream (see "When upstream is broken").
+**Up to native-v0.19.1, one known, accepted failure: `ios_sim_arm64/libLiteRtLmMetalAccelerator.dylib`** (from native-v0.20.0 the file does not ship: the Apple archives hold `libLiteRtLm.dylib` and `libStreamProxy.dylib` only). It is upstream's prebuilt `libLiteRtMetalAccelerator.dylib`, shipped renamed since native-v0.18.0 (flutter_litert embeds a `LiteRtMetalAccelerator.framework` of its own, and an app bundle holds one framework per name — see `patch_c_api.sh` §10). It has only **48 bytes** of header slack, so the 91-character test path above does not fit. The name the iOS build actually writes, `@rpath/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator` (66 characters, +32 bytes of load commands), does fit — test that one for this file. The published native-v0.17.1-a carried a file with the same slack, so this is not a regression; it surfaced at the v0.18.0 bump. The device slice (`ios_arm64`) passes the long path. If a future upstream refresh shrinks the slack further, the framework name stops fitting too, and then it is a blocker: relink or report upstream (see "When upstream is broken").
 
 ### 5. Phase 8 patch markers (iOS / macOS only)
+
+From native-v0.20.0 (D1) the Metal accelerator is linked in:
+
+```bash
+nm -gU packages/litertlm_dart/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep LiteRtStaticLinkedAcceleratorGpuDef
+strings packages/litertlm_dart/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib \
+  | /usr/bin/grep -E 'LiteRtLmMetalAccelerator|@executable_path/Frameworks|libLiteRt[A-Za-z]*Accelerator|GemmaModelConstraintProvider|webgpu_dawn'
+```
+
+Expected: the symbol once, and nothing from `strings` (`build_{ios,macos}.sh`
+fail on any hit; `build_macos.sh` also `dlopen`s the library and checks
+`LiteRtStaticLinkedAcceleratorGpuDef` is set). The checks below are the ones up
+to native-v0.19.1, kept for rebuilding an old tag.
 
 ```bash
 strings packages/litertlm_dart/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep '@executable_path.*LiteRtLmMetalAccelerator'
 ```
 
-Expected: 1 hit (path to `LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator`; before native-v0.18.0 it was the upstream `LiteRtMetalAccelerator`). If 0 hits, `patch_c_api.sh` §10b didn't apply — your build was against a tree where `WORKSPACE.patch_cmds` didn't run. Run `bazelisk clean --expunge` and rebuild.
+Up to native-v0.19.1, expected: 1 hit (path to `LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator`; before native-v0.18.0 it was the upstream `LiteRtMetalAccelerator`). If 0 hits, `patch_c_api.sh` §10b didn't apply — your build was against a tree where `WORKSPACE.patch_cmds` didn't run. Run `bazelisk clean --expunge` and rebuild.
 
 ```bash
 strings packages/litertlm_dart/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep -c '^libLiteRtMetalAccelerator.dylib$'
@@ -568,8 +591,9 @@ mv packages/litertlm_dart/native/litert_lm/prebuilt /tmp/prebuilt-aside
 #   macOS   ~/Library/Caches/litertlm_dart/native
 #   Linux   ~/.cache/litertlm_dart/native
 #   Windows %LOCALAPPDATA%\litertlm_dart\native
-# (~/Library/Caches/flutter_gemma/native/macos_arm64 is only the Podfile
-# stager's mirror of the companions; the hook never resolves libLiteRtLm there.)
+# (~/Library/Caches/flutter_gemma/native/macos_arm64 held the Podfile stager's
+# mirror of the companions up to 0.19.1+4; from 0.20.0 only the hook's no-op
+# stager stub is written there. The hook never resolves libLiteRtLm there.)
 rm -rf "$HOME/Library/Caches/litertlm_dart/native"     # kill the cache too, or you test source #2
 # Only a download recreates it: after the build, the tag's directory must exist
 # again (ls ~/Library/Caches/litertlm_dart/native/native-v*/).
@@ -588,7 +612,8 @@ After `flutter build ipa --release` or archive:
 ```bash
 R=build/ios/iphoneos/Runner.app
 ls "$R/Frameworks" | wc -l                                    # must be NON-ZERO
-ls "$R/Frameworks" | grep -E 'LiteRtLm|LiteRtLmMetalAccelerator|GemmaModelConstraintProvider|StreamProxy'
+ls "$R/Frameworks" | grep -E 'LiteRtLm|StreamProxy'   # from native-v0.20.0 only these two of ours
+ls "$R/Frameworks" | grep -E 'LiteRtLmMetalAccelerator|GemmaModelConstraintProvider'   # must be empty from 0.20.0
 find "$R/Frameworks" -maxdepth 1 -type l                      # must be empty
 find "$R/Frameworks" -maxdepth 1 -name "*.dylib" -type f      # must be empty
 ```
@@ -600,11 +625,17 @@ If anything other than `.framework/` is in there, App Store will reject with ITM
 ### 9. A tool call, on every platform you shipped
 
 The litertlm smoke suite never passes a tool to a session, so nothing in checks
-1–8 loads `libGemmaModelConstraintProvider`. That library is a Google prebuilt
-you did not build, against a `Constraint` interface that lives in the runtime
-you did — and when the two disagree, the first tool call segfaults in
-`CompositeLogitMask::Apply`, with no Dart-side error and every other check
-green. native-v0.17.0 shipped exactly that.
+1–8 builds a tool-call constraint. From native-v0.20.0 the constraints are
+LLGuidance's, compiled into libLiteRtLm (`patch_c_api.sh` §29, with §31 keeping
+FunctionGemma's arguments in declared order), and no constraint provider ships:
+the build scripts, `check_linux_bundle.py` and `verify_tarball_manifest.sh`
+refuse one. Up to native-v0.19.1 the constraints came from
+`libGemmaModelConstraintProvider`, a Google prebuilt against a `Constraint`
+interface in the runtime we built — and when the two disagreed, the first tool
+call segfaulted in `CompositeLogitMask::Apply`, with no Dart-side error and
+every other check green. native-v0.17.0 shipped exactly that. A tool call on
+every platform stays the check: LLGuidance changes every tool call, and
+`ToolChoice` other than auto exists only with it.
 
 ```bash
 cd packages/flutter_edge_ai/example
@@ -620,8 +651,9 @@ Stage the four models first (`functiongemma-270M-it`, `mobile_actions_q8_ekv1024
 `tiny_garden`, `gemma-4-E2B-it`) in the app documents dir, or in
 `/data/local/tmp/flutter_gemma_test/` on Android.
 
-The static pre-check, before any device is involved — the provider must carry
-the type the runtime asks it for:
+Up to native-v0.19.1 only (a build with the FST provider), the static
+pre-check, before any device is involved — the provider must carry the type the
+runtime asks it for:
 
 ```bash
 H=/tmp/LiteRT-LM/runtime/components/constrained_decoding/constraint.h
@@ -649,7 +681,8 @@ OLDER than the runtime segfaults, a NEWER one segfaults the same way from the
 other side (which is what happens if you build an older ref while `PREBUILT_REF`
 still points at main), and a `grep` on a missing header silently answers "no".
 
-**Linux has a second provider ABI on top of this one (#551).** The Linux
+**Up to native-v0.19.1 Linux had a second provider ABI on top of this one (#551);
+section 12 and its bridge are deleted from native-v0.20.0 with the provider.** The Linux
 providers are built with Google's libc++ (`std::__u`), our runtime with clang +
 libstdc++, so `patch_c_api.sh` section 12 puts `gemma_constraint_abi_bridge.h`
 between them: it calls the provider's vtable slots with the provider's own
@@ -827,7 +860,7 @@ The bundle has **three** consumers — LLM inference (LiteRT-LM C API), embeddin
 
 Where and how, with the traps that cost time in the v0.17.0 cycle:
 
-- **macOS** — local. The example's Podfile stager copies companions from the **cache** (`~/Library/Caches/flutter_gemma/native/macos_arm64/`), not from the build, so a maintainer machine runs a 0.16/0.17 mix. For the run, move the cache's `libGemmaModelConstraintProvider.dylib` aside (the stager picks its source by that one file and falls back to `prebuilt/`), restore it in a `trap`.
+- **macOS** — local. From native-v0.20.0 nothing is staged: the hook bundles LiteRtLm and StreamProxy, and the Podfile block runs the hook's no-op stub. Up to native-v0.19.1 the example's Podfile stager copied companions from the **cache** (`~/Library/Caches/flutter_gemma/native/macos_arm64/`), not from the build, so a maintainer machine ran a 0.16/0.17 mix; for such a run, move the cache's `libGemmaModelConstraintProvider.dylib` aside (the stager picks its source by that one file and falls back to `prebuilt/`), restore it in a `trap`. Metal runs need the sandbox off (Metal has no device inside Seatbelt).
 - **iOS device** — USB only (`ioreg -p IOUSB` must show `iPhone@…`; `transportType: localNetwork` ⇒ "Cannot start app on wirelessly tethered iOS device"). On Xcode 26+ `enable-lldb-debugging` must be `true`, otherwise flutter never sees the VM Service URL and hangs at "not discovered" (memory `project_ios_device_xcode26_lldb`). The simulator is CPU-only by design.
 - **Android** — GPU/OpenCL needs real devices, and **at least one Adreno and one Mali**: Adreno and Mali take different paths through the same accelerator (#545 crashed only on Mali). On DDP (the `ddp-device-test` skill, not Firebase Test Lab): `e1q-34` (Galaxy S24, Adreno 750), `akita-35` (Pixel 8a, Mali-G715), `a34x-36` (Galaxy A34, Mali-G68 — the #545 device). Write the DDP id + GPU per row in the PR body; "Galaxy S24" alone does not say which GPU ran. The `gemma_api36_arm64` emulator is enough for CPU speech.
 - **Linux** — GCE `flutter-gemma-linux` (T4) and `flutter-gemma-linux-gpu` (L4, often stocked out in `us-central1-b`). The T4 box boots a mainline 6.16 kernel without the NVIDIA module (Vulkan falls back to `llvmpipe`); for GPU runs `kexec` once into `6.8.0-*-gcp`. Prove the GPU was used from throughput (T4: ~42 chunks/s GPU vs ~2.4 CPU), not from test names.
@@ -874,7 +907,7 @@ Three patterns deserve emphasis because nothing in the build output hints at the
 
 ## When upstream is broken
 
-We import some dylibs as-is from upstream LiteRT-LM (`libGemmaModelConstraintProvider.dylib`, `libLiteRtMetalAccelerator.dylib`, sampler dylibs). When upstream ships them with insufficient headerpad / wrong arch / broken exports:
+We imported some dylibs as-is from upstream LiteRT-LM up to native-v0.19.1 (`libGemmaModelConstraintProvider.dylib`, `libLiteRtMetalAccelerator.dylib`, sampler dylibs; on Windows also `libLiteRt.dll` and the WebGPU accelerator). From native-v0.20.0 none: the provider is replaced by LLGuidance, the Metal accelerator is linked into libLiteRtLm, and Linux and Windows build libLiteRt and the WebGPU accelerator from LiteRT's source (LiteRT-LM ships no Windows prebuilt since `c57b9ae0a2`). Dawn and the DirectX shader compiler are still upstream binaries. When upstream ships them with insufficient headerpad / wrong arch / broken exports:
 
 0. **Before adopting an upstream tag, read what is already reported against it.** `gh issue list --repo google-ai-edge/LiteRT-LM --search "created:>=<tag-date>"` and skim for crashes on platforms we ship. #545 was upstream #3575 — same crash, same BuildId, same `patchelf` workaround — open six days before our first release with those bytes.
 1. **Rule out our own frozen inputs first.** Before writing the issue, enumerate every input to the failing comparison — defines, SDK versions, pinned SHAs, carried-forward binaries — and confirm which ones actually moved between the working and broken versions. Two of our four most recent upstream reports (#2957, #3217) were our configuration and had to be retracted; in both the "regression" was upstream finally exercising something we had frozen years earlier. A bisection that lands on a version boundary tells you *when*, never *whose*.

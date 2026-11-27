@@ -6,13 +6,20 @@ import 'dart:typed_data' show Uint8List;
 import 'package:meta/meta.dart' show immutable;
 
 import '../embedder/embedder_types.dart';
+import '../runtime/types.dart' show ActivationDataType;
 import 'backend.dart';
 import 'message.dart';
 
-/// What an `EmbeddingEngine` loads, and on what: LiteRT-LM's
-/// `EmbeddingEngineConfig`.
+/// What an `EmbeddingEngine` loads, and on what: LiteRT-LM's Kotlin and
+/// Swift `EmbeddingEngineConfig`.
+///
+/// Kotlin's `modelFd` (an Android file descriptor in place of [modelPath]) is
+/// not here: LiteRT-LM's C API creates embedding settings from a path only,
+/// and the bundle's NPU stamp and towers are read from the file by path
+/// before the engine exists.
 @immutable
 final class EmbeddingEngineConfig {
+  /// Throws [ArgumentError] for a [maxInputLength] below 1.
   EmbeddingEngineConfig({
     required this.modelPath,
     this.cacheDir,
@@ -21,7 +28,13 @@ final class EmbeddingEngineConfig {
     this.audioBackend,
     this.visionTokensPerImage,
     this.requireWeightCache = false,
-  }) : backend = backend ?? const Backend.cpu();
+    this.maxInputLength,
+    this.activationDataType,
+  }) : backend = backend ?? const Backend.cpu() {
+    if (maxInputLength case final length? when length < 1) {
+      throw ArgumentError.value(length, 'maxInputLength', 'must be 1 or more');
+    }
+  }
 
   /// The EmbeddingGemma 2 `.litertlm` bundle. On the web: a URL the page can
   /// fetch (`blob:`, `https:`).
@@ -38,9 +51,10 @@ final class EmbeddingEngineConfig {
   /// only, a generic one never there; the GPU is taken where it was measured,
   /// for the bundles measured there, and refused elsewhere (never moved to
   /// the CPU). On the web: [Backend.gpu] (WebGPU) only — the CPU
-  /// (WebAssembly) path of the pinned `@litert-lm/core` cannot read these
-  /// bundles' external weights, so `Backend.cpu`, the default, is refused
-  /// there, as is the NPU.
+  /// (WebAssembly) path of the pinned `@litert-lm/core` 0.20.0 loads these
+  /// bundles but takes 110-225 s to load and 9-12 s per short text, so
+  /// `Backend.cpu`, the default, is refused there for speed, as is the
+  /// NPU.
   final Backend backend;
 
   /// Null: images are not taken. Set: they are, and a bundle without a vision
@@ -62,6 +76,28 @@ final class EmbeddingEngineConfig {
   /// warning. Native only: the web keeps no weight cache, and `true` is
   /// refused there.
   final bool requireWeightCache;
+
+  /// The longest text input the engine must take, in tokens (Kotlin's and
+  /// Swift's `maxInputLength`). Null is 1024 (the largest signature when a
+  /// bundle has none that long). The engine prepares the bundle's text
+  /// signatures up to the smallest one at or above it, and that signature is
+  /// its limit (`info.maxInputTokens`): an input over it is refused with an
+  /// [EmbedderInputTooLongException], never truncated. Natively a length
+  /// above the bundle's largest signature is refused at load (LiteRT-LM
+  /// refuses it). Memory grows with the signature: one 8192-token input
+  /// peaked at +10.25 GB.
+  final int? maxInputLength;
+
+  /// The activation type of the text tower and, when there is one, the
+  /// vision tower (Kotlin's `EmbeddingEngineConfig.activationDataType`;
+  /// Swift has none). Null keeps the bundle's preferred type. Only the GPU
+  /// reads it: on the CPU and the NPU it has no effect (logged). On the GPU
+  /// the 270m measured, over the ten golden texts on Metal (native-v0.20.0),
+  /// a minimum cosine to the CPU of 0.99937 at float32 and 0.99696 at
+  /// float16, the bundle's own; int16 and int8 ran as float16 (the same
+  /// vectors) and are refused there with an [ArgumentError]. Refused on the
+  /// web, whose `EmbeddingEngine` takes none.
+  final ActivationDataType? activationDataType;
 }
 
 /// [contents] as one embedder request: at most one text part, any image

@@ -235,7 +235,10 @@ const mediatekAndroidSystemLibs = [
 /// ahead-of-time compiled models on Hexagon V73/V75/V79/V81 (82.8 MiB as
 /// published, the Skels carrying non-loaded sections we leave alone). Left
 /// out on purpose: libQnnHtpPrepare (on-device compilation only), the GPU and
-/// DSP backends, and the V66/V68/V69 pairs no LiteRT-LM model targets.
+/// DSP backends, and the V66/V68/V69 pairs no LiteRT-LM model targets. Also
+/// left out: the V85 pair that qnn-runtime 2.52.0 adds — no SoC in LiteRT's
+/// table (`litert/vendors/qualcomm/supported_soc.csv` at `bf49eb62`) has a
+/// v85 runtime library, so no per-SoC bundle can target it.
 const qnnRuntimeLibs = [
   'QnnHtp',
   'QnnSystem',

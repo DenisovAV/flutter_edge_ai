@@ -4,7 +4,10 @@
 // conversation refusing every later send, so the next message goes to one
 // rebuilt from the preface, the exchanges so far and `getHistory()` (which
 // holds no preface); a stop with nothing in flight or after the last chunk
-// changes nothing.
+// changes nothing. A reply that ends before any chunk with no stop asked
+// is an empty reply when the history holds an empty assistant entry after
+// the message, else a send the runtime refused (0.20.0 closes its stream
+// empty): the turn fails and the next one is rebuilt without it.
 //
 // Run: dart test -p chrome test/web/web_conversation_stop_browser_test.dart
 //      dart test -p chrome -c dart2wasm test/web/web_conversation_stop_browser_test.dart
@@ -435,6 +438,173 @@ void main() {
         assistantPart('Uno'),
       ]);
     });
+  });
+
+  group('a reply that ends before any chunk, no stop asked', () {
+    late web.Engine engine;
+    late Conversation conversation;
+    setUp(() async {
+      engine = await webEngine();
+      conversation = await engine.createConversation();
+    });
+    tearDown(() => engine.close());
+
+    /// Sends [text], which the runtime refuses before it generates: as
+    /// 0.20.0, the stream closes empty.
+    Future<Object?> refusedTurn(String text) async {
+      setOnPage('refuseNextSend', true);
+      Object? error;
+      await conversation
+          .sendMessageStream(Message.user(text))
+          .drain<void>()
+          .catchError((Object e) => error = e);
+      return error;
+    }
+
+    test('with an empty assistant entry after the message is an empty reply: '
+        'the turn ends normally and the conversation is not rebuilt', () async {
+      await exchange(conversation, 'One', 'Uno');
+      final replies = <Message>[];
+      final done = conversation
+          .sendMessageStream(Message.user('Quiet'))
+          .forEach(replies.add);
+      await settle();
+      js('__emptyReply');
+      await done;
+      expect(replies.where((m) => m.text.isNotEmpty), isEmpty);
+
+      await exchange(conversation, 'Two', 'Dos');
+
+      expect(list('conversationOptions'), hasLength(1));
+      expect(list('sent').last, 'Two');
+    });
+
+    test('with the message last and no reply is a refused send: a '
+        'TurnFailedException that says so, and the next message goes to a '
+        'conversation rebuilt without it', () async {
+      await exchange(conversation, 'One', 'Uno');
+
+      final error = await refusedTurn('Bad');
+
+      expect(
+        error,
+        errorWith<TurnFailedException>('refused the message without a reason'),
+      );
+      await exchange(conversation, 'Two', 'Dos');
+      expect(list('conversationOptions'), hasLength(2));
+      expect(prefaceMessages(1), [
+        {'role': 'user', 'content': 'One'},
+        assistantPart('Uno'),
+      ]);
+      expect(list('sent').last, 'Two');
+    });
+
+    test('a send refused without the runtime keeping it is refused too, and '
+        'the rebuild replays the history as it is', () async {
+      await exchange(conversation, 'One', 'Uno');
+      setOnPage('refusedBeforeHistory', true);
+
+      final error = await refusedTurn('Bad');
+
+      expect(
+        error,
+        errorWith<TurnFailedException>('refused the message without a reason'),
+      );
+      await exchange(conversation, 'Two', 'Dos');
+      expect(prefaceMessages(1), [
+        {'role': 'user', 'content': 'One'},
+        assistantPart('Uno'),
+      ]);
+    });
+
+    test('after a stop: the refused message is left out of the next '
+        'rebuild, the stopped exchange kept', () async {
+      await exchange(conversation, 'One', 'Uno');
+      await stoppedExchange(conversation, 'Two', 'Do');
+
+      final error = await refusedTurn('Bad');
+      expect(
+        error,
+        errorWith<TurnFailedException>('refused the message without a reason'),
+      );
+      // The refused send went to the conversation rebuilt after the stop.
+      expect(list('conversationOptions'), hasLength(2));
+
+      await exchange(conversation, 'Three', 'Tres');
+
+      expect(list('conversationOptions'), hasLength(3));
+      expect(prefaceMessages(2), [
+        {'role': 'user', 'content': 'One'},
+        assistantPart('Uno'),
+        userPart('Two'),
+        assistantPart('Do'),
+      ]);
+      expect(list('sent').last, 'Three');
+    });
+
+    test('a history that cannot be read fails the turn naming why it was '
+        'read', () async {
+      final turn = conversation
+          .sendMessageStream(Message.user('Quiet'))
+          .drain<void>();
+      await settle();
+      setOnPage('historyError', 'history unavailable');
+      js('__emptyReply');
+
+      await expectLater(
+        turn,
+        throwsWith<TurnFailedException>(
+          'could not be read: Error: history unavailable',
+        ),
+      );
+      setOnPage('historyError', null);
+
+      // Whether the runtime kept an answer cannot be told: the next message
+      // goes to a conversation rebuilt from the history.
+      await exchange(conversation, 'Two', 'Dos');
+      expect(list('conversationOptions'), hasLength(2));
+      expect(list('sent').last, 'Two');
+    });
+
+    test('an earlier empty exchange at the end of the history is not this '
+        "turn's reply: a send the runtime refused without keeping it, after "
+        'one it answered empty, is refused', () async {
+      final quiet = conversation
+          .sendMessageStream(Message.user('Quiet'))
+          .drain<void>();
+      await settle();
+      js('__emptyReply');
+      await quiet;
+
+      setOnPage('refusedBeforeHistory', true);
+      final error = await refusedTurn('Quiet');
+
+      expect(
+        error,
+        errorWith<TurnFailedException>('refused the message without a reason'),
+      );
+    });
+
+    test(
+      'a stop asked while the history is read ends the turn normally',
+      () async {
+        setOnPage('refuseNextSend', true);
+        // The read after the empty stream: no send reads the history first.
+        setOnPage('holdHistory', true);
+        final turn = conversation
+            .sendMessageStream(Message.user('Bad'))
+            .drain<void>();
+        await settle();
+        conversation.cancel();
+        setOnPage('holdHistory', false);
+        js('__releaseHistories');
+
+        await turn;
+        await exchange(conversation, 'Two', 'Dos');
+        expect(list('conversationOptions'), hasLength(2));
+        expect(prefaceMessages(1), isNull);
+      },
+    );
   });
 
   group('a stop that changes nothing in the runtime', () {

@@ -10,6 +10,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/adapter/web_inference_model.dart';
 import 'package:litertlm_dart/internal_web.dart'
     show JsLiteRtLmConversation, WebConversationHandle, conversationForTest;
+import 'package:litertlm_dart/litertlm_dart.dart' as lm;
 import 'package:mutex/mutex.dart';
 
 LiteRtLmWebSession webSessionOver(
@@ -24,6 +25,7 @@ LiteRtLmWebSession webSessionOver(
   void Function(WebConversationHandle handle)? onHandle,
   int? maxImages,
   int maxTokens = 0,
+  List<lm.Tool> tools = const [],
 }) {
   final handle = WebConversationHandle(
     conversation as JsLiteRtLmConversation,
@@ -41,7 +43,11 @@ LiteRtLmWebSession webSessionOver(
   );
   onHandle?.call(handle);
   return LiteRtLmWebSession(
-    conversation: conversationForTest(handle),
+    conversation: conversationForTest(
+      handle,
+      config: lm.ConversationConfig(tools: tools),
+    ),
+    declaresTools: tools.isNotEmpty,
     modelType: modelType,
     fileType: ModelFileType.litertlm,
     generationMutex: generationMutex ?? Mutex(),

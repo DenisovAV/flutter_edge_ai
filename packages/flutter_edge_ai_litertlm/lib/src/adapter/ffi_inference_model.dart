@@ -5,6 +5,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show File;
 
 import 'package:flutter_edge_ai/engine.dart';
 
@@ -108,6 +109,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     this.structuredOutput = const StructuredOutputSupport.none(
       'This LiteRT-LM model was not loaded through LiteRtLmEngine.',
     ),
+    this.toolChoiceRefusal,
     required this.onClose,
   }) : multimodalOrder =
            multimodalOrder ?? MultimodalOrder.forModelType(modelType) {
@@ -118,6 +120,12 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   /// The loaded LiteRT-LM engine.
   final lm.Engine engine;
 
+  /// Why LiteRT-LM cannot apply a per-message tool choice on the host and
+  /// backend this model loaded on (its constrained decoding is not qualified
+  /// there: every NPU, Linux arm64, an Android GPU of unknown family), or
+  /// null where it can. [ToolChoice.required] is refused at open with it.
+  final String? toolChoiceRefusal;
+
   /// Why a conversation of this model is rebuilt from history instead of
   /// being rewound after a stopped turn or a full context; null when it
   /// rewinds.
@@ -125,7 +133,8 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   String? get noRewindReason => engineNoRewindReason(engine);
 
   /// Whether LiteRT-LM may strip a finished reply's thought from the KV
-  /// cache ([lm.Engine.filtersChannelContent]).
+  /// cache of a conversation without tools ([lm.Engine.filtersChannelContent]);
+  /// one with tools keeps its thoughts.
   @visibleForTesting
   bool get filterChannelContent => engineFiltersChannelContent(engine);
   final ModelType modelType;
@@ -353,6 +362,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     required List<Tool> tools,
     required int? maxOutputTokens,
     String? jsonSchema,
+    String? loraPath,
   }) {
     return lm.ConversationConfig(
       systemInstruction: systemInstruction,
@@ -366,6 +376,11 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           : lm.ResponseFormat.json(
               (jsonDecode(jsonSchema) as Map).cast<String, Object?>(),
             ),
+      // Core's loraPath is the conversation's text LoRA adapter, as Kotlin's
+      // LoraConfig. litertlm_dart refuses it by name where it cannot work: a
+      // file that is not there, a model exported without LoRA inputs, an NPU
+      // engine.
+      loraConfig: loraPath == null ? null : lm.LoraConfig(loraPath: loraPath),
     );
   }
 
@@ -382,20 +397,45 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     bool enableThinking = false,
     List<Tool> tools = const [],
     int? maxOutputTokens,
+  }) => _createSingletonSession(
+    temperature: temperature,
+    randomSeed: randomSeed,
+    topK: topK,
+    topP: topP,
+    loraPath: loraPath,
+    enableVisionModality: enableVisionModality,
+    enableAudioModality: enableAudioModality,
+    systemInstruction: systemInstruction,
+    enableThinking: enableThinking,
+    tools: tools,
+    maxOutputTokens: maxOutputTokens,
+  );
+
+  /// The legacy singleton lane ([createSession], [createChat]), with
+  /// [createChat]'s [toolChoice] mapped as [openEngineSession] maps it.
+  Future<InferenceModelSession> _createSingletonSession({
+    double? temperature,
+    int? randomSeed,
+    int? topK,
+    double? topP,
+    String? loraPath,
+    bool? enableVisionModality,
+    bool? enableAudioModality,
+    String? systemInstruction,
+    bool enableThinking = false,
+    List<Tool> tools = const [],
+    int? maxOutputTokens,
+    ToolChoice toolChoice = ToolChoice.auto,
   }) async {
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
       );
     }
-
-    if (loraPath != null) {
-      throw UnsupportedError(
-        'LoRA weights are not supported on the .litertlm FFI path '
-        '(loraPath=$loraPath). Track upstream LiteRT-LM C API support; '
-        'remove loraPath or use a MediaPipe .task model on Android/iOS.',
-      );
-    }
+    final (:sessionTools, :userTurnToolChoice) = _toolChoiceFor(
+      toolChoice,
+      tools,
+    );
 
     // Single-flight guard for genuinely *concurrent* callers only. The
     // completer is cleared in the `finally` below once creation settles,
@@ -421,6 +461,9 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         randomSeed: randomSeed,
       );
       final sampling = _resolveSampling(explicit, thinking: enableThinking);
+      // Refused before the live session is closed, so a bad adapter does not
+      // cost it.
+      if (loraPath != null) _checkLoraPath(loraPath);
 
       // Legacy singleton lane: close the previous conversation BEFORE
       // opening a fresh one. createSession replaces the session it gave
@@ -445,8 +488,9 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
             explicit: explicit,
             sampling: sampling,
             systemInstruction: systemInstruction,
-            tools: tools,
+            tools: sessionTools,
             maxOutputTokens: maxOutputTokens,
+            loraPath: loraPath,
           ),
           _defaultSampler(explicit, sampling),
         );
@@ -474,6 +518,8 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       late final FfiInferenceModelSession session;
       session = FfiInferenceModelSession(
         conversation: conversation,
+        declaresTools: sessionTools.isNotEmpty,
+        userTurnToolChoice: userTurnToolChoice,
         multimodalOrder: multimodalOrder,
         thinkingTokenBudget: thinkingTokenBudget,
         modelType: modelType,
@@ -527,6 +573,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       :tools,
       :maxOutputTokens,
       :responseFormat,
+      :toolChoice,
     ) = request;
     final jsonSchema = responseFormat?.schemaJson;
     if (_isClosed) {
@@ -534,13 +581,10 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         'Model is closed. Create a new instance to use it again',
       );
     }
-    if (loraPath != null) {
-      throw UnsupportedError(
-        'LoRA weights are not supported on the .litertlm FFI path '
-        '(loraPath=$loraPath). Remove loraPath or use a MediaPipe .task '
-        'model on Android/iOS.',
-      );
-    }
+    final (:sessionTools, :userTurnToolChoice) = _toolChoiceFor(
+      toolChoice,
+      tools,
+    );
     final cap = maxConcurrentSessions;
     if (cap != null && _openSessions.length + _openSessionsPending >= cap) {
       throw StateError(
@@ -571,9 +615,10 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           explicit: explicit,
           sampling: sampling,
           systemInstruction: systemInstruction,
-          tools: tools,
+          tools: sessionTools,
           maxOutputTokens: maxOutputTokens,
           jsonSchema: jsonSchema,
+          loraPath: loraPath,
         ),
         _defaultSampler(explicit, sampling),
       );
@@ -598,6 +643,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     late final FfiInferenceModelSession session;
     session = FfiInferenceModelSession(
       conversation: conversation,
+      declaresTools: sessionTools.isNotEmpty,
       multimodalOrder: multimodalOrder,
       thinkingTokenBudget: thinkingTokenBudget,
       modelType: modelType,
@@ -606,6 +652,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       supportAudio: enableAudioModality ?? supportAudio,
       enableThinking: enableThinking,
       maxOutputTokens: maxOutputTokens,
+      userTurnToolChoice: userTurnToolChoice,
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);
@@ -662,7 +709,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       );
     }
     chat = InferenceChat(
-      sessionCreator: () => createSession(
+      sessionCreator: () => _createSingletonSession(
         temperature: temperature,
         randomSeed: randomSeed,
         topK: topK,
@@ -674,6 +721,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         enableThinking: enableThinking,
         tools: tools,
         maxOutputTokens: maxOutputTokens,
+        toolChoice: toolChoice,
       ),
       maxTokens: maxTokens,
       tokenBuffer: tokenBuffer,
@@ -691,6 +739,58 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     );
     await chat!.initSession();
     return chat!;
+  }
+
+  /// Core's tool choice where LiteRT-LM renders the tools (Gemma 4 and
+  /// FunctionGemma; core's own tools prompt follows the choice for every
+  /// other model): none opens the conversation without them, so the model
+  /// never sees them (declared, LiteRT-LM's none only keeps a call out of
+  /// the reply, and the model may write it as text); required goes with
+  /// each user message as litertlm_dart's per-message choice, never with a
+  /// message carrying tool results, so the model can answer them.
+  /// [ToolChoice.required] without tools is an [ArgumentError], and where
+  /// LiteRT-LM cannot apply it ([toolChoiceRefusal]) an [UnsupportedError].
+  ({List<Tool> sessionTools, lm.ToolChoice? userTurnToolChoice}) _toolChoiceFor(
+    ToolChoice toolChoice,
+    List<Tool> tools,
+  ) {
+    if (toolChoice == ToolChoice.required && tools.isEmpty) {
+      throw ArgumentError.value(
+        toolChoice,
+        'toolChoice',
+        'ToolChoice.required needs at least one tool',
+      );
+    }
+    final sessionTools = toolChoice == ToolChoice.none ? const <Tool>[] : tools;
+    final native =
+        toolChoice == ToolChoice.required &&
+        _nativeTools(sessionTools).isNotEmpty;
+    final refusal = toolChoiceRefusal;
+    if (native && refusal != null) {
+      throw UnsupportedError(
+        'ToolChoice.required cannot be applied here: LiteRT-LM applies it by '
+        'constrained decoding. $refusal',
+      );
+    }
+    return (
+      sessionTools: sessionTools,
+      userTurnToolChoice: native ? lm.ToolChoice.required : null,
+    );
+  }
+
+  /// The checks of a session's [loraPath] that need no engine call, as
+  /// litertlm_dart makes them: no adapter on the NPU, and a file that is
+  /// there.
+  void _checkLoraPath(String loraPath) {
+    if (activeBackend == PreferredBackend.npu) {
+      throw UnsupportedError(
+        'LoRA adapters are not supported on the NPU: LiteRT-LM\'s NPU '
+        'executor refuses them. Load the model on the CPU or the GPU.',
+      );
+    }
+    if (loraPath.isEmpty || !File(loraPath).existsSync()) {
+      throw ArgumentError.value(loraPath, 'loraPath', 'is not a file');
+    }
   }
 
   /// `tools_json` for a model whose tool calling LiteRT-LM runs natively —
@@ -756,6 +856,7 @@ class FfiInferenceModelSession extends InferenceModelSession
     with RawSdkResponseSession {
   FfiInferenceModelSession({
     required this.conversation,
+    required this.declaresTools,
     required this.modelType,
     required this.fileType,
     required this.supportImage,
@@ -764,11 +865,23 @@ class FfiInferenceModelSession extends InferenceModelSession
     this.enableThinking = false,
     this.thinkingTokenBudget,
     this.maxOutputTokens,
+    this.userTurnToolChoice,
     required this.onClose,
   });
 
+  /// The tool choice each user turn is sent with (core's
+  /// [ToolChoice.required] on a model whose tools LiteRT-LM renders); null
+  /// sends none. A turn answering tool results never carries it.
+  final lm.ToolChoice? userTurnToolChoice;
+
   /// The session's conversation.
   final lm.Conversation conversation;
+
+  /// Whether the session was opened with tools. Without, a tool response is
+  /// sent as user text, as for a model whose tool calling runs in Dart:
+  /// LiteRT-LM refuses a tool message on a conversation that declares no
+  /// tools.
+  final bool declaresTools;
 
   final ModelType modelType;
   final ModelFileType fileType;
@@ -852,7 +965,9 @@ class FfiInferenceModelSession extends InferenceModelSession
     );
     _queryBuffer.write(prompt);
 
-    if (_nativeTools && message.type == MessageType.toolResponse) {
+    if (_nativeTools &&
+        declaresTools &&
+        message.type == MessageType.toolResponse) {
       final name = message.toolName;
       if (name == null) {
         throw ArgumentError.value(
@@ -894,15 +1009,15 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// staged user message. A turn that also carries user text or media is a
   /// user message, so there the results stay in the text they were staged
   /// as; the history replay after a context trim stages exactly that mix.
-  lm.Message _takeTurnMessage() {
+  ({lm.Message message, bool carriesToolResponse}) _takeTurnMessage() {
     final text = _queryBuffer.toString();
     _queryBuffer.clear();
     final images = List<Uint8List>.of(_pendingImages);
     final audio = _pendingAudio;
     _pendingAudio = null;
     _pendingImages.clear();
-    final onlyTools =
-        _pendingToolResponses.isNotEmpty && !_stagedNonToolContent;
+    final carriesToolResponse = _pendingToolResponses.isNotEmpty;
+    final onlyTools = carriesToolResponse && !_stagedNonToolContent;
     final message = onlyTools
         ? lm.Message.tool([
             for (final r in _pendingToolResponses)
@@ -916,7 +1031,7 @@ class FfiInferenceModelSession extends InferenceModelSession
           );
     _pendingToolResponses.clear();
     _stagedNonToolContent = false;
-    return message;
+    return (message: message, carriesToolResponse: carriesToolResponse);
   }
 
   /// The last turn asked for: a turn asked for while it still streams waits
@@ -927,16 +1042,23 @@ class FfiInferenceModelSession extends InferenceModelSession
   ({Future<void> done, _TurnStop stop})? _lastTurn;
 
   /// One turn's reply, with core's errors.
-  Stream<lm.Message> _turn(lm.Message message) => conversation
+  Stream<lm.Message> _turn(
+    lm.Message message, {
+    lm.ToolChoice? toolChoice,
+  }) => conversation
       .sendMessageStream(
         message,
         thinkingConfig: lm.ThinkingConfig(
           enableThinking: enableThinking,
           thinkingTokenBudget: thinkingTokenBudget,
         ),
+        toolChoice: toolChoice,
       )
       .handleError((Object error, StackTrace stack) {
-        if (error is lm.ConstraintUnsupportedException) {
+        // A turn sent with a tool choice carries no response format (core
+        // refuses one with tools), so its refusal is the tool choice's,
+        // made before anything was sent: the session stays usable.
+        if (error is lm.ConstraintUnsupportedException && toolChoice == null) {
           // Settle the failed turn before close changes reportedEngineTurn's
           // end to `closed`. CreateConstraint has already pushed a ghost user
           // message, so refuse another send immediately and delete the
@@ -1008,7 +1130,7 @@ class FfiInferenceModelSession extends InferenceModelSession
         done = Completer<void>();
         _lastTurn = (done: done.future, stop: stop);
         _liveTurnStops.add(stop);
-        final lm.Message message;
+        final ({lm.Message message, bool carriesToolResponse}) message;
         try {
           _assertNotClosed();
           message = _takeTurnMessage();
@@ -1040,21 +1162,29 @@ class FfiInferenceModelSession extends InferenceModelSession
           await out.close();
           return;
         }
-        body = _reply(message).listen(
-          out.add,
-          // The body's error is its last event; its end follows once it has
-          // let go of the conversation, which is when the queue moves on.
-          onError: (Object error, StackTrace stack) {
-            if (out.isClosed) return;
-            out
-              ..addError(error, stack)
-              ..close();
-          },
-          onDone: () {
-            finish();
-            if (!out.isClosed) out.close();
-          },
-        );
+        body =
+            _reply(
+              message.message,
+              // Never with a message that answers tool calls, whole or mixed
+              // with user text (a history replay after a context trim).
+              toolChoice: message.carriesToolResponse
+                  ? null
+                  : userTurnToolChoice,
+            ).listen(
+              out.add,
+              // The body's error is its last event; its end follows once it has
+              // let go of the conversation, which is when the queue moves on.
+              onError: (Object error, StackTrace stack) {
+                if (out.isClosed) return;
+                out
+                  ..addError(error, stack)
+                  ..close();
+              },
+              onDone: () {
+                finish();
+                if (!out.isClosed) out.close();
+              },
+            );
         if (out.isPaused) body!.pause();
       },
       onPause: () => body?.pause(),
@@ -1082,13 +1212,16 @@ class FfiInferenceModelSession extends InferenceModelSession
   }
 
   /// The reply to [message], with the timings the perf log reports.
-  Stream<String> _reply(lm.Message message) async* {
+  Stream<String> _reply(
+    lm.Message message, {
+    lm.ToolChoice? toolChoice,
+  }) async* {
     final genSw = Stopwatch()..start();
     int? firstChunkMs;
     var chunkCount = 0;
     final raw = _nativeTools ? StringBuffer() : null;
     _lastRawResponse = null;
-    await for (final chunk in _turn(message)) {
+    await for (final chunk in _turn(message, toolChoice: toolChoice)) {
       if (firstChunkMs == null) {
         firstChunkMs = genSw.elapsedMilliseconds;
         runtimeLog(

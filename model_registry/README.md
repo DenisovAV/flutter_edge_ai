@@ -21,6 +21,7 @@ text-to-speech) in the repositories below. The schema already admits `task`,
 | `hosts.yaml` | the platforms the website shows a status for, in its column order | hand |
 | `documented_claims.yaml` | what the docs and release notes say works, with the source | hand |
 | `evidence/<date>_<host>_<device>.json` | what a recorded integration run passed, and on which native build | `registry.dart evidence` |
+| `pub_dev.yaml` | the catalog packages' versions on pub.dev and the native build they bundle | `registry.dart pin` |
 
 Generated from it, checked in, never edited by hand:
 - `packages/flutter_edge_ai_litertlm/lib/src/catalog/generated/litert_catalog.g.dart`:
@@ -39,8 +40,8 @@ Generated from it, checked in, never edited by hand:
 
   | Status | From |
   |---|---|
-  | verified | a run under `evidence/` on the native build the packages ship now |
-  | stale | the same, on an earlier native build or minor version |
+  | verified | a run under `evidence/` on the native build of the packages on pub.dev (`pub_dev.yaml`) |
+  | stale | the same, on another native build or minor version |
   | documented | a claim in `documented_claims.yaml` |
   | untested | the package's snapshot runs it there and nothing says more |
   | refused | the snapshot does not run it there: a native backend the package rules out, or an NPU build on its vendor's platform |
@@ -198,6 +199,54 @@ a log from more than one host or from a simulator, uncommitted changes under
 `packages/*/lib`, `hook` or `native`, and a cell the package's snapshot does
 not run there.
 
+## What pub.dev ships
+
+The site describes what an app gets when it resolves the catalog packages from
+pub.dev, not the workspace. `flutter_edge_ai_litertlm` pins `litertlm_dart`
+to one version, and that version's hook names one native release and one
+archive per host, so the published adapter decides the native build.
+`pub_dev.yaml` records it:
+
+```yaml
+packages:
+  flutter_edge_ai_litertlm: 1.21.3
+  flutter_edge_ai_speech: 0.6.2
+litertlm_dart: 0.19.1+4
+native_release: native-v0.19.1-c
+archives:          # host: the sha256 of that litertlm_dart's archive
+  macos_arm64: 698c48bc...
+```
+
+A cell is verified when a run passed on `archives[host]` (on the web, on the
+pinned adapter version) and its package is on the pinned minor version. Runs
+on a newer workspace build are kept and read as stale until the release that
+ships that build moves the pin. `generate` and `check` read only this file,
+never the network. `check` refuses a pin without a version for a package with
+a catalog, without an archive for a native host, or, when the workspace's
+`litertlm_dart` is the pinned version, with a tag or archive its hook does not
+name.
+
+The pin moves in the release commit of the package, never by hand:
+
+```sh
+dart run bin/registry.dart pin flutter_edge_ai_litertlm   # also litertlm_dart and its native build
+dart run bin/registry.dart pin flutter_edge_ai_speech     # its version only
+dart run bin/registry.dart generate
+```
+
+`pin flutter_edge_ai_litertlm` refuses an adapter that does not pin
+`litertlm_dart` to one version, or pins one the workspace is not at.
+`release-check` refuses until the pin names the version being published.
+
+```sh
+dart run bin/registry.dart pub-check
+```
+
+asks pub.dev (network; the weekly live workflow runs it): every pinned package
+must be its latest version, the latest adapter must pin the pinned
+`litertlm_dart`, and that version's published hook must name the pinned tag
+and archives.
+
 ## Check
 
 ```sh
@@ -272,6 +321,8 @@ generated from here. Before either is published:
 ```sh
 cd tool/model_registry
 dart run bin/registry.dart freeze flutter_edge_ai_litertlm     # published/<package>/<version>.json
+dart run bin/registry.dart pin flutter_edge_ai_litertlm        # pub_dev.yaml
+dart run bin/registry.dart generate
 dart run bin/registry.dart release-check flutter_edge_ai_litertlm
 ```
 
@@ -281,14 +332,14 @@ in its pubspec, `check` reports that version's snapshot missing until `freeze`
 writes it; `freeze`, `generate`, `evidence` and `release-check` let that one
 problem pass (`release-check` still refuses until the snapshot is written), so
 the release skill's order works: bump, rename the heading, record, freeze,
-generate, commit, release-check. `freeze` lets every package's pending
+pin, generate, commit, release-check. `freeze` lets every package's pending
 snapshot pass, so litertlm and speech bumped together freeze in either order;
 `release-check` lets only its own pass. A snapshot git ever held is a shipped
 one, never written again (and when git cannot say, it is treated as one). `release-check` passes when the registry and every
 generated file are current, the frozen fields are written, and every cell
 `release_critical.yaml` lists for the package is verified: a run under
-`evidence/` on the native build the package ships, since that build or the
-package's minor version last moved, and nothing under `model_registry/`,
+`evidence/` on the native build the moved pin names, since that build or the
+package's minor version last moved, `pub_dev.yaml` names the version, and nothing under `model_registry/`,
 `tool/model_registry/` or the package is uncommitted (an example app's
 `pubspec.lock`, which any `pub get` rewrites, aside). A patch on the same
 native build keeps its evidence. The release skill makes a green

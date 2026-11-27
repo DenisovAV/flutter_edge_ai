@@ -85,88 +85,114 @@ class MobileModelManager extends ModelFileManager
       // the active-tasks gate below reflects reality (avoids racing — and then
       // deleting — a just-restarted download's temp on cold start).
       await Future<void>.delayed(const Duration(seconds: 5));
-      final downloader = FileDownloader();
-      await downloader.resumeFromBackground();
-
-      // Narrow the blanket gate to GENUINELY-RUNNING native tasks. A legacy
-      // record re-materialized by resumeFromBackground() shows up as a *paused*
-      // task; gating on "any active task" would let one stale paused record wedge
-      // reclaim forever — exactly the R2 upgrade-mid-download scenario (#383).
-      // ignore: invalid_use_of_visible_for_testing_member
-      final storage = downloader.database.storage;
-      final pausedIds = (await storage.retrieveAllPausedTasks())
-          .map((t) => t.taskId)
-          .toSet();
-      final allIds = (await downloader.allTasks(
-        allGroups: true,
-      )).map((t) => t.taskId).toSet();
-      final nativeRunningIds = allIds.difference(pausedIds);
-
-      // Reconcile every group-scoped resume record against the current scheme,
-      // BEFORE the blanket sweep. Purge legacy records (temp + resume/paused/db
-      // state); keep current-scheme and still-running temps.
-      final resumeData = await storage.retrieveAllResumeData();
-      final keep = <String>{};
-      for (final r in resumeData) {
-        if (r.task.group != SmartDownloader.downloadGroup) continue;
-        try {
-          final expectedId = computeTaskId(
-            r.task.baseDirectory,
-            r.task.directory,
-            r.task.filename,
-          );
-          Duration tempAge;
-          try {
-            tempAge = DateTime.now().difference(
-              await File(r.tempFilepath).lastModified(),
-            );
-          } catch (_) {
-            tempAge =
-                kDownloadTempMinReclaimAge; // treat unknown mtime as eligible-old
-          }
-          final decision = reconcileResumeRecord(
-            taskId: r.task.taskId,
-            expectedId: expectedId,
-            isNativeRunning: nativeRunningIds.contains(r.task.taskId),
-            tempAge: tempAge,
-          );
-          switch (decision) {
-            case ReclaimDecision.keep:
-              keep.add(r.tempFilepath);
-            case ReclaimDecision.skip:
-              break;
-            case ReclaimDecision.purge:
-              try {
-                await File(r.tempFilepath).delete();
-              } catch (_) {}
-              await storage.removeResumeData(r.task.taskId);
-              await storage.removePausedTask(r.task.taskId);
-              await downloader.database.deleteRecordWithId(r.task.taskId);
-              edgeAiLog(
-                'Reclaimed legacy download record ${r.task.taskId} (#383)',
-              );
-          }
-        } catch (e) {
-          edgeAiLog('Reclaim: skipped record ${r.task.taskId} ($e) (#383)');
-          continue;
-        }
-      }
-
-      // Blanket filesystem sweep only when nothing is actively writing a temp.
-      if (nativeRunningIds.isNotEmpty) {
-        edgeAiLog(
-          'Download-temp sweep skipped: ${nativeRunningIds.length} running task(s) (#383)',
-        );
-        return;
-      }
-      final dir = await getApplicationSupportDirectory();
-      final reclaimed = await sweepOrphanedDownloadTemps(dir, keepPaths: keep);
-      edgeAiLog(
-        'Download-temp reclaim: kept ${keep.length}, reclaimed $reclaimed (#383)',
-      );
+      await reclaimAfterReplay(_reclaimRecordsAndSweep);
     } catch (e, st) {
       edgeAiLog('Orphaned download-temp reclaim failed (non-fatal): $e\n$st');
     }
+  }
+
+  /// The reclaim once its startup delay is over: the one
+  /// `resumeFromBackground()` of the process first, then [recordsAndSweep] —
+  /// only when that replay ran.
+  ///
+  /// The replay goes through [SmartDownloader.backgroundCompletions], with a
+  /// listener attached, so the completions it replays are kept, not dropped
+  /// (#873); an install that ran before this has already triggered it, and
+  /// then this only waits. A replay that failed has not put the resume records
+  /// back into storage, so their temps would not be kept and the sweep could
+  /// delete a resumable partial download: then nothing is reclaimed this run.
+  @visibleForTesting
+  Future<void> reclaimAfterReplay(
+    Future<void> Function() recordsAndSweep,
+  ) async {
+    if (!await SmartDownloader.backgroundCompletions.reconcile()) {
+      edgeAiLog('Download-temp reclaim skipped: the replay failed (#383)');
+      return;
+    }
+    await recordsAndSweep();
+  }
+
+  /// Reconciles core's resume records and sweeps the orphaned temps (#383).
+  /// Runs after [reclaimAfterReplay]'s replay.
+  Future<void> _reclaimRecordsAndSweep() async {
+    final downloader = FileDownloader();
+
+    // Narrow the blanket gate to GENUINELY-RUNNING native tasks. A legacy
+    // record re-materialized by resumeFromBackground() shows up as a *paused*
+    // task; gating on "any active task" would let one stale paused record wedge
+    // reclaim forever — exactly the R2 upgrade-mid-download scenario (#383).
+    // ignore: invalid_use_of_visible_for_testing_member
+    final storage = downloader.database.storage;
+    final pausedIds = (await storage.retrieveAllPausedTasks())
+        .map((t) => t.taskId)
+        .toSet();
+    final allIds = (await downloader.allTasks(
+      allGroups: true,
+    )).map((t) => t.taskId).toSet();
+    final nativeRunningIds = allIds.difference(pausedIds);
+
+    // Reconcile every group-scoped resume record against the current scheme,
+    // BEFORE the blanket sweep. Purge legacy records (temp + resume/paused/db
+    // state); keep current-scheme and still-running temps.
+    final resumeData = await storage.retrieveAllResumeData();
+    final keep = <String>{};
+    for (final r in resumeData) {
+      if (r.task.group != SmartDownloader.downloadGroup) continue;
+      try {
+        final expectedId = computeTaskId(
+          r.task.baseDirectory,
+          r.task.directory,
+          r.task.filename,
+        );
+        Duration tempAge;
+        try {
+          tempAge = DateTime.now().difference(
+            await File(r.tempFilepath).lastModified(),
+          );
+        } catch (_) {
+          tempAge =
+              kDownloadTempMinReclaimAge; // treat unknown mtime as eligible-old
+        }
+        final decision = reconcileResumeRecord(
+          taskId: r.task.taskId,
+          expectedId: expectedId,
+          isNativeRunning: nativeRunningIds.contains(r.task.taskId),
+          tempAge: tempAge,
+        );
+        switch (decision) {
+          case ReclaimDecision.keep:
+            keep.add(r.tempFilepath);
+          case ReclaimDecision.skip:
+            break;
+          case ReclaimDecision.purge:
+            try {
+              await File(r.tempFilepath).delete();
+            } catch (_) {}
+            await storage.removeResumeData(r.task.taskId);
+            await storage.removePausedTask(r.task.taskId);
+            await downloader.database.deleteRecordWithId(r.task.taskId);
+            edgeAiLog(
+              'Reclaimed legacy download record ${r.task.taskId} (#383)',
+            );
+        }
+      } catch (e) {
+        edgeAiLog('Reclaim: skipped record ${r.task.taskId} ($e) (#383)');
+        continue;
+      }
+    }
+
+    // Blanket filesystem sweep only when nothing is actively writing a temp.
+    if (nativeRunningIds.isNotEmpty) {
+      edgeAiLog(
+        'Download-temp sweep skipped: ${nativeRunningIds.length} running task(s) (#383)',
+      );
+      return;
+    }
+    final dir = await getApplicationSupportDirectory();
+    final reclaimed = await sweepOrphanedDownloadTemps(dir, keepPaths: keep);
+    edgeAiLog(
+      'Download-temp reclaim: kept ${keep.length}, reclaimed $reclaimed (#383)',
+    );
   }
 
   /// Rehydrate `_activeInferenceModel` from the identity that

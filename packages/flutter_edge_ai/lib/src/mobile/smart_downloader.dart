@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_edge_ai/src/domain/download_error.dart';
+import 'package:flutter_edge_ai/src/mobile/background_completions.dart';
 import 'package:flutter_edge_ai/src/domain/download_exception.dart';
 import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
@@ -482,6 +483,12 @@ class SmartDownloader {
   /// [stream] may be single- or broadcast; non-broadcast sources are
   /// wrapped with [Stream.asBroadcastStream] so concurrent downloads can
   /// each call [Stream.listen].
+  ///
+  /// The hub should forward each update as it arrives — directly or through
+  /// further streams, but not after a timer or other I/O. At startup core
+  /// listens to it only around its `resumeFromBackground()` call, to keep the
+  /// downloads that finished while the app was closed (#873); an update that
+  /// reaches the hub later is not kept, and that model is downloaded again.
   static void configureDownloadUpdatesStream(Stream<TaskUpdate>? stream) {
     _configuredDownloadUpdatesStream = stream;
     _configuredBroadcastStream = null;
@@ -616,6 +623,85 @@ class SmartDownloader {
       taskProgressCallback: forward,
     );
     return live.stream;
+  }
+
+  /// Core's downloads that finished while the app was not running, as
+  /// `resumeFromBackground()` replays them (#873). Captured through the same
+  /// stream every download listens to ([_resolveUpdatesStream]): the group
+  /// fan-out, or a host's hub when one is configured — a group callback of
+  /// our own would starve the hub (#445).
+  static BackgroundCompletions get backgroundCompletions =>
+      _backgroundCompletions;
+  static BackgroundCompletions _backgroundCompletions = _coreCompletions(
+    () => FileDownloader().resumeFromBackground(),
+  );
+
+  static BackgroundCompletions _coreCompletions(
+    Future<void> Function() resume,
+  ) => BackgroundCompletions(
+    updates: _resolveUpdatesStream,
+    resume: resume,
+    group: downloadGroup,
+  );
+
+  /// Starts [backgroundCompletions] afresh — core's own wiring, nothing kept,
+  /// the replay not yet made — with [resume] standing in for
+  /// `FileDownloader().resumeFromBackground()`.
+  @visibleForTesting
+  static void debugResetBackgroundCompletions({
+    Future<void> Function()? resume,
+  }) {
+    _backgroundCompletions = _coreCompletions(
+      resume ?? () => FileDownloader().resumeFromBackground(),
+    );
+  }
+
+  /// The background_downloader task id of a download to [targetPath]: the one
+  /// [download] gives its task, from [Task.split] and [computeTaskId].
+  static Future<String> taskIdFor(String targetPath) async {
+    final (base, directory, filename) = await Task.split(filePath: targetPath);
+    return computeTaskId(base, directory, filename);
+  }
+
+  /// A completion of a download of [url] to [targetPath] that finished while
+  /// the app was not running, when the file may be reused instead of being
+  /// downloaded again (#873); see [BackgroundCompletions.takeFor].
+  ///
+  /// Android only. iOS finishes a background download only when the system,
+  /// not the user, ended the app, and core does not call
+  /// `resumeFromBackground()` there; desktop downloads cannot outlive the
+  /// process. Never throws: a failure means no evidence.
+  static Future<BackgroundCompletion?> completedWhileAway(
+    String url,
+    String targetPath,
+  ) async {
+    if (!Platform.isAndroid) return null;
+    return debugCompletedWhileAway(
+      url,
+      targetPath,
+      isActive: (taskId) async =>
+          await FileDownloader().taskForId(taskId) != null,
+    );
+  }
+
+  /// [completedWhileAway] on any platform, with [isActive] in place of
+  /// `FileDownloader().taskForId`.
+  @visibleForTesting
+  static Future<BackgroundCompletion?> debugCompletedWhileAway(
+    String url,
+    String targetPath, {
+    required Future<bool> Function(String taskId) isActive,
+  }) async {
+    try {
+      return await backgroundCompletions.takeFor(
+        await taskIdFor(targetPath),
+        url,
+        isActive: isActive,
+      );
+    } catch (error) {
+      edgeAiLog('⚠️ SmartDownloader.completedWhileAway failed: $error');
+      return null;
+    }
   }
 
   static Stream<TaskUpdate> _resolveUpdatesStream() {

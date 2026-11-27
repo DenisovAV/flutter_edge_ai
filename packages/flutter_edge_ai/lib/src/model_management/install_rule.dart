@@ -36,6 +36,7 @@ import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/src/model_management/utils/local_file.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/src/utils/network_url.dart';
 import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
 
 /// What installing one file of a spec does, as [planInstall] decided it.
@@ -323,8 +324,10 @@ Future<String?> _bundlePath(String resourceName) async {
 /// fragment and credentials — a refreshed signed link, or `?download=true`,
 /// is the same model —, the same asset, the same bundled resource.
 bool _sameSource(ModelSource a, ModelSource b) => switch ((a, b)) {
-  (NetworkSource(url: final x), NetworkSource(url: final y)) =>
-    _withoutQuery(x) == _withoutQuery(y),
+  (NetworkSource(url: final x), NetworkSource(url: final y)) => sameNetworkUrl(
+    x,
+    y,
+  ),
   (
     AssetSource(normalizedPath: final x),
     AssetSource(normalizedPath: final y),
@@ -337,17 +340,6 @@ bool _sameSource(ModelSource a, ModelSource b) => switch ((a, b)) {
     x == y,
   _ => false,
 };
-
-String _withoutQuery(String url) {
-  final uri = Uri.tryParse(url);
-  if (uri == null || !uri.hasScheme) return url;
-  return Uri(
-    scheme: uri.scheme,
-    host: uri.host,
-    port: uri.hasPort ? uri.port : null,
-    path: uri.path,
-  ).toString();
-}
 
 /// Installs what [planInstall] decided, in order, and returns what releases
 /// the earlier copies once the spec is active.

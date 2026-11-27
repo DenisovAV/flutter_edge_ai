@@ -374,7 +374,9 @@ final class _SttStream {
 
   /// Samples received and not analysed yet: those in [_queue] and the chunk
   /// the transcriber is working on.
-  int _pendingSamples = 0;
+  /// Whether any text has been confirmed in this stream: the first
+  /// confirmed delta has no leading space.
+  bool _anyConfirmed = false;
 
   /// The flushes the transcriber is running now (taken off [_queue]).
   List<Completer<void>> _flushing = const [];
@@ -488,15 +490,18 @@ final class _SttStream {
     if (bytes.isEmpty) return;
     final samples = pcm16LEToFloat32(bytes);
     _queue.add(samples);
-    _pendingSamples += samples.length;
+    // Received and not analysed yet: what waits in the queue, and what the
+    // transcriber holds that no window has run over (a window in flight
+    // counts as not analysed until it returns).
+    var pending = _transcriber?.pendingSamples ?? 0;
+    for (final item in _queue) {
+      if (item is Float32List) pending += item.length;
+    }
     final limitTime = _options.maxBufferedAudioFor(_owner.streaming.window);
     final limit = limitTime.inMicroseconds * _rate ~/ 1000000;
-    if (_pendingSamples > limit) {
+    if (pending > limit) {
       _fail(
-        SpeechStreamOverrunException(
-          buffered: _at(_pendingSamples),
-          limit: limitTime,
-        ),
+        SpeechStreamOverrunException(buffered: _at(pending), limit: limitTime),
       );
       return;
     }
@@ -505,6 +510,12 @@ final class _SttStream {
 
   Future<void> flush() {
     final mark = Completer<void>();
+    // A flush already running covers all audio received so far when none
+    // has arrived since: this call shares it.
+    if (_flushing.isNotEmpty && !_queue.any((item) => item is Float32List)) {
+      _flushing.add(mark);
+      return mark.future;
+    }
     _queue.add(mark);
     _pump();
     return mark.future;
@@ -524,7 +535,6 @@ final class _SttStream {
         final item = _queue.removeAt(0);
         if (item is Float32List) {
           final result = await transcriber.add(item);
-          _pendingSamples -= item.length;
           _emit(result, endpoint: false);
         } else if (item is Completer<void>) {
           final pending = <Completer<void>>[item];
@@ -566,9 +576,13 @@ final class _SttStream {
     }
     _lastUnconfirmed = unconfirmed;
     _lastConfirmedUntil = result.confirmedUntil;
+    final hadConfirmed = _anyConfirmed;
+    if (result.confirmed.isNotEmpty) _anyConfirmed = true;
     _out.add(
       TranscriptUpdate(
-        confirmedDelta: result.confirmed.isEmpty ? '' : ' ${result.confirmed}',
+        confirmedDelta: result.confirmed.isEmpty
+            ? ''
+            : '${hadConfirmed ? ' ' : ''}${result.confirmed}',
         unconfirmed: unconfirmed,
         confirmedUntil: _at(result.confirmedUntil),
         endpoint: endpoint,
@@ -601,6 +615,9 @@ final class _SttStream {
   void _fail(Object error, [StackTrace? stack]) {
     if (_done) return;
     _done = true;
+    // Windows not started yet do not run: the recognizer is released below
+    // and the next stream's windows should not wait behind them.
+    _transcriber?.stop();
     unawaited(_subscription?.cancel());
     _release();
     _out.addError(error, stack);

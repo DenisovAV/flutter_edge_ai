@@ -36,6 +36,32 @@ void main() {
       expect(shifted.window.sublist(6), _ramp(100, 4));
     });
 
+    test('with the overlap known, a long run of digital silence is spliced '
+        'right and fast', () {
+      // 80k-sample window of exact zeros but its last 10 samples; the
+      // remainder starts with its last 60k samples (the kept overlap). A
+      // search from the longest candidate scans ~60k equal samples per
+      // candidate before the tail tells them apart.
+      final previous = Float32List(80000);
+      for (var i = 79990; i < 80000; i++) {
+        previous[i] = (i % 7 + 1) / 8;
+      }
+      final remainder = Float32List(65000)..setRange(0, 60000, previous, 20000);
+      for (var i = 60000; i < 65000; i++) {
+        remainder[i] = (i % 89 + 1) / 90;
+      }
+      final watch = Stopwatch()..start();
+      final shifted = shiftShortChunkBack(
+        remainder,
+        previous,
+        expectedOverlapSamples: 60000,
+      );
+      watch.stop();
+      expect(shifted.window.sublist(15000), remainder);
+      expect(shifted.startFraction, closeTo(15000 / 80000, 1e-9));
+      expect(watch.elapsedMilliseconds, lessThan(50));
+    });
+
     test('a remainder as long as the window throws', () {
       expect(
         () => shiftShortChunkBack(_ramp(0, 10), _ramp(0, 10)),

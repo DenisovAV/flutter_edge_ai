@@ -104,6 +104,15 @@ final class WindowedTranscriber {
 
   int _confirmedUntil = 0;
 
+  /// Where the audio analysed so far ends: the end of the last window run,
+  /// from the first sample given to the transcriber.
+  int _analysedEnd = 0;
+
+  /// Samples given to the transcriber and not yet inside a window that ran:
+  /// what a caller counts against its buffer limit (the overlap a window
+  /// keeps is inside an analysed window, so it does not count).
+  int get pendingSamples => _origin + _received - _analysedEnd;
+
   bool _stopped = false;
 
   /// Stops at the next window boundary: windows not started yet are not run.
@@ -124,6 +133,8 @@ final class WindowedTranscriber {
     _previousWindow = null;
     _origin += _received;
     _received = 0;
+    // Everything up to here is analysed, also when no remainder ran.
+    if (_analysedEnd < _origin) _analysedEnd = _origin;
     _fullWindows = 0;
     _confirmedUntil = _origin;
     return result;
@@ -144,6 +155,15 @@ final class WindowedTranscriber {
       final tokens = await _runPrepared(window);
       ran = true;
       if (window.kind == AudioWindowKind.full) _fullWindows++;
+      final step = _windower.samplesPerInterval - _windower.overlapSamples;
+      final analysedTo =
+          _origin +
+          switch (window.kind) {
+            AudioWindowKind.full => (_fullWindows - 1) * step + windowSamples,
+            AudioWindowKind.warmStart => window.samples.length,
+            AudioWindowKind.remainder => _received,
+          };
+      if (analysedTo > _analysedEnd) _analysedEnd = analysedTo;
       final end = tokens.isEmpty ? null : tokens.last;
       if (end != null && end.isEndOfChunk && end.timestampMs != null) {
         _windowFrames ??= end.timestampMs;
@@ -216,7 +236,11 @@ final class WindowedTranscriber {
             previous.length == windowSamples &&
             missing > 0 &&
             missing * 6 >= windowSamples) {
-          final shifted = shiftShortChunkBack(samples, previous);
+          final shifted = shiftShortChunkBack(
+            samples,
+            previous,
+            expectedOverlapSamples: _windower.overlapSamples,
+          );
           _previousWindow = shifted.window;
           return _runWindow(
             shifted.window,
@@ -260,6 +284,7 @@ final class WindowedTranscriber {
   Float32List remainder,
   Float32List previous, {
   int minOverlapSamples = 1,
+  int? expectedOverlapSamples,
 }) {
   final windowSamples = previous.length;
   final missing = windowSamples - remainder.length;
@@ -272,7 +297,22 @@ final class WindowedTranscriber {
   }
   var overlap = 0;
   final minOverlap = minOverlapSamples > 0 ? minOverlapSamples : 1;
-  for (var candidate = remainder.length; candidate >= minOverlap; candidate--) {
+  // The windower knows the overlap it kept: try it first, so a long run of
+  // equal samples (digital silence) does not make the search below scan it
+  // once per candidate.
+  final expected = expectedOverlapSamples;
+  if (expected != null &&
+      expected >= minOverlap &&
+      expected <= remainder.length &&
+      expected <= windowSamples &&
+      _suffixEquals(previous, remainder, expected)) {
+    overlap = expected;
+  }
+  for (
+    var candidate = remainder.length;
+    overlap == 0 && candidate >= minOverlap;
+    candidate--
+  ) {
     var equal = true;
     final from = windowSamples - candidate;
     for (var k = 0; k < candidate; k++) {
@@ -293,3 +333,13 @@ final class WindowedTranscriber {
 }
 
 double _f32(double value) => (Float32List(1)..[0] = value)[0];
+
+/// Whether the last [length] samples of [previous] equal the first [length]
+/// of [remainder].
+bool _suffixEquals(Float32List previous, Float32List remainder, int length) {
+  final from = previous.length - length;
+  for (var k = 0; k < length; k++) {
+    if (previous[from + k] != remainder[k]) return false;
+  }
+  return true;
+}

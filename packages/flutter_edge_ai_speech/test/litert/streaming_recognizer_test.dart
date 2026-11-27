@@ -43,7 +43,14 @@ final class _FakeEngine implements SttWorkerEngine {
     final (mode, log) = parseFakeConfig(_config);
     appendLogLine(log, 'window');
     if (mode == 'dies') Isolate.exit();
-    if (_config.startsWith('gate')) blockUntilReleased(log);
+    // `gate`: every window waits for the release; `gate2`: from the second
+    // window on.
+    final windowsRun = log == null
+        ? 0
+        : '\n'.allMatches(File(log).readAsStringSync()).length;
+    if (mode == 'gate' || (mode == 'gate2' && windowsRun >= 2)) {
+      blockUntilReleased(log);
+    }
     const frame = 1280;
     final frames = window.length ~/ frame;
     final first = (startFraction * frames).floor();
@@ -497,6 +504,205 @@ void main() {
       await expectLater(stream, throwsStateError);
       await input.close();
     });
+  });
+
+  group('review fixes', () {
+    int windows(File log) =>
+        log.existsSync() ? '\n'.allMatches(log.readAsStringSync()).length : 0;
+
+    test('the backlog is audio received and not inside a window that ran: '
+        'an overrun comes exactly past the limit', () async {
+      final log = gatedLog(dir, 'gate');
+      final recognizer = await create(config: 'gate@${log.path}');
+      addTearDown(recognizer.close);
+      final input = StreamController<Uint8List>();
+      Object? error;
+      final ended = Completer<void>();
+      recognizer
+          .transcribeStream(input.stream)
+          .listen(
+            (_) {},
+            onError: (Object e) => error = e,
+            onDone: ended.complete,
+          );
+      // 5 s whose first window blocks in "native" code: all 5 s pending.
+      input.add(_speech([1], seconds: 5));
+      await waitForLine(log, 'window');
+      // The default limit for a 5 s window is 10 s: 5 more seconds fit.
+      for (var i = 0; i < 5; i++) {
+        input.add(_speech([], seconds: 1));
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(error, isNull, reason: '10 s pending is at the limit, not past');
+      input.add(_speech([], seconds: 1));
+      await ended.future;
+      expect(error, isA<SpeechStreamOverrunException>());
+      release(log);
+      await input.close();
+    });
+
+    test(
+      'a model that keeps up never overruns, however long the stream',
+      () async {
+        final recognizer = await create();
+        addTearDown(recognizer.close);
+        final input = StreamController<Uint8List>();
+        final stream = recognizer.transcribeStream(input.stream).toList();
+        // 25 s at the default 10 s limit, a second at a time.
+        for (var i = 0; i < 25; i++) {
+          input.add(_speech([1 + i % 9], seconds: 1));
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        await input.close();
+        expect(await stream, isNotEmpty);
+      },
+    );
+
+    test('closing during a running flush fails it, and the stream', () async {
+      final log = File('${dir.path}/gate2.log');
+      addTearDown(() => release(log));
+      final recognizer = await create(config: 'gate2@${log.path}');
+      final input = StreamController<Uint8List>();
+      final stream = recognizer.transcribeStream(input.stream).toList();
+      final ended = expectLater(stream, throwsStateError);
+      // 2 s: one warm-start window (the first runs after 1.25 s).
+      input.add(_speech([1], seconds: 2));
+      while (windows(log) < 1) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      // 0.3 s more, below the next warm start: left for the flush's own
+      // window, the second, which blocks.
+      input.add(_speech([], seconds: 0.3));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      // The flush's own window is the second: it blocks.
+      final flushed = expectLater(recognizer.flush(), throwsStateError);
+      while (windows(log) < 2) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      final closing = recognizer.close();
+      release(log);
+      await flushed;
+      await ended;
+      await closing;
+      await input.close();
+    });
+
+    test(
+      'a flush asked for while one runs, with no audio since, shares it',
+      () async {
+        final log = File('${dir.path}/gate2b.log');
+        addTearDown(() => release(log));
+        final recognizer = await create(config: 'gate2@${log.path}');
+        addTearDown(recognizer.close);
+        final input = StreamController<Uint8List>();
+        final updates = <TranscriptUpdate>[];
+        final done = recognizer
+            .transcribeStream(input.stream)
+            .listen(updates.add)
+            .asFuture<void>();
+        // 2 s: one warm-start window; 0.3 s more for the flush's own
+        // window, the second, which blocks.
+        input.add(_speech([1], seconds: 2));
+        while (windows(log) < 1) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        input.add(_speech([], seconds: 0.3));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        final first = recognizer.flush();
+        while (windows(log) < 2) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        final second = recognizer.flush();
+        release(log);
+        await Future.wait([first, second]);
+        expect(updates.where((u) => u.endpoint), hasLength(1));
+        await input.close();
+        await done;
+      },
+    );
+
+    test(
+      'cancelling stops at the next window: windows not started never run',
+      () async {
+        final log = gatedLog(dir, 'gate');
+        final recognizer = await create(config: 'gate@${log.path}');
+        addTearDown(recognizer.close);
+        final input = StreamController<Uint8List>();
+        final sub = recognizer.transcribeStream(input.stream).listen((_) {});
+        // 9 s in one chunk: several windows, the first blocked.
+        input.add(_speech([1, 2], seconds: 9));
+        await waitForLine(log, 'window');
+        final cancelling = sub.cancel();
+        release(log);
+        await cancelling;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(windows(log), 1);
+        await input.close();
+      },
+    );
+
+    test('a failed stream stops at the next window as well', () async {
+      final log = gatedLog(dir, 'gate');
+      final recognizer = await create(config: 'gate@${log.path}');
+      addTearDown(recognizer.close);
+      final input = StreamController<Uint8List>();
+      final stream = recognizer.transcribeStream(input.stream).toList();
+      final ended = expectLater(stream, throwsFormatException);
+      input.add(_speech([1, 2], seconds: 9));
+      await waitForLine(log, 'window');
+      input.addError(const FormatException('mic failed'));
+      await ended;
+      release(log);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(windows(log), 1);
+      await input.close();
+    });
+
+    test('confirmedUntil never goes back, across a flush too', () async {
+      final recognizer = await create();
+      addTearDown(recognizer.close);
+      final input = StreamController<Uint8List>();
+      final updates = <TranscriptUpdate>[];
+      final done = recognizer
+          .transcribeStream(
+            input.stream,
+            options: const TranscribeStreamOptions(
+              maxBufferedAudio: Duration(minutes: 10),
+            ),
+          )
+          .listen(updates.add)
+          .asFuture<void>();
+      input.add(_speech([1, 2, 3, 4, 5, 6, 7, 8]));
+      await Future<void>.delayed(Duration.zero);
+      await recognizer.flush();
+      input.add(_speech([9, 8, 7, 6, 5, 4, 3]));
+      await input.close();
+      await done;
+      for (var k = 1; k < updates.length; k++) {
+        expect(
+          updates[k].confirmedUntil >= updates[k - 1].confirmedUntil,
+          isTrue,
+          reason: 'update $k: ${updates[k - 1]} then ${updates[k]}',
+        );
+      }
+    });
+
+    test(
+      'the confirmed deltas add up to the transcript, no leading space',
+      () async {
+        final recognizer = await create();
+        addTearDown(recognizer.close);
+        final updates = await recognizer
+            .transcribeStream(
+              _chunks(_speech([1, 2, 3]), 3200),
+              options: const TranscribeStreamOptions(
+                maxBufferedAudio: Duration(minutes: 10),
+              ),
+            )
+            .toList();
+        expect(updates.map((u) => u.confirmedDelta).join(), 'w1 w2 w3');
+      },
+    );
   });
 
   test('audio piling up behind a slow model fails with an overrun', () async {

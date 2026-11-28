@@ -42,8 +42,10 @@ dependencies:
   # LiteRtLmNpuTarget, the core NpuTarget the speech catalog names. 1.22.0 is
   # the first release on litertlm_dart 0.20.0; 1.21.x pin 0.19.1, which the
   # line above excludes. (The 1.20.x releases carry a build hook of their own,
-  # which would bundle libLiteRtLm a second time.)
-  flutter_edge_ai_litertlm: ^1.22.0
+  # which would bundle libLiteRtLm a second time.) 1.22.1 is the first that
+  # allows flutter_edge_ai 2.8.0, which the line above requires; with 1.22.0
+  # as the floor the lowest versions do not resolve.
+  flutter_edge_ai_litertlm: ^1.22.1
   ffi: ^2.1.0
   # The bundled VAD model is copied to the app's support directory for
   # LiteRT, which opens models by path, and checked against its SHA-256.

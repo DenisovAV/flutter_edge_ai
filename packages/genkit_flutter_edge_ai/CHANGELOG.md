@@ -1,3 +1,6 @@
+## 0.12.2+1
+- README pins on `flutter_edge_ai` 2.8.0 and `flutter_edge_ai_litertlm` 1.22.1; full pub points.
+
 ## 0.12.2
 - Require `genkit` ^1.0.1, which wraps primitive tool inputs as `{input: …}`.
 

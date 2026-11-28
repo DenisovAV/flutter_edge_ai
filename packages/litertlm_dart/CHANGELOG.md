@@ -1,4 +1,4 @@
-## Unreleased
+## 0.20.0+3
 - Gemma 4 with thinking answers tool results in text: canonical chat template, thoughts kept with tools.
 
 ## 0.20.0+2

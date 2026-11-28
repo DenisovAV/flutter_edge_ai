@@ -8,7 +8,6 @@ import 'package:flutter_edge_ai/src/domain/no_active_model_error.dart';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:meta/meta.dart' show internal;
 import 'package:path/path.dart' as path;
 
 import '../interface.dart';

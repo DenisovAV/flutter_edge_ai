@@ -575,9 +575,7 @@ abstract class InferenceModel {
   /// The sessions this engine holds open: the legacy [session] and each
   /// session [openEngineSession] returned that is not closed yet.
   @protected
-  List<InferenceModelSession> get engineSessions => [
-    if (session != null) session!,
-  ];
+  List<InferenceModelSession> get engineSessions => [?session];
 
   /// Creates a chat in the legacy singleton lane, closing its prior session.
   ///

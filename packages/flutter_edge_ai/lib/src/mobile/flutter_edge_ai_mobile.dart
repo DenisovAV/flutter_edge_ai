@@ -8,7 +8,6 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart'; // MethodChannel — used by file_system_manager.dart part
-import 'package:meta/meta.dart' show internal;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,7 +28,6 @@ import '../model_management/utils/local_file.dart';
 import '../model_management/utils/download_temp_reclaim.dart';
 import '../utils/file_name_utils.dart';
 import '../registry/engine_registry.dart';
-import '../registry/inference_engine_provider.dart';
 import '../registry/multi_model_engine.dart';
 import '../registry/stt_registry.dart';
 import '../registry/tts_registry.dart';

@@ -1,3 +1,7 @@
+## 1.22.1
+- Allows `flutter_edge_ai` 2.8.0.
+- On `litertlm_dart` 0.20.0+3: Gemma 4 with thinking answers tool results in text.
+
 ## 1.22.0
 - Requires `litertlm_dart` 0.20.0+2 (LiteRT-LM 0.20.0, `native-v0.20.0`).
 - Web: import `@litert-lm/core@0.20.0` and `window.litertLm = m;` replaces the `window.Engine` lines.

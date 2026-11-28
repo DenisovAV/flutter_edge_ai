@@ -1,6 +1,6 @@
 name: flutter_edge_ai_litertlm
 description: "LiteRT-LM (.litertlm) engine for flutter_edge_ai: dart:ffi on 5 native platforms plus web, CPU/GPU/NPU, and the LiteRT embedding backend."
-version: 1.22.0
+version: 1.22.1
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_litertlm
 topics: [gemma, llm, litert, on-device, ffi]
@@ -46,12 +46,13 @@ dependencies:
   # for FunctionGemma and 1.7.3's `createChat` fix, without which web function
   # calling resolves, compiles, and the tools silently never reach the model.
   # 2.7.0 brought `HuggingFaceResolver.type` (`ModelManagementType`), which
-  # `LitertlmManifestResolver` declares.
-  flutter_edge_ai: '>=2.7.0 <2.8.0'
+  # `LitertlmManifestResolver` declares. 2.8.0 adds the streaming speech
+  # members, with default bodies, to classes this adapter does not implement.
+  flutter_edge_ai: '>=2.7.0 <2.9.0'
   # The LiteRT-LM runtime and its build hook (libLiteRtLm and the NPU
   # stacks). Pinned exactly: this adapter reads litertlm_dart's internal
   # libraries, which carry no compatibility promise between releases.
-  litertlm_dart: 0.20.0+2
+  litertlm_dart: 0.20.0+3
   ffi: ^2.1.0
   mutex: ^3.1.0
   crypto: ^3.0.6

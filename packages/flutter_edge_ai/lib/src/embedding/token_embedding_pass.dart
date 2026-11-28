@@ -39,10 +39,9 @@ final class TokenPassGraph {
 /// may override them.
 abstract base class TokenEmbeddingPass extends EmbeddingPass {
   TokenEmbeddingPass({
-    required String tokenizerPath,
-    required EmbeddingTokenizerFactory tokenizerFactory,
-  }) : _tokenizerPath = tokenizerPath,
-       _tokenizerFactory = tokenizerFactory;
+    required this._tokenizerPath,
+    required this._tokenizerFactory,
+  });
 
   final String _tokenizerPath;
   final EmbeddingTokenizerFactory _tokenizerFactory;

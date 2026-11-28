@@ -15,6 +15,7 @@ description: Use when adding speech to a flutter_edge_ai app — speech-to-text 
 6. TTS language: `close()` the synthesizer first. Asking a live synthesizer for another language throws `StateError`.
 7. Android needs `minSdk 30`. There is no web support — the web backends throw `UnsupportedError`.
 8. Close recognizers and synthesizers.
+9. Live transcription is `recognizer.transcribeStream(stream)`, on Parakeet only: check `recognizer.streaming != null` first (moonshine and Whisper fail with `UnsupportedError`). `VoiceActivityDetector` finds where speech starts and ends; it is native only.
 
 ## Setup
 
@@ -62,6 +63,48 @@ On the GPU, run the f32 files: on Adreno 740 the int8 (`_i8`) ones did not compi
 **Audio longer than the window is silently truncated**, not rejected: it is zero-padded when shorter and cut when longer, so a 40-second clip on Whisper returns the first 30 seconds with no error. Split long recordings yourself.
 
 Whisper tiny is weak outside English. Whisper base int8 is the next size up in the catalog: `LiteRtSpeechModels.whisperBase.i8`. Every speech build and where it has been run: https://flutteredge.ai/docs/registry.
+
+## Live transcription and voice activity detection
+
+Parakeet CTC transcribes a stream as it arrives (`SpeechRecognizer.streaming` is not null for it). Each update brings text that is final (`TranscriptUpdate.confirmedDelta`, append it) and a tail that may still change (`TranscriptUpdate.unconfirmed`, replace the previous one). The input is the same 16 kHz mono 16-bit PCM as `transcribe`, in chunks of any size: record at 16 kHz, nothing resamples.
+
+```dart
+final SpeechRecognizer recognizer = await FlutterEdgeAi.getActiveStt();
+if (recognizer.streaming == null) {
+  throw StateError('this model does not stream: install Parakeet CTC');
+}
+final transcript = StringBuffer();
+await for (final update in recognizer.transcribeStream(microphone)) {
+  transcript.write(update.confirmedDelta);
+  print('$transcript${update.unconfirmed}');
+  if (update.endpoint) print('utterance complete');
+}
+```
+
+- One stream per recognizer at a time; `transcribe` calls made meanwhile wait their turn.
+- `recognizer.flush()` closes an utterance without ending the stream (call it at a voice activity detector's end of speech).
+- Audio piling up faster than the model runs ends the stream with `SpeechStreamOverrunException` after `TranscribeStreamOptions.maxBufferedAudio` (10 s); `StreamingLatency.balanced` halves the work of the default `StreamingLatency.lowLatency`.
+- Stopping the recorder stays the app's job, also when the stream ends.
+
+`VoiceActivityDetector` reports where speech starts and ends, with Silero VAD bundled in the package (nothing to download):
+
+```dart
+final vad = await VoiceActivityDetector.create();
+try {
+  await for (final event in vad.detect(microphone)) {
+    switch (event) {
+      case VadSpeechStart(:final startSample):
+        print('speech from sample $startSample');
+      case VadSpeechEnd(:final startSample, :final endSample):
+        print('utterance: samples $startSample to $endSample');
+    }
+  }
+} finally {
+  await vad.close();
+}
+```
+
+Positions are 16 kHz sample indices from the stream's first sample (the utterance is `pcm` bytes `2 * startSample` to `2 * endSample`). A start arrives at least `VadOptions.minSpeech` (250 ms) after the voice began, at most about 0.9 s: keep that much audio to hand the whole utterance to speech-to-text. Silero hears any voice, a reply playing from the speaker included: barge-in needs echo cancellation.
 
 ## Getting 16 kHz mono PCM
 

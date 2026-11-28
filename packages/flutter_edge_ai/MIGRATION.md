@@ -1,5 +1,20 @@
 # Migration guide
 
+## flutter_edge_ai 2.8.0: streaming speech members
+
+`SpeechRecognizer` gains `streaming`, `transcribeStream` and `flush`;
+`SpeechSynthesizer` gains `supportsStreaming`, `synthesizeStream` and
+`openTextStream`. Each has a default body that reports "cannot stream", so a
+class that `extends` either one compiles unchanged and callers see the
+non-streaming answer (`streaming` null, `supportsStreaming` false; the streams
+end with an `UnsupportedError`, `openTextStream` throws one, `flush` fails with
+a `StateError`). A class that `implements` either one must add its three
+members: return those defaults, or extend the class instead. Apps that
+only call `installStt`/`installTts` and their models change nothing;
+`flutter_edge_ai_speech` 0.7.0 implements the streaming members for Parakeet CTC
+and needs core 2.8.0, and `flutter_edge_ai_litertlm` 1.22.1 is the first adapter
+that resolves with it.
+
 ## flutter_edge_ai_litertlm 1.22.0 and litertlm_dart 0.20.0: one web shim line
 
 **Web: one shim line replaces three.** `flutter_edge_ai_litertlm` 1.22.0 (on `litertlm_dart` 0.20.0, LiteRT-LM 0.20.0) reads `@litert-lm/core` from `window.litertLm`, the whole module, instead of `window.Engine` and `window.EmbeddingEngine`. The backend ids it sends now come from the module's own `Backend` enum, because 0.20.0 renumbered them. In `web/index.html`, inside the `litertLmReady` module script, replace

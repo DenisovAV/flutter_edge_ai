@@ -1,6 +1,6 @@
 name: flutter_edge_ai_speech
 description: "On-device speech for flutter_edge_ai: STT, TTS and voice activity detection via the LiteRT C API + dart:ffi. Opt-in Stt/TtsBackendProvider."
-version: 0.6.3
+version: 0.7.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_speech
 topics: [speech, stt, gemma, litert, on-device]
@@ -32,7 +32,10 @@ dependencies:
   # Whisper's output language, and only core 1.8.0's
   # `getActiveStt(language:)` sets it.)
   # 2.6.0 supplies the catalog and registry contracts used by this release.
-  flutter_edge_ai: ^2.6.0
+  # 2.8.0 brought the streaming speech members this version implements
+  # (`SpeechRecognizer.streaming`, `transcribeStream`, `flush`) and their
+  # value types (`TranscriptUpdate` and the rest).
+  flutter_edge_ai: ^2.8.0
   # The LiteRT C API bindings (litert_bindings.dart) and the native bundle
   # that carries libLiteRt / libLiteRtLm.
   litertlm_dart: '>=0.20.0 <0.20.1'

@@ -4,3 +4,9 @@ targets:
       schemantic_builder:schemantic:
         generate_for:
           - lib/src/flutter_edge_ai_options.dart
+      # schemantic_builder 1.0.0 emits `JsonSchemaMetadata(...)` without
+      # `const`; pana charges 10 points for the two infos.
+      source_gen:combining_builder:
+        options:
+          ignore_for_file:
+            - prefer_const_constructors

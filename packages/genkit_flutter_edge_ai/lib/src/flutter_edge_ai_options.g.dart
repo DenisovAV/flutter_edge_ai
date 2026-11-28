@@ -1,5 +1,7 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
+// ignore_for_file: prefer_const_constructors
+
 part of 'flutter_edge_ai_options.dart';
 
 // **************************************************************************
@@ -289,14 +291,18 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  /// Backend for the vision encoder. Null defaults to CPU (the Metal/WebGPU
-  /// delegates can't prepare its ops). Ignored by MediaPipe.
+  /// Backend for the vision encoder. Null follows the bundle: its section's
+  /// `backend_constraint`, else the NPU it is compiled for, else CPU (the
+  /// Metal/WebGPU delegates can't prepare its ops). Set one only where the
+  /// section allows it. Ignored by MediaPipe.
   String? get preferredVisionBackend {
     return _json['preferredVisionBackend'] as String?;
   }
 
-  /// Backend for the vision encoder. Null defaults to CPU (the Metal/WebGPU
-  /// delegates can't prepare its ops). Ignored by MediaPipe.
+  /// Backend for the vision encoder. Null follows the bundle: its section's
+  /// `backend_constraint`, else the NPU it is compiled for, else CPU (the
+  /// Metal/WebGPU delegates can't prepare its ops). Set one only where the
+  /// section allows it. Ignored by MediaPipe.
   set preferredVisionBackend(String? value) {
     if (value == null) {
       _json.remove('preferredVisionBackend');
@@ -305,14 +311,16 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  /// Backend for the audio encoder. Null defaults to CPU; set 'gpu' for
-  /// faster audio (Gemma 3n ~2x on Metal). Ignored by MediaPipe.
+  /// Backend for the audio encoder. Null follows the bundle, as for the
+  /// vision encoder; the published Gemma 4 and Gemma 3n audio encoders
+  /// declare cpu and refuse 'gpu'. Ignored by MediaPipe.
   String? get preferredAudioBackend {
     return _json['preferredAudioBackend'] as String?;
   }
 
-  /// Backend for the audio encoder. Null defaults to CPU; set 'gpu' for
-  /// faster audio (Gemma 3n ~2x on Metal). Ignored by MediaPipe.
+  /// Backend for the audio encoder. Null follows the bundle, as for the
+  /// vision encoder; the published Gemma 4 and Gemma 3n audio encoders
+  /// declare cpu and refuse 'gpu'. Ignored by MediaPipe.
   set preferredAudioBackend(String? value) {
     if (value == null) {
       _json.remove('preferredAudioBackend');
